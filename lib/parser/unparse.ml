@@ -604,8 +604,8 @@ and unparse_canonical : type mode n lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun vars c li ri ->
   match c with
-  | Data { indices = _; evaldim; constrs; discrete = _; recursive = _; tyfam = _; hints = _ } ->
-      unparse_data vars evaldim constrs li ri
+  | Data { indices = _; evaldim; constrs; discrete = _; recursive = _; tyfam; hints = _ } ->
+      unparse_data vars evaldim tyfam constrs li ri
   | Codata { eta; evaldim; plusdim; fields; _ } ->
       (* The self-variable has the sum of the evaluation and intrinsic dimensions; the instances of a higher field are indexed by the evaluation dimension alone. *)
       unparse_codata vars eta evaldim (D.plus_out evaldim plusdim) fields li ri
@@ -776,15 +776,18 @@ and unparse_constr_display : type lt ls rt rs.
 and unparse_data : type mode a m lt ls rt rs.
     (unparser, a) Names.t ->
     m D.t ->
-    (Constr.t, (mode, a, kinetic) term) Abwd.t ->
+    (mode, a, kinetic) term ->
+    (Constr.t, (mode, (a, (mode Modality.id, D.zero) dim_entry) snoc, kinetic) term) Abwd.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars evaldim constrs _li _ri ->
+ fun vars evaldim tyfam constrs _li _ri ->
+  (* The constructors' types are stored over the datatype's self-type variable, which is not a variable the user can write: it displays as the datatype's own type family, which is stored beside them for exactly this purpose.  It is bound to an unparser rather than a finished parse tree because its occurrences sit in different tightness intervals. *)
+  let selfvars = Names.add_other vars (make_unparser vars tyfam) in
   let inner =
     Bwd.fold_left
       (fun acc (c, ty) ->
-        let cterm = unparse_dataconstr vars c ty No.Interval.entire No.Interval.entire in
+        let cterm = unparse_dataconstr selfvars c ty No.Interval.entire No.Interval.entire in
         acc <: mktok (Op "|") <: Term cterm)
       (Snoc (Emp, mktok LBracket))
       constrs in

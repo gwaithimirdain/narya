@@ -385,9 +385,11 @@ module Act = struct
       (m, n) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
       (mode, m) dataconstr =
-   fun (Dataconstr { env; ty }) s cell ->
+   fun (Dataconstr { env; self; ty }) s cell ->
     let env = act_env_deg env s cell in
-    Dataconstr { env; ty }
+    (* The self-type variable's value is a cube of the environment's dimension, so it is acted along with the environment. *)
+    let self = act_cube { act = (fun x s c -> act_lazy_eval x s c) } self s cell in
+    Dataconstr { env; self; ty }
 
   (* act_binder assumes that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_binder : type mode modality dom mn kn s mu1 mu2 cod.

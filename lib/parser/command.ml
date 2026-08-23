@@ -1318,12 +1318,12 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             | Zero -> return ()
                             | Pos _ ->
                                 NameBranches.stateless (Branches.lift (HigherBranch.put true)) in
-                          let* c, Dataconstr { env; ty } =
+                          let* c, Dataconstr { env; self; ty } =
                             NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
                           let* (Wrap names) = NameBranches.get in
                           let arg_hints =
                             Reporter.try_with ~fatal:(fun _ -> Emp) @@ fun () ->
-                            Domvars.constr_arg_hints ctx env ty in
+                            Domvars.constr_arg_hints ctx (Norm.dataconstr_env env self) ty in
                           let cargs, newnames =
                             constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in
                           let* () = NameBranches.put newnames in

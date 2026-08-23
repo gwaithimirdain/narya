@@ -192,7 +192,7 @@ and equal_at_data : type mode m a b.
  fun ctx constrs ty tyargs x y ->
   match (x, y) with
   | Constr (xconstr, xn, xargs), Constr (yconstr, yn, yargs) -> (
-      let (Dataconstr { env; ty }) =
+      let (Dataconstr { env; self; ty }) =
         match Abwd.find_opt xconstr constrs with
         | Some x -> x
         | None -> fatal (Anomaly "constr not found in equality-check") in
@@ -213,7 +213,7 @@ and equal_at_data : type mode m a b.
               ~wrong_constr:(fun _ -> Anomaly "inst arg wrong constr in equality at datatype")
               ~not_constr:(fun _ -> Anomaly "inst arg not constr in equality at datatype") in
           (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees. *)
-          equal_at_pi ctx xn (lazy (eval_term env ty)) xargs yargs tyarg_args)
+          equal_at_pi ctx xn (lazy (eval_term (dataconstr_env env self) ty)) xargs yargs tyarg_args)
   | Neu _, Neu _ -> (
       (* Two neutrals are first compared as spines; a mismatch is inconclusive if either side unfolds, in which case we retry (once) on the unfoldings, which may now be constructors. *)
       match equal_neu ctx x y with

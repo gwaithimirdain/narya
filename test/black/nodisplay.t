@@ -2,9 +2,9 @@ Fallbacks in the readback of a potential term
 
 Reading back a potential term is display-only, and it is allowed to fail: when a piece of a case tree can't be displayed as the construct it came from, we show its application spine instead, which is always a correct thing to show and only a less informative one.  Most fallbacks say so as information, visible with -v (I0010); others are silent, because a spine is all there ever was to show.
 
-This file records every way that currently happens, and nothing that used to.  The first group has nothing to do with matches.  The second applies to matches of every kind.  The third is specific to an *implicit* match -- one with no stored motive, which recovers the types of its branches by refining the context rather than by applying a motive -- and does not arise for a match with an explicit motive or a non-dependent one.  A fourth lists degradations that stop short of falling back.
+This file records every way that currently happens, and nothing that used to.  The first group has nothing to do with matches.  The second applies to matches of every kind, and has no fallbacks left in it at all: it records what a branch body can now be displayed as, and what makes that work.  The third is specific to an *implicit* match -- one with no stored motive, which recovers the types of its branches by refining the context rather than by applying a motive -- and does not arise for a match with an explicit motive or a non-dependent one.  A fourth lists degradations that stop short of falling back.
 
-There are exactly four messages, one for the stuck metavariable in I, one for the anonymous codatatype in II, and two for the unrefined branch types in III; everything else here falls back silently or does not fall back at all.
+There are exactly three messages, one for the stuck metavariable in I and two for the unrefined branch types in III; everything else here falls back silently or does not fall back at all.
 
 
 I. Not about matches
@@ -82,6 +82,8 @@ Finally, a potential value that is a universe or a pi-type is shown as its spine
 II. Matches of every kind
 =========================
 
+Nothing in this group falls back any more.  It is kept because each entry here displays only by a specific mechanism, and would fall back again without it.
+
 A branch body that is itself an *anonymous* codatatype or record -- one written inline rather than named, so that it evaluates to a canonical value rather than to a neutral -- is displayed as a declaration rather than as a spine, which at a positive dimension means computing its field types.  Those project the field from the self variable at each proper face of the self cube, and those faces come from the type we are reading back at, which is the *match's*: they are the match at the faces of the environment, and a stuck match exposes no fields.  Specializing them at this branch's constructor makes them the branch's own faces instead, so a lower field displays, and so does a record.
 
   $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def F : Bool → Type ≔ [ true. ↦ codata [ x .head : N ] | false. ↦ N ]' -e 'about (refl F b2)'
@@ -154,9 +156,9 @@ Only a projection fails, so a codatatype with no fields to project displays, bou
     : Type⁽ᵉ⁾ (F b0) (F b1)
   
 
-So does an anonymous *datatype* under an implicit match: readback of a degenerate datatype evaluates each constructor's function-type in a faced environment instead of projecting from boundary self variables, so it never needs the boundary to be a datatype at all.
+So does an anonymous *datatype*, under an implicit match and under an explicit motive alike.  A constructor's stored function-type names its datatype not by the head being checked but by a self-type variable, so reading it back needs nothing at the head: the top face of that variable's entry is a fresh variable of the display context, which unparses as the datatype's stored type family, and the proper faces are that family at the faces of the environment.  Those faces are stuck matches for the same reason a codatatype's self cube's are, and are specialized in the same way; without that, they would expose no datatype to read the lower-dimensional constructor-functions back at.
 
-Under an explicit motive it does not, and this is the one fallback left in the group.  The datatype's stored type family is read back along with it, and there the instantiation arguments of its spine are read back as normals, at types that for an anonymous datatype in a branch are not the datatypes the constructors among them need.
+Under an explicit motive the discriminee is not refined, so the type family displays unrefined -- "Id F b2" rather than "F⁽ᵉ⁾ {true.} {true.} true." -- and the motive is displayed as well.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def F : Bool → Type ≔ [ true. ↦ data [ u. | v. ] | false. ↦ N ]' -e 'about (refl F b2)'
   match b2 [
@@ -167,29 +169,26 @@ Under an explicit motive it does not, and this is the one fallback left in the g
     : Type⁽ᵉ⁾ (F b0) (F b1)
   
 
-  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def F : Bool → Type ≔ x ↦ match x return _ ↦ Type [ true. ↦ data [ u. | v. ] | false. ↦ N ]' -e 'about (refl F b2)'
-   ￫ info[I0000]
-   ￮ constant N defined
-  
-   ￫ info[I0000]
-   ￮ constant Bool defined
-  
-   ￫ info[I0001]
-   ￮ axiom b0 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b1 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom b2 assumed
-  
-   ￫ info[I0000]
-   ￮ constant F defined
-  
-   ￫ info[I0010]
-   ￮ not displaying a stuck match with a branch body that is a constructor, which does not synthesize; showing an application spine instead
-  
-  Id F b2
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def F : Bool → Type ≔ x ↦ match x return _ ↦ Type [ true. ↦ data [ u. | v. ] | false. ↦ N ]' -e 'about (refl F b2)'
+  match b2
+  return 𝑥 𝑦 𝑧 ↦
+         Type⁽ᵉ⁾
+           (match 𝑥
+            return 𝑤 ↦ Type [
+            | false. ↦ N
+            | true. ↦ data [
+              | u. : F b0
+              | v. : F b0 ]])
+           (match 𝑦
+            return 𝑤 ↦ Type [
+            | false. ↦ N
+            | true. ↦ data [
+              | u. : F b1
+              | v. : F b1 ]]) [
+  | false. ⤇ N⁽ᵉ⁾
+  | true. ⤇ data⁽ᵉ⁾ [
+    | u. : Id F b2 u. u.
+    | v. : Id F b2 v. v. ]]
     : Type⁽ᵉ⁾ (F b0) (F b1)
   
 

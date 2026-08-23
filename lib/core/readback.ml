@@ -177,7 +177,7 @@ type (_, _, _, _) readback_apps =
       ('hmode, 'z, 'c) Ctx.t * (('hmode, 'c, 's) term -> ('mode, 'a, 's) term)
       -> ('hmode, 'mode, 'a, 's) readback_apps
 
-(* The reduction that specialize_boundary performs at each proper face of a value being displayed, packaged so that it can be applied to other cubes of values living at those same faces.  What makes a face specializable depends only on the match being reduced, not on what is being specialized. *)
+(* The reduction that specialize_boundary performs at each proper face of a value being displayed, packaged so that it can be applied to other cubes of values living at those same faces.  What makes a face specializable depends only on the match being reduced, not on what is being specialized: a datatype's self-type values at the faces of its environment are stuck matches for exactly the same reason its type's instantiation arguments are, and want exactly the same reduction. *)
 type ('mode, 'k) specializer = {
   specialize : 'm. ('m, 'k) pface -> ('mode, kinetic) value -> ('mode, kinetic) value;
 }
@@ -472,7 +472,7 @@ and readback_at : type mode a z s.
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
       (* Pick out the constructor of the datatype that matches the one we're reading back *)
-      let (Dataconstr { env; ty }) =
+      let (Dataconstr { env; self; ty }) =
         Abwd.find_opt xconstr constrs <|> Anomaly "constr not found in readback" in
       match D.compare xn (TubeOf.inst tyargs) with
       | Neq -> fatal (Dimension_mismatch ("reading back constrs", xn, TubeOf.inst tyargs))
@@ -495,7 +495,9 @@ and readback_at : type mode a z s.
           Constr
             ( xconstr,
               dim_env env,
-              readback_at_pi ctx (dim_env env) (lazy (eval_term env ty)) xargs tyarg_args ))
+              readback_at_pi ctx (dim_env env)
+                (lazy (eval_term (dataconstr_env env self) ty))
+                xargs tyarg_args ))
   (* Reading back canonical types themselves (data, codata, record), *at* a universe, happens only for potential terms. *)
   | ( Canonical
         (type hmode m n mn)
@@ -518,7 +520,7 @@ and readback_at : type mode a z s.
               let Eq = eq_of_ins_zero ins in
               Inst
                 ( Potential,
-                  readback_data ctx data_args,
+                  readback_data ctx neutral data_args,
                   TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ tyargs ] )
           (* Codatatypes and records are handled uniformly whether 0-dimensional, intrinsically higher (Gel-like), or degenerate, instantiated or not, and whether or not their fields are modal.  Unlike a datatype, an instantiated one is *not* read back uninstantiated and re-instantiated: the boundary of a degenerate codatatype behaves like parameters rather than like indices, so it is the instantiated form that behaves like a codatatype, and it is displayed as one.  Hence the instantiation arguments are passed along rather than read back separately here.
              The insertion splits the value's total dimension into its evaluation dimension and its intrinsic (Gel) dimension, which are the two dimensions the displayed codatatype records.  When the insertion is the identity, the two are in that order and the value is displayed directly; otherwise the value is not a record type at all (its fields can't even be projected), but it is a permutation of one, so we un-permute it, display that, and wrap the result in the permutation as a degeneracy action. *)
@@ -531,9 +533,9 @@ and readback_at : type mode a z s.
   | ( Canonical (_, Pi _, _, _),
       Canonical { canonical = Data ({ indices = Fillvec.Unfilled _; _ } as data_args); tyargs; _ } )
     -> (
-      let (Potential _) = status in
+      let (Potential neutral) = status in
       match D.compare_zero (TubeOf.inst tyargs) with
-      | Zero -> readback_data ctx data_args
+      | Zero -> readback_data ctx neutral data_args
       | Pos _ -> fatal (Anomaly "instantiated datatype is missing indices"))
   | _ -> readback_val ctx tm
 
@@ -974,12 +976,18 @@ and readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = f
 
 (* Read back a datatype definition. *)
 and readback_data : type mode a b m j ij.
-    (mode, a, b) Ctx.t -> (mode, m, j, ij) Value.data_args -> (mode, b, potential) term =
- fun ctx { constrs; discrete; recursive; tyfam; hints; dim; indices } ->
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    (mode, m, j, ij) Value.data_args ->
+    (mode, b, potential) term =
+ fun ctx neutral { constrs; discrete; recursive; tyfam; hints; dim; indices } ->
   let ij = Fillvec.expected_length indices in
+  (* If this datatype is the body of a branch of a stuck match, then at the proper faces of its environment its own type family is that match, which exposes no datatype; so we specialize those faces at the same constructor the branch body's self is specialized at. *)
+  let spec = specializer neutral dim in
   (* Evaluate each constructor's stored function-type in its appropriately-dimensional environment and then read it back. *)
-  let constrs = Abwd.mapi (readback_dataconstr ctx) constrs in
-  let tyfam = readback_nf ctx (nf_of_neu (force_eval_term tyfam) "readback_data") in
+  let tyfam_nf = nf_of_neu (force_eval_term tyfam) "readback_data" in
+  let constrs = Abwd.mapi (readback_dataconstr ctx tyfam_nf spec) constrs in
+  let tyfam = readback_nf ctx tyfam_nf in
   let data : (mode, b, potential) term =
     Canonical (Data { indices = ij; evaldim = dim; constrs; discrete; recursive; tyfam; hints })
   in
@@ -998,13 +1006,34 @@ and readback_data : type mode a b m j ij.
               CubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ i ] ) ))
     data (Fillvec.to_list indices)
 
-(* Read back the type of a constructor. *)
+(* Read back the type of a constructor, over the self-type variable its codomain names the datatype by.  Only the *top* face of that variable's entry is a fresh variable of the displayed context, so that the top-dimensional codomain reads back as that variable, which the unparser then shows as the datatype's type family.  The lower faces are bound to the lower-dimensional type families themselves, as the Dataconstr carries them (for a branch of a stuck match, that branch's own datatype): they are what the boundary instantiation arguments are computed from, and reading one of those lower-dimensional constructor-functions back needs its type to expose the datatype it belongs to, which a variable does not.
+
+   That is exactly the well-formed cube of values that a zero-dimensional entry wants, the fresh variable's type being the type family's own type -- which for a degenerated datatype is the degenerated type of the family, already instantiated at those lower-dimensional families.  So the self variable is zero-dimensional but higher-dimensionally typed, like any other variable of a degenerate type, and the entry needs no dimension of its own. *)
 and readback_dataconstr : type mode m a b.
-    (mode, a, b) Ctx.t -> Constr.t -> (mode, m) dataconstr -> (mode, b, kinetic) term =
- fun ctx c (Dataconstr { env; ty }) ->
+    (mode, a, b) Ctx.t ->
+    mode normal ->
+    (mode, m) specializer option ->
+    Constr.t ->
+    (mode, m) dataconstr ->
+    (mode, (b, (mode Modality.id, D.zero) dim_entry) snoc, kinetic) term =
+ fun ctx tyfam_nf spec c (Dataconstr { env; self; ty }) ->
   let m = dim_env env in
+  (* The fresh self variable, invisible: it takes no raw variable, being nothing the user wrote. *)
+  let selfvar, selfnfs =
+    dom_vars ctx (Modality.id (Ctx.mode ctx)) (CubeOf.singleton (Lazy.force tyfam_nf.ty)) in
+  let selfctx = Ctx.invis ctx (Modality.filter_id (Ctx.mode ctx) D.zero) selfnfs in
+  let selfbdry =
+    match spec with
+    | None -> TubeOf.boundary self
+    | Some { specialize } ->
+        TubeOf.mmap
+          { map = (fun fa [ v ] -> ready (Val (specialize fa (force_eval_term v)))) }
+          [ TubeOf.boundary self ] in
+  let selfenv =
+    dataconstr_env env
+      (TubeOf.plus_cube selfbdry (CubeOf.singleton (ready (Val (CubeOf.find_top selfvar))))) in
   (* The evaluated, but uninstantiated, type. *)
-  let ft = Norm.eval_term env ty in
+  let ft = Norm.eval_term selfenv ty in
   (* For a degenerate (higher-dimensional) datatype, we instantiate the resulting higher-dimensional pi-type at the lower-dimensional versions of the constructor itself.  Here is the boundary at which to instantiate. *)
   let tbl = Hashtbl.create 10 in
   let boundary =
@@ -1016,7 +1045,7 @@ and readback_dataconstr : type mode m a b.
             (* The constructor's function-type at this face, obtained by evaluating the same term in a faced environment, instantiated at the lower faces of the constructor that we have already computed. *)
             let fty =
               Norm.inst
-                (Norm.eval_term (act_env env (opt_op_of_sface fa)) ty)
+                (Norm.eval_term (act_env selfenv (opt_op_of_sface fa)) ty)
                 (TubeOf.build D.zero
                    (D.zero_plus (dom_sface fa))
                    {
@@ -1031,7 +1060,7 @@ and readback_dataconstr : type mode m a b.
             Hashtbl.add tbl (SFace_of fa) nf;
             nf);
       } in
-  readback_val ctx (Norm.inst ft boundary)
+  readback_val selfctx (Norm.inst ft boundary)
 
 (* Build the term of the eta-long constructor "λ⁽ⁿ⁾ args. c⁽ⁿ⁾ args" at dimension n, over the display context, given the n-dimensional function-type value ft of the constructor. *)
 and readback_constr_function : type mode lev e n.
@@ -1851,7 +1880,7 @@ and readback_stuck_match : type mode a z hmode any.
                   (fun constr br ->
                     match br with
                     | Term.Branch { annotate; comp; perm; tm = body } ->
-                        let (Dataconstr { env = cenv; ty = cty }) =
+                        let (Dataconstr { env = cenv; self = cself; ty = cty }) =
                           Abwd.find_opt constr constrs
                           <|> Anomaly "constructor missing from stuck match in readback" in
                         (* Fresh pattern variables, named as in the branch; ext_pi fills in the constructor's argument names for anonymous ones. *)
@@ -1870,7 +1899,8 @@ and readback_stuck_match : type mode a z hmode any.
                                  out;
                                  normals = _;
                                }) =
-                          ext_pi ctx window cenv xs (Norm.eval_term cenv cty) in
+                          ext_pi ctx window cenv xs (Norm.eval_term (dataconstr_env cenv cself) cty)
+                        in
                         (* We first try to refine the context and return type by rebinding the variable discriminee to the constructor, as when typechecking a variable match, except in environments rather than contexts.  This is not always possible, even for a match that was originally a variable, since a discriminee (or its indices or boundary) that was originally a free variable might have been substituted by something else. *)
                         Reporter.try_with
                           (fun () ->

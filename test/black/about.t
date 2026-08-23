@@ -300,15 +300,15 @@ In a parametricity configuration with no endpoints (arity 0), a degenerate datat
   
 
 
-A datatype defined nested inside a case tree is reached through the tree rather than as a top-level canonical type, so "about" displays the stored case tree.  Each nested datatype's constructor output types are shown faithfully (with the real datatype head) from the stored output term.
+A datatype defined nested inside a case tree is reached through the tree rather than as a top-level canonical type, so "about" displays the stored case tree.  Each nested datatype's constructor output types are shown with the real datatype head, which comes from the stored type family rather than from the constructor's own stored output type (that names the datatype only by the self-type variable).  Since the type family is read back where the datatype is checked, inside the branch, its parameters appear as the branch has refined them: "W (suc. m)" rather than "W n".
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def W (n : N) : N → Type ≔ match n [ zero. ↦ data [ w0. : W n zero. ] | suc. m ↦ data [ w1. : W n (suc. m) ] ]' -e 'about W'
   n ↦
   match n [
   | suc. m ↦ data [
-    | w1. : W n (suc. m) ]
+    | w1. : W (suc. m) (suc. m) ]
   | zero. ↦ data [
-    | w0. : W n 0 ]]
+    | w0. : W 0 0 ]]
     : (n : N) → N → Type
   
 
@@ -828,9 +828,9 @@ The datatype in a branch body can be an indexed one that the branch does not app
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def W (n : N) : N → Type ≔ match n [ zero. ↦ data [ w0. : W n zero. ] | suc. m ↦ data [ w1. : W n (suc. m) ] ]' -e 'axiom ax : N' -e 'about (W ax)'
   match ax [
   | suc. m ↦ data [
-    | w1. : W ax (suc. m) ]
+    | w1. : W (suc. m) (suc. m) ]
   | zero. ↦ data [
-    | w0. : W ax 0 ]]
+    | w0. : W 0 0 ]]
     : N → Type
   
 

@@ -64,6 +64,22 @@ type (_, _, _) branch_spec =
     }
       -> ('mode, 'm, 'kn) branch_spec
 
+(* The environment in which a constructor's stored function-type is evaluated: the datatype's own environment, extended by the self-type variable its codomain names the datatype by (see Term.canonical's Data).  The entry is zero-dimensional, as it is where the datatype was checked, so its values are a cube of the environment's own dimension. *)
+let dataconstr_env : type mode m a.
+    (mode, m, a) env ->
+    (m, (mode, kinetic) lazy_eval) CubeOf.t ->
+    (mode, m, (a, (mode Modality.id, D.zero) dim_entry) snoc) env =
+ fun env self ->
+  let m = dim_env env in
+  Ext
+    {
+      env;
+      plus = D.plus_zero m;
+      filter = Modality.filter_id (mode_env env) m;
+      filtered = Modality.filter_id (mode_env env) D.zero;
+      values = `Lazy self;
+    }
+
 (* Extract the pi-type data from an uninstantiated pi-type value. *)
 type (_, _) viewed_pi =
   | Viewed_pi : ('dom, 'modality, 'mode, 'k, 'n) Value.pi_args -> ('mode, 'n) viewed_pi
@@ -1474,8 +1490,13 @@ and eval_canonical : type mode m a.
   | Data { indices; evaldim = _; constrs; discrete; recursive; hints; tyfam } ->
       let dim, mode = (dim_env env, mode_env env) in
       (* The type family (the datatype applied to its parameters, e.g. "Vec A") was read back when this datatype was checked; we now evaluate it, lazily to avoid the circularity of re-entering this same evaluation eagerly.  Its type we take from the resulting neutral, since that is computed fully-instantiated at the current dimension (whereas re-evaluating a read-back type term would not be). *)
-      let tyfam = lazy_eval env tyfam in
-      let constrs = Abwd.map (fun ty -> Value.Dataconstr { env; ty }) constrs in
+      let tyfam_tm = tyfam in
+      let tyfam = lazy_eval env tyfam_tm in
+      (* The self-type variable of every constructor is bound to the datatype's own type family, evaluated at each face of the environment. *)
+      let self =
+        CubeOf.build dim
+          { build = (fun fa -> lazy_eval (act_env env (opt_op_of_sface fa)) tyfam_tm) } in
+      let constrs = Abwd.map (fun ty -> Value.Dataconstr { env; self; ty }) constrs in
       let canonical =
         Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; recursive; hints }
       in
@@ -2355,13 +2376,15 @@ and tyof_specialize : type dom window mode.
                           D.compare data_dim total_dim )
                       with
                       | ( Some (Branch { annotate; comp; perm; tm = body }),
-                          Some (Dataconstr { env = cenv; ty = cty }),
+                          Some (Dataconstr { env = cenv; self = cself; ty = cty }),
                           Eq,
                           Eq ) ->
                           let benv =
                             Permute (perm, take_args env plus_dim dargs window fw annotate comp)
                           in
-                          let out = apply_dargs total_dim (eval_term cenv cty) dargs in
+                          let out =
+                            apply_dargs total_dim (eval_term (dataconstr_env cenv cself) cty) dargs
+                          in
                           let index_nfs =
                             indices_of_out "tyof_specialize" out total_dim (Vec.length data_indices)
                           in

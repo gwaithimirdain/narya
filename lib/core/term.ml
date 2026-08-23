@@ -227,7 +227,8 @@ module rec Term : sig
     | Data : {
         indices : 'i Fwn.t;
         evaldim : 'm D.t;
-        constrs : (Constr.t, ('mode, 'a, kinetic) term) Abwd.t;
+        constrs :
+          (Constr.t, ('mode, ('a, ('mode Modality.id, D.zero) dim_entry) snoc, kinetic) term) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         recursive : Positivity.recursion;
         hints : hints;
@@ -576,8 +577,9 @@ end = struct
         indices : 'i Fwn.t;
         (* The dimension the datatype was evaluated at, exactly as for the [evaldim] of a codatatype: zero for one produced by typechecking, and positive only for the display-only readback of a degenerated datatype value, whose constructors then store higher-dimensional pi-types.  Evaluation ignores it, taking the dimension from its environment instead; it is stored so that the unparser can display the dimension on the "data" keyword. *)
         evaldim : 'm D.t;
-        (* Each constructor is stored as its full function-type: the iterated (modal, zero-dimensional) pi-type over its argument telescope whose codomain is the datatype family applied to the parameters and indices.  It is walked on demand, evaluating and introducing the arguments (e.g. by ext_pi in match typechecking) to reach the codomain, off which the index values are read; its arity and argument names alone are available more cheaply via Telescope.pi_arity and Telescope.pi_names.  For a non-indexed datatype, where the user need not write an output type, the codomain is synthesized as the datatype applied to its parameters.  The readback of a higher-dimensionally degenerated datatype stores a higher-dimensional pi-type here; that is used only for display and is not re-evaluable. *)
-        constrs : (Constr.t, ('mode, 'a, kinetic) term) Abwd.t;
+        (* Each constructor is stored as its full function-type: the iterated (modal, zero-dimensional) pi-type over its argument telescope whose codomain is the datatype family applied to the parameters and indices.  It is walked on demand, evaluating and introducing the arguments (e.g. by ext_pi in match typechecking) to reach the codomain, off which the index values are read; its arity and argument names alone are available more cheaply via Telescope.pi_arity and Telescope.pi_names.  Its codomain names the datatype not by the head being checked but by a self-type variable, an invisible variable standing for the datatype's own type family, over which every constructor's type is stored; evaluation binds that variable to the type family (stored below as [tyfam]), and readback for display binds its top face to a fresh variable that unparses as that family, so that reading a constructor back needs no datatype at the head at all -- which is what lets an anonymous datatype in a branch of a stuck match be displayed.  Not, as for the self-variable of a codatatype, an *element* of the type, but the *type*.  Being invisible it is no route to recursion.  The readback of a higher-dimensionally degenerated datatype stores a higher-dimensional pi-type here; that is used only for display and is not re-evaluable. *)
+        constrs :
+          (Constr.t, ('mode, ('a, ('mode Modality.id, D.zero) dim_entry) snoc, kinetic) term) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         recursive : Positivity.recursion;
         (* Variable-name hints, for displaying anonymous variables of this type. *)

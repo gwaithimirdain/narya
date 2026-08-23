@@ -137,7 +137,9 @@ type (_, _, _) checkable_branch =
       (* If the body is None, that means the user omitted this branch.  (That might be ok, if it can be refuted by a pattern variable belonging to an empty type.) *)
       body : 'ac check located option;
       env : ('mode, 'm, 'b) env;
-      ty : ('mode, 'b, kinetic) term;
+      (* The value of the datatype's self-type variable, carried along with the environment because the constructor's type is stored over it. *)
+      self : ('m, ('mode, kinetic) lazy_eval) CubeOf.t;
+      ty : ('mode, ('b, ('mode Modality.id, D.zero) dim_entry) snoc, kinetic) term;
     }
       -> ('mode, 'a, 'm) checkable_branch
 
@@ -147,7 +149,8 @@ type (_, _, _) synthable_branch =
       xs : ('a, 'c, 'ac) Namevec.t;
       body : 'ac synth located;
       env : ('mode, 'm, 'b) env;
-      ty : ('mode, 'b, kinetic) term;
+      self : ('m, ('mode, kinetic) lazy_eval) CubeOf.t;
+      ty : ('mode, ('b, ('mode Modality.id, D.zero) dim_entry) snoc, kinetic) term;
     }
       -> ('mode, 'a, 'm) synthable_branch
 
@@ -167,7 +170,7 @@ let merge_branches : type hmode dom a m.
         (* We check at the preprocessing stage that there are no duplicate constructors in the match. *)
         if Abwd.mem constr userbrs then fatal ?loc (Duplicate_constructor_in_match constr);
         let databrs, databr = Abwd.extract constr databrs in
-        let (Value.Dataconstr { env; ty }) =
+        let (Value.Dataconstr { env; self; ty }) =
           match databr with
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
@@ -187,18 +190,46 @@ let merge_branches : type hmode dom a m.
               (Wrong_number_of_arguments_to_pattern
                  (constr, Fwn.to_int (Namevec.length xs) - Fwn.to_int arity))
         | Eq ->
-            let br = Checkable_branch { xs; body = Some body; env; ty } in
+            let br = Checkable_branch { xs; body = Some body; env; self; ty } in
             (Snoc (userbrs, (constr, br)), databrs))
       (Bwd.Emp, data_constrs) user_branches in
   (* If there are any constructors in the datatype left over that the user didn't supply branches for, we add them to the list at the end.  They will be tested for refutability. *)
   Bwd.prepend user_branches
     (Bwd_extra.to_list_map
-       (fun (c, Value.Dataconstr { env; ty }) ->
+       (fun (c, Value.Dataconstr { env; self; ty }) ->
          let (Wrap arity) = pi_arity ty in
          let (Bplus plus_args) = Raw.Indexed.bplus arity in
          let xs = Namevec.none plus_args in
-         (c, Checkable_branch { xs; body = None; env; ty }))
+         (c, Checkable_branch { xs; body = None; env; self; ty }))
        leftovers)
+
+(* Extend a context by the self-type variable of a datatype: an invisible variable standing for the datatype's own type family, of the type that family is being checked against (e.g. "N → Type" for "Vec A").  Every constructor's arguments and output type are checked over it, and its codomain names the datatype by it rather than by the head being checked, so that evaluation and readback can each say what the datatype is.  Being invisible, it gives the user no way to refer to the datatype, so it is not a route to recursion. *)
+let self_var : type mode a b.
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    (mode, a, (b, (mode Modality.id, D.zero) dim_entry) Tbwd.snoc) Ctx.t * (mode, kinetic) value =
+ fun ctx ty ->
+  let mode = Ctx.mode ctx in
+  let vars, nfs = dom_vars ctx (Modality.id mode) (CubeOf.singleton ty) in
+  (Ctx.invis ctx (Modality.filter_id mode D.zero) nfs, CubeOf.find_top vars)
+
+(* Build a constructor's codomain over the datatype's self-type variable: that variable applied to this constructor's indices, as the datatype would be applied to them.  This is what the codomain names the datatype by, whether or not the user declared an output type; when one is declared, the indices are the ones get_indices extracts from it. *)
+let self_codomain : type mode a b.
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    (mode, b, kinetic) term list ->
+    (mode, b, kinetic) term =
+ fun ctx selfval indices ->
+  let mode = Ctx.mode ctx in
+  List.fold_left
+    (fun t i ->
+      Term.App
+        ( Kinetic,
+          t,
+          D.zero,
+          Modality.filter_id mode D.zero,
+          Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton i) ))
+    (readback_val ctx selfval) indices
 
 exception Case_tree_construct_in_let
 
@@ -880,7 +911,7 @@ and check_constr : type mode a b s.
       (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name; the parameters are baked into the constructor's stored function-type, and the indices are compared at the end.  The variable tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
       match Abwd.find_opt constr constrs with
       | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
-      | Some (Dataconstr { env; ty = constr_ty }) ->
+      | Some (Dataconstr { env; self; ty = constr_ty }) ->
           (* We recover the constructor's arity from the pi-depth of its stored function-type, to drive the conversion of the instantiation arguments below. *)
           let (Wrap lgth) = pi_arity constr_ty in
           (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors.  What we naturally have is a *tube of lists*, but what check_at_pi wants is a *vector of tubes*, one per constructor argument; we do the conversion with a multiple-output traversal, as in readback and equality. *)
@@ -893,7 +924,9 @@ and check_constr : type mode a b s.
                 Missing_instantiation_constructor (constr, `Nonconstr (PNormal (ctx, tm)))) in
           (* Now we walk the evaluation of the constructor's function-type, checking each user-supplied argument against the current domain (instantiated at the corresponding arguments of the lower-dimensional constructors, from tyarg_args) and applying the codomain to the checked argument to continue.  The final codomain is then the constructor's output type (the datatype applied to the parameters and indices) evaluated at all the checked arguments. *)
           let out, newargs =
-            check_at_pi constr ctx (dim_env env) (eval_term env constr_ty) args tyarg_args in
+            check_at_pi constr ctx (dim_env env)
+              (eval_term (dataconstr_env env self) constr_ty)
+              args tyarg_args in
           (* The last thing to do is check that this output type is the type we are checking against.  Since the constructor's function-type came from that very type, the parameters agree automatically, so this amounts to comparing the indices; thus a constructor application "checks against the parameters but synthesizes the indices" in some sense.  The output is uninstantiated, a "vertex" of the higher-dimensional type, so we instantiate it at the same arguments before comparing. *)
           let outty = inst out tyargs in
           (match equal_val ctx outty ty with
@@ -1368,10 +1401,11 @@ and check_match_branches : type dom window mode a b bm.
       let branches, errs =
         List.fold_left
           (fun (branches, errs)
-               (constr, (Checkable_branch { xs; body; env; ty } : (dom, a, m) checkable_branch)) ->
+               ( constr,
+                 (Checkable_branch { xs; body; env; self; ty } : (dom, a, m) checkable_branch) ) ->
             (* Create new De-Bruijn-level variables for the pattern variables to which the constructor is applied, and add corresponding De-Bruijn-index variables to the context.  The types of those variables are the domains of the constructor's function-type, evaluated at the closure environment 'env' and the previous new variables (this is what ext_pi does, walking that pi-type).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes.  We also read this branch's type indices off the residual output type. *)
             let (Ext_pi { ctx = newctx; values = newvars; normals = newnfs; annotate; comp; out }) =
-              ext_pi ctx window env xs (eval_term env ty) in
+              ext_pi ctx window env xs (eval_term (dataconstr_env env self) ty) in
             let index_vals = indices_of_out "match branch" out dim (Vec.length indices) in
             let perm = id_perm in
             let status =
@@ -1475,11 +1509,11 @@ and synth_nondep_match : type mode a b.
         (* We split the branches into the synthesizing and non-synthesizing ones. *)
         let synth_branches, check_branches =
           List.partition_map
-            (fun (c, (Checkable_branch { xs; body; env; ty } as cb)) ->
+            (fun (c, (Checkable_branch { xs; body; env; self; ty } as cb)) ->
               match body with
               | Some { value = Synth sbody; loc } ->
                   let body = locate_opt loc sbody in
-                  Left (c, Synthable_branch { xs; body; env; ty })
+                  Left (c, Synthable_branch { xs; body; env; self; ty })
               | _ -> Right (c, cb))
             user_branches in
         (* We iterate through the synthesizing branches looking for the first one that succeeds at synthesizing, accumulating errors from the ones that fail. *)
@@ -1491,11 +1525,11 @@ and synth_nondep_match : type mode a b.
                   Snoc (Emp, diagnostic (Nonsynthesizing "match without synthesizing branches"))
                 else errs in
               (None, errs, Constr.Map.empty, [])
-          | (constr, (Synthable_branch { xs; body; env; ty } : (dom, a, m) synthable_branch)) :: brs
-            ->
+          | (constr, (Synthable_branch { xs; body; env; self; ty } : (dom, a, m) synthable_branch))
+            :: brs ->
               (* This is the same preprocessing that's done for checking branches in check_match_branches. *)
               let (Ext_pi { ctx = newctx; annotate; comp; _ }) =
-                ext_pi ctx window env xs (eval_term env ty) in
+                ext_pi ctx window env xs (eval_term (dataconstr_env env self) ty) in
               let perm = id_perm in
               let status =
                 make_match_status status window plus_lock tm dim None Constr.Map.empty annotate comp
@@ -1523,9 +1557,9 @@ and synth_nondep_match : type mode a b.
         (* We put the remaining synthesizing branches back on the front of the checking ones, and return them. *)
         let check_branches =
           List.fold_right
-            (fun (c, Synthable_branch { xs; body; env; ty }) cbs ->
+            (fun (c, Synthable_branch { xs; body; env; self; ty }) cbs ->
               let body = Some { value = Synth body.value; loc = body.loc } in
-              (c, Checkable_branch { xs; body; env; ty }) :: cbs)
+              (c, Checkable_branch { xs; body; env; self; ty }) :: cbs)
             synth_branches check_branches in
         (motive, errs, branches, check_branches) in
       (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch. *)
@@ -1667,10 +1701,11 @@ and check_var_match : type dom modality mode a b bm.
       let branches, errs =
         List.fold_left
           (fun (branches, errs)
-               (constr, (Checkable_branch { xs; body; env; ty } : (dom, a, m) checkable_branch)) ->
+               ( constr,
+                 (Checkable_branch { xs; body; env; self; ty } : (dom, a, m) checkable_branch) ) ->
             (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are the domains of the constructor's function-type, evaluated at the closure environment 'env' and the previous new variables (this is what ext_pi does, walking that pi-type).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
             let (Ext_pi { ctx = newctx; values = newvars; normals = newnfs; annotate; comp; out }) =
-              ext_pi ctx window env xs (eval_term env ty) in
+              ext_pi ctx window env xs (eval_term (dataconstr_env env self) ty) in
             (* Read the indices of the new term that replaces the match variable in the match body off the residual output type, as the values of the type indices at the new pattern variables. *)
             let index_nfs = indices_of_out "match branch" out dim (Vec.length var_indices) in
             let index_vals = Vec.map val_of_norm_cube index_nfs in
@@ -2073,7 +2108,7 @@ and check_data : type mode a b i.
     (mode, a, b) Ctx.t ->
     (mode, kinetic) value ->
     i Fwn.t ->
-    (Constr.t, (mode, b, kinetic) term) Abwd.t ->
+    (Constr.t, (mode, (b, (mode Modality.id, D.zero) dim_entry) snoc, kinetic) term) Abwd.t ->
     (Constr.t * a Raw.dataconstr located) list ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (mode, b, potential) term =
@@ -2120,11 +2155,19 @@ and check_data : type mode a b i.
       match (Abwd.find_opt c checked_constrs, output) with
       | Some _, _ -> fatal (Duplicate_constructor_in_data c)
       | None, Some output ->
-          let disc, crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t), errs =
+          let ( disc,
+                crec,
+                (checked_constrs :
+                  ( Constr.t,
+                    (mode, (b, (mode Modality.id, D.zero) dim_entry) snoc, kinetic) term )
+                  Abwd.t),
+                errs ) =
             Reporter.try_with ~fatal:(fun e -> (true, `Recursive, checked_constrs, Snoc (errs, e)))
             @@ fun () ->
+            (* The constructor's arguments and output are checked over the datatype's self-type variable, which its stored codomain names the datatype by.  The output type is NOT included in the positivity scope: its head is by definition the current datatype, and occurrences there are not recursion. *)
+            let selfctx, selfval = self_var ctx ty in
             let (Checked_tel (args, newctx), disc), crec =
-              Positivity.scope @@ fun () -> check_tel ?discrete ctx args in
+              Positivity.scope @@ fun () -> check_tel ?discrete selfctx args in
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let coutput = check (Kinetic `Nolet) newctx output (universe (Ctx.mode ctx) D.zero) in
             let err = Code.Invalid_constructor_type (c, Left "head must be current datatype") in
@@ -2143,7 +2186,10 @@ and check_data : type mode a b i.
                         | Eq ->
                             ( disc,
                               crec,
-                              checked_constrs |> Abwd.add c (Telescope.pis args coutput),
+                              checked_constrs
+                              |> Abwd.add c
+                                   (Telescope.pis args
+                                      (self_codomain newctx selfval (Vec.to_list indices))),
                               errs )
                         | _ ->
                             (* This can happen if the number of indices expected, which is computed from the type the datatype is being checked against, differs from the number of arguments the current constant actually takes.  For instance, if a 'match' with an explicit motive is used to define an indexed family, the motive could specify fewer indices than the constant has. *)
@@ -2160,16 +2206,21 @@ and check_data : type mode a b i.
           (* If the output wasn't supplied, there can't be any indices. *)
           match num_indices with
           | Zero ->
-              let disc, crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t), errs =
+              let ( disc,
+                    crec,
+                    (checked_constrs :
+                      ( Constr.t,
+                        (mode, (b, (mode Modality.id, D.zero) dim_entry) snoc, kinetic) term )
+                      Abwd.t),
+                    errs ) =
                 Reporter.try_with ~fatal:(fun e ->
                     (true, `Recursive, checked_constrs, Snoc (errs, e)))
                 @@ fun () ->
+                let selfctx, selfval = self_var ctx ty in
                 let (Checked_tel (args, newctx), disc), crec =
-                  Positivity.scope @@ fun () -> check_tel ?discrete ctx args in
-                (* In this case, the output of the constructor is the datatype itself. *)
-                let output =
-                  readback_neu ~canonical:`Canonical newctx (head_of_potential head) current_apps
-                in
+                  Positivity.scope @@ fun () -> check_tel ?discrete selfctx args in
+                (* In this case, the output of the constructor is the datatype itself, which is what the self-type variable stands for. *)
+                let output = self_codomain newctx selfval [] in
                 (disc, crec, checked_constrs |> Abwd.add c (Telescope.pis args output), errs) in
               check_data
                 ~discrete:(if disc then discrete else None)

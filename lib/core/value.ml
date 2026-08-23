@@ -193,7 +193,9 @@ module rec Value : sig
   and (_, _) dataconstr =
     | Dataconstr : {
         env : ('mode, 'm, 'a) env;
-        ty : ('mode, 'a, kinetic) term;
+        (* The value of the self-type variable that the stored function-type's codomain names the datatype by: its type family, at every face of the environment, an environment entry being a cube of the environment's dimension.  Only eval_canonical can build this, having the family as a *term* that it can evaluate at faced environments; a consumer holds only a value, whose faces are not recoverable.  Readback for display replaces the top face by a fresh variable (which unparses as the family) and specializes the lower ones if this datatype is a branch body. *)
+        self : ('m, ('mode, kinetic) Value.lazy_eval) Dim.CubeOf.t;
+        ty : ('mode, ('a, ('mode Modality.id, D.zero) dim_entry) snoc, kinetic) Term.term;
       }
         -> ('mode, 'm) dataconstr
 
@@ -468,7 +470,9 @@ end = struct
   and (_, _) dataconstr =
     | Dataconstr : {
         env : ('mode, 'm, 'a) env;
-        ty : ('mode, 'a, kinetic) term;
+        (* The value of the self-type variable that the stored function-type's codomain names the datatype by: its type family, at every face of the environment, an environment entry being a cube of the environment's dimension.  Only eval_canonical can build this, having the family as a *term* that it can evaluate at faced environments; a consumer holds only a value, whose faces are not recoverable.  Readback for display replaces the top face by a fresh variable (which unparses as the family) and specializes the lower ones if this datatype is a branch body. *)
+        self : ('m, ('mode, kinetic) Value.lazy_eval) Dim.CubeOf.t;
+        ty : ('mode, ('a, ('mode Modality.id, D.zero) dim_entry) snoc, kinetic) Term.term;
       }
         -> ('mode, 'm) dataconstr
 
