@@ -1175,7 +1175,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                   | Zero -> (`Normal, Token.Mapsto, Builtins.abs)
                   | Pos _ -> (`Cube, Token.DblMapsto, Builtins.cubeabs) in
                 (* Uniquify the variable names relative to the context *)
-                let names = ref (Wrap names : Names.wrapped) in
+                let names = ref (Wrap names : unparser Names.wrapped) in
                 let xs =
                   Mbwd.map
                     (fun x ->
@@ -1276,16 +1276,16 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               Monad.StateT
                 (Branches)
                 (struct
-                  type t = Names.wrapped
+                  type t = unparser Names.wrapped
                 end) in
             let open Monad.Ops (NameBranches) in
             let rec constr_args : type n k.
-                n Names.t ->
+                (unparser, n) Names.t ->
                 k D.t ->
                 Variables.hints list ->
                 ?acc:unparser Bwd.t ->
                 string option list ->
-                unparser Bwd.t * Names.wrapped =
+                unparser Bwd.t * unparser Names.wrapped =
              fun names dim hints ?(acc = Emp) -> function
                | [] -> (acc, Wrap names)
                | x :: args ->
