@@ -476,10 +476,10 @@ let rec check : type mode a b s.
     (* Similarly, an application can always synthesize, but can also check, as a non-dependent application, if enough domains are ascribed or arguments are synthesizing. *)
     | Synth (App _), _ -> (
         let fn, args = spine tm in
-        let ctm, sty = synth_or_check_apps ctx fn args (Some ty) in
-        (* We still have to check that the synthesized type is correct, as in check_of_synth. *)
+        let ctm, sty = synth_or_check_convoy_apps status ctx fn args (Some ty) in
+        (* We still have to check that the synthesized type is correct, as in check_of_synth.  The term is already at the status's energy, synth_or_check_convoy_apps having realized it if it needed to be. *)
         match subtype_of ctx sty ty with
-        | Ok () -> realize status ctm
+        | Ok () -> ctm
         | Error why ->
             fatal
               (Unequal_synthesized_type
@@ -812,7 +812,7 @@ let rec check : type mode a b s.
                               (fun (l, x) ->
                                 (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
                               args in
-                          synth_apps ctx new_sfn new_sty
+                          synth_apps Kinetic ctx new_sfn new_sty
                             { value = Synth fn.value; loc = fn.loc }
                             args
                       | _ -> (new_sfn.value, new_sty) in
@@ -3470,8 +3470,7 @@ and synth : type mode a b s.
     | App _, _ ->
         (* If there's at least one application, we slurp up all the applications and then iterate through them. *)
         let fn, args = spine { value = Synth tm.value; loc = tm.loc } in
-        let stm, sty = synth_or_check_apps ctx fn args None in
-        (realize status stm, sty)
+        synth_or_check_convoy_apps status ctx fn args None
     | Act (str, fa, Some { value = Synth x; loc }), _ ->
         let x = { value = x; loc } in
         let mode = Ctx.mode ctx in
@@ -3604,7 +3603,7 @@ and synth : type mode a b s.
                 let new_sty = tyof_app cods tyargs filter (CubeOf.singleton sargty) in
                 (* And then apply to the argument. *)
                 let stm, sty =
-                  synth_apps ctx new_sfn new_sty
+                  synth_apps Kinetic ctx new_sfn new_sty
                     { value = Synth fn.value; loc = fn.loc }
                     [
                       ( apploc,
@@ -3741,23 +3740,24 @@ and synth : type mode a b s.
   (restm, resty)
 
 (* Given something that can be applied, its type, and a list of arguments, check the arguments in appropriately-sized groups. *)
-and synth_apps : type mode a b.
+and synth_apps : type mode a b s.
+    s energy ->
     (mode, a, b) Ctx.t ->
-    (mode, b, kinetic) term located ->
+    (mode, b, s) term located ->
     (mode, kinetic) value ->
     a check located ->
     (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
-    (mode, b, kinetic) term * (mode, kinetic) value =
- fun ctx sfn sty fn args ->
+    (mode, b, s) term * (mode, kinetic) value =
+ fun energy ctx sfn sty fn args ->
   (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
   let asfn, aty, afn, aargs =
     match view_type sty "synthesizing application spine" with
     (* The obvious thing we can "apply" is an element of a pi-type. *)
     | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) ->
         let Eq = eq_of_ins_zero ins in
-        synth_app ctx filter sfn doms cods tyargs fn args
+        synth_app energy ctx filter sfn doms cods tyargs fn args
     (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
-    | Canonical (_, UU _, _, tyargs) -> synth_inst ctx sfn tyargs fn args
+    | Canonical (_, UU _, _, tyargs) -> synth_inst energy ctx sfn tyargs fn args
     (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
     | _ ->
         fatal ?loc:sfn.loc (Applying_nonfunction_nontype (PTerm (ctx, sfn.value), PVal (ctx, sty)))
@@ -3766,11 +3766,15 @@ and synth_apps : type mode a b.
   match aargs with
   | [] -> (asfn.value, aty)
   | _ :: _ ->
-      with_loc asfn.loc (fun () ->
-          Annotate.ctx (Kinetic `Nolet) ctx afn;
-          Annotate.ty ctx aty;
-          Annotate.tm ctx asfn.value);
-      synth_apps ctx asfn aty afn aargs
+      (* Annotations are only for kinetic terms; a potential spine (a convoy) is not something the user hovers over. *)
+      (match energy with
+      | Kinetic ->
+          with_loc asfn.loc (fun () ->
+              Annotate.ctx (Kinetic `Nolet) ctx afn;
+              Annotate.ty ctx aty;
+              Annotate.tm ctx asfn.value)
+      | Potential -> ());
+      synth_apps energy ctx asfn aty afn aargs
 
 (* This is a common subroutine for synth_app and synth_inst that picks up a whole cube of arguments and checks their types.  Since in one case we need a cube of values and the other case a cube of normals, we let the caller choose. *)
 and synth_arg_cube : type dom modality mode a b n c.
@@ -3896,20 +3900,21 @@ and synth_arg_cube : type dom modality mode a b n c.
       [ doms ] (Cons (Cons Nil)) in
   ((Modal (modality, plus, cargs), eargs), !state)
 
-and synth_app : type dom modality mode a b k n.
+and synth_app : type dom modality mode a b k n s.
+    s energy ->
     (mode, a, b) Ctx.t ->
     (dom, modality, mode, k, n) Modality.filter_dim ->
-    (mode, b, kinetic) term located ->
+    (mode, b, s) term located ->
     (k, (dom, kinetic) value) CubeOf.t ->
     (n, mode * modality * dom) BindCube.t ->
     (D.zero, n, n, mode normal) TubeOf.t ->
     a check located ->
     (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
-    (mode, b, kinetic) term located
+    (mode, b, s) term located
     * (mode, kinetic) value
     * a check located
     * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
- fun ctx filter sfn doms cods tyargs fn args ->
+ fun energy ctx filter sfn doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
     synth_arg_cube ~not_enough:Not_enough_arguments_to_function
       ~which:"higher-dimensional application" ctx (Modality.filter_modality filter)
@@ -3917,23 +3922,24 @@ and synth_app : type dom modality mode a b k n.
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these evaluated arguments and instantiate it at the appropriate values of tyargs. *)
   let output = tyof_app cods tyargs filter eargs in
-  ( { value = Term.App (Kinetic, sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
+  ( { value = Term.App (energy, sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
     output,
     newfn,
     rest )
 
 (* Pick up enough arguments to form a tube for instantiating a higher-dimensional type by a single direction, and return the result along with the remaining arguments not yet picked up.  *)
-and synth_inst : type mode a b n.
+and synth_inst : type mode a b n s.
+    s energy ->
     (mode, a, b) Ctx.t ->
-    (mode, b, kinetic) term located ->
+    (mode, b, s) term located ->
     (D.zero, n, n, mode normal) TubeOf.t ->
     a check located ->
     (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
-    (mode, b, kinetic) term located
+    (mode, b, s) term located
     * (mode, kinetic) value
     * a check located
     * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
- fun ctx sfn tyargs fn args ->
+ fun energy ctx sfn tyargs fn args ->
   let n = TubeOf.inst tyargs in
   match D.compare_zero n with
   | Zero -> fatal (Instantiating_zero_dimensional_type (PTerm (ctx, sfn.value)))
@@ -3977,12 +3983,29 @@ and synth_inst : type mode a b n.
       (* The synthesized type *of* the instantiation is itself a full instantiation of a universe, at the instantiations of the type arguments at the evaluated term arguments.  This is computed by tyof_inst. *)
       let cargs = TubeOf.of_cube_bwv m k msuc l cargs in
       let nargs = TubeOf.of_cube_bwv m k msuc l nargs in
-      ( { value = Term.Inst (Kinetic, sfn.value, cargs); loc = newloc },
+      ( { value = Term.Inst (energy, sfn.value, cargs); loc = newloc },
         tyof_inst (Ctx.mode ctx) tyargs nargs,
         newfn,
         rest )
 
 (* If the head of an application spine doesn't fully synthesize, i.e. it is a possibly-degenerated abstraction, we inspect the arguments and ascriptions in the abstraction to see if we can get types for all the arguments.  Then we can try to synthesize the body of the abstraction, or check it if we are checking the whole application against a (non-dependent) output type. *)
+(* An application whose head is a match with a motive, inside a case tree, is a *convoy*: the match stays a case-tree node and the applications are potential ones, rather than the match being lifted to a metavariable as it would be in a kinetic position (see the Bare_case_tree_construct hint).  This is what lets a match's motive quantify over variables whose types depend on the discriminee -- the branches abstract over them and the match is applied back to them.  Anything else goes to synth_or_check_apps, which is kinetic throughout, and is realized into the status as before. *)
+and synth_or_check_convoy_apps : type mode a b s.
+    (mode, b, s) status ->
+    (mode, a, b) Ctx.t ->
+    a check located ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    (mode, kinetic) value option ->
+    (mode, b, s) term * (mode, kinetic) value =
+ fun status ctx fn args ty ->
+  match (fn.value, status) with
+  | Synth (Match { sort = `Explicit _; _ } as m), Potential _ ->
+      let sfn, sty = synth status ctx { value = m; loc = fn.loc } in
+      synth_apps Potential ctx { value = sfn; loc = fn.loc } sty fn args
+  | _ ->
+      let stm, sty = synth_or_check_apps ctx fn args ty in
+      (realize status stm, sty)
+
 and synth_or_check_apps : type mode a b.
     (mode, a, b) Ctx.t ->
     a check located ->
@@ -3994,7 +4017,7 @@ and synth_or_check_apps : type mode a b.
   (* If we can fully synthesize a type for the function (that is, if it's a synthesizing term perhaps degenerated), we do that and then pass off to synth_apps to iterate through all the arguments. *)
   | Synth sfn, (_, Some { value = Synth _; _ }) ->
       let sfn, sty = synth (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc } in
-      let stm, sty = synth_apps ctx { value = sfn; loc = fn.loc } sty fn args in
+      let stm, sty = synth_apps Kinetic ctx { value = sfn; loc = fn.loc } sty fn args in
       (stm, sty)
   (* Otherwise, we try getting information from the arguments. *)
   | _, (_, None) -> fatal (Nonsynthesizing "degeneracy of placeholder function")
@@ -4009,7 +4032,7 @@ and synth_or_check_apps : type mode a b.
           let cfn, sty = synth_lam (dom_deg s) lctx fn ctx args ty in
           let efn = eval_term (Ctx.env lctx) cfn in
           (* Finally, we still need to degenerate that function and apply it to all the arguments. *)
-          synth_apps ctx
+          synth_apps Kinetic ctx
             (locate_opt fn.loc
                (Term.Act
                   ( Kinetic,
