@@ -2,9 +2,9 @@ Fallbacks in the readback of a potential term
 
 Reading back a potential term is display-only, and it is allowed to fail: when a piece of a case tree can't be displayed as the construct it came from, we show its application spine instead, which is always a correct thing to show and only a less informative one.  Most fallbacks say so as information, visible with -v (I0010); others are silent, because a spine is all there ever was to show.
 
-This file records every way that currently happens, and nothing that used to.  The first group has nothing to do with matches.  The second applies to matches of every kind: all but one of its entries record what a branch body can now be displayed as, and what makes that work.  The third is specific to an *implicit* match -- one with no stored motive, which recovers the types of its branches by refining the context rather than by applying a motive -- and does not arise for a match with an explicit motive or a non-dependent one.  A fourth lists degradations that stop short of falling back.
+This file records every way that currently happens, and nothing that used to.  The first group has nothing to do with matches.  The second applies to matches of every kind, and has no fallbacks left in it at all: it records what a branch body can now be displayed as, and what makes that work.  The third is specific to an *implicit* match -- one with no stored motive, which recovers the types of its branches by refining the context rather than by applying a motive -- and does not arise for a match with an explicit motive or a non-dependent one.  A fourth lists degradations that stop short of falling back.
 
-There are exactly four messages, one for the stuck metavariable in I, one for the convoy in II, and two for the unrefined branch types in III; everything else here falls back silently or does not fall back at all.
+There are exactly three messages, one for the stuck metavariable in I and two for the unrefined branch types in III; everything else here falls back silently or does not fall back at all.
 
 
 I. Not about matches
@@ -82,7 +82,7 @@ Finally, a potential value that is a universe or a pi-type is shown as its spine
 II. Matches of every kind
 =========================
 
-Only one thing in this group still falls back, and only in a degenerated environment.  The rest is kept because each entry here displays only by a specific mechanism, and would fall back again without it.
+Nothing in this group falls back any more.  It is kept because each entry here displays only by a specific mechanism, and would fall back again without it.
 
 A branch body that is itself an *anonymous* codatatype or record -- one written inline rather than named, so that it evaluates to a canonical value rather than to a neutral -- is displayed as a declaration rather than as a spine, which at a positive dimension means computing its field types.  Those project the field from the self variable at each proper face of the self cube, and those faces come from the type we are reading back at, which is the *match's*: they are the match at the faces of the environment, and a stuck match exposes no fields.  Specializing them at this branch's constructor makes them the branch's own faces instead, so a lower field displays, and so does a record.
 
@@ -207,52 +207,6 @@ Specializing the boundary is what makes this work, and it cannot be replaced by 
     : Type⁽ᵉ⁾ A B
   
 
-A convoy -- a match that the case tree applies to arguments, so that a later argument can have a type depending on the one being matched -- displays as a match with those applications put back outside it, and its branches display like any other's (see about.t).  Not in a degenerated environment, though.  A branch body is read back at the type of the match itself, and the only neutral a convoy gives us is the match *applied* to the case tree's arguments; un-applying its type is impossible, since no type of a result records how it depended on the arguments, and the motive, the only other route to it, computes an uninstantiated family in a degenerated environment.  The matches at the faces of that environment are zero-dimensional, so those branches display; it is the top-dimensional one that falls back.
-
-  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def D : Type ≔ data [ d. (b : Bool) (x : T b) ]' -e 'def g (y : D) : N ≔ match y return _ ↦ N [ d. c x ↦ (match c return z ↦ T z → N [ true. ↦ w ↦ w | false. ↦ w ↦ zero. ]) x ]' -e 'axiom y0 : D' -e 'axiom y1 : D' -e 'axiom y2 : Id D y0 y1' -e 'about (refl g y2)'
-   ￫ info[I0000]
-   ￮ constant N defined
-  
-   ￫ info[I0000]
-   ￮ constant Bool defined
-  
-   ￫ info[I0000]
-   ￮ constant T defined
-  
-   ￫ info[I0000]
-   ￮ constant D defined
-  
-   ￫ info[I0000]
-   ￮ constant g defined
-  
-   ￫ info[I0001]
-   ￮ axiom y0 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom y1 assumed
-  
-   ￫ info[I0001]
-   ￮ axiom y2 assumed
-  
-   ￫ info[I0010]
-   ￮ not displaying a stuck match with a branch body that is a match applied to arguments inside a case tree, whose own type a degenerated environment hides; showing an application spine instead
-  
-  match y2
-  return 𝑥 𝑦 𝑧 ↦
-         N⁽ᵉ⁾
-           (match 𝑥
-            return 𝑤 ↦ N [
-            | d. c x ↦
-                match c return z ↦ T z → N [ false. ↦ w ↦ 0 | true. ↦ w ↦ w ]
-                  x])
-           (match 𝑦
-            return 𝑤 ↦ N [
-            | d. c x ↦
-                match c return z ↦ T z → N [ false. ↦ w ↦ 0 | true. ↦ w ↦ w ]
-                  x]) [ d. c x ⤇ ap g y2 ]
-    : N⁽ᵉ⁾ (g y0) (g y1)
-  
-
 III. Implicit matches only
 ==========================
 
@@ -326,6 +280,8 @@ IV. Degradations that are not fallbacks
 =======================================
 
 A match in a degenerated environment displays without a "return" clause, rather than not at all, when its motive can't be read back as a family of the total dimension: when the type of the match is not a fully instantiated neutral whose instantiation covers the dimensions the environment adds, or when a match at one of those faces can't be displayed.  Here the discriminee is a path between two constructors, so the match at each endpoint reduces to a branch body and there is none to show.
+
+A convoy -- a match the case tree applies to arguments -- in a degenerated environment is degraded the same way and for a related reason: what a "return" clause needs is the matches at the faces of the environment, and all a convoy can name there are the matches *applied* to those arguments.  Its branches display; see the convoy section of about.t.
 
   $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def g : (b : Bool) → T b ≔ b ↦ match b return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'axiom p : Id Bool true. false.' -e 'about (refl g p)'
    ￫ info[I0000]

@@ -921,6 +921,26 @@ A convoy's branch bodies begin with one lambda per application, and those lambda
     : N → √N
   
 
+A convoy in a *degenerated* environment displays too, branches and all.  Two things make that work.  The type at which the branches are read back is computed per branch from the motive, so the match's own type -- which for a convoy would have to be recovered by un-applying, and cannot be -- is never demanded.  And a branch body's boundary, at a face where its value is a case tree, comes from specializing the match at that face; for a convoy the type to hand supplies the *convoys* at the faces instead, but a specialization reduces the match at the head of a stuck spine and discards what the case tree applied it to, so it lands on the same branch body either way.  What is lost is the inner "return" clause, which would need the matches at the faces themselves (see nodisplay.t IV).
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def D : Type ≔ data [ d. (b : Bool) (x : T b) ]' -e 'def g (y : D) : N ≔ match y return _ ↦ N [ d. c x ↦ (match c return z ↦ T z → N [ true. ↦ w ↦ w | false. ↦ w ↦ zero. ]) x ]' -e 'axiom y0 : D' -e 'axiom y1 : D' -e 'axiom y2 : Id D y0 y1' -e 'about (refl g y2)'
+  match y2
+  return 𝑥 𝑦 𝑧 ↦
+         N⁽ᵉ⁾
+           (match 𝑥
+            return 𝑤 ↦ N [
+            | d. c x ↦
+                match c return z ↦ T z → N [ false. ↦ w ↦ 0 | true. ↦ w ↦ w ]
+                  x])
+           (match 𝑦
+            return 𝑤 ↦ N [
+            | d. c x ↦
+                match c return z ↦ T z → N [ false. ↦ w ↦ 0 | true. ↦ w ↦ w ]
+                  x]) [
+  | d. c x ⤇ match c.2 [ false. ⤇ w ⤇ refl 0 | true. ⤇ w ⤇ w.2 ] x.2]
+    : N⁽ᵉ⁾ (g y0) (g y1)
+  
+
 A higher-dimensional match reads back at its own dimension, with cube abstractions for its pattern variables.  Refining its branches means rebinding the discriminee to the whole cube of the constructor's instances, so a dependent one works too.  The dimension can come from the match itself, in which case the discriminee is an ordinary variable of a higher-dimensional type whose boundary is the separate variables that instantiate that type, and they are rebound to the constructor's corresponding faces.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def f (x0 x1 : Bool) (x2 : Id Bool x0 x1) : N ≔ match x2 [ true. ⤇ zero. | false. ⤇ suc. zero. ]' -e 'about (f b0 b1 b2)' -e 'def U (x0 x1 : Bool) (x2 : Id Bool x0 x1) : Type ≔ match x2 [ true. ⤇ N | false. ⤇ Bool ]' -e 'about (let p : (x0 x1 : Bool) (x2 : Id Bool x0 x1) → U x0 x1 x2 ≔ x0 ↦ x1 ↦ x2 ↦ match x2 [ true. ⤇ zero. | false. ⤇ true. ] in p)'

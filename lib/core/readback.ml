@@ -1827,7 +1827,7 @@ and readback_stuck_match : type mode a z hmode imode iany any.
       in
       (* The type of the match itself, as opposed to that of the spine it may be applied to.  With both pieces of the spine empty the type we were handed is already it (an empty spine also identifies the two modes).  With a nonempty outer piece it is the type of the *stripped* neutral, which nothing has stored, since a neutral records only the type of the whole of itself; but evaluation annotates every neutral it builds with its own type -- the head's declared type at the head end, and tyof_app or tyof_field at each elimination -- so running the stripped neutral through the readback/eval cycle recomputes it.  We need it because its instantiation arguments are the faces of the match: there is no face operator on values (the face of a variable is a different variable, which the value doesn't record), so the boundary of a term is recoverable only from its type, exactly as dom_vars establishes it for a variable and Norm.self_values reads it back off for a field projection.  It is lazy because the motive computes the type by itself when the environment is zero-dimensional, which is the common case.
 
-         With a nonempty *inner* piece that cycle gives the type of the convoy rather than of the match, and un-applying it is not possible: the match's type is a pi whose codomain's dependence on the arguments no type of a result records.  Going forwards from the motive is the only route to it, and that is exactly what a degenerated environment blocks.  So a convoy in a degenerated environment falls back, as a nonempty spine in one already does, and for the same reason. *)
+         With a nonempty *inner* piece that cycle gives the type of the convoy rather than of the match, and un-applying it is not possible: the match's type is a pi whose codomain's dependence on the arguments no type of a result records.  Going forwards from the motive is the only route to it, and that is exactly what a degenerated environment blocks.  So this is unavailable for a convoy in a degenerated environment -- but only two things want it, and neither is on the path a convoy takes.  The type at which the branches are read back is one, and an explicit motive computes that per branch with motive_branch_ty instead; refining the discriminee is the other, and a match with a motive doesn't refine.  Hence the laziness is load-bearing rather than an optimization: it is what lets such a match display at all.  What is lost is the "return" clause, which readback_motive builds from this type's instantiation arguments -- those must be the matches at the faces, and the convoys at the faces (which boundary_ty has) are the wrong family. *)
       let match_self_ty : (hmode, kinetic) value Lazy.t =
         lazy
           (match (empty_apps iapps, empty_apps apps) with
@@ -1842,6 +1842,17 @@ and readback_stuck_match : type mode a z hmode imode iany any.
                 (Readback_at_wrong_type
                    "a match applied to arguments inside a case tree, whose own type a degenerated environment hides"))
       in
+      (* A branch body's boundary, in a degenerated environment, comes from the instantiation arguments of a type: at a face where the body's value is a case tree rather than a realized term, there is nothing of its own to instantiate, so motive_branch_ty takes the match at that face and specializes it at this branch's constructor.  For an ordinary match that type is the match's own, as above.  For a convoy it is the type of the match *applied* to the case tree's arguments, whose instantiation arguments are therefore the convoys at the faces rather than the matches -- but that is just as good, because a specialization reduces the match at the head of a stuck spine and discards what the case tree applied it to.  Specializing a convoy at a face thus lands on the same branch body as specializing the match there would, which is exactly what the boundary wants.
+
+         So this is the eval-readback cycle of the stripped neutral in both cases, and unlike match_self_ty it is available for a convoy.  It is what un-applying a type would be needed for if we wanted the match's own type, and the reason we don't: nothing here asks for the family, only for its boundary. *)
+      let boundary_ty : (hmode, kinetic) value Lazy.t =
+        lazy
+          (match (empty_apps iapps, empty_apps apps) with
+          | Some Eq, Some Eq -> ty
+          | _ -> (
+              match eval_term (Ctx.env ctx) (readback_neu ctx head_head head_args) with
+              | Neu { ty; _ } -> Lazy.force ty
+              | _ -> fatal (Anomaly "stuck match prefix is not a neutral"))) in
       match view_type (Lazy.force disc_nf.ty) "readback_stuck_match" with
       | Canonical
           (type dhmode mn m n)
@@ -1860,7 +1871,8 @@ and readback_stuck_match : type mode a z hmode imode iany any.
               (* The type of the match itself is computed from the motive only in a zero-dimensional environment.  Evaluated in a degenerated one the motive computes an uninstantiated family instead, and instantiating it means supplying the matches at the faces of that environment as *values*, this being a type rather than a term.  With an empty spine we don't have to: the type we were handed is that of the match, and is where those values come from when readback_motive needs them.  With a nonempty spine we would have to build them, and nothing has computed them; Corealize is no help, since it makes a match into a kinetic term and evaluating one is what it refuses to do.  So such a match falls back on its application spine.  (Each *branch* type is still computed from the motive, since the boundary there consists of the branch bodies, which we can evaluate; see motive_branch_ty.)
 
                  The motive is displayed in both cases, but they are different families: the match we reconstruct is at the total dimension, and the motive of a match at that dimension is a flat family of all the faces of its discriminee whose values are types, which is what motive_of_family describes and what typechecking checks a "return" clause against.  In a zero-dimensional environment the stored motive is already one.  In a degenerated one it is not, and readback_motive builds the one that is. *)
-              let motive_and_ty : ((_, _) Term.match_motive option * (_, kinetic) value) option =
+              let motive_and_ty :
+                  ((_, _) Term.match_motive option * (_, kinetic) value Lazy.t) option =
                 match (motive, empty_apps apps, D.compare_zero env_dim) with
                 (* An explicit motive is a type family over the datatype's indices and the datatype itself.  Evaluated in the environment we are stuck in, it gives the type of the match, when applied to the discriminee's indices, instantiation arguments, and itself.  We also read it back, at the same type of type families that it was checked against, so that the displayed match shows it again in a "return" clause. *)
                 | Some (`Family t), _, Zero ->
@@ -1868,13 +1880,14 @@ and readback_stuck_match : type mode a z hmode imode iany any.
                     let motive_ty =
                       eval_term (Ctx.env ctx)
                         (motive_of_family ctx window tyfam.tm (Lazy.force tyfam.ty)) in
-                    let r = Vec.fold_left (apply_singleton_nfs window) emotive data_indices in
-                    let r = apply_singleton_tube_nfs window r disc_tyargs in
                     Some
                       ( Some (`Family (readback_at Kinetic ctx emotive motive_ty)),
-                        apply_term r (Modality.filter_zero window) (CubeOf.singleton disc) )
+                        lazy
+                          (let r = Vec.fold_left (apply_singleton_nfs window) emotive data_indices in
+                           let r = apply_singleton_tube_nfs window r disc_tyargs in
+                           apply_term r (Modality.filter_zero window) (CubeOf.singleton disc)) )
                 (* A non-dependent match instead records one type, which is that of the match and of every branch alike.  There is no surface syntax for such a match other than the placeholder "return _ … _ ↦ _", which says nothing about the type, so we don't read it back. *)
-                | Some (`Type t), _, Zero -> Some (None, eval_term env t)
+                | Some (`Type t), _, Zero -> Some (None, lazy (eval_term env t))
                 (* In a degenerated environment the type of the match is its own type, not the motive applied to anything, but the motive can still be displayed, as a family of the total dimension whose boundary is the matches at the faces of that environment.  Those come from that type's own instantiation arguments, so we need it to be a fully instantiated neutral whose instantiation includes those dimensions.  If it isn't, or a boundary match can't be displayed, we show the match without a "return" clause. *)
                 | Some (`Family t), _, Pos _ ->
                     let emotive = eval_term env t in
@@ -1907,9 +1920,9 @@ and readback_stuck_match : type mode a z hmode imode iany any.
                                   | _ -> None)
                               | _ -> None)
                           | _ -> None) in
-                    Some (motive, Lazy.force match_self_ty)
+                    Some (motive, match_self_ty)
                 (* Otherwise -- a match with no motive, or a non-dependent one in a degenerated environment -- the type at which to read the branches back is the type of the match itself. *)
-                | _, _, _ -> Some (None, Lazy.force match_self_ty) in
+                | _, _, _ -> Some (None, match_self_ty) in
               let* new_motive, match_ty = motive_and_ty in
               let new_branches =
                 Constr.Map.mapi
@@ -1984,7 +1997,8 @@ and readback_stuck_match : type mode a z hmode imode iany any.
                             | Bind_some { checked_perm; oldctx; newctx } -> (
                                 (* Everything about the branch is now obtained by the same eval-readback cycle: read back in the old context, where the pattern variables still carry their pre-refinement levels, and re-evaluate in the new one, where the discriminee and the index variables are bound to the values this branch's constructor gives them. *)
                                 let new_match_ty =
-                                  eval_term (Ctx.env newctx) (readback_val oldctx match_ty) in
+                                  eval_term (Ctx.env newctx)
+                                    (readback_val oldctx (Lazy.force match_ty)) in
                                 (* We need that same refined type back in the *old* levels too, since that is where the branch body starts out: the body is evaluated in the environment the match is stuck in, which sends the discriminee to a variable rather than to the constructor, so it is at the old levels but already at the refined type -- that is exactly the sense in which the branch typechecks.  Running the type through the cycle in the other direction gives it: the rebound variables have been substituted away, so all that remains to translate are the pattern variables. *)
                                 let old_match_ty =
                                   eval_term (Ctx.env oldctx) (readback_val newctx new_match_ty)
@@ -2073,7 +2087,7 @@ and readback_stuck_match : type mode a z hmode imode iany any.
                                 (* The motive is applied to this branch's indices and constructor, in that order, exactly as check_match_branches applies it to compute the type at which to check the branch. *)
                                 let branch_ty =
                                   match motive with
-                                  | None -> match_ty
+                                  | None -> Lazy.force match_ty
                                   | Some mot ->
                                       let args =
                                         Vec.fold_left
@@ -2089,7 +2103,7 @@ and readback_stuck_match : type mode a z hmode imode iany any.
                                         (* A zero-dimensional environment gives an empty boundary, so there is nothing to supply.  We check that before forcing the match's type, which with a nonempty spine costs an eval-readback cycle. *)
                                         | Zero -> None
                                         | Pos _ -> (
-                                            match Lazy.force match_self_ty with
+                                            match Lazy.force boundary_ty with
                                             | Neu { args = tyapps; _ } -> (
                                                 match inst_of_apps tyapps with
                                                 | _, Some (Any_tube bdry) -> (
