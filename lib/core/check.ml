@@ -680,15 +680,9 @@ let rec check : type mode a b s.
     | Synth (Match { tm; window; sort = `Implicit; branches; refutables; highers }), Potential _ ->
         check_implicit_match status ctx tm window branches refutables highers ty
     (* A match the parser nested inside a deep match becomes whatever the match it is nested in turned out to be, so that the nest the user wrote as one match is uniform. *)
-    | Synth (Match { tm; window; sort = `Nested; branches; refutables; highers }), Potential _ -> (
-        match Nested.read () with
-        | `Implicit | `Convoy ->
-            check_implicit_match status ctx tm window branches refutables highers ty
-        | `Nondep ->
-            let (Wrap window) = get_window (Ctx.mode ctx) window in
-            let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
-            let stm, sty = synth (Kinetic `Nolet) lctx tm in
-            check_nondep_match status ctx stm sty window plus_lock branches None highers ty tm.loc)
+    (* Until the convoy is built, a nested match still behaves as the implicit one it used to be. *)
+    | Synth (Match { tm; window; sort = `Nested; branches; refutables; highers }), Potential _ ->
+        check_implicit_match status ctx tm window branches refutables highers ty
     | Synth (Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }), Potential _
       ->
         let (Wrap window) = get_window (Ctx.mode ctx) window in
@@ -1517,7 +1511,7 @@ and check_nondep_match : type dom window mode a b bm.
     (mode, b, potential) term =
  fun status ctx tm varty window plus_lock brs i highers motive loc ->
   let result, _ =
-    check_match_branches ~nested:`Nondep status ctx tm varty window plus_lock brs i highers loc
+    check_match_branches ~nested:`Convoy status ctx tm varty window plus_lock brs i highers loc
       (* Since the motive is already given, the callback can just return it. *)
       (Motive
          {
@@ -1623,7 +1617,7 @@ and synth_nondep_match : type mode a b.
         (motive, errs, branches, check_branches) in
       (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch. *)
       let result, motive =
-        check_match_branches ~nested:`Nondep status ctx tm varty window plus_lock brs i highers loc
+        check_match_branches ~nested:`Convoy status ctx tm varty window plus_lock brs i highers loc
           (Motive
              {
                get;
