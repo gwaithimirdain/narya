@@ -1286,6 +1286,22 @@ let rec display ?use_ansi ?output ?(empty_ok = false) (d : Code.t Asai.Diagnosti
       Mbwd.miter (fun [ e ] -> display ?use_ansi ?output ~empty_ok:true e) [ msgs ]
   | _ -> try_with ~fatal:(fun _ -> ()) @@ fun () -> Terminal.display ?use_ansi ?output d
 
+(* A fatal error raised inside a match branch (or a record field, a datatype constructor, etc.) doesn't propagate outwards unchanged: it is caught there and re-raised inside an "Accumulated", possibly along with the analogous errors from the sibling branches.  Thus a handler that wants to catch a specific error code can't just match on the message of the diagnostic it receives; it has to look inside any accumulations too.  These two functions do that.
+
+   'accumulated p d' applies the partial function p to d if d isn't an accumulation, and otherwise (recursively) to all the errors accumulated in d, returning the data from the first of them but only if *all* of them match.  (If only some of them match, then the others are unrelated errors that ought to be reported as usual.)  An empty accumulation is a "dependence" marker rather than a real error, so it doesn't count as an instance of anything.  Note that p is applied to the whole diagnostic, not just its message, so that the caller can also pick up the location of the actual innermost error. *)
+let rec accumulated (p : Code.t Asai.Diagnostic.t -> 'a option) (d : Code.t Asai.Diagnostic.t) :
+    'a option =
+  match d.message with
+  | Accumulated (_, errs) -> (
+      match List.map (accumulated p) (Bwd.to_list errs) with
+      | [] -> None
+      | first :: _ as subs -> if List.for_all Option.is_some subs then first else None)
+  | _ -> p d
+
+(* 'accumulates p d' is the common special case when only the code matters and not any data attached to it: it tests whether d is, or accumulates only, errors whose message satisfies p. *)
+let accumulates (p : Code.t -> bool) (d : Code.t Asai.Diagnostic.t) : bool =
+  Option.is_some (accumulated (fun d -> if p d.message then Some () else None) d)
+
 (* We also may need to extract an accumulated singleton, for testing purposes. *)
 let rec unaccumulate (c : Code.t) : Code.t =
   match c with

@@ -480,9 +480,14 @@ let rec check : type mode a b s.
             match
               Reporter.try_with ~fatal:(fun d ->
                   (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
-                  match d.message with
-                  | Low_dimensional_argument_of_degeneracy _ -> Error d
-                  | _ -> fatal_diagnostic d)
+                  if
+                    Reporter.accumulates
+                      (function
+                        | Low_dimensional_argument_of_degeneracy _ -> true
+                        | _ -> false)
+                      d
+                  then Error d
+                  else fatal_diagnostic d)
               @@ fun () ->
               Ok
                 (gact_ty None ty fainv ~err:(low_dim_arg_err str.value)
@@ -1545,9 +1550,14 @@ and check_match_branches : type dom window mode a b bm.
                 constr in
             (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
             Reporter.try_with ~fatal:(fun e ->
-                match e.message with
-                | Missing_constructor_in_match _ -> fatal_diagnostic e
-                | _ -> (branches, Snoc (errs, e)))
+                if
+                  Reporter.accumulates
+                    (function
+                      | Missing_constructor_in_match _ -> true
+                      | _ -> false)
+                    e
+                then fatal_diagnostic e
+                else (branches, Snoc (errs, e)))
             @@ fun () ->
             match (body, motive) with
             (* In the synthesizing case, we might still have no motive, if all the synthesis failed.  In that case, the only reason we're going through this is to annotate the contexts of each branch. *)
@@ -1985,9 +1995,14 @@ and check_var_match : type dom modality mode a b bm.
                         | Some body ->
                             (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
                             Reporter.try_with ~fatal:(fun e ->
-                                match e.message with
-                                | Missing_constructor_in_match _ -> fatal_diagnostic e
-                                | _ -> (branches, Snoc (errs, e)))
+                                if
+                                  Reporter.accumulates
+                                    (function
+                                      | Missing_constructor_in_match _ -> true
+                                      | _ -> false)
+                                    e
+                                then fatal_diagnostic e
+                                else (branches, Snoc (errs, e)))
                             @@ fun () ->
                             let branch = check status newctx body newty in
                             ( branches
@@ -2127,13 +2142,20 @@ and check_refute : type mode a b.
       Reporter.try_with
         (fun () -> check_nondep_match status ctx stm sty window plus Emp None [] ty tm.loc)
         ~fatal:(fun d ->
-          match d.message with
-          | Missing_constructor_in_match c -> (
+          match
+            Reporter.accumulated
+              (fun d ->
+                match d.message with
+                | Missing_constructor_in_match c -> Some c
+                | _ -> None)
+              d
+          with
+          | Some c -> (
               match (i, missing) with
               | `Explicit, _ -> fatal Invalid_refutation
               | `Implicit, Some missing -> fatal (Missing_constructor_in_match missing)
               | `Implicit, None -> fatal (Missing_constructor_in_match c))
-          | _ -> fatal_diagnostic d)
+          | None -> fatal_diagnostic d)
   | (tm, window_name) :: (_ :: _ as tms) ->
       let (Wrap window) = get_window (Ctx.mode ctx) window_name in
       let (Locked (plus, wctx)) = Ctx.lock ctx window in
@@ -2141,10 +2163,16 @@ and check_refute : type mode a b.
       Reporter.try_with
         (fun () -> check_nondep_match status ctx stm sty window plus Emp None [] ty tm.loc)
         ~fatal:(fun d ->
-          match d.message with
-          | Missing_constructor_in_match c ->
-              check_refute status ctx tms ty i (Some (Option.value missing ~default:c))
-          | _ -> fatal_diagnostic d)
+          match
+            Reporter.accumulated
+              (fun d ->
+                match d.message with
+                | Missing_constructor_in_match c -> Some c
+                | _ -> None)
+              d
+          with
+          | Some c -> check_refute status ctx tms ty i (Some (Option.value missing ~default:c))
+          | None -> fatal_diagnostic d)
 
 (* Try empty-matching against each successive domain in an iterated pi-type.  For higher-dimensional pi-types, try empty-matching against each variable in the abstraction cube. *)
 and check_empty_match_lam : type mode a b.
@@ -2228,14 +2256,19 @@ and check_empty_match_lam : type mode a b.
             (fun () ->
               Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst))
             ~fatal:(fun d ->
-              match d.message with
-              | Invalid_refutation -> (
-                  let firstty = firstty <|> Anomaly "missing firstty in checking []" in
-                  match view_type firstty "is_empty" with
-                  | Canonical (_, Data { constrs; _ }, _, _) ->
-                      fatal (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
-                  | _ -> fatal (Matching_on_nondatatype (PVal (wctx, firstty))))
-              | _ -> fatal_diagnostic d))
+              if
+                Reporter.accumulates
+                  (function
+                    | Invalid_refutation -> true
+                    | _ -> false)
+                  d
+              then
+                let firstty = firstty <|> Anomaly "missing firstty in checking []" in
+                match view_type firstty "is_empty" with
+                | Canonical (_, Data { constrs; _ }, _, _) ->
+                    fatal (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
+                | _ -> fatal (Matching_on_nondatatype (PVal (wctx, firstty)))
+              else fatal_diagnostic d))
   | _ -> fatal Invalid_refutation
 
 and is_empty : type mode. (mode, kinetic) value -> bool =

@@ -468,9 +468,13 @@ let rec repl terminal history buf =
             ~emit:(fun d -> Reporter.display ?use_ansi ~output:stdout d)
             ~fatal:(fun d ->
               Reporter.display ?use_ansi ~output:stdout d;
-              match d.message with
-              | Quit _ -> exit 0
-              | _ -> ())
+              if
+                Reporter.accumulates
+                  (function
+                    | Quit _ -> true
+                    | _ -> false)
+                  d
+              then exit 0)
         @@ fun () ->
           match Command.parse_single str with
           | _, Some cmd ->
