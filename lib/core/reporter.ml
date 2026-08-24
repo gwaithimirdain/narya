@@ -311,6 +311,7 @@ module Code = struct
     | Cyclic_term : t
     | Oracle_failed : string * printable -> t
     | Invalid_flags : t
+    | Typeless_meta : ('mode, 'x, 'b, 's) Meta.t * [ `Let | `Bare ] -> t
 
   (* If an error is encountered during printing a term, we (meaning the function 'printer' to be defined in Parser.Unparse) call the function supplied by this reader effect and print it as "_UNPRINTABLE".  Usually this is a bug, but sometimes it can happen normally, particularly when accumulating errors: a term involved in a later error might be unprintable due to a previous error.  We make this a reader that supplies a function so that the function can be called at the point of *performing* the effect.  Thus, if we are not in the middle of displaying another message, there can be an outer handler for this effect that supplies the function "fatal", which is called at the point of performing the effect and is therefore inside any inner Reporter.run wrappers rather than the outermost one that just Exits. *)
   module PrintingErrorData = struct
@@ -497,10 +498,11 @@ module Code = struct
     | Cyclic_term -> Error
     | Oracle_failed _ -> Error
     | Invalid_flags -> Error
+    | Typeless_meta _ -> Bug
 
   (** A short, concise, ideally Google-able string representation for each message code. *)
   let short_code : t -> string = function
-    (* Usually bugs *)
+    (* Usually bugs (at least, if they escape to the user) *)
     | Anomaly _ -> "E0000"
     | No_such_level _ -> "E0001"
     | Accumulated (_msg, _errs) -> "E0002"
@@ -509,6 +511,7 @@ module Code = struct
     | Readback_at_wrong_type _ -> "E0005"
     | Degenerated_neutral_not_a_struct -> "E0006"
     | Evaluating_display_term _ -> "E0007"
+    | Typeless_meta _ -> "E0010"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
     | Deprecated _ -> "E0110"
@@ -1223,7 +1226,13 @@ module Code = struct
       | Ill_scoped_connection -> text "ill-scoped connection"
       | Cyclic_term -> text "cycle in graphical term"
       | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm)
-      | Invalid_flags -> text "invalid combination of command-line flags" in
+      | Invalid_flags -> text "invalid combination of command-line flags"
+      | Typeless_meta (m, why) ->
+          textf "typeless meta in %s: %a"
+            (match why with
+            | `Let -> "let-binding"
+            | `Bare -> "bare case tree")
+            pp_printed (print (PMeta m)) in
     match !printing_errors with
     | Emp -> msg
     | Snoc _ ->
@@ -1302,6 +1311,22 @@ let rec display ?use_ansi ?output ?(empty_ok = false) (d : Code.t Asai.Diagnosti
   | Accumulated (_name, msgs) ->
       Mbwd.miter (fun [ e ] -> display ?use_ansi ?output ~empty_ok:true e) [ msgs ]
   | _ -> try_with ~fatal:(fun _ -> ()) @@ fun () -> Terminal.display ?use_ansi ?output d
+
+(* A fatal error raised inside a match branch (or a record field, a datatype constructor, etc.) doesn't propagate outwards unchanged: it is caught there and re-raised inside an "Accumulated", possibly along with the analogous errors from the sibling branches.  Thus a handler that wants to catch a specific error code can't just match on the message of the diagnostic it receives; it has to look inside any accumulations too.  These two functions do that.
+
+   'accumulated p d' applies the partial function p to d if d isn't an accumulation, and otherwise (recursively) to all the errors accumulated in d, returning the data from the first of them but only if *all* of them match.  (If only some of them match, then the others are unrelated errors that ought to be reported as usual.)  An empty accumulation is a "dependence" marker rather than a real error, so it doesn't count as an instance of anything.  Note that p is applied to the whole diagnostic, not just its message, so that the caller can also pick up the location of the actual innermost error. *)
+let rec accumulated (p : Code.t Asai.Diagnostic.t -> 'a option) (d : Code.t Asai.Diagnostic.t) :
+    'a option =
+  match d.message with
+  | Accumulated (_, errs) -> (
+      match List.map (accumulated p) (Bwd.to_list errs) with
+      | [] -> None
+      | first :: _ as subs -> if List.for_all Option.is_some subs then first else None)
+  | _ -> p d
+
+(* 'accumulates p d' is the common special case when only the code matters and not any data attached to it: it tests whether d is, or accumulates only, errors whose message satisfies p. *)
+let accumulates (p : Code.t -> bool) (d : Code.t Asai.Diagnostic.t) : bool =
+  Option.is_some (accumulated (fun d -> if p d.message then Some () else None) d)
 
 (* We also may need to extract an accumulated singleton, for testing purposes. *)
 let rec unaccumulate (c : Code.t) : Code.t =
