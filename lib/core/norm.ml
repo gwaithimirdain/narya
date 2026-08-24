@@ -54,6 +54,11 @@ type (_, _) looked_up_cube =
 
 (* Require that the supplied list contains exactly one argument for each annotated variable being added, and add all of those cubes to the given environment. *)
 (* What lets a branch body's boundary be supplied when its own value at a face is a case tree rather than a term.  The branch at a face of the environment is the *match* at that face, specialized at this branch's constructor there; the matches come from the instantiation arguments of the match's own type, which is the only place a neutral's faces are recorded, and the constructors from the cube the motive is applied to.  Since a specialization is a neutral, it is a kinetic value and so can instantiate a type where the case tree could not. *)
+(* What stands at a face of the environment when a motive's family is instantiated there: given the face and the type the value must have, produce it.  Rank-2 because the face's dimension is existential. *)
+type ('mode, 'm) face_value = {
+  face_value : 'j. ('j, 'm) sface -> ('mode, kinetic) value -> ('mode, kinetic) value;
+}
+
 type (_, _, _) branch_spec =
   | Branch_spec : {
       bdry : (D.zero, 'i, 'i, 'mode normal) TubeOf.t;
@@ -429,10 +434,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
               let ftlenv =
                 act_env tlenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_lm)) in
               let etys = eval_args ftlenv l_n ln tys in
-              let nfs =
-                CubeOf.mmap
-                  { map = (fun _ [ tm; ty ] -> { tm; ty = Lazy.from_val ty }) }
-                  [ eargs; etys ] in
+              (* The stored types are terms, so at a face of a degenerated environment each evaluates to a family that still has to be instantiated at the values on the lower faces -- which is exactly what norm_of_vals_cube does, and what the domains of a pi-type arrive already having done for an ordinary application.  Pairing them off face by face instead leaves, for instance, a closed argument type as the bare degeneracy "Bool⁽ᵉ⁾" where "Bool⁽ᵉ⁾ c₀ c₁" is meant. *)
+              let nfs = norm_of_vals_cube eargs etys in
               (* The application is written inside the case tree, so it goes on the *inner* spine: it eliminates the stuck head itself, not the case tree's result.  The outer spine must therefore be empty, since nothing outside can have been applied to a case tree that is still evaluating: app_eval_apps, the only other thing that appends to a stuck spine, runs on the value of a neutral, hence only once this evaluation has finished.  We need that fact anyway, to know that the inner spine ends at the mode this application lives at. *)
               let Eq = empty_apps sp <|> Anomaly "external spine on a case tree still evaluating" in
               Unrealized (Some (h, Arg (isp, filter_total, nfs, ins_zero (D.plus_out m m_k)), Emp)))
@@ -2276,18 +2279,17 @@ and indices_of_out : type dom m ij.
    Evaluated in a degenerated environment, the motive computes a *family* of that dimension rather than a type, so we instantiate it at the boundary of the branch body, which we get by evaluating that body in the corresponding faces of its own environment; the type of each such face is the same family at that face, instantiated in turn at its boundary, so we build them up face by face as dom_vars does for the domains of a pi-type.  In a zero-dimensional environment the boundary is empty and the instantiation does nothing, leaving exactly the application of a zero-dimensional motive to singletons that typechecking performed.
 
    A branch body is a case tree, so its value at a face may be a case tree too rather than a term; then there is nothing to instantiate at and we give up on displaying the match (the caller catches this and falls back to the application spine). *)
-and motive_branch_ty : type mode dom window a c k m n kn.
-    ?spec:(mode, m, kn) branch_spec ->
+(* The type a motive gives when applied to a collection of arguments, at any dimension of environment: the motive evaluated at each face, applied to the faces of the arguments lying over it, and instantiated at whatever the caller says stands at those faces.  The type of a match and the type of one of its branches are both of this shape, differing only in the arguments -- the discriminee, or a constructor applied to the branch's pattern variables -- and in what stands at a face.  The faces are built in order and memoized, since instantiating the family at one of them needs the values at all the lower ones; that is also what makes a positive-dimensional environment no harder than a zero-dimensional one, where the tube is empty and the result is the family itself. *)
+and motive_inst_ty : type mode dom window a k m n kn.
     (dom, window, mode, k, m) Modality.filter_dim ->
     (mode, m, a) env ->
     (mode, a) Term.match_motive ->
     (k, n, kn) D.plus ->
     n D.t ->
     (kn, (dom, kinetic) value) CubeOf.t list ->
-    (mode, m, c) env ->
-    (mode, c, potential) term ->
+    (mode, m) face_value ->
     (mode, kinetic) value =
- fun ?spec fw env motive plus_dim match_dim args benv body ->
+ fun fw env motive plus_dim match_dim args face ->
   let env_dim = dim_env env in
   (* The motive evaluated at a face of that environment, applied to the faces of the arguments lying over it.  The arguments live at the *filtered* dimension of the environment plus the match dimension, so the face of them we want is the image of this one under the filter, which also tells us the filter to apply the motive at there. *)
   let family : type j. (j, m) sface -> (mode, kinetic) value =
@@ -2319,40 +2321,57 @@ and motive_branch_ty : type mode dom window a c k m n kn.
                      build =
                        (fun fc -> Hashtbl.find tbl (SFace_of (comp_sface fs (sface_of_tface fc))));
                    }) in
-            let ev = eval (act_env benv (opt_op_of_sface fs)) body in
-            let tm =
-              match (ev, spec) with
-              | Realize v, _ -> v
-              (* The body's value here is a case tree, so there is no term of its own to instantiate at; we take the match at this face and specialize it, which denotes the same thing and is a neutral. *)
-              | _, Some (Branch_spec { bdry; bdry_plus; inst_dim; window; constrs }) -> (
-                  let (Plus iplus) = D.plus inst_dim in
-                  let fb = sface_plus_sface fs bdry_plus iplus (id_sface inst_dim) in
-                  match pface_of_sface fb with
-                  | `Id _ -> fatal (Anomaly "identity face in motive_branch_ty boundary")
-                  | `Proper fd -> (
-                      match (TubeOf.find bdry fd).tm with
-                      | Neu { head; args = margs; _ } ->
-                          let (Filter_sface (fk, _)) = Modality.filter_sface fw fs in
-                          let (Plus jplus) = D.plus match_dim in
-                          let fa = sface_plus_sface fk plus_dim jplus (id_sface match_dim) in
-                          Neu
-                            {
-                              head;
-                              args = Specialize (margs, window, CubeOf.find constrs fa);
-                              value = ready ev;
-                              ty = Lazy.from_val ty;
-                            }
-                      | _ ->
-                          fatal
-                            (Readback_at_wrong_type "a branch whose boundary match is not a neutral")
-                      ))
-              | _, None -> fatal (Readback_at_wrong_type "a case tree at one of its boundary faces")
-            in
+            let tm = face.face_value fs ty in
             let nf = { tm; ty = Lazy.from_val ty } in
             Hashtbl.add tbl (SFace_of fs) nf;
             nf);
       } in
   inst (family (id_sface env_dim)) boundary
+
+(* The type of a branch of a stuck match: the motive applied to the branch's indices and constructor, with the branch body standing at each face of the environment.  Where that body's value is a case tree there is no term of its own to instantiate at, and the caller supplies instead the match at that face, to be specialized at this branch's constructor -- which denotes the same thing and is a neutral. *)
+and motive_branch_ty : type mode dom window a c k m n kn.
+    ?spec:(mode, m, kn) branch_spec ->
+    (dom, window, mode, k, m) Modality.filter_dim ->
+    (mode, m, a) env ->
+    (mode, a) Term.match_motive ->
+    (k, n, kn) D.plus ->
+    n D.t ->
+    (kn, (dom, kinetic) value) CubeOf.t list ->
+    (mode, m, c) env ->
+    (mode, c, potential) term ->
+    (mode, kinetic) value =
+ fun ?spec fw env motive plus_dim match_dim args benv body ->
+  motive_inst_ty fw env motive plus_dim match_dim args
+    {
+      face_value =
+        (fun fs ty ->
+          let ev = eval (act_env benv (opt_op_of_sface fs)) body in
+          match (ev, spec) with
+          | Realize v, _ -> v
+          (* The body's value here is a case tree, so there is no term of its own to instantiate at; we take the match at this face and specialize it, which denotes the same thing and is a neutral. *)
+          | _, Some (Branch_spec { bdry; bdry_plus; inst_dim; window; constrs }) -> (
+              let (Plus iplus) = D.plus inst_dim in
+              let fb = sface_plus_sface fs bdry_plus iplus (id_sface inst_dim) in
+              match pface_of_sface fb with
+              | `Id _ -> fatal (Anomaly "identity face in motive_branch_ty boundary")
+              | `Proper fd -> (
+                  match (TubeOf.find bdry fd).tm with
+                  | Neu { head; args = margs; _ } ->
+                      let (Filter_sface (fk, _)) = Modality.filter_sface fw fs in
+                      let (Plus jplus) = D.plus match_dim in
+                      let fa = sface_plus_sface fk plus_dim jplus (id_sface match_dim) in
+                      Neu
+                        {
+                          head;
+                          args = Specialize (margs, window, CubeOf.find constrs fa);
+                          value = ready ev;
+                          ty = Lazy.from_val ty;
+                        }
+                  | _ ->
+                      fatal
+                        (Readback_at_wrong_type "a branch whose boundary match is not a neutral")))
+          | _, None -> fatal (Readback_at_wrong_type "a case tree at one of its boundary faces"));
+    }
 
 (* Apply a constructor's stored function-type to the actual arguments the constructor was applied to, reaching its output type: the datatype at this branch's indices.  This is what ext_pi does when typechecking a match, except that there the arguments are fresh variables and here they are the values a specialization supplies.  Like ext_pi we view the pi-type and apply its top binder rather than going through apply, since for a degenerate datatype the constructor's function-type is an uninstantiated higher-dimensional pi, which apply's view_type would reject. *)
 and apply_dargs : type mode n.
@@ -2381,49 +2400,137 @@ and unapply_neu : type mode. (mode, kinetic) value -> (mode, kinetic) value =
  fun neu ->
   specializing "unapplying";
   match neu with
-  | Neu { head; args; value; _ } ->
-      let uvalue = ready (app_eval_apps (force_eval value) (Unapply Emp)) in
-      Neu { head; args = Unapply args; value = uvalue; ty = lazy (tyof_unapply neu) }
+  | Neu { head; args; value; _ } -> (
+      match force_eval value with
+      | Unrealized (Some _) as ev ->
+          let uvalue = ready (app_eval_apps ev (Unapply Emp)) in
+          Neu { head; args = Unapply args; value = uvalue; ty = lazy (tyof_unapply neu) }
+      (* There is no match here to unapply: it has reduced, its discriminee being a constructor.  The caller catches this and shows the match it was building a boundary for without a "return" clause. *)
+      | _ -> fatal (Readback_at_wrong_type "a match that has reduced at a boundary face"))
   | _ -> fatal (Anomaly "unapplying a non-neutral")
 
 (* The type of an unapplied neutral: the type of the stuck match at its head, which is its motive applied to the discriminee's indices, instantiation arguments, and itself -- exactly as readback computes it for a match in an undegenerated environment, and as check computes the type of a match it is synthesizing. *)
 and tyof_unapply : type mode. (mode, kinetic) value -> (mode, kinetic) value =
  fun neu ->
   match neu with
-  | Neu { value; _ } -> (
+  | Neu { value; ty = neu_ty; _ } -> (
       match force_eval value with
       | Unrealized
           (Some
-             ( Stuck { env; tm = Match { tm = disc_tm; window; plus_lock; motive; _ }; ins = _ },
+             ( Stuck
+                 {
+                   env;
+                   tm = Match { tm = disc_tm; window; plus_lock; dim = match_dim; motive; _ };
+                   ins = _;
+                 },
                isp,
                (Emp : (_, _, _) apps) )) -> (
           let Eq =
             nonmodal_apps isp <|> Anomaly "typing an unapplication across a modal field projection"
           in
-          let env_dim = dim_env env in
-          match (motive, D.compare_zero env_dim) with
-          | Some (`Type t), _ -> eval_term env t
-          | Some (`Family t), Zero -> (
+          match motive with
+          (* An implicit match records no motive, so there is nothing to compute its type from.  Only a match with one can be a convoy, so readback never builds an unapplication of such a match. *)
+          | None -> fatal (Anomaly "unapplying a match with no motive")
+          | Some motive -> (
+              let env_dim = dim_env env in
               let (Has_filter fw) = Modality.filter window env_dim in
+              let (Plus plus_dim) = D.plus match_dim in
+              let total_dim = D.plus_out (Modality.filtered env_dim fw) plus_dim in
               let akenv =
                 act_env (key_id_env env plus_lock)
                   (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
               let disc_nf = nf_of_neu (eval_term akenv disc_tm) "discriminee of unapplied match" in
               match view_type (Lazy.force disc_nf.ty) "tyof_unapply" with
-              | Canonical (_, Data { indices = Filled data_indices; _ }, _, disc_tyargs) ->
-                  let emotive = eval_term env t in
-                  let r = Vec.fold_left (apply_singleton_nfs window) emotive data_indices in
-                  let r = apply_singleton_tube_nfs window r disc_tyargs in
-                  apply_term r (Modality.filter_zero window) (CubeOf.singleton disc_nf.tm)
-              | _ -> fatal (Anomaly "discriminee of unapplied match is not a full datatype"))
-          (* In a degenerated environment the motive gives an uninstantiated family; see above. *)
-          | Some (`Family _), Pos _ | None, _ ->
-              fatal
-                (Readback_at_wrong_type
-                   "a match applied to arguments inside a degenerated case tree, whose own type only its motive gives")
-          )
+              | Canonical
+                  ( _,
+                    Data { dim = data_dim; indices = Filled data_indices; _ },
+                    disc_ins,
+                    disc_tyargs ) -> (
+                  (* A datatype has intrinsic dimension zero, so its instantiation tube is at its substitution dimension. *)
+                  let Eq = eq_of_ins_zero disc_ins in
+                  match D.compare data_dim total_dim with
+                  | Neq -> fatal (Dimension_mismatch ("tyof_unapply", data_dim, total_dim))
+                  | Eq -> (
+                      (* The last argument is the whole discriminee cube, whose proper faces are its boundary, exactly as a branch's last argument is the constructor cube. *)
+                      let disc_cube =
+                        val_of_norm_cube (TubeOf.plus_cube disc_tyargs (CubeOf.singleton disc_nf))
+                      in
+                      let args =
+                        Vec.fold_left (fun acc c -> acc @ [ val_of_norm_cube c ]) [] data_indices
+                        @ [ disc_cube ] in
+                      (* The values at the faces of the environment come from the instantiation arguments of the type this neutral carries.  A value's type is always fully instantiated -- something not fully instantiated is not a type that anything can be of -- and at a dimension including the environment's, so the three checks here are defensive. *)
+                      match D.compare_zero env_dim with
+                      (* An undegenerated environment needs no boundary at all: the tube is empty and the motive applied is already the type.  Its type has no instantiation to read one off either, a zero-dimensional type having none. *)
+                      | Zero ->
+                          motive_match_ty fw env motive plus_dim match_dim args
+                            (TubeOf.empty D.zero) (D.zero_plus D.zero) D.zero
+                      | Pos _ -> (
+                          match Lazy.force neu_ty with
+                          | Neu { args = tyapps; _ } -> (
+                              match inst_of_apps tyapps with
+                              | _, Some (Any_tube bdry) -> (
+                                  match
+                                    ( D.compare_zero (TubeOf.uninst bdry),
+                                      D.factor (TubeOf.inst bdry) env_dim )
+                                  with
+                                  | Zero, Some (Factor bdry_plus) ->
+                                      let Eq =
+                                        D.plus_uniq (TubeOf.plus bdry)
+                                          (D.zero_plus (TubeOf.inst bdry)) in
+                                      motive_match_ty fw env motive plus_dim match_dim args bdry
+                                        bdry_plus (D.plus_right bdry_plus)
+                                  | Pos _, _ ->
+                                      fatal
+                                        (Anomaly "unapplied match with a partly instantiated type")
+                                  | _, None ->
+                                      fatal
+                                        (Anomaly
+                                           "unapplied match whose type omits the environment's dimensions")
+                                  )
+                              | _ -> fatal (Anomaly "unapplied match with an uninstantiated type"))
+                          | _ -> fatal (Anomaly "unapplied match whose type is not a neutral"))))
+              | _ -> fatal (Anomaly "discriminee of unapplied match is not a full datatype")))
       | _ -> fatal (Anomaly "unapplying a term that is not a stuck case tree"))
   | _ -> fatal (Anomaly "unapplying a non-neutral")
+
+(* The type of a stuck match itself, rather than of one of its branches: the motive applied to the discriminee's indices and to the discriminee cube, whose proper faces are the discriminee's own boundary.  What stands at a face of the environment is the match there, which we get by unapplying the corresponding face of the type the neutral carries: for a convoy that type has the convoys at the faces, and unapplying each leaves the match.  For a match that is not a convoy the unapplication is the identity on the payload, so the same code serves. *)
+and motive_match_ty : type mode dom window a i inst k m n kn.
+    (dom, window, mode, k, m) Modality.filter_dim ->
+    (mode, m, a) env ->
+    (mode, a) Term.match_motive ->
+    (k, n, kn) D.plus ->
+    n D.t ->
+    (kn, (dom, kinetic) value) CubeOf.t list ->
+    (D.zero, i, i, mode normal) TubeOf.t ->
+    (m, inst, i) D.plus ->
+    inst D.t ->
+    (mode, kinetic) value =
+ fun fw env motive plus_dim match_dim args bdry bdry_plus inst_dim ->
+  motive_inst_ty fw env motive plus_dim match_dim args
+    {
+      face_value =
+        (fun fs ty ->
+          let (Plus iplus) = D.plus inst_dim in
+          let fb = sface_plus_sface fs bdry_plus iplus (id_sface inst_dim) in
+          match pface_of_sface fb with
+          | `Id _ -> fatal (Anomaly "identity face in motive_match_ty boundary")
+          | `Proper fd -> (
+              match (TubeOf.find bdry fd).tm with
+              | Neu { head; args = margs; value; _ } -> (
+                  match force_eval value with
+                  | Unrealized (Some _) as ev ->
+                      Neu
+                        {
+                          head;
+                          args = Unapply margs;
+                          value = ready (app_eval_apps ev (Unapply Emp));
+                          ty = Lazy.from_val ty;
+                        }
+                  (* The match at this face has reduced -- its discriminee there is a constructor -- so there is no match to stand here.  The caller catches this and shows the match without a "return" clause, as it does when a boundary match cannot be displayed. *)
+                  | _ ->
+                      fatal (Readback_at_wrong_type "a match that has reduced at a boundary face"))
+              | _ -> fatal (Readback_at_wrong_type "a match whose boundary match is not a neutral")));
+    }
 
 (* The type of a specialized neutral: the type the match has when its discriminee is the given constructor, which is the type the corresponding branch was checked at.  It is computed here rather than carried on the specialization, so that it comes out right at whatever dimension it is asked for -- evaluating a stored one in a degenerated environment leaves it uninstantiated at the faces the degeneration adds, which is what every other term form avoids by computing its type too (tyof_app and its kin).
 

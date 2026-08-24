@@ -281,148 +281,6 @@ IV. Degradations that are not fallbacks
 
 A match in a degenerated environment displays without a "return" clause, rather than not at all, when its motive can't be read back as a family of the total dimension: when the type of the match is not a fully instantiated neutral whose instantiation covers the dimensions the environment adds, or when a match at one of those faces can't be displayed.  Here the discriminee is a path between two constructors, so the match at each endpoint reduces to a branch body and there is none to show.
 
-A convoy -- a match the case tree applies to arguments -- is degraded the same way once the environment it is stuck in has dimension 2 or more.  Its "return" clause needs the matches at the faces of that environment, which an unapplication supplies (see the convoy section of about.t); but the type of an unapplied match is its motive applied, and where the face is itself positive-dimensional that motive gives an uninstantiated family in its turn, needing the same construction one dimension down.  That recursion terminates but is not built, and since the proper faces of an n-dimensional cube have dimensions up to n-1, what is built covers dimension 1 and no higher.  Both are visible below in the single two-dimensional degeneracy "g⁽ᵉᵉ⁾": the convoys on "c" and "c.2", stuck in environments of dimension 0 and 1, have their "return" clauses, and the one on "c.22", stuck in the two-dimensional one, does not.
-
-  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def D : Type ≔ data [ d. (b : Bool) (x : T b) ]' -e 'def g (y : D) : N ≔ match y return _ ↦ N [ d. c x ↦ (match c return z ↦ T z → N [ true. ↦ w ↦ w | false. ↦ w ↦ zero. ]) x ]' -e 'about (refl (refl g))'
-  y ⤇
-  match y.22
-  return 𝑥 𝑦 𝑧 𝑤 𝑢 𝑣 𝑥′ 𝑦′ 𝑧′ ↦
-         N⁽ᵉᵉ⁾
-           (match 𝑧
-            return 𝑤′ 𝑢′ 𝑣′ ↦
-                   N⁽ᵉ⁾
-                     (match 𝑤′
-                      return 𝑥″ ↦ N [
-                      | d. c x ↦
-                          match c
-                          return z ↦ T z → N [
-                          | false. ↦ w ↦ 0
-                          | true. ↦ w ↦ w] x])
-                     (match 𝑢′
-                      return 𝑥″ ↦ N [
-                      | d. c x ↦
-                          match c
-                          return z ↦ T z → N [
-                          | false. ↦ w ↦ 0
-                          | true. ↦ w ↦ w] x]) [
-            | d. c x ⤇
-                match c.2
-                return 𝑤′ 𝑢′ 𝑣′ ↦
-                       {𝑥₀ : T 𝑤′} {𝑥₁ : T 𝑢′} (𝑥₂ : Id T 𝑣′ 𝑥₀ 𝑥₁)
-                       →⁽ᵉ⁾ N⁽ᵉ⁾
-                              ((match 𝑤′
-                                return z ↦ T z → N [
-                                | false. ↦ w ↦ 0
-                                | true. ↦ w ↦ w]) 𝑥₀)
-                              ((match 𝑢′
-                                return z ↦ T z → N [
-                                | false. ↦ w ↦ 0
-                                | true. ↦ w ↦ w]) 𝑥₁) [
-                | false. ⤇ w ⤇ refl 0
-                | true. ⤇ w ⤇ w.2] x.2])
-           (match 𝑣
-            return 𝑤′ 𝑢′ 𝑣′ ↦
-                   N⁽ᵉ⁾
-                     (match 𝑤′
-                      return 𝑥″ ↦ N [
-                      | d. c x ↦
-                          match c
-                          return z ↦ T z → N [
-                          | false. ↦ w ↦ 0
-                          | true. ↦ w ↦ w] x])
-                     (match 𝑢′
-                      return 𝑥″ ↦ N [
-                      | d. c x ↦
-                          match c
-                          return z ↦ T z → N [
-                          | false. ↦ w ↦ 0
-                          | true. ↦ w ↦ w] x]) [
-            | d. c x ⤇
-                match c.2
-                return 𝑤′ 𝑢′ 𝑣′ ↦
-                       {𝑥₀ : T 𝑤′} {𝑥₁ : T 𝑢′} (𝑥₂ : Id T 𝑣′ 𝑥₀ 𝑥₁)
-                       →⁽ᵉ⁾ N⁽ᵉ⁾
-                              ((match 𝑤′
-                                return z ↦ T z → N [
-                                | false. ↦ w ↦ 0
-                                | true. ↦ w ↦ w]) 𝑥₀)
-                              ((match 𝑢′
-                                return z ↦ T z → N [
-                                | false. ↦ w ↦ 0
-                                | true. ↦ w ↦ w]) 𝑥₁) [
-                | false. ⤇ w ⤇ refl 0
-                | true. ⤇ w ⤇ w.2] x.2])
-           (match 𝑥′
-            return 𝑤′ 𝑢′ 𝑣′ ↦
-                   N⁽ᵉ⁾
-                     (match 𝑤′
-                      return 𝑥″ ↦ N [
-                      | d. c x ↦
-                          match c
-                          return z ↦ T z → N [
-                          | false. ↦ w ↦ 0
-                          | true. ↦ w ↦ w] x])
-                     (match 𝑢′
-                      return 𝑥″ ↦ N [
-                      | d. c x ↦
-                          match c
-                          return z ↦ T z → N [
-                          | false. ↦ w ↦ 0
-                          | true. ↦ w ↦ w] x]) [
-            | d. c x ⤇
-                match c.2
-                return 𝑤′ 𝑢′ 𝑣′ ↦
-                       {𝑥₀ : T 𝑤′} {𝑥₁ : T 𝑢′} (𝑥₂ : Id T 𝑣′ 𝑥₀ 𝑥₁)
-                       →⁽ᵉ⁾ N⁽ᵉ⁾
-                              ((match 𝑤′
-                                return z ↦ T z → N [
-                                | false. ↦ w ↦ 0
-                                | true. ↦ w ↦ w]) 𝑥₀)
-                              ((match 𝑢′
-                                return z ↦ T z → N [
-                                | false. ↦ w ↦ 0
-                                | true. ↦ w ↦ w]) 𝑥₁) [
-                | false. ⤇ w ⤇ refl 0
-                | true. ⤇ w ⤇ w.2] x.2])
-           (match 𝑦′
-            return 𝑤′ 𝑢′ 𝑣′ ↦
-                   N⁽ᵉ⁾
-                     (match 𝑤′
-                      return 𝑥″ ↦ N [
-                      | d. c x ↦
-                          match c
-                          return z ↦ T z → N [
-                          | false. ↦ w ↦ 0
-                          | true. ↦ w ↦ w] x])
-                     (match 𝑢′
-                      return 𝑥″ ↦ N [
-                      | d. c x ↦
-                          match c
-                          return z ↦ T z → N [
-                          | false. ↦ w ↦ 0
-                          | true. ↦ w ↦ w] x]) [
-            | d. c x ⤇
-                match c.2
-                return 𝑤′ 𝑢′ 𝑣′ ↦
-                       {𝑥₀ : T 𝑤′} {𝑥₁ : T 𝑢′} (𝑥₂ : Id T 𝑣′ 𝑥₀ 𝑥₁)
-                       →⁽ᵉ⁾ N⁽ᵉ⁾
-                              ((match 𝑤′
-                                return z ↦ T z → N [
-                                | false. ↦ w ↦ 0
-                                | true. ↦ w ↦ w]) 𝑥₀)
-                              ((match 𝑢′
-                                return z ↦ T z → N [
-                                | false. ↦ w ↦ 0
-                                | true. ↦ w ↦ w]) 𝑥₁) [
-                | false. ⤇ w ⤇ refl 0
-                | true. ⤇ w ⤇ w.2] x.2]) [
-  | d. c x ⤇ match c.22 [ false. ⤇ w ⤇ 0⁽ᵉᵉ⁾ | true. ⤇ w ⤇ w.22 ] x.22]
-    : {y₀₀ : D} {y₀₁ : D} {y₀₂ : D⁽ᵉ⁾ y₀₀ y₀₁} {y₁₀ : D} {y₁₁ : D}
-      {y₁₂ : D⁽ᵉ⁾ y₁₀ y₁₁} {y₂₀ : D⁽ᵉ⁾ y₀₀ y₁₀} {y₂₁ : D⁽ᵉ⁾ y₀₁ y₁₁}
-      (y₂₂ : D⁽ᵉᵉ⁾ y₀₂ y₁₂ y₂₀ y₂₁)
-      →⁽ᵉᵉ⁾ N⁽ᵉᵉ⁾ (ap g y₀₂) (ap g y₁₂) (ap g y₂₀) (ap g y₂₁)
-  
-
   $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def g : (b : Bool) → T b ≔ b ↦ match b return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'axiom p : Id Bool true. false.' -e 'about (refl g p)'
    ￫ info[I0000]
    ￮ constant N defined
@@ -441,6 +299,13 @@ A convoy -- a match the case tree applies to arguments -- is degraded the same w
   
   match p [ false. ⤇ true. | true. ⤇ refl 0 ]
     : Id T p 0 true.
+  
+
+A convoy -- a match the case tree applies to arguments -- is degraded the same way, and by the same cause.  Its "return" clause needs the matches at the faces of the environment, which for a convoy are got by unapplying the faces of the type it carries: those are the *convoys* there, and an unapplication discards what the case tree applied them to.  Where a face has reduced there is no match to unapply, and we show the convoy without a "return" clause.  This is the same "def g" as above made into a convoy, and it degrades for the same reason: the discriminee is a path between two constructors, so the match at each endpoint reduces.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def g (b : Bool) (n : N) : T b ≔ (match b return x ↦ N → T x [ true. ↦ m ↦ zero. | false. ↦ m ↦ true. ]) n' -e 'axiom p : Id Bool true. false.' -e 'about (refl g p)'
+  n ⤇ match p [ false. ⤇ m ⤇ true. | true. ⤇ m ⤇ refl 0 ] n.2
+    : {n₀ : N} {n₁ : N} (n₂ : N⁽ᵉ⁾ n₀ n₁) →⁽ᵉ⁾ Id T p 0 true.
   
 
 Refining a branch refines its *value* as well as its type, by reading the body back at the refined type in the old context and re-evaluating it in the new one.  A body that reads back as a display-only term does not survive that cycle: an anonymous canonical type in a branch reads back as a declaration, which readback marks unevaluable -- a codatatype or record by carrying no fibrancy, a datatype by the potential instantiation wrapped around it -- and evaluating one raises.  We catch that and read the branch back unrefined, which displays but shows the discriminee where the constructor would be.
