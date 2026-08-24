@@ -61,6 +61,8 @@ val add_meta :
   energy:'s energy ->
   unit
 
+val add_meta_error : ('mode, 'a, 'b, 's) Meta.t -> Reporter.Code.t -> unit
+
 val set_meta :
   ('mode, 'a, 'b, 's) Meta.t ->
   ?termctx:('mode, 'a, 'b) termctx ->

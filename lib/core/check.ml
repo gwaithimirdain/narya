@@ -1156,6 +1156,7 @@ and kinetic_of_potential : type mode a b.
 
 and synth_or_check_let : type mode a b s p.
     ?nosynth:Code.t Asai.Diagnostic.t ->
+    ?synthed:((mode, kinetic) value -> unit) ->
     (mode, b, s) status ->
     (mode, a, b) Ctx.t ->
     string option ->
@@ -1164,7 +1165,7 @@ and synth_or_check_let : type mode a b s p.
     a N.suc check located ->
     ((mode, kinetic) value, p) Perhaps.t ->
     (mode, b, s) term * ((mode, kinetic) value, p) Perhaps.not =
- fun ?nosynth status ctx name premod v body ty ->
+ fun ?nosynth ?synthed status ctx name premod v body ty ->
   (* A non-recursive let-binding can be modal, but the modality must be tangible. *)
   match Modality.of_name_tgt (Ctx.mode ctx) premod.value with
   | Error e -> modality_fatal "checking let-in" (e :> modality_error)
@@ -1200,10 +1201,15 @@ and synth_or_check_let : type mode a b s p.
                 Global.set_meta meta cv;
                 (cv, evty)
             | _ ->
-                (* Otherwise, we just synthesize the term. *)
-                let sv, svty = synth tmstatus lctx v in
-                let vty = readback_val lctx svty in
-                Global.add_meta meta ~termctx ~tm:(`Defined sv) ~ty:vty ~energy:Potential;
+                (* Otherwise, we just synthesize the term.  But first we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
+                Global.add_meta_error meta (Typeless_meta (meta, `Let));
+                (* We pass in a ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
+                let synthed svty =
+                  let vty = readback_val lctx svty in
+                  Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
+                let sv, svty = synth ~synthed tmstatus lctx v in
+                (* Now the type is already installed and we can just set the value. *)
+                Global.set_meta meta sv;
                 (sv, svty) in
           (* We turn that metavariable into a value. *)
           let head = Value.Meta { meta; env = Ctx.env lctx; ins = zero_ins D.zero } in
@@ -1232,12 +1238,14 @@ and synth_or_check_let : type mode a b s p.
           let sbody = check status newctx body ty in
           (Term.Let (name, Modal (modality, plus, v), sbody), Not_some)
       | None, { value = Synth body; loc } ->
-          let sbody, sbodyty = synth status newctx { value = body; loc } in
+          (* The type of the body is the type of the entire let-binding, so we pass in the ?synthed callback. *)
+          let sbody, sbodyty = synth ?synthed status newctx { value = body; loc } in
           (Term.Let (name, Modal (modality, plus, v), sbody), Not_none sbodyty)
       | None, _ -> fatal_or nosynth (Nonsynthesizing "let-expression without synthesizing body"))
 
 and synth_or_check_letrec : type mode a b c ac s p.
     ?nosynth:Code.t Asai.Diagnostic.t ->
+    ?synthed:((mode, kinetic) value -> unit) ->
     (mode, b, s) status ->
     (mode, a, b) Ctx.t ->
     (a, c, ac) Raw.tel ->
@@ -1245,7 +1253,7 @@ and synth_or_check_letrec : type mode a b c ac s p.
     ac check located ->
     ((mode, kinetic) value, p) Perhaps.t ->
     (mode, b, s) term * ((mode, kinetic) value, p) Perhaps.not =
- fun ?nosynth status ctx rvtys vtms body ty ->
+ fun ?nosynth ?synthed status ctx rvtys vtms body ty ->
   let mode = Ctx.mode ctx in
   (* First we check the types of all the bound variables, which are a telescope since each can depend on the previous ones. *)
   let Checked_tel (type bc) ((vtys, _) : (mode, _, _, bc) Telescope.t * (_, _, bc) Ctx.t), _ =
@@ -1269,7 +1277,8 @@ and synth_or_check_letrec : type mode a b c ac s p.
       let sbody = check status newctx body ty in
       (let_metas mode metas sbody, Not_some)
   | None, { value = Synth body; loc } ->
-      let sbody, sbodyty = synth status newctx { value = body; loc } in
+      (* The type of the body is the type of the entire let-binding, so we pass in the ?synthed callback. *)
+      let sbody, sbodyty = synth ?synthed status newctx { value = body; loc } in
       (let_metas mode metas sbody, Not_none sbodyty)
   | None, _ -> fatal_or nosynth (Nonsynthesizing "let-expression without synthesizing body")
 
@@ -1526,6 +1535,8 @@ and check_match_branches : type dom window mode a b bm.
       let user_branches = merge_branches name brs data_constrs in
       (* We use the callback to get the motive and other data.  This might typecheck some of the branches, if it is a synthesizing match. *)
       let motive, errs, branches, check_branches = callbacks.get dim user_branches tyfam in
+      (* If the match is synthesizing, at this point we can already compute what its output type will be.  We do it now so that the computation has any desired side effects, notably (in the dependent case) passing it to the ?synthed callback before any matches are checked. *)
+      let synthed_type = Option.map (callbacks.return indices inst_args) motive in
       (* Now we iterate through the remaining constructors, typechecking the corresponding branches and inserting them in the match tree. *)
       let branches, errs =
         List.fold_left
@@ -1583,8 +1594,7 @@ and check_match_branches : type dom window mode a b bm.
             (fun b ->
               if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
-          ( Match { tm; window; plus_lock; dim; branches },
-            Option.map (callbacks.return indices inst_args) motive ))
+          (Match { tm; window; plus_lock; dim; branches }, synthed_type))
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -1617,6 +1627,7 @@ and check_nondep_match : type dom window mode a b bm.
 
 (* Try to synthesize a type from all the branches.  If any succeed, check the remaining branches against that synthesized type. *)
 and synth_nondep_match : type mode a b.
+    ?synthed:((mode, kinetic) value -> unit) ->
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
     a synth located ->
@@ -1625,7 +1636,7 @@ and synth_nondep_match : type mode a b.
     bool ref located list ->
     int located option ->
     (mode, b, potential) term * (mode, kinetic) value =
- fun status ctx tm window_name brs highers i ->
+ fun ?synthed status ctx tm window_name brs highers i ->
   (* First we synthesize the discriminee.  If that fails, we give up completely, as we don't even have a context in which to try synthesizing the branches. *)
   match get_window (Ctx.mode ctx) window_name with
   | Wrap (type dom window) (window : (dom, window, mode) Modality.t) -> (
@@ -1674,16 +1685,25 @@ and synth_nondep_match : type mode a b.
               (* Trap errors and accumulate them, going on to look for other synthesizing branches. *)
               Reporter.try_with ~fatal:(fun e -> find_synthing_branch (Snoc (errs, e)) brs)
               @@ fun () ->
-              let sbr, sty = synth status newctx body in
-              (* The type synthesized is only valid for the whole match if it doesn't depend on the pattern variables.  We check that by reading it back into the original context. *)
-              ( Reporter.try_with ~fatal:(fun d ->
-                    match d.message with
-                    | No_such_level _ ->
-                        fatal ?loc:d.explanation.loc
-                          (Invalid_synthesized_type
-                             ("synthesizing branch of match", PVal (newctx, sty)))
-                    | _ -> fatal_diagnostic d)
-              @@ fun () -> ignore (readback_val ctx sty) );
+              (* If the branch successfully synthesizes a type, it is the type of the entire match, so we pass in the ?synthed callback.  Importantly, therefore, the callback gets called before any other branches are typechecked.  However, that type is only valid for the whole match if it doesn't depend on the pattern variables.  We check that by reading it back into the original context, as soon as it is known.  Thus we pass our own ?synthed callback unconditionally to do this, and also call the caller's ?synthed if it exists. *)
+              let synthed sty =
+                ( Reporter.try_with ~fatal:(fun d ->
+                      match
+                        Reporter.accumulated
+                          (fun d ->
+                            match d.message with
+                            | No_such_level _ -> Some d.explanation.loc
+                            | _ -> None)
+                          d
+                      with
+                      | Some errloc ->
+                          fatal ?loc:errloc
+                            (Invalid_synthesized_type
+                               ("synthesizing branch of match", PVal (newctx, sty)))
+                      | None -> fatal_diagnostic d)
+                @@ fun () -> ignore (readback_val ctx sty) );
+                Option.iter (fun f -> f sty) synthed in
+              let sbr, sty = synth ~synthed status newctx body in
               (* Finally, if we found a synthesizing branch that works, return the synthesized type, the accumulated errors, the successful typechecked branch, and the remaining synthesizing branches.  We don't need to deal again with any of the ones we've visited before the one that succeeded, as they all must have errored in order to get here, and we've accumulated their errors. *)
               ( Some sty,
                 errs,
@@ -1708,6 +1728,7 @@ and synth_nondep_match : type mode a b.
 
 (* Check a dependently typed match, with motive supplied by the user.  (Thus we have to typecheck the motive as well.)  *)
 and synth_dep_match : type mode a b.
+    ?synthed:((mode, kinetic) value -> unit) ->
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
     a synth located ->
@@ -1716,7 +1737,7 @@ and synth_dep_match : type mode a b.
     bool ref located list ->
     a check located ->
     (mode, b, potential) term * (mode, kinetic) value =
- fun status ctx tm window_name brs highers motive ->
+ fun ?synthed status ctx tm window_name brs highers motive ->
   (* We synthesize the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match get_window (Ctx.mode ctx) window_name with
   | Wrap window -> (
@@ -1766,8 +1787,12 @@ and synth_dep_match : type mode a b.
                    (* We compute the output type of the match by applying the dependent motive to the discriminee's indices, boundary, and itself. *)
                    let result = Vec.fold_left (apply_singleton_nfs window) emotive indices in
                    let result = apply_singleton_tube_nfs window result inst_args in
-                   apply_term result (Modality.filter_zero window)
-                     (CubeOf.singleton (eval_term (Ctx.env lctx) tm)));
+                   let sty =
+                     apply_term result (Modality.filter_zero window)
+                       (CubeOf.singleton (eval_term (Ctx.env lctx) tm)) in
+                   (* Now we've computed this type, we pass it off to the ?synthed callback. *)
+                   Option.iter (fun f -> f sty) synthed;
+                   sty);
              }) in
       match result_ty with
       | None -> fatal (Anomaly "synth_dep_match: no type of match but no errors")
@@ -1852,17 +1877,24 @@ and check_var_match : type dom modality mode a b bm.
             fatal (Matching_wont_refine ("index is not a free variable", Some (PNormal (lctx, x))))
       in
       Reporter.try_with ~fatal:(fun d ->
-          match d.message with
-          | Matching_wont_refine (str, x) ->
-              emit ?loc:d.explanation.loc (Matching_wont_refine (str, x));
+          match
+            Reporter.accumulated
+              (fun d ->
+                match d.message with
+                | Matching_wont_refine (str, x) ->
+                    Some (d.explanation.loc, Code.Matching_wont_refine (str, x))
+                | No_such_level x ->
+                    Some
+                      ( d.explanation.loc,
+                        Code.Matching_wont_refine ("index variable occurs in parameter", Some x) )
+                | _ -> None)
+              d
+          with
+          | Some (errloc, msg) ->
+              emit ?loc:errloc msg;
               check_nondep_match status ctx (Term.Var index) varty window plus brs None highers
                 motive loc
-          | No_such_level x ->
-              emit ?loc:d.explanation.loc
-                (Matching_wont_refine ("index variable occurs in parameter", Some x));
-              check_nondep_match status ctx (Term.Var index) varty window plus brs None highers
-                motive loc
-          | _ -> fatal_diagnostic d)
+          | None -> fatal_diagnostic d)
       @@ fun () ->
       let index_vars =
         Vec.mmap
@@ -1973,12 +2005,19 @@ and check_var_match : type dom modality mode a b bm.
                     | Bind_some { checked_perm; oldctx; newctx } -> (
                         (* We readback the index and instantiation values into this new context and discard the result, catching No_such_level to turn it into a user Error.  This has the effect of doing an occurs-check that none of the index variables occur in any of the index values.  This is a bit less general than the CDP Solution rule, which (when applied one variable at a time) prohibits only cycles of occurrence.  Note that this exception is still caught by check_var_match, above, causing a fallback to term matching. *)
                         ( Reporter.try_with ~fatal:(fun d ->
-                              match d.message with
-                              | No_such_level x ->
-                                  fatal ?loc:d.explanation.loc
+                              match
+                                Reporter.accumulated
+                                  (fun d ->
+                                    match d.message with
+                                    | No_such_level x -> Some (d.explanation.loc, x)
+                                    | _ -> None)
+                                  d
+                              with
+                              | Some (errloc, x) ->
+                                  fatal ?loc:errloc
                                     (Matching_wont_refine
                                        ("free index variable occurs in inferred index value", Some x))
-                              | _ -> fatal_diagnostic d)
+                              | None -> fatal_diagnostic d)
                         @@ fun () ->
                           let (Locked (_, oldlctx)) = Ctx.lock oldctx window in
                           Hashtbl.iter (fun _ v -> ignore (readback_nf oldlctx v)) new_vals );
@@ -3150,12 +3189,30 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
 
 and synth : type mode a b s.
     ?nosynth:Code.t Asai.Diagnostic.t ->
+    (* A callback to execute as soon as we discover the type, especially if this is before synthesizing the term, in case a caller needs that type to (for instance) install in a metavariable.  We pass it into recursive calls ONLY if the type synthesized by that recursive call would be the SAME as the type synthesized by this call (so, for instance, not into synthesizing the discriminee of a match or the function of an application, but yes into synthesizing a *branch* of a nondependent match). *)
+    ?synthed:((mode, kinetic) value -> unit) ->
     (mode, b, s) status ->
     (mode, a, b) Ctx.t ->
     a synth located ->
     (mode, b, s) term * (mode, kinetic) value =
- fun ?nosynth status ctx tm ->
+ fun ?nosynth ?synthed status ctx tm ->
   let mode = Ctx.mode ctx in
+  (* We keep a flag to ensure that the ?synthed callback isn't called again at the end if it was called from a recursive call or from a branch of this function. *)
+  let synth_called = ref false in
+  (* This helper is for calls from this function, including the one at the end. *)
+  let call_synthed ty =
+    match (!synth_called, synthed) with
+    | false, Some synthed ->
+        synthed ty;
+        synth_called := true
+    | _ -> () in
+  (* When we delegate instead, by passing the callback down to a recursive call, we mark it as called when it fires so that we don't redundantly fire it again with the same type at the end.  Note we can't just pass down call_synthed, since a recursive call may legitimately fire the callback more than once (synth_nondep_match does, when an earlier branch is rejected), and only the last of those is the real type. *)
+  let synthed =
+    Option.map
+      (fun f ty ->
+        synth_called := true;
+        f ty)
+      synthed in
   let go () =
     match (tm.value, status) with
     | Var i, _ -> (
@@ -3440,11 +3497,17 @@ and synth : type mode a b s.
                   with_loc dom.loc @@ fun () : (left, m, binder_name) Build.fwrap_left ->
                   (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
                   Reporter.try_with ~fatal:(fun d ->
-                      match d.message with
-                      | No_such_level _ ->
-                          fatal ?loc:d.explanation.loc
-                            (Invalid_higher_function "invalid domain scope")
-                      | _ -> fatal_diagnostic d)
+                      match
+                        Reporter.accumulated
+                          (fun d ->
+                            match d.message with
+                            | No_such_level _ -> Some d.explanation.loc
+                            | _ -> None)
+                          d
+                      with
+                      | Some errloc ->
+                          fatal ?loc:errloc (Invalid_higher_function "invalid domain scope")
+                      | None -> fatal_diagnostic d)
                   @@ fun () : (left, m, binder_name) Build.fwrap_left ->
                   let dom, tyargs =
                     match D.compare_zero m with
@@ -3506,11 +3569,17 @@ and synth : type mode a b s.
                 let ccod = check (Kinetic `Nolet) newctx cod (universe mode D.zero) in
                 with_loc cod.loc @@ fun () ->
                 Reporter.try_with ~fatal:(fun d ->
-                    match d.message with
-                    | No_such_level _ ->
-                        fatal ?loc:d.explanation.loc
-                          (Invalid_higher_function "invalid codomain scope")
-                    | _ -> fatal_diagnostic d)
+                    match
+                      Reporter.accumulated
+                        (fun d ->
+                          match d.message with
+                          | No_such_level _ -> Some d.explanation.loc
+                          | _ -> None)
+                        d
+                    with
+                    | Some errloc ->
+                        fatal ?loc:errloc (Invalid_higher_function "invalid codomain scope")
+                    | None -> fatal_diagnostic d)
                 @@ fun () ->
                 (* It must also be fully instantiated at at least the total dimension. *)
                 match split_inst n' (eval_term (Ctx.env newctx) ccod) with
@@ -3619,6 +3688,8 @@ and synth : type mode a b s.
               | _ -> fatal_diagnostic d1)
           @@ fun () -> check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
         let ety = eval_term (Ctx.env ctx) cty in
+        (* The ascription will be the type of the entire term, so we pass it into the callback.  We do this before typechecking the term, in case that term depends on having a metavariable's type installed. *)
+        call_synthed ety;
         let ctm = check status ctx tm ety in
         (ctm, ety)
     | AscLam ({ value = x; loc = _ }, modality, dom, body), _ -> (
@@ -3656,11 +3727,15 @@ and synth : type mode a b s.
                    (readback_val newctx scod)) in
             (Lam (xs, D.zero, filter, cbody), ty))
     | Let (x, modality, v, body), _ ->
-        let ctm, Not_none ety = synth_or_check_let ?nosynth status ctx x modality v body None in
+        (* The synthesized type of the body will be the type of the let-binding, so we pass in the 'synthed' callback. *)
+        let ctm, Not_none ety =
+          synth_or_check_let ?nosynth ?synthed status ctx x modality v body None in
         (* The synthesized type of the body is also correct for the whole let-expression, because it was synthesized in a context where the variable is bound not just to its type but to its value, so it doesn't include any extra level variables (i.e. it can be silently "strengthened"). *)
         (ctm, ety)
     | Letrec (vtys, vs, body), _ ->
-        let ctm, Not_none ety = synth_or_check_letrec ?nosynth status ctx vtys vs body None in
+        (* The synthesized type of the body will be the type of the let-binding, so we pass in the 'synthed' callback. *)
+        let ctm, Not_none ety =
+          synth_or_check_letrec ?nosynth ?synthed status ctx vtys vs body None in
         (* The synthesized type of the body is also correct for the whole let-expression, because it was synthesized in a context where the variable is bound not just to its type but to its value, so it doesn't include any extra level variables (i.e. it can be silently "strengthened"). *)
         (ctm, ety)
     | Match _, Kinetic l -> (
@@ -3673,18 +3748,24 @@ and synth : type mode a b s.
               Meta.make_def "match" None (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx)
                 Potential in
             let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun x -> x) in
-            let sv, svty = synth tmstatus ctx tm in
-            let vty = readback_val ctx svty in
-            let termctx = readback_ctx ctx in
-            Global.add_meta meta ~termctx ~tm:(`Defined sv) ~ty:vty ~energy:Potential;
+            (* First we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
+            Global.add_meta_error meta (Typeless_meta (meta, `Bare));
+            (* We wrap the supplied ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
+            let synthed svty =
+              Option.iter (fun f -> f svty) synthed;
+              let vty = readback_val ctx svty in
+              let termctx = readback_ctx ctx in
+              Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
+            let sv, svty = synth ~synthed tmstatus ctx tm in
+            Global.set_meta meta sv;
             (Term.Meta (meta, Kinetic), svty))
     | Match { tm; window; sort = `Explicit motive; branches; refutables = _; highers }, Potential _
-      -> synth_dep_match status ctx tm window branches highers motive
+      -> synth_dep_match ?synthed status ctx tm window branches highers motive
     | Match { tm; window; sort = `Implicit; branches; refutables = _; highers }, Potential _ ->
         emit (Matching_wont_refine ("match in synthesizing position", None));
-        synth_nondep_match status ctx tm window branches highers None
+        synth_nondep_match ?synthed status ctx tm window branches highers None
     | Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }, Potential _ ->
-        synth_nondep_match status ctx tm window branches highers (Some i)
+        synth_nondep_match ?synthed status ctx tm window branches highers (Some i)
     | Fail e, _ -> fatal e
     (* If we're using the synthesized type of an argument as an implicit first argument: *)
     | ImplicitSApp (fn, apploc, arg), _ -> (
@@ -3847,6 +3928,7 @@ and synth : type mode a b s.
   let restm, resty = go () in
   Annotate.ty ctx resty;
   Annotate.tm ctx restm;
+  call_synthed resty;
   (restm, resty)
 
 (* Given something that can be applied, its type, and a list of arguments, check the arguments in appropriately-sized groups. *)

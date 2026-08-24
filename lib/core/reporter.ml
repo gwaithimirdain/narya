@@ -302,6 +302,7 @@ module Code = struct
     | Cyclic_term : t
     | Oracle_failed : string * printable -> t
     | Invalid_flags : t
+    | Typeless_meta : ('mode, 'x, 'b, 's) Meta.t * [ `Let | `Bare ] -> t
 
   (* If an error is encountered during printing a term, we (meaning the function 'printer' to be defined in Parser.Unparse) call the function supplied by this reader effect and print it as "_UNPRINTABLE".  Usually this is a bug, but sometimes it can happen normally, particularly when accumulating errors: a term involved in a later error might be unprintable due to a previous error.  We make this a reader that supplies a function so that the function can be called at the point of *performing* the effect.  Thus, if we are not in the middle of displaying another message, there can be an outer handler for this effect that supplies the function "fatal", which is called at the point of performing the effect and is therefore inside any inner Reporter.run wrappers rather than the outermost one that just Exits. *)
   module PrintingErrorData = struct
@@ -483,14 +484,16 @@ module Code = struct
     | Cyclic_term -> Error
     | Oracle_failed _ -> Error
     | Invalid_flags -> Error
+    | Typeless_meta _ -> Bug
 
   (** A short, concise, ideally Google-able string representation for each message code. *)
   let short_code : t -> string = function
-    (* Usually bugs *)
+    (* Usually bugs (at least, if they escape to the user) *)
     | Anomaly _ -> "E0000"
     | No_such_level _ -> "E0001"
     | Accumulated (_msg, _errs) -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
+    | Typeless_meta _ -> "E0010"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
     | Deprecated _ -> "E0110"
@@ -1206,7 +1209,13 @@ module Code = struct
       | Ill_scoped_connection -> text "ill-scoped connection"
       | Cyclic_term -> text "cycle in graphical term"
       | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm)
-      | Invalid_flags -> text "invalid combination of command-line flags" in
+      | Invalid_flags -> text "invalid combination of command-line flags"
+      | Typeless_meta (m, why) ->
+          textf "typeless meta in %s: %a"
+            (match why with
+            | `Let -> "let-binding"
+            | `Bare -> "bare case tree")
+            pp_printed (print (PMeta m)) in
     match !printing_errors with
     | Emp -> msg
     | Snoc _ ->
