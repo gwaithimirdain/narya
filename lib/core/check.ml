@@ -677,9 +677,18 @@ let rec check : type mode a b s.
           else { value = Raw.Constr (quot, [ process_nat n.num; process_pos n.den ]); loc = tm.loc }
         in
         check ?discrete status ctx numeral ty
-    | ( Synth (Match { tm; window; sort = `Implicit | `Nested; branches; refutables; highers }),
-        Potential _ ) ->
+    | Synth (Match { tm; window; sort = `Implicit; branches; refutables; highers }), Potential _ ->
         check_implicit_match status ctx tm window branches refutables highers ty
+    (* A match the parser nested inside a deep match becomes whatever the match it is nested in turned out to be, so that the nest the user wrote as one match is uniform. *)
+    | Synth (Match { tm; window; sort = `Nested; branches; refutables; highers }), Potential _ -> (
+        match Nested.read () with
+        | `Implicit | `Convoy ->
+            check_implicit_match status ctx tm window branches refutables highers ty
+        | `Nondep ->
+            let (Wrap window) = get_window (Ctx.mode ctx) window in
+            let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
+            let stm, sty = synth (Kinetic `Nolet) lctx tm in
+            check_nondep_match status ctx stm sty window plus_lock branches None highers ty tm.loc)
     | Synth (Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }), Potential _
       ->
         let (Wrap window) = get_window (Ctx.mode ctx) window in
@@ -1367,6 +1376,7 @@ and check_implicit_match : type mode a b.
 
 (* This subroutine iterates through the branches of a non-refining match, checking them all in an appropriate context against the same motive.  Since a non-dependent match might be either checking or synthesizing, the motive can be obtained in two ways, either supplied by the caller directly, or deduced from a branch whose body synthesizes.  We abstract away from this variation by having the caller of this subroutine supply a callback (of type match_motive) that computes a motive from the list of merged branches (see merge_branches).  Since in the process it might also try synthesizing one or more of the branches, it has to also return a list of errors, a list of already-typechecked branches, and the list of branches remaining to check.  Moreover, in the case of a dependent match when the *user* has specified a dependent motive, that motive has to be specialized differently in each branch; we abstract away from that by having the callback return an abstract type which another callback can specialize in each branch. *)
 and check_match_branches : type dom window mode a b bm.
+    nested:Nested.t ->
     ?convoy:
       a check located
       * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
@@ -1382,7 +1392,7 @@ and check_match_branches : type dom window mode a b bm.
     Asai.Range.t option ->
     (dom, window, mode, a, b) match_motive ->
     (mode, b, potential) term * (mode, kinetic) value option =
- fun ?convoy status ctx tm varty window plus_lock brs i highers loc (Motive callbacks) ->
+ fun ~nested ?convoy status ctx tm varty window plus_lock brs i highers loc (Motive callbacks) ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_match_branches" with
   | Canonical
@@ -1462,7 +1472,8 @@ and check_match_branches : type dom window mode a b bm.
                 (branches, errs)
             | Some body, Some motive ->
                 let cmotive = callbacks.use motive constr dim index_vals newvars in
-                let cbody = check status newctx body cmotive in
+                (* Whatever this match turned out to be, the matches the parser nested inside its branches become the same. *)
+                let cbody = Nested.run nested (fun () -> check status newctx body cmotive) in
                 ( branches
                   |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm = cbody }),
                   errs )
@@ -1506,7 +1517,7 @@ and check_nondep_match : type dom window mode a b bm.
     (mode, b, potential) term =
  fun status ctx tm varty window plus_lock brs i highers motive loc ->
   let result, _ =
-    check_match_branches status ctx tm varty window plus_lock brs i highers loc
+    check_match_branches ~nested:`Nondep status ctx tm varty window plus_lock brs i highers loc
       (* Since the motive is already given, the callback can just return it. *)
       (Motive
          {
@@ -1612,7 +1623,7 @@ and synth_nondep_match : type mode a b.
         (motive, errs, branches, check_branches) in
       (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch. *)
       let result, motive =
-        check_match_branches status ctx tm varty window plus_lock brs i highers loc
+        check_match_branches ~nested:`Nondep status ctx tm varty window plus_lock brs i highers loc
           (Motive
              {
                get;
@@ -1645,7 +1656,8 @@ and synth_dep_match : type mode a b.
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
       let (tm, varty), loc = (synth (Kinetic `Nolet) lctx tm, tm.loc) in
       let result, result_ty =
-        check_match_branches ?convoy status ctx tm varty window plus_lock brs None highers loc
+        check_match_branches ~nested:`Convoy ?convoy status ctx tm varty window plus_lock brs None
+          highers loc
           (* In this case when the motive is dependent, the definition of the motive callbacks is more involved. *)
           (Motive
              {
@@ -1830,7 +1842,7 @@ and check_var_match : type dom modality mode a b bm.
                         then fatal_diagnostic e
                         else (branches, Snoc (errs, e)))
                     @@ fun () ->
-                    let branch = check status newctx body newty in
+                    let branch = Nested.run `Implicit (fun () -> check status newctx body newty) in
                     ( branches
                       |> Constr.Map.add constr
                            (Term.Branch { annotate; comp; perm = checked_perm; tm = branch }),
@@ -3714,8 +3726,8 @@ and synth : type mode a b s.
             (Term.Meta (meta, Kinetic), svty))
     | Match { tm; window; sort = `Explicit motive; branches; refutables = _; highers }, Potential _
       -> synth_dep_match ?synthed status ctx tm window branches highers motive
-    | Match { tm; window; sort = (`Implicit | `Nested); branches; refutables = _; highers },
-      Potential _ ->
+    | ( Match { tm; window; sort = `Implicit | `Nested; branches; refutables = _; highers },
+        Potential _ ) ->
         emit (Matching_wont_refine ("match in synthesizing position", None));
         synth_nondep_match ?synthed status ctx tm window branches highers None
     | Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }, Potential _ ->

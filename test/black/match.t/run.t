@@ -370,3 +370,37 @@
      ^ e-dimensional match requires cube abstraction
   
   [1]
+
+A deep match is compiled into a nest of matches, of which the user wrote only the outermost, and the nest is kept uniform: whatever the outermost turns out to be, the nested ones become.  So a deep match marked non-dependent by hand has non-dependent matches all the way down, and none of them refines.  Here the inner match on "b" would have refined "x : T true." had it been implicit, and without that refinement the branch no longer typechecks; dropping the "return _ ↦ _" makes it an implicit match throughout and it does.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def D : Type ≔ data [ d. (b : Bool) (x : T b) ]' -e 'def f (y : D) : N ≔ match y return _ ↦ _ [ d. true. x ↦ x | d. false. x ↦ zero. ]'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f (y : D) : N ≔ match y return _ ↦ _ [ d. true. x ↦ x | d. false. x ↦ zero. ]
+     ^ term synthesized type
+         T b
+       but is being checked against type
+         N
+       unequal head constants:
+         T
+       does not equal
+         N
+  
+  [1]
+
+  $ narya -v -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def D : Type ≔ data [ d. (b : Bool) (x : T b) ]' -e 'def f (y : D) : N ≔ match y [ d. true. x ↦ x | d. false. x ↦ zero. ]'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0000]
+   ￮ constant T defined
+  
+   ￫ info[I0000]
+   ￮ constant D defined
+  
+   ￫ info[I0000]
+   ￮ constant f defined
+  
