@@ -1564,7 +1564,7 @@ let rec process_branches : type a n.
     int Bwd.t ->
     (a, n) branch list ->
     Asai.Range.t option ->
-    [ `Implicit | `Explicit of wrapped_parse | `Nondep of int located ] ->
+    [ `Implicit | `Nested | `Explicit of wrapped_parse | `Nondep of int located ] ->
     a check located * bool ref located list =
  fun xctx xs seen branches loc sort ->
   match branches with
@@ -1588,7 +1588,8 @@ let rec process_branches : type a n.
               [] )
         | _ -> fatal (Anomaly "multiple match with return-type") in
       match sort with
-      | `Implicit -> (locate (Refute (tms, `Implicit)) loc, [])
+      (* A nested match with no branches is a refutation like an implicit one: there is nothing to give a motive to. *)
+      | `Implicit | `Nested -> (locate (Refute (tms, `Implicit)) loc, [])
       | `Explicit (Wrap motive) -> explicit_or_nondep (`Explicit (process ctx motive))
       | `Nondep i -> explicit_or_nondep (`Nondep i))
   (* If there are no patterns left, and hence no discriminees either, we require that there must be exactly one branch. *)
@@ -1705,8 +1706,8 @@ let rec process_branches : type a n.
                     then fatal ?loc:c.loc (Duplicate_constructor_in_match c.value)
                     else fatal_diagnostic d)
                 @@ fun () ->
-                (* After the first outer match, we always switch to implicit matches. *)
-                let rest, bs = process_branches newxctx newxs seen newbrs loc `Implicit in
+                (* The matches after the first are ones we are emitting rather than ones the user wrote, so they are marked as such: what they become is decided when the match they are nested in is checked, so that a deep match written with an explicit motive has explicit motives throughout, one written without has implicit matches throughout, and one that ends up non-dependent is non-dependent throughout.  The parser cannot decide that itself, since whether refinement succeeds is not known until typechecking. *)
+                let rest, bs = process_branches newxctx newxs seen newbrs loc `Nested in
                 Hlist.Hlist.cons (x, Raw.Branch (locate names loc, cube, rest)) [ bs ])
           [ cbranches ] (Cons (Cons Nil)) in
       let tm, window = process_obs_or_ix xctx x in
@@ -1722,6 +1723,7 @@ let rec process_branches : type a n.
       let sort =
         match sort with
         | `Implicit -> `Implicit
+        | `Nested -> `Nested
         | `Nondep i -> `Nondep i
         | `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
       ( locate (Synth (Match { tm; window; sort; branches; refutables; highers = [] })) loc,

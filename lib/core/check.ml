@@ -677,7 +677,8 @@ let rec check : type mode a b s.
           else { value = Raw.Constr (quot, [ process_nat n.num; process_pos n.den ]); loc = tm.loc }
         in
         check ?discrete status ctx numeral ty
-    | Synth (Match { tm; window; sort = `Implicit; branches; refutables; highers }), Potential _ ->
+    | ( Synth (Match { tm; window; sort = `Implicit | `Nested; branches; refutables; highers }),
+        Potential _ ) ->
         check_implicit_match status ctx tm window branches refutables highers ty
     | Synth (Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }), Potential _
       ->
@@ -3713,7 +3714,8 @@ and synth : type mode a b s.
             (Term.Meta (meta, Kinetic), svty))
     | Match { tm; window; sort = `Explicit motive; branches; refutables = _; highers }, Potential _
       -> synth_dep_match ?synthed status ctx tm window branches highers motive
-    | Match { tm; window; sort = `Implicit; branches; refutables = _; highers }, Potential _ ->
+    | Match { tm; window; sort = (`Implicit | `Nested); branches; refutables = _; highers },
+      Potential _ ->
         emit (Matching_wont_refine ("match in synthesizing position", None));
         synth_nondep_match ?synthed status ctx tm window branches highers None
     | Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }, Potential _ ->
