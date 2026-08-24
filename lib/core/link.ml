@@ -86,6 +86,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Specialize { tm; window; plus_lock; constr; constr_ty } ->
       Specialize
         { tm = term f tm; window; plus_lock; constr = term f constr; constr_ty = term f constr_ty }
+  | Unapply tm -> Unapply (term f tm)
 
 and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, a, n) branch =
  fun f br ->

@@ -113,6 +113,8 @@ module rec Value : sig
     | Specialize :
         ('hmode, 'mode, 'any) apps * ('dom, 'window, 'mode) Modality.t * 'dom normal
         -> ('hmode, 'mode, noninst) apps
+    (* Also display-only: the other half of a specialization, which discards what a case tree applied a stuck match to without reducing the match itself.  It names the match of a convoy, which nothing else can: the neutral one has is the match applied to those arguments, and there is no elimination that undoes an application.  Readback needs it for a motive's boundary, whose faces must be the matches at the faces of a degenerated environment and not the convoys there; its type is the match's own, which Norm.tyof_unapply computes forwards from the motive rather than by undoing anything.  Like Specialize it neither takes dimensions nor crosses a mode, and nothing outside a readback for display may construct, evaluate, or compare one. *)
+    | Unapply : ('hmode, 'mode, 'any) apps -> ('hmode, 'mode, noninst) apps
 
   and (_, _, _, _, _) binder =
     | Bind : {
@@ -362,6 +364,8 @@ end = struct
     | Specialize :
         ('hmode, 'mode, 'any) apps * ('dom, 'window, 'mode) Modality.t * 'dom normal
         -> ('hmode, 'mode, noninst) apps
+    (* Also display-only: the other half of a specialization, which discards what a case tree applied a stuck match to without reducing the match itself.  It names the match of a convoy, which nothing else can: the neutral one has is the match applied to those arguments, and there is no elimination that undoes an application.  Readback needs it for a motive's boundary, whose faces must be the matches at the faces of a degenerated environment and not the convoys there; its type is the match's own, which Norm.tyof_unapply computes forwards from the motive rather than by undoing anything.  Like Specialize it neither takes dimensions nor crosses a mode, and nothing outside a readback for display may construct, evaluate, or compare one. *)
+    | Unapply : ('hmode, 'mode, 'any) apps -> ('hmode, 'mode, noninst) apps
 
   (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body; this is the insertion.  *)
   and (_, _, _, _, _) binder =
@@ -1062,7 +1066,8 @@ let inst_apps : type hmode mode any m n mn.
       | Emp -> Any (Inst (apps, n', args2))
       | Arg _ -> Any (Inst (apps, n', args2))
       | Field _ -> Any (Inst (apps, n', args2))
-      | Specialize _ -> Any (Inst (apps, n', args2)))
+      | Specialize _ -> Any (Inst (apps, n', args2))
+      | Unapply _ -> Any (Inst (apps, n', args2)))
 
 (* Instantiate a lazy value *)
 let inst_lazy : type mode m n mn s.
@@ -1100,6 +1105,7 @@ let inst_of_apps : type hmode mode any.
   | Arg _ -> (apps, None)
   | Field _ -> (apps, None)
   | Specialize _ -> (apps, None)
+  | Unapply _ -> (apps, None)
 
 (* A head together with an application spine ending at a given mode, with the mode at the head end existentially quantified. *)
 type _ head_apps =
@@ -1139,6 +1145,7 @@ module Fwd_app = struct
         * ('tk, 't, 'k) insertion
         -> ('src, 'mode) t
     | Specialize : ('dom, 'window, 'mode) Modality.t * 'dom normal -> ('mode, 'mode) t
+    | Unapply : ('mode, 'mode) t
 
   type (_, _) fwd = Nil : ('mode, 'mode) fwd | Cons : ('a, 'b) t * ('b, 'c) fwd -> ('a, 'c) fwd
 
@@ -1149,6 +1156,7 @@ module Fwd_app = struct
     | Arg (filter, arg, ins) -> Arg (apps, filter, arg, ins)
     | Field (f, fld, plus, ins) -> Field (apps, f, fld, plus, ins)
     | Specialize (w, c) -> Specialize (apps, w, c)
+    | Unapply -> Unapply apps
 
   let of_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) fwd =
    fun apps ->
@@ -1160,6 +1168,7 @@ module Fwd_app = struct
       | Arg (apps, filter, arg, ins) -> go apps (Cons (Arg (filter, arg, ins), fwds))
       | Field (apps, f, fld, plus, ins) -> go apps (Cons (Field (f, fld, plus, ins), fwds))
       | Specialize (apps, w, c) -> go apps (Cons (Specialize (w, c), fwds))
+      | Unapply apps -> go apps (Cons (Unapply, fwds))
       | Inst _ -> fatal (Anomaly "instantiation in fwd_of_apps") in
     go apps Nil
 end
@@ -1171,6 +1180,7 @@ let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, 
   | Arg (rest, _, _, _) -> nonmodal_apps rest
   | Inst (rest, _, _) -> nonmodal_apps rest
   | Specialize (rest, _, _) -> nonmodal_apps rest
+  | Unapply rest -> nonmodal_apps rest
   | Field (rest, filter, _, _, _) -> (
       match Modality.compare_id (Modality.filter_modality filter) with
       | Eq -> nonmodal_apps rest
@@ -1180,7 +1190,7 @@ let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, 
 let empty_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) Eq.t option =
   function
   | Emp -> Some Eq
-  | Arg _ | Field _ | Inst _ | Specialize _ -> None
+  | Arg _ | Field _ | Inst _ | Specialize _ | Unapply _ -> None
 
 (* The result of splitting an application spine ending at a given mode: a prefix spine ending at some intermediate mode, and the rest as a forward sequence. *)
 type (_, _) split_apps =
@@ -1213,6 +1223,7 @@ let rec strip_apps : type h hmode mode any1 any2.
   | Arg (args, _, _, _), Arg (apps, _, _, _) -> strip_apps args apps
   | Inst (args, _, _), Inst (apps, _, _) -> strip_apps args apps
   | Specialize (args, _, _), Specialize (apps, _, _) -> strip_apps args apps
+  | Unapply args, Unapply apps -> strip_apps args apps
   | Field (args, f1, _, _, _), Field (apps, f2, _, _, _) -> (
       match Modality.compare (Modality.filter_modality f1) (Modality.filter_modality f2) with
       | Eq -> strip_apps args apps

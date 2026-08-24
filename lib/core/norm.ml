@@ -325,6 +325,12 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
           let value = ready (app_eval_apps (force_eval value) (Specialize (Emp, window, ecval))) in
           Val (Neu { head; args = Specialize (args, window, ecval); value; ty = ety })
       | _ -> fatal (Anomaly "specializing a non-neutral"))
+  (* An unapplication evaluates like a specialization, for the same reason: readback puts the self it builds through an eval-readback cycle, and the entry has to survive it. *)
+  | Unapply tm -> (
+      specializing "evaluating an unapplied term";
+      match eval_term env tm with
+      | Neu _ as neu -> Val (unapply_neu neu)
+      | _ -> fatal (Anomaly "unapplying a non-neutral"))
   | Inst (Potential, _, _) -> fatal (Evaluating_display_term "potential instantiation")
   | Inst (Kinetic, tm, args) -> (
       (* The arguments are an (n,k) tube, with k dimensions instantiated and n dimensions uninstantiated. *)
@@ -1750,6 +1756,14 @@ and app_eval_apps : type hmode mode s any.
      It yields the branch body *alone*, discarding whatever the case tree applied the match to.  Those are the entries of the inner spine, and they are eliminations of the match's result, not of the match: readback attaches a specialization to the self it hands a branch body, and that body is the branch's own term, unapplied -- the convoy's applications are put back outside the reconstructed match, by the same readback_apps that puts the outer ones back.  Replaying them here, as this function does for every entry it walks, would leave the self's value one application ahead of the body it stands for.
 
      The outer spine, by contrast, must be empty.  Those entries would have to be replayed, since they eliminate the match's result and would still do so after the reduction; but readback never builds a specialization where there are any, because it only ever puts one on the neutral it gets by stripping them off.  Their emptiness is also what identifies our mode with the one the match's window lives at, together with the inner spine crossing none. *)
+  (* Unapplying discards what a case tree applied a stuck match to, leaving the match itself: the other half of a specialization, which does this and then reduces.  It is what names the match of a convoy, there being no elimination that undoes an application, and readback uses it for a motive's boundary.  As for a specialization, the outer spine must be empty and the inner one crosses no mode, both of which hold wherever readback builds one. *)
+  | Unapply rest -> (
+      specializing "unapplying";
+      match app_eval_apps ev rest with
+      | Unrealized (Some (h, isp, (Emp : (_, _, _) apps))) ->
+          let Eq = nonmodal_apps isp <|> Anomaly "unapplying across a modal field projection" in
+          Unrealized (Some (h, Emp, Emp))
+      | _ -> fatal (Anomaly "unapplying a term that is not a stuck case tree"))
   | Specialize (rest, swindow, cval) -> (
       specializing "evaluating";
       match app_eval_apps ev rest with
@@ -2359,6 +2373,57 @@ and apply_dargs : type mode n.
       | Eq ->
           let Eq = Modality.filter_uniq afilter pifilter in
           apply_dargs m (apply_binder_term b pifilter arg) rest)
+
+(* Discard what a case tree applied a stuck match to, leaving a neutral standing for the match itself.  Readback needs one per face of a degenerated environment, to build the boundary of a convoy's motive: the faces of the type it has to hand are the convoys there, and the motive's boundary must be the matches.
+
+   The type is the match's own, computed forwards from its motive rather than by undoing the application, which no type of a result records enough to do.  Only a zero-dimensional environment is handled.  Since the proper faces of an n-dimensional cube have dimensions up to n-1, that covers every face of an environment of dimension 1 but not of dimension 2 or more, where a face is itself positive-dimensional and the motive gives an uninstantiated family there in its turn -- needing this same construction one dimension down.  That is a real recursion and it terminates, but nothing yet builds it, so a convoy stuck in an environment of dimension 2 or more still shows no "return" clause. *)
+and unapply_neu : type mode. (mode, kinetic) value -> (mode, kinetic) value =
+ fun neu ->
+  specializing "unapplying";
+  match neu with
+  | Neu { head; args; value; _ } ->
+      let uvalue = ready (app_eval_apps (force_eval value) (Unapply Emp)) in
+      Neu { head; args = Unapply args; value = uvalue; ty = lazy (tyof_unapply neu) }
+  | _ -> fatal (Anomaly "unapplying a non-neutral")
+
+(* The type of an unapplied neutral: the type of the stuck match at its head, which is its motive applied to the discriminee's indices, instantiation arguments, and itself -- exactly as readback computes it for a match in an undegenerated environment, and as check computes the type of a match it is synthesizing. *)
+and tyof_unapply : type mode. (mode, kinetic) value -> (mode, kinetic) value =
+ fun neu ->
+  match neu with
+  | Neu { value; _ } -> (
+      match force_eval value with
+      | Unrealized
+          (Some
+             ( Stuck { env; tm = Match { tm = disc_tm; window; plus_lock; motive; _ }; ins = _ },
+               isp,
+               (Emp : (_, _, _) apps) )) -> (
+          let Eq =
+            nonmodal_apps isp <|> Anomaly "typing an unapplication across a modal field projection"
+          in
+          let env_dim = dim_env env in
+          match (motive, D.compare_zero env_dim) with
+          | Some (`Type t), _ -> eval_term env t
+          | Some (`Family t), Zero -> (
+              let (Has_filter fw) = Modality.filter window env_dim in
+              let akenv =
+                act_env (key_id_env env plus_lock)
+                  (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
+              let disc_nf = nf_of_neu (eval_term akenv disc_tm) "discriminee of unapplied match" in
+              match view_type (Lazy.force disc_nf.ty) "tyof_unapply" with
+              | Canonical (_, Data { indices = Filled data_indices; _ }, _, disc_tyargs) ->
+                  let emotive = eval_term env t in
+                  let r = Vec.fold_left (apply_singleton_nfs window) emotive data_indices in
+                  let r = apply_singleton_tube_nfs window r disc_tyargs in
+                  apply_term r (Modality.filter_zero window) (CubeOf.singleton disc_nf.tm)
+              | _ -> fatal (Anomaly "discriminee of unapplied match is not a full datatype"))
+          (* In a degenerated environment the motive gives an uninstantiated family; see above. *)
+          | Some (`Family _), Pos _ | None, _ ->
+              fatal
+                (Readback_at_wrong_type
+                   "a match applied to arguments inside a degenerated case tree, whose own type only its motive gives")
+          )
+      | _ -> fatal (Anomaly "unapplying a term that is not a stuck case tree"))
+  | _ -> fatal (Anomaly "unapplying a non-neutral")
 
 (* The type of a specialized neutral: the type the match has when its discriminee is the given constructor, which is the type the corresponding branch was checked at.  It is computed here rather than carried on the specialization, so that it comes out right at whatever dimension it is asked for -- evaluating a stored one in a degenerated environment leaves it uninstantiated at the faces the degeneration adds, which is what every other term form avoids by computing its type too (tyof_app and its kin).
 

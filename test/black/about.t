@@ -921,7 +921,7 @@ A convoy's branch bodies begin with one lambda per application, and those lambda
     : N → √N
   
 
-A convoy in a *degenerated* environment displays too, branches and all.  Two things make that work.  The type at which the branches are read back is computed per branch from the motive, so the match's own type -- which for a convoy would have to be recovered by un-applying, and cannot be -- is never demanded.  And a branch body's boundary, at a face where its value is a case tree, comes from specializing the match at that face; for a convoy the type to hand supplies the *convoys* at the faces instead, but a specialization reduces the match at the head of a stuck spine and discards what the case tree applied it to, so it lands on the same branch body either way.  What is lost is the inner "return" clause, which would need the matches at the faces themselves (see nodisplay.t IV).
+A convoy in a *degenerated* environment displays too, branches, motive and all.  Three things make that work.  The type at which the branches are read back is computed per branch from the motive, so the match's own type -- which for a convoy would have to be recovered by un-applying, and cannot be -- is never demanded.  A branch body's boundary, at a face where its value is a case tree, comes from specializing the match at that face; for a convoy the type to hand supplies the *convoys* at the faces instead, but a specialization reduces the match at the head of a stuck spine and discards what the case tree applied it to, so it lands on the same branch body either way.  And the motive's boundary must be the *matches* at those faces rather than the convoys, which is what an unapplication gives: the other half of a specialization, discarding the case tree's applications without reducing.  So the boundary entries below are the matches applied to the motive's own abstracted variable, "(match 𝑥 …) 𝑥₀", exactly as they are for a function-typed match with no convoy.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def D : Type ≔ data [ d. (b : Bool) (x : T b) ]' -e 'def g (y : D) : N ≔ match y return _ ↦ N [ d. c x ↦ (match c return z ↦ T z → N [ true. ↦ w ↦ w | false. ↦ w ↦ zero. ]) x ]' -e 'axiom y0 : D' -e 'axiom y1 : D' -e 'axiom y2 : Id D y0 y1' -e 'about (refl g y2)'
   match y2
@@ -937,7 +937,17 @@ A convoy in a *degenerated* environment displays too, branches and all.  Two thi
             | d. c x ↦
                 match c return z ↦ T z → N [ false. ↦ w ↦ 0 | true. ↦ w ↦ w ]
                   x]) [
-  | d. c x ⤇ match c.2 [ false. ⤇ w ⤇ refl 0 | true. ⤇ w ⤇ w.2 ] x.2]
+  | d. c x ⤇
+      match c.2
+      return 𝑥 𝑦 𝑧 ↦
+             {𝑥₀ : T 𝑥} {𝑥₁ : T 𝑦} (𝑥₂ : Id T 𝑧 𝑥₀ 𝑥₁)
+             →⁽ᵉ⁾ N⁽ᵉ⁾
+                    ((match 𝑥
+                      return z ↦ T z → N [ false. ↦ w ↦ 0 | true. ↦ w ↦ w ])
+                       𝑥₀)
+                    ((match 𝑦
+                      return z ↦ T z → N [ false. ↦ w ↦ 0 | true. ↦ w ↦ w ])
+                       𝑥₁) [ false. ⤇ w ⤇ refl 0 | true. ⤇ w ⤇ w.2 ] x.2]
     : N⁽ᵉ⁾ (g y0) (g y1)
   
 

@@ -1966,7 +1966,8 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
                let erhead, errest = erapps loldctx lnewenv rest in
                (erhead, Field (errest, filter, x, y, z))
            | Inst _ -> fatal (Anomaly "inst in make_match_status")
-           | Specialize _ -> fatal (Anomaly "specialize in make_match_status") in
+           | Specialize _ -> fatal (Anomaly "specialize in make_match_status")
+           | Unapply _ -> fatal (Anomaly "unapply in make_match_status") in
         erapps oldctx (Ctx.env newctx) args
     | None -> (head, args) in
   let hyp tm =
@@ -2362,7 +2363,8 @@ and get_indices : type mode hmode1 hmode2 a b any1 any2.
         | _, _, Neq ->
             fatal (Invalid_constructor_type (c, Left "applications must be zero-dimensional")))
     | Cons (Field _, _) -> fatal (Anomaly "field is not an index")
-    | Cons (Specialize _, _) -> fatal (Anomaly "specialize is not an index") in
+    | Cons (Specialize _, _) -> fatal (Anomaly "specialize is not an index")
+    | Cons (Unapply, _) -> fatal (Anomaly "unapply is not an index") in
   let Eq, tms = go output_indices in
   match equal_apps ctx current output_params with
   | None -> fatal (Invalid_constructor_type (c, Left "unequal parameters"))
@@ -3036,7 +3038,9 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                    (head, Arg (newapps, filter_sn_rm, newarg, newins))
                | Inst _ -> fatal (Anomaly "inst in eval-readback when checking higher field")
                | Specialize _ ->
-                   fatal (Anomaly "specialize in eval-readback when checking higher field") in
+                   fatal (Anomaly "specialize in eval-readback when checking higher field")
+               | Unapply _ -> fatal (Anomaly "unapply in eval-readback when checking higher field")
+            in
             let head, args = erapps ctx degenv args in
             let (Plus ni) = D.plus intrinsic in
             (* We add the current field projection to the args, with an insertion obtained by incorporating the remaining dimensions into the evaluation. *)

@@ -197,6 +197,8 @@ module rec Term : sig
         constr_ty : ('dom, 'aw, kinetic) term;
       }
         -> ('mode, 'a, kinetic) term
+    (* And the readback of the Unapply spine entry: the same, but discarding what a case tree applied the match to rather than reducing it.  It carries only the spine, having nothing else to store. *)
+    | Unapply : ('mode, 'a, kinetic) term -> ('mode, 'a, kinetic) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term
     | Unshift :
         'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'nb, 's) term
@@ -547,6 +549,8 @@ end = struct
         constr_ty : ('dom, 'aw, kinetic) term;
       }
         -> ('mode, 'a, kinetic) term
+    (* And the readback of the Unapply spine entry: the same, but discarding what a case tree applied the match to rather than reducing it.  It carries only the spine, having nothing else to store. *)
+    | Unapply : ('mode, 'a, kinetic) term -> ('mode, 'a, kinetic) term
     | Canonical : ('mode, 'a) canonical -> ('mode, 'a, potential) term
     (* These operations are easy to evaluate because they are dual to corresponding operations on environments.  They never appear in the output of typechecking, but they are useful when constructing terms "by hand" in OCaml code, such as in fibrancy witnesses. *)
     | Unshift :

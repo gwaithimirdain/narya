@@ -379,6 +379,10 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
   | Specialize _, _ | _, Specialize _ ->
       specializing "comparing";
       fatal (Anomaly "comparing a specialized neutral")
+  (* An unapplication is a display-only fiction in the same way: its spine says the match was applied to something while it asserts the type of the match alone. *)
+  | Unapply _, _ | _, Unapply _ ->
+      specializing "comparing";
+      fatal (Anomaly "comparing an unapplied neutral")
   | Emp, Emp -> (
       match heads with
       | None -> return ()

@@ -582,6 +582,14 @@ and readback_apps : type hmode mode a z any s.
                     constr = readback_nf lctx cval;
                     constr_ty = readback_val lctx (Lazy.force cval.ty);
                   } ))
+  (* An unapplication, like a specialization, wraps the spine so far and neither takes dimensions nor crosses a mode; unlike one it stores nothing, so there is nothing to read back but the spine. *)
+  | Unapply rest -> (
+      specializing "reading back";
+      match energy with
+      | Potential -> fatal (Anomaly "reading back an unapplied neutral at potential energy")
+      | Kinetic ->
+          let (Readback_apps (hctx, rewrap)) = readback_apps energy ~pi ctx rest in
+          Readback_apps (hctx, fun tm -> Term.Unapply (rewrap tm)))
   | Arg (rest, filter, args, ins) ->
       let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
@@ -1898,10 +1906,25 @@ and readback_stuck_match : type mode a z hmode imode iany any.
                           | Readback_at_wrong_type _ -> None
                           | _ -> fatal_diagnostic d)
                         (fun () ->
-                          match Lazy.force match_self_ty with
+                          (* All the motive wants from this type is its instantiation arguments: the values at the faces of the degenerated environment, which must be the matches there.  For an ordinary match that is the match's own type, whose faces are already those.  For a convoy the match's own type is not to hand, but the type that is -- the match applied to the case tree's arguments -- has the convoys at the faces, and unapplying each of those gives the matches.  That is what an Unapply entry is for; unlike a specialization it does not reduce, so what it leaves is the match itself. *)
+                          match Lazy.force boundary_ty with
                           | Neu { args = tyapps; _ } -> (
                               match inst_of_apps tyapps with
                               | _, Some (Any_tube bdry) -> (
+                                  let bdry =
+                                    match empty_apps iapps with
+                                    | Some Eq -> bdry
+                                    | None ->
+                                        TubeOf.mmap
+                                          {
+                                            map =
+                                              (fun _ [ nf ] ->
+                                                {
+                                                  tm = Norm.unapply_neu nf.tm;
+                                                  ty = lazy (Norm.tyof_unapply nf.tm);
+                                                });
+                                          }
+                                          [ bdry ] in
                                   (* The type must be fully instantiated, and its instantiation must include the dimensions the environment adds, which are the ones whose faces the matches we need lie over. *)
                                   match
                                     ( D.compare_zero (TubeOf.uninst bdry),

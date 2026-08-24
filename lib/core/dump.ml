@@ -178,6 +178,9 @@ module F = struct
         apps ppf rest;
         fprintf ppf " <: ";
         fprintf ppf "Specialize (%a)" normal c
+    | Unapply rest ->
+        apps ppf rest;
+        fprintf ppf " <: Unapply"
 
   and level : type a b m n. formatter -> level -> (a, m, n, b) Modalcell.t -> unit =
    fun ppf l key -> fprintf ppf "LVar (%d,%d,%s)" (fst l) (snd l) (Modalcell.to_string key)
@@ -295,6 +298,7 @@ module F = struct
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
     | Weaken tm -> fprintf ppf "Weaken (%a)" term tm
     | Specialize { tm; constr; _ } -> fprintf ppf "Specialize (%a, %a)" term tm term constr
+    | Unapply tm -> fprintf ppf "Unapply (%a)" term tm
 
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->

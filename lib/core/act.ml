@@ -438,6 +438,7 @@ module Act = struct
           | Arg _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
           | Field _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
           | Specialize _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
+          | Unapply _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
           | Emp -> (args, TubeOf.Full_tube (TubeOf.empty D.zero)) in
         let (Ty_acted_instargs (fa, new_inst_args)) =
           gact_ty_instargs ?err tm tmty inst_args s cell in
@@ -640,6 +641,11 @@ module Act = struct
         let new_s, new_c, new_rest = act_apps rest s c in
         let (Wrap cc) = Modalcell.prewhisker_wrapped c window in
         (new_s, new_c, Specialize (new_rest, window, act_normal cval s cc))
+    (* An unapplication stores nothing to act on and, like a specialization, neither crosses a mode nor carries an insertion, so the degeneracy simply passes through. *)
+    | Unapply rest ->
+        specializing "act";
+        let new_s, new_c, new_rest = act_apps rest s c in
+        (new_s, new_c, Unapply new_rest)
 
   and act_instargs : type mode mu1 mu2 cod a b n j nj p.
       (n, j, nj, mode normal) TubeOf.t ->
@@ -687,8 +693,8 @@ module Act = struct
         let (Wrap newkey) = key_vcomp c key in
         ref (Deferred (tm, fa, newkey, Emp))
     (* When the deferral carries a pending argument spine (which happens only in glued evaluation), we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
-    | Deferred_eval (_, _, _, _, (Arg _ | Field _ | Inst _ | Specialize _))
-    | Deferred (_, _, _, (Arg _ | Field _ | Inst _ | Specialize _)) ->
+    | Deferred_eval (_, _, _, _, (Arg _ | Field _ | Inst _ | Specialize _ | Unapply _))
+    | Deferred (_, _, _, (Arg _ | Field _ | Inst _ | Specialize _ | Unapply _)) ->
         ref (Deferred ((fun () -> force_eval lev), s, c, Emp))
     | Ready tm -> ref (Deferred ((fun () -> tm), s, c, Emp))
 end
