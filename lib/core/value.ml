@@ -109,7 +109,7 @@ module rec Value : sig
         -> ('hmode, 'mode, inst) apps
     (* A display-only spine entry, never produced by typechecking: it specializes a stuck match at the head end of the spine, reducing it as if its discriminee were the stored constructor value.  Readback attaches one to the self it hands a branch body, so that the self's spine really does evaluate to that body -- which projecting a higher codata field from it, and hence degenerating it, requires.  It stores the constructor as a normal -- a constructor does not synthesize, so reading one back needs its type.  It does *not* store the type of the specialized match: Norm.tyof_specialize computes that from the match, as every other elimination's type is computed, so that it comes out right at whatever dimension it is asked for.
 
-       The constructor lives at the window modality's source, not at the mode of the spine, so the entry carries the window as well -- exactly as Term.Match carries the one its discriminee is evaluated behind.  Since a specialization is not an elimination, it does not itself change the mode.  Nothing outside a readback for display may construct, evaluate, or compare one; see Displaying.specializing. *)
+       The constructor lives at the window modality's source, not at the mode of the spine, so the entry carries the window as well -- exactly as Term.Match carries the one its discriminee is evaluated behind.  Since a specialization is not an elimination, it does not itself change the mode.  The window is indexed at the mode of the spine, which is where readback locks the context to read the constructor back and where evaluating a Term.Specialize can rebuild it; the match it specializes lives at the head end of the spine, so the two coincide only when the stuck spine between them crosses no mode.  Readback builds a specialization only then -- see nonmodal_apps -- and the reduction may therefore assume it.  Nothing outside a readback for display may construct, evaluate, or compare one; see Displaying.specializing. *)
     | Specialize :
         ('hmode, 'mode, 'any) apps * ('dom, 'window, 'mode) Modality.t * 'dom normal
         -> ('hmode, 'mode, noninst) apps
@@ -163,7 +163,8 @@ module rec Value : sig
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
     | Unrealized :
-        (('hmode, potential) head * ('hmode, 'mode, 'any) apps) option
+        (('hmode, potential) head * ('hmode, 'imode, 'iany) apps * ('imode, 'mode, 'any) apps)
+        option
         -> ('mode, potential) evaluation
 
   and (_, _, _) canonical =
@@ -357,7 +358,7 @@ end = struct
 
        (An earlier version of this comment claimed the storing was load-bearing, because a branch body's boundary could not be supplied at a face.  It can: motive_branch_ty now takes it from the match's own instantiation arguments, specialized.  That reason is gone; the simplicity one is what remains.)
 
-       The constructor lives at the window modality's source, not at the mode of the spine, so the entry carries the window as well -- exactly as Term.Match carries the one its discriminee is evaluated behind.  Since a specialization is not an elimination, it does not itself change the mode.  Nothing outside a readback for display may construct, evaluate, or compare one; see Displaying.specializing. *)
+       The constructor lives at the window modality's source, not at the mode of the spine, so the entry carries the window as well -- exactly as Term.Match carries the one its discriminee is evaluated behind.  Since a specialization is not an elimination, it does not itself change the mode.  The window is indexed at the mode of the spine, which is where readback locks the context to read the constructor back and where evaluating a Term.Specialize can rebuild it; the match it specializes lives at the head end of the spine, so the two coincide only when the stuck spine between them crosses no mode.  Readback builds a specialization only then -- see nonmodal_apps -- and the reduction may therefore assume it.  Nothing outside a readback for display may construct, evaluate, or compare one; see Displaying.specializing. *)
     | Specialize :
         ('hmode, 'mode, 'any) apps * ('dom, 'window, 'mode) Modality.t * 'dom normal
         -> ('hmode, 'mode, noninst) apps
@@ -421,9 +422,12 @@ end = struct
     (* When 's = potential, a Val means the case tree is not yet fully applied; while when 's = kinetic, it is the only possible kind of result.  Collapsing these two together seems to unify the code for Lam and Struct as much as possible. *)
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    (* An Unrealized may carry the stuck case tree that it got stuck on, together with the spine of arguments that it was applied to.  This is what lets it be read back, for display only, as a match rather than as an opaque application spine.  The payload is optional because an axiom also evaluates to Unrealized, with no case tree behind it at all; in that case the enclosing kinetic neutral supplies its own head and spine for readback.  The payload is a "potential neutral", the potential analogue of the Neu constructor of 'value'; unlike Neu, it stores neither a type nor an up-to-now value, since a stuck case tree has neither. *)
+    (* An Unrealized may carry the stuck case tree that it got stuck on, together with the spine of arguments that it was applied to.  This is what lets it be read back, for display only, as a match rather than as an opaque application spine.  The payload is optional because an axiom also evaluates to Unrealized, with no case tree behind it at all; in that case the enclosing kinetic neutral supplies its own head and spine for readback.  The payload is a "potential neutral", the potential analogue of the Neu constructor of 'value'; unlike Neu, it stores neither a type nor an up-to-now value, since a stuck case tree has neither.
+
+       The spine is stored in *two* pieces, meeting at an intermediate mode.  The inner one holds the eliminations the case tree applied to the stuck head itself -- a convoy, i.e. a match applied to arguments written inside the case tree; the outer one holds those applied to the whole case tree from outside, after it got stuck.  The two are indistinguishable entry by entry (an inner Arg and an outer Arg are the same constructor, and may even carry the same value), but they behave differently in every consumer: only the outer ones appear in the spine of the enclosing kinetic neutral, so only they may be stripped off to recover the neutral naming the match; and only the outer ones are eliminations of the match's *result*, so a specialization of the match reduces past the inner ones.  Splitting them here, rather than marking a dividing entry, makes the boundary a type rather than an invariant: eval appends to the inner piece, app_eval_apps to the outer, and neither has to consult the other.  The order is guaranteed by construction, since the only appender running while a case tree is still evaluating is eval itself. *)
     | Unrealized :
-        (('hmode, potential) head * ('hmode, 'mode, 'any) apps) option
+        (('hmode, potential) head * ('hmode, 'imode, 'iany) apps * ('imode, 'mode, 'any) apps)
+        option
         -> ('mode, potential) evaluation
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
@@ -1159,6 +1163,18 @@ module Fwd_app = struct
       | Inst _ -> fatal (Anomaly "instantiation in fwd_of_apps") in
     go apps Nil
 end
+
+(* If an application spine crosses no modal field projection (every field has the identity left adjoint), then its head lives at the mode of the spine as a whole; this returns a witness of that mode equality, or None if the spine is modal.  Used where a spine lies between two things that have to be compared at a single mode. *)
+let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) Eq.t option =
+  function
+  | Emp -> Some Eq
+  | Arg (rest, _, _, _) -> nonmodal_apps rest
+  | Inst (rest, _, _) -> nonmodal_apps rest
+  | Specialize (rest, _, _) -> nonmodal_apps rest
+  | Field (rest, filter, _, _, _) -> (
+      match Modality.compare_id (Modality.filter_modality filter) with
+      | Eq -> nonmodal_apps rest
+      | Neq -> None)
 
 (* If an apps is empty, then its two modes agree. *)
 let empty_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) Eq.t option =

@@ -293,7 +293,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
             | value ->
                 Val (Neu { head; args = Emp; value = ready value; ty = lazy (make_ty meta ty) }))
       (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  The identity and equality checks are all handled correctly by the constant whose definition it is, so the only reason to remember the metavariable is so that we can read it back and display it; we record it as a stuck head with an empty spine. *)
-      | _, Potential -> Unrealized (Some (Stuck { env; tm; ins = ins_zero (dim_env env) }, Emp))
+      | _, Potential ->
+          Unrealized (Some (Stuck { env; tm; ins = ins_zero (dim_env env) }, Emp, Emp))
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
       | { ty; _ }, Kinetic ->
           Val
@@ -416,7 +417,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
           (* An axiom, or anything else stuck with no case tree recorded, has nothing to record the application on either. *)
           | Unrealized None -> Unrealized None
           (* A stuck case tree keeps the application in its spine rather than stopping the stuckness here, exactly as app_eval_apps replays a spine entry onto one.  We can't go through "apply", whose input is a value and which would wrap the result in a neutral, stopping the stuckness.  The spine entry stores normals, and a stuck case tree has no type to read their types off, which is why a potential application records them: we evaluate them in the same environment as the arguments themselves. *)
-          | Unrealized (Some (h, sp)) ->
+          | Unrealized (Some (h, isp, sp)) ->
               let (Arg_tys (Modal (_, tal, tys))) = arg_tys in
               let tlenv = key_id_env env tal in
               let ftlenv =
@@ -426,7 +427,10 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                 CubeOf.mmap
                   { map = (fun _ [ tm; ty ] -> { tm; ty = Lazy.from_val ty }) }
                   [ eargs; etys ] in
-              Unrealized (Some (h, Arg (sp, filter_total, nfs, ins_zero (D.plus_out m m_k))))))
+              (* The application is written inside the case tree, so it goes on the *inner* spine: it eliminates the stuck head itself, not the case tree's result.  The outer spine must therefore be empty, since nothing outside can have been applied to a case tree that is still evaluating: app_eval_apps, the only other thing that appends to a stuck spine, runs on the value of a neutral, hence only once this evaluation has finished.  We need that fact anyway, to know that the inner spine ends at the mode this application lives at. *)
+              let Eq = empty_apps sp <|> Anomaly "external spine on a case tree still evaluating" in
+              Unrealized (Some (h, Arg (isp, filter_total, nfs, ins_zero (D.plus_out m m_k)), Emp)))
+      )
   | Field (Potential, _, _, _) -> fatal (Evaluating_display_term "potential field")
   | Field (Kinetic, Modal (fm, plus_lock, tm), fld, fldins) -> (
       let m = dim_env env in
@@ -648,7 +652,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   (* Then we proceed recursively with the body of that branch. *)
                   eval (Permute (perm, env)) tm))
       (* Otherwise, the case tree doesn't reduce.  We remember the match itself, unevaluated, along with the environment it was to be evaluated in, so that it can be read back as a match rather than as an opaque application spine. *)
-      | _ -> Unrealized (Some (Stuck { env; tm = match_tm; ins = ins_zero (dim_env env) }, Emp)))
+      | _ ->
+          Unrealized (Some (Stuck { env; tm = match_tm; ins = ins_zero (dim_env env) }, Emp, Emp)))
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
   | Unshift (n, plusmap, tm) ->
@@ -794,12 +799,13 @@ and apply : type dom modality mode n m s.
               else
                 (* We evaluate further with a case tree. *)
                 match force_eval value with
-                (* If the case tree is stuck, the new argument is added to the stuck case tree as well, since it is what a readback of that stuck case tree will have to be applied to. *)
+                (* If the case tree is stuck, the new argument is added to the stuck case tree as well, since it is what a readback of that stuck case tree will have to be applied to.  It comes from outside the case tree, so it goes on the outer spine. *)
                 | Unrealized stuck ->
                     let stuck =
                       match stuck with
                       | None -> None
-                      | Some (h, sp) -> Some (h, Arg (sp, filter, newarg, ins_zero m)) in
+                      | Some (h, isp, sp) -> Some (h, isp, Arg (sp, filter, newarg, ins_zero m))
+                    in
                     Val (Neu { head; args; value = ready (Unrealized stuck); ty = newty })
                 (* It could be an indexed datatype waiting to be applied to more indices. *)
                 | Val
@@ -921,7 +927,8 @@ and field : type src f mode n k nk s.
                 let stuck =
                   match stuck with
                   | None -> None
-                  | Some (h, sp) -> Some (h, Field (sp, filter, fld, fldplus, ins_zero n)) in
+                  | Some (h, isp, sp) -> Some (h, isp, Field (sp, filter, fld, fldplus, ins_zero n))
+                in
                 Val (Neu { head; args; value = ready (Unrealized stuck); ty = newty })
             | Val tm -> (
                 (* At this point we've already pushed the insertion inside in computing our neutral, so the remaining insertion on the field to compute of its value is "the identity" of appropriate dimensions *)
@@ -1710,8 +1717,8 @@ and app_eval_apps : type hmode mode s any.
             act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode) in
           Realize v
       | Unrealized None -> Unrealized None
-      (* A spine entry appended to a stuck case tree denotes exactly the action taken by this function on the entry, so replaying the rest of the spine onto a stuck case tree is just re-appending it. *)
-      | Unrealized (Some (h, sp)) -> Unrealized (Some (h, Arg (sp, filter, xs, ins))))
+      (* A spine entry appended to a stuck case tree denotes exactly the action taken by this function on the entry, so replaying the rest of the spine onto a stuck case tree is just re-appending it.  Everything this function replays comes from outside the case tree, so it goes on the outer spine. *)
+      | Unrealized (Some (h, isp, sp)) -> Unrealized (Some (h, isp, Arg (sp, filter, xs, ins))))
   | Field (rest, filter, fld, fldplus, ins) -> (
       let fm = Modality.filter_modality filter in
       let mode = Modality.tgt fm in
@@ -1728,23 +1735,30 @@ and app_eval_apps : type hmode mode s any.
               p (Modalcell.id2 mode) in
           Realize v
       | Unrealized None -> Unrealized None
-      | Unrealized (Some (h, sp)) -> Unrealized (Some (h, Field (sp, filter, fld, fldplus, ins))))
+      | Unrealized (Some (h, isp, sp)) ->
+          Unrealized (Some (h, isp, Field (sp, filter, fld, fldplus, ins))))
   | Inst (rest, _, args) -> (
       match app_eval_apps ev rest with
       | Val tm -> Val (inst tm args)
       | Realize tm -> Realize (inst tm args)
       | Unrealized None -> Unrealized None
-      | Unrealized (Some (h, sp)) ->
+      | Unrealized (Some (h, isp, sp)) ->
           let (Any sp) = inst_apps sp args in
-          Unrealized (Some (h, sp)))
-  (* Specializing reduces a stuck match as if its discriminee were the stored constructor: exactly the reduction that eval performs when a match's discriminee *is* a constructor, with that value supplied instead of evaluated.  We require the stuck spine to be empty, which is what identifies the match's mode with ours, ; readback only builds a Specialize when it is. *)
+          Unrealized (Some (h, isp, sp)))
+  (* Specializing reduces a stuck match as if its discriminee were the stored constructor: exactly the reduction that eval performs when a match's discriminee *is* a constructor, with that value supplied instead of evaluated.
+
+     It yields the branch body *alone*, discarding whatever the case tree applied the match to.  Those are the entries of the inner spine, and they are eliminations of the match's result, not of the match: readback attaches a specialization to the self it hands a branch body, and that body is the branch's own term, unapplied -- the convoy's applications are put back outside the reconstructed match, by the same readback_apps that puts the outer ones back.  Replaying them here, as this function does for every entry it walks, would leave the self's value one application ahead of the body it stands for.
+
+     The outer spine, by contrast, must be empty.  Those entries would have to be replayed, since they eliminate the match's result and would still do so after the reduction; but readback never builds a specialization where there are any, because it only ever puts one on the neutral it gets by stripping them off.  Their emptiness is also what identifies our mode with the one the match's window lives at, together with the inner spine crossing none. *)
   | Specialize (rest, swindow, cval) -> (
       specializing "evaluating";
       match app_eval_apps ev rest with
       | Unrealized
           (Some
              ( Stuck { env; tm = Match { window; dim = match_dim; branches; _ }; ins = _ },
+               isp,
                (Emp : (_, _, _) apps) )) -> (
+          let Eq = nonmodal_apps isp <|> Anomaly "specializing across a modal field projection" in
           (* The stored window identifies the mode the constructor lives at with the one the match's own discriminee does; anything else is a specialization built for a different match. *)
           match Modality.compare window swindow with
           | Neq -> fatal (Anomaly "specializing at the wrong window")
@@ -2363,9 +2377,21 @@ and tyof_specialize : type dom window mode.
                    tm = Match { tm = disc_tm; window; plus_lock; dim = match_dim; motive; branches };
                    ins = _;
                  },
+               isp,
                (Emp : (_, _, _) apps) )) -> (
+          let Eq =
+            nonmodal_apps isp <|> Anomaly "typing a specialization across a modal field projection"
+          in
           match motive with
-          | None -> Lazy.force unrefined
+          (* An implicit match records no motive, and the branch is read back at the type of the match itself, which the unspecialized neutral already carries -- but only when the match *is* the whole of that neutral.  With a convoy the neutral is the match applied to the case tree's own arguments, so its type is the convoy's; specializing yields the unapplied branch body, whose type that is not, and nothing here can recover it.  Such a match falls back on its application spine. *)
+          | None -> (
+              match empty_apps isp with
+              | Some Eq -> Lazy.force unrefined
+              | None ->
+                  fatal
+                    (Readback_at_wrong_type
+                       "a match applied to arguments inside a case tree, with no motive to type its branches")
+              )
           | Some mot -> (
               match Modality.compare window swindow with
               | Neq -> fatal (Anomaly "specialized type at the wrong window")

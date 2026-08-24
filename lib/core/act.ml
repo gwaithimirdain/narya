@@ -342,10 +342,11 @@ module Act = struct
    fun tm s c ->
     match tm with
     | Unrealized None -> Unrealized None
-    (* A stuck case tree is acted on just like a neutral: outside-in through the spine, with the resulting inner degeneracy and cell acting on the head. *)
-    | Unrealized (Some (head, args)) ->
-        let Any_deg s', Wrap hc, args = act_apps args s c in
-        Unrealized (Some (act_head head s' hc, args))
+    (* A stuck case tree is acted on just like a neutral: outside-in through the spine, with the resulting inner degeneracy and cell acting on the head.  Its spine comes in two pieces, so we act on the outer one and pass its residual degeneracy and cell on to the inner one, exactly as act_apps passes them from one entry to the next. *)
+    | Unrealized (Some (head, iargs, args)) ->
+        let Any_deg s', Wrap ic, args = act_apps args s c in
+        let Any_deg s'', Wrap hc, iargs = act_apps iargs s' ic in
+        Unrealized (Some (act_head head s'' hc, iargs, args))
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
 

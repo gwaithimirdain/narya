@@ -53,18 +53,6 @@ let if_known (test : 'a Err.t option) err =
   | None -> Error (err ())
   | Some x -> x
 
-(* If an application spine crosses no modal field projection (every field has the identity left adjoint), then its head lives at the ambient mode; this returns a witness of that mode equality, or None if the spine is modal. *)
-let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) Eq.t option =
-  function
-  | Emp -> Some Eq
-  | Arg (rest, _, _, _) -> nonmodal_apps rest
-  | Inst (rest, _, _) -> nonmodal_apps rest
-  | Specialize (rest, _, _) -> nonmodal_apps rest
-  | Field (rest, filter, _, _, _) -> (
-      match Modality.compare_id (Modality.filter_modality filter) with
-      | Eq -> nonmodal_apps rest
-      | Neq -> None)
-
 module ErrOpt = struct
   type 'a t = 'a Err.t option
 

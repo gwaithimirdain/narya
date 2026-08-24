@@ -882,6 +882,35 @@ The specialization carries the window modality its constructor lives behind, so 
     : (b :♭| Bool) → √N
   
 
+A case tree can apply a match to arguments -- a "convoy", the pattern that gives a later argument a type depending on the one being matched.  Those applications are recorded separately from the ones the case tree is applied to from outside: only the latter appear in the enclosing neutral's spine, and only they may be stripped off it to find the neutral that names the match.  Both are put back around the reconstructed match, the convoy's own first.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def D : Type ≔ data [ d. (b : Bool) (x : T b) ]' -e 'def g (y : D) : N ≔ match y return _ ↦ N [ d. c x ↦ (match c return z ↦ T z → N [ true. ↦ w ↦ w | false. ↦ w ↦ zero. ]) x ]' -e 'axiom bb : Bool' -e 'axiom xx : T bb' -e 'echo g (d. true. 3)' -e 'echo g (d. false. false.)' -e 'about (g (d. bb xx))'
+  3
+    : N
+  
+  0
+    : N
+  
+  match bb return z ↦ T z → N [ false. ↦ w ↦ 0 | true. ↦ w ↦ w ] xx
+    : N
+  
+
+The convoy can be stuck inside a branch of an outer match that is stuck too.  The neutral there carries a specialization rather than the convoy's argument, so the two spines have nothing in common; stripping the outer one, which is empty, leaves the whole of it, and the branches display.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def D : Type ≔ data [ d. (b : Bool) (x : T b) ]' -e 'def g (y : D) : N ≔ match y return _ ↦ N [ d. c x ↦ (match c return z ↦ T z → N [ true. ↦ w ↦ w | false. ↦ w ↦ zero. ]) x ]' -e 'axiom yy : D' -e 'about (g yy)'
+  match yy
+  return 𝑥 ↦ N [
+  | d. c x ↦ match c return z ↦ T z → N [ false. ↦ w ↦ 0 | true. ↦ w ↦ w ] x]
+    : N
+  
+
+Both kinds can occur in one spine: here the case tree applies the match to "x" itself and is then applied to "5" from outside.  Only the "5" is stripped, even though both are ordinary applications and the case tree's own argument happens to carry the very value the neutral was applied to.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def h (c : Bool) (x : T c) : N → N ≔ (match c return z ↦ T z → N → N [ true. ↦ w ↦ n ↦ w | false. ↦ w ↦ n ↦ n ]) x' -e 'axiom cc : Bool' -e 'axiom xx : T cc' -e 'about (h cc xx 5)'
+  match cc return z ↦ T z → N → N [ false. ↦ w n ↦ n | true. ↦ w n ↦ w ] xx 5
+    : N
+  
+
 A higher-dimensional match reads back at its own dimension, with cube abstractions for its pattern variables.  Refining its branches means rebinding the discriminee to the whole cube of the constructor's instances, so a dependent one works too.  The dimension can come from the match itself, in which case the discriminee is an ordinary variable of a higher-dimensional type whose boundary is the separate variables that instantiate that type, and they are rebound to the constructor's corresponding faces.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def f (x0 x1 : Bool) (x2 : Id Bool x0 x1) : N ≔ match x2 [ true. ⤇ zero. | false. ⤇ suc. zero. ]' -e 'about (f b0 b1 b2)' -e 'def U (x0 x1 : Bool) (x2 : Id Bool x0 x1) : Type ≔ match x2 [ true. ⤇ N | false. ⤇ Bool ]' -e 'about (let p : (x0 x1 : Bool) (x2 : Id Bool x0 x1) → U x0 x1 x2 ≔ x0 ↦ x1 ↦ x2 ↦ match x2 [ true. ⤇ zero. | false. ⤇ true. ] in p)'

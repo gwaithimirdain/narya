@@ -1186,7 +1186,8 @@ and specializer : type mode k. (mode, kinetic) value -> k D.t -> (mode, k) speci
                       (* Only a value that is itself a stuck match with an empty spine can be specialized, that being what the reduction needs.  With an explicit motive the type's boundary has already been specialized, by motive_branch_ty, and its value is the branch body rather than a match; specializing again would have nothing to reduce. *)
                       | Neu { head; args; value; ty }
                         when match force_eval value with
-                             | Unrealized (Some (_, sp)) -> Option.is_some (empty_apps sp)
+                             | Unrealized (Some (_, isp, sp)) ->
+                                 Option.is_some (empty_apps isp) && Option.is_some (empty_apps sp)
                              | _ -> false ->
                           let cnf =
                             {
@@ -1747,11 +1748,11 @@ and readback_motive : type dom window mode a b j k m n kn mj.
 (* ********** Readback of stuck matches (for display only) ********** *)
 
 (* Read back a stuck case tree, possibly applied to arguments: check_match_branches run backwards.  This is display-only output, like the readback of a canonical type: it is never re-typechecked or re-evaluated.  Reading back a stuck term can legitimately fail; in that case we return None here, causing the caller to fall back to showing the neutral spine.  *)
-and readback_stuck : type mode a z hmode any.
+and readback_stuck : type mode a z hmode imode iany any.
     ?disc:mode disc_override ->
     (mode, potential) readback_status ->
     (mode, z, a) Ctx.t ->
-    (hmode, potential) head * (hmode, mode, any) apps ->
+    (hmode, potential) head * (hmode, imode, iany) apps * (imode, mode, any) apps ->
     (mode, kinetic) value ->
     (mode, a, potential) term option =
  fun ?disc status ctx pn ty ->
@@ -1768,22 +1769,24 @@ and readback_stuck : type mode a z hmode any.
 
 (* For each constructor we invent fresh pattern variables from its stored function-type, with ext_pi, exactly as typechecking does; extend the stored environment by them, with take_args, exactly as evaluation does; evaluate the branch body there; and read it back in the context extended by the same variables.  The reconstructed branch carries ext_pi's own annotate and comp -- which name the pattern variables after the constructor's arguments -- and the identity permutation, rather than the stored ones, which are relative to the original checking context.
 
-   The branch bodies are read back at the type of the match itself.  When the stuck spine is empty that is the type we were handed; otherwise the type we were handed is that of something the match was applied to, and we recover the match's own type from the stripped neutral (see match_self_ty below).  We reconstruct only a match: a stuck metavariable has no branches to show.  In every other case we return None and the caller falls back to the application spine.
+   The branch bodies are read back at the type of the match itself.  When both pieces of the stuck spine are empty that is the type we were handed; otherwise the type we were handed is that of something the match was applied to, and we recover the match's own type from the stripped neutral where we can (see match_self_ty below).  We reconstruct only a match: a stuck metavariable has no branches to show.  In every other case we return None and the caller falls back to the application spine.
 
    The pattern variables are *not* substituted into the type or the context, so for a match that refines its motive the branch bodies are read back at the unrefined type rather than at the refined one that typechecking used.  The two are definitionally equal in the branch, so where the unrefined type still exposes the canonical form that readback needs -- which is everything except a motive that is itself a stuck match -- the display is right.  Where it doesn't, readback raises, and we catch that and fall back to the application spine, exactly as if there had been no payload at all. *)
-and readback_stuck_match : type mode a z hmode any.
+and readback_stuck_match : type mode a z hmode imode iany any.
     ?disc:mode disc_override ->
     (mode, potential) readback_status ->
     (mode, z, a) Ctx.t ->
-    (hmode, potential) head * (hmode, mode, any) apps ->
+    (hmode, potential) head * (hmode, imode, iany) apps * (imode, mode, any) apps ->
     (mode, kinetic) value ->
     (mode, a, potential) term option =
- fun ?disc:disc_ov status ctx (Stuck { env; tm = ctm; ins }, apps) ty ->
+ fun ?disc:disc_ov status ctx (Stuck { env; tm = ctm; ins }, iapps, apps) ty ->
   match (status, ctm) with
   | ( Potential (Neu { head = head_head; args; _ }),
       Match { tm; window; plus_lock; dim = match_dim; motive; branches } ) -> (
-      (* The match at the head end of the spine is displayed in our context locked by the field projections the spine crosses, and the spine is put back around it afterwards. *)
-      let (Readback_apps (ctx, rewrap)) = readback_apps Potential ctx apps in
+      (* The match at the head end of the spine is displayed in our context locked by the field projections the spine crosses, and the spine is put back around it afterwards.  Both pieces of the spine are put back, the inner one first: a convoy's own applications belong immediately around the match, and whatever the case tree was applied to from outside belongs around those. *)
+      let (Readback_apps (imctx, rewrap_outer)) = readback_apps Potential ctx apps in
+      let (Readback_apps (ctx, rewrap_inner)) = readback_apps Potential imctx iapps in
+      let rewrap tm = rewrap_outer (rewrap_inner tm) in
       (* The stored insertion, if any, should also be put back around the read-back match. *)
       let rewrap x =
         match is_id_ins ins with
@@ -1811,22 +1814,34 @@ and readback_stuck_match : type mode a z hmode any.
             match Modality.compare window owindow with
             | Eq -> readback_val lctx ov
             | Neq -> fatal (Anomaly "discriminee override at the wrong window")) in
-      (* The self a branch body is read back against must live at the mode of the match, not of the whole spine, so we take the neutral we were given and strip the spine's eliminations back off it.
+      (* The self a branch body is read back against must live at the mode of the match, not of the whole spine, so we take the neutral we were given and strip the spine's eliminations back off it.  Only the *outer* piece is stripped: those are the eliminations applied to the case tree from outside, and they are exactly the ones that also appear in the enclosing neutral's spine.  The inner piece has no counterpart there -- the case tree applied those itself -- so the neutral this leaves us with is the one whose value is the convoy, the match together with its own applications.
 
-         That assumes the stuck spine is a tail of the neutral's, which holds when the eliminations were applied to the case tree from outside.  A convoy breaks it: the match is applied to arguments *inside* the case tree, so those entries are in the stuck spine but not in the enclosing neutral's, and there is no neutral in that spine whose value is the unapplied match.  Until that has a self of its own to be read back against, such a match falls back on its application spine. *)
+         Every outer entry got onto both spines at once, so the strip should always succeed; the fallback is a guard, and the test suite never reaches it. *)
       let (Any head_args) =
         strip_apps args apps
         <|> Readback_at_wrong_type "a match applied to arguments inside a case tree" in
-      (* The type of the match itself, as opposed to that of the spine it may be applied to.  With an empty spine the type we were handed is already it (an empty spine also identifies the two modes).  With a nonempty spine it is the type of the *stripped* neutral, which nothing has stored, since a neutral records only the type of the whole of itself; but evaluation annotates every neutral it builds with its own type -- the head's declared type at the head end, and tyof_app or tyof_field at each elimination -- so running the stripped neutral through the readback/eval cycle recomputes it.  We need it because its instantiation arguments are the faces of the match: there is no face operator on values (the face of a variable is a different variable, which the value doesn't record), so the boundary of a term is recoverable only from its type, exactly as dom_vars establishes it for a variable and Norm.self_values reads it back off for a field projection.  It is lazy because the motive computes the type by itself when the environment is zero-dimensional, which is the common case. *)
+      (* A specialization of this match will sit on that neutral, at the mode its spine ends at, while the match itself lives at the head end; the two are separated by the inner spine, and the specialization stores a single window relating the constructor's mode to its own.  So we can only build one when the inner spine crosses no mode.  It never does today, since eval refuses a potential field projection; when it can, the entry will need the composite of the match's window with the spine's modality, and this bridge is where that shows up. *)
+      let Eq =
+        nonmodal_apps iapps
+        <|> Readback_at_wrong_type "a match applied to arguments across a modal field projection"
+      in
+      (* The type of the match itself, as opposed to that of the spine it may be applied to.  With both pieces of the spine empty the type we were handed is already it (an empty spine also identifies the two modes).  With a nonempty outer piece it is the type of the *stripped* neutral, which nothing has stored, since a neutral records only the type of the whole of itself; but evaluation annotates every neutral it builds with its own type -- the head's declared type at the head end, and tyof_app or tyof_field at each elimination -- so running the stripped neutral through the readback/eval cycle recomputes it.  We need it because its instantiation arguments are the faces of the match: there is no face operator on values (the face of a variable is a different variable, which the value doesn't record), so the boundary of a term is recoverable only from its type, exactly as dom_vars establishes it for a variable and Norm.self_values reads it back off for a field projection.  It is lazy because the motive computes the type by itself when the environment is zero-dimensional, which is the common case.
+
+         With a nonempty *inner* piece that cycle gives the type of the convoy rather than of the match, and un-applying it is not possible: the match's type is a pi whose codomain's dependence on the arguments no type of a result records.  Going forwards from the motive is the only route to it, and that is exactly what a degenerated environment blocks.  So a convoy in a degenerated environment falls back, as a nonempty spine in one already does, and for the same reason. *)
       let match_self_ty : (hmode, kinetic) value Lazy.t =
         lazy
-          (match empty_apps apps with
-          | Some Eq -> ty
-          | None -> (
+          (match (empty_apps iapps, empty_apps apps) with
+          | Some Eq, Some Eq -> ty
+          | Some Eq, None -> (
               match eval_term (Ctx.env ctx) (readback_neu ctx head_head head_args) with
               | Neu { ty; _ } -> Lazy.force ty
               (* The whole spine is stuck on this match, so the prefix containing it must be stuck too, and hence a neutral. *)
-              | _ -> fatal (Anomaly "stuck match prefix is not a neutral"))) in
+              | _ -> fatal (Anomaly "stuck match prefix is not a neutral"))
+          | None, _ ->
+              fatal
+                (Readback_at_wrong_type
+                   "a match applied to arguments inside a case tree, whose own type a degenerated environment hides"))
+      in
       match view_type (Lazy.force disc_nf.ty) "readback_stuck_match" with
       | Canonical
           (type dhmode mn m n)
