@@ -545,11 +545,15 @@ let rec check : type mode a b s.
                 (mode, b, s) status -> (mode, (b, (modality, n) dim_entry) snoc, s) status =
               function
               | Kinetic l -> Kinetic l
-              | Potential (c, args, hyp) ->
-                  let arg = CubeOf.mmap { map = (fun _ [ x ] -> Ctx.Binding.value x) } [ newnfs ] in
-                  Potential
-                    (c, Arg (args, filter, arg, ins_zero m), fun tm -> hyp (Lam (xs, m, filter, tm)))
-            in
+              | Potential (c, args, convoy, hyp) -> (
+                  let hyp tm = hyp (Lam (xs, m, filter, tm)) in
+                  match convoy with
+                  (* A lambda that a convoy's application consumes belongs to the match, not to the head being defined: the head is not applied to anything here, so the spine is left alone and one application is struck off.  Adding to it would push the head past its own arity, which is exactly what the type of the self a comatch in the body is checked against would then contradict. *)
+                  | _ when convoy > 0 -> Potential (c, args, convoy - 1, hyp)
+                  | _ ->
+                      let arg =
+                        CubeOf.mmap { map = (fun _ [ x ] -> Ctx.Binding.value x) } [ newnfs ] in
+                      Potential (c, Arg (args, filter, arg, ins_zero m), 0, hyp)) in
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs filter newargs in
             match cube.value with
@@ -690,7 +694,7 @@ let rec check : type mode a b s.
         | _, _ -> check status ctx { value = Struct (Noeta, Abwd.empty); loc = tm.loc } ty)
     | Refute (tms, i), Potential _ -> check_refute status ctx tms ty i None
     (* Now we go through the canonical types. *)
-    | Codata (fields, hints), Potential (head, apps, _) -> (
+    | Codata (fields, hints), Potential (head, apps, _, _) -> (
         match view_type ~severity ty "typechecking codata" with
         | Canonical (_, UU (_mode, dim), ins, tyargs) -> (
             match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
@@ -703,7 +707,7 @@ let rec check : type mode a b s.
                      (readback_neu ctx (head_of_potential head) apps))
                   (Bwd.to_list fields) Emp)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
-    | SelfRecord (fields, opacity, hints), Potential (head, apps, _) -> (
+    | SelfRecord (fields, opacity, hints), Potential (head, apps, _, _) -> (
         match view_type ~severity ty "typechecking self-record" with
         | Canonical (_, UU (_mode, dim), ins, tyargs) -> (
             match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
@@ -729,7 +733,7 @@ let rec check : type mode a b s.
                          (readback_neu ctx (head_of_potential head) apps))
                       (Bwd.to_list fields) Emp))
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
-    | Record (xs, fields, opacity, hints), Potential (head, apps, _) -> (
+    | Record (xs, fields, opacity, hints), Potential (head, apps, _, _) -> (
         match view_type ~severity ty "typechecking record" with
         | Canonical (_, UU (_mode, dim), ins, tyargs) -> (
             match (D.compare_zero dim, Endpoints.hott (), !gel_ok) with
@@ -743,7 +747,7 @@ let rec check : type mode a b s.
                      (readback_neu ctx (head_of_potential head) apps))
                   fields Emp)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
-    | Data (constrs, hints), Potential (head, apps, _) ->
+    | Data (constrs, hints), Potential (head, apps, _, _) ->
         (* For a datatype, the type to check against might not be a universe, it could include indices.  We also check whether all the types of all the indices are discrete or a type being defined, to decide whether to keep evaluating the type for discreteness. *)
         let n, disc = typefam ?discrete ctx ty in
         let (Wrap num_indices) = Fwn.of_int n in
@@ -1023,7 +1027,7 @@ and kinetic_of_potential : type mode a b.
       let vty = readback_val ctx ty in
       Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
       (* Then we check the value and redefine the metavariable to be that value. *)
-      let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun x -> x) in
+      let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, 0, fun x -> x) in
       let cv = check tmstatus ctx tm ty in
       Global.set_meta meta cv;
       (* Finally, we return the metavariable. *)
@@ -1064,7 +1068,7 @@ and synth_or_check_let : type mode a b s p.
           in
           let termctx = readback_ctx lctx in
           (* A new status in which to check the value of that metavariable; now it is the "current constant" being defined. *)
-          let tmstatus = Potential (Meta (meta, Ctx.env lctx), Emp, fun x -> x) in
+          let tmstatus = Potential (Meta (meta, Ctx.env lctx), Emp, 0, fun x -> x) in
           let sv, svty =
             match v.value with
             | Asc (vtm, rvty) ->
@@ -1103,8 +1107,9 @@ and synth_or_check_let : type mode a b s p.
       (* Now we update the status of the original constant being checked *)
       let status : (mode, (b, (modality, D.zero) dim_entry) snoc, s) status =
         match status with
-        | Potential (c, args, hyp) ->
-            Potential (c, args, fun body -> hyp (Let (name, Modal (modality, plus, v), body)))
+        | Potential (c, args, convoy, hyp) ->
+            Potential
+              (c, args, convoy, fun body -> hyp (Let (name, Modal (modality, plus, v), body)))
         | Kinetic l -> Kinetic l in
       (* And synthesize or check the body in the extended context. *)
       Annotate.ctx status newctx body;
@@ -1141,7 +1146,8 @@ and synth_or_check_letrec : type mode a b c ac s p.
   (* Now we update the status of the original constant being checked *)
   let status : (mode, bc, s) status =
     match status with
-    | Potential (c, args, hyp) -> Potential (c, args, fun x -> hyp (let_metas mode metas x))
+    | Potential (c, args, convoy, hyp) ->
+        Potential (c, args, convoy, fun x -> hyp (let_metas mode metas x))
     | Kinetic l -> Kinetic l in
   (* Make a context for it *)
   let _, newctx = ext_metas ctx ac metas vtys Zero Zero Snocs_zero in
@@ -1189,7 +1195,7 @@ and check_letrec_bindings : type mode a xc b ac bc.
             let hyp b =
               Term.Let (name, Modal (modality, plus, Meta (meta, Kinetic)), let_metas mode metas b)
             in
-            let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, hyp) in
+            let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, 0, hyp) in
             (* The bound value is checked in an occurrence-analysis scope, and the verdict is recorded on the metavariable, whence ext_metas reads it as the "dirt" of the corresponding context variable.  (While this value is being checked, the metavariables of it and its mutual companions are still undefined in Global, so ext_metas marks all the variables of tmctx as dirty; thus self- and companion-references count as recursive occurrences.) *)
             let cv, recursion = Positivity.scope @@ fun () -> check tmstatus tmctx v evty in
             Global.set_meta meta ~recursion (hyp cv);
@@ -1360,6 +1366,9 @@ and check_implicit_match : type mode a b.
 
 (* This subroutine iterates through the branches of a non-refining match, checking them all in an appropriate context against the same motive.  Since a non-dependent match might be either checking or synthesizing, the motive can be obtained in two ways, either supplied by the caller directly, or deduced from a branch whose body synthesizes.  We abstract away from this variation by having the caller of this subroutine supply a callback (of type match_motive) that computes a motive from the list of merged branches (see merge_branches).  Since in the process it might also try synthesizing one or more of the branches, it has to also return a list of errors, a list of already-typechecked branches, and the list of branches remaining to check.  Moreover, in the case of a dependent match when the *user* has specified a dependent motive, that motive has to be specialized differently in each branch; we abstract away from that by having the callback return an abstract type which another callback can specialize in each branch. *)
 and check_match_branches : type dom window mode a b bm.
+    ?convoy:
+      a check located
+      * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
     (dom, bm, kinetic) term ->
@@ -1372,7 +1381,7 @@ and check_match_branches : type dom window mode a b bm.
     Asai.Range.t option ->
     (dom, window, mode, a, b) match_motive ->
     (mode, b, potential) term * (mode, kinetic) value option =
- fun status ctx tm varty window plus_lock brs i highers loc (Motive callbacks) ->
+ fun ?convoy status ctx tm varty window plus_lock brs i highers loc (Motive callbacks) ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_match_branches" with
   | Canonical
@@ -1415,6 +1424,11 @@ and check_match_branches : type dom window mode a b bm.
       let motive_tm = Option.bind motive callbacks.motive_term in
       (* If the match is synthesizing, at this point we can already compute what its output type will be.  We do it now so that the computation has any desired side effects, notably (in the dependent case) passing it to the ?synthed callback before any matches are checked. *)
       let synthed_type = Option.map (callbacks.return indices inst_args) motive in
+      (* A convoy applies this match to arguments written in the case tree.  We check those arguments now, as soon as the match's type is known and before any branch is: each of them consumes one of the leading lambdas of every branch body, and the branches have to be told how many, since such a lambda belongs to the match rather than to the head being defined (see the Potential status).  The arguments cannot be attached to the match term yet -- it does not exist until the branches have been checked -- so what we get back is a function that will wrap them around it. *)
+      let convoy_apps, convoy_type, convoy_count =
+        match (convoy, synthed_type) with
+        | Some (fn, args), Some sty -> synth_convoy_apps ctx sty fn.loc fn args
+        | Some _, None | None, _ -> ((fun tm -> tm), synthed_type, 0) in
       (* Now we iterate through the remaining constructors, typechecking the corresponding branches and inserting them in the match tree. *)
       let branches, errs =
         List.fold_left
@@ -1427,8 +1441,8 @@ and check_match_branches : type dom window mode a b bm.
             let index_vals = indices_of_out "match branch" out dim (Vec.length indices) in
             let perm = id_perm in
             let status =
-              make_match_status status window plus_lock tm dim motive_tm branches annotate comp None
-                perm constr in
+              make_match_status ~convoy:(convoy_count, convoy_apps) status window plus_lock tm dim
+                motive_tm branches annotate comp None perm constr in
             (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
             Reporter.try_with ~fatal:(fun e ->
                 if
@@ -1469,7 +1483,8 @@ and check_match_branches : type dom window mode a b bm.
             (fun b ->
               if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
-          (Match { tm; window; plus_lock; dim; motive = motive_tm; branches }, synthed_type))
+          ( convoy_apps (Match { tm; window; plus_lock; dim; motive = motive_tm; branches }),
+            convoy_type ))
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -1611,6 +1626,9 @@ and synth_nondep_match : type mode a b.
 (* Check a dependently typed match, with motive supplied by the user.  (Thus we have to typecheck the motive as well.)  *)
 and synth_dep_match : type mode a b.
     ?synthed:((mode, kinetic) value -> unit) ->
+    ?convoy:
+      a check located
+      * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
     a synth located ->
@@ -1619,14 +1637,14 @@ and synth_dep_match : type mode a b.
     bool ref located list ->
     a check located ->
     (mode, b, potential) term * (mode, kinetic) value =
- fun ?synthed status ctx tm window_name brs highers motive ->
+ fun ?synthed ?convoy status ctx tm window_name brs highers motive ->
   (* We synthesize the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match get_window (Ctx.mode ctx) window_name with
   | Wrap window -> (
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
       let (tm, varty), loc = (synth (Kinetic `Nolet) lctx tm, tm.loc) in
       let result, result_ty =
-        check_match_branches status ctx tm varty window plus_lock brs None highers loc
+        check_match_branches ?convoy status ctx tm varty window plus_lock brs None highers loc
           (* In this case when the motive is dependent, the definition of the motive callbacks is more involved. *)
           (Motive
              {
@@ -1875,6 +1893,7 @@ and check_var_match : type dom modality mode a b bm.
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
 
 and make_match_status : type dom window mode annotations a am b ab c n x y z.
+    ?convoy:int * ((mode, a, potential) term -> (mode, a, potential) term) ->
     (mode, a, potential) status ->
     (dom, window, mode) Modality.t ->
     (a, mode, window, dom, am) plus_lock ->
@@ -1888,12 +1907,15 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     (c, ab) permute ->
     Constr.t ->
     (mode, c, potential) status =
- fun status window plus_lock newtm dim motive branches annotate comp eval_readback perm constr ->
+ fun ?(convoy = (0, fun tm -> tm)) status window plus_lock newtm dim motive branches annotate comp
+     eval_readback perm constr ->
+  let convoy_count, convoy_apps = convoy in
   let (Potential
          (type hm d any)
-         ((head, args, hyp) :
+         ((head, args, outer_convoy, hyp) :
            (hm, d) potential_head
            * (hm, mode, any) apps
+           * int
            * ((mode, a, potential) term -> (hm, d, potential) term))) =
     status in
   let head, apps =
@@ -1949,8 +1971,10 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     | None -> (head, args) in
   let hyp tm =
     let branches = branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm }) in
-    hyp (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches }) in
-  Potential (head, apps, hyp)
+    (* The hypothesized definition has to include the convoy's applications too, or the head would be bound to a case tree of the wrong type while the later fields of a comatch in this branch are checked. *)
+    hyp (convoy_apps (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches })) in
+  (* A branch body's leading lambdas are consumed first by this match's own convoy applications, if it has any, and then by any of an enclosing convoy that are still outstanding -- descending into a branch consumes none itself.  Since all we do with them is decline to extend the spine, the order doesn't matter and the two counts simply add.  (In fact one of them is always zero: an outstanding count means the branch body must begin with a lambda, so it cannot begin with a convoy.) *)
+  Potential (head, apps, outer_convoy + convoy_count, hyp)
 
 (* Try matching against all the supplied terms with zero branches, producing an empty match if any succeeds and raising an error if none succeed.  Each term carries its own optional window modality. *)
 and check_refute : type mode a b.
@@ -2208,7 +2232,7 @@ and check_data : type mode a b i.
                  tyfam;
                }))
   | ( (c, { value = Dataconstr (args, output); loc }) :: raw_constrs,
-      Potential (head, current_apps, hyp) ) -> (
+      Potential (head, current_apps, _, hyp) ) -> (
       with_loc loc @@ fun () ->
       (* Temporarily bind the current constant to the up-until-now value, for recursive purposes, and also for specifying the output types for indexed inductive families (and presumably, one day, for higher inductive types). *)
       run_with_definition head
@@ -2359,8 +2383,8 @@ and with_codata_so_far : type mode a b n c et.
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((mode, n) self_vars -> (mode, b, potential) term -> c) ->
     c =
- fun (Potential (h, args, hyp)) eta ctx opacity hints dim tyargs checked_fields (Fibrancy fibrancy)
-     errs cont ->
+ fun (Potential (h, args, _, hyp)) eta ctx opacity hints dim tyargs checked_fields
+     (Fibrancy fibrancy) errs cont ->
   let mode = Ctx.mode ctx in
   let domvars =
     match errs with
@@ -2448,7 +2472,7 @@ and check_codata : type mode a b n et.
           with_loc self_ty.loc @@ fun () ->
           match (eself_ty, status) with
           | ( Neu { head = Const { name; ins = _ }; args; value = _; ty = _ },
-              Potential (Constant (pname, _, _), pargs, _) ) ->
+              Potential (Constant (pname, _, _), pargs, _, _) ) ->
               if name = pname then
                 match equal_apps ctx args pargs with
                 | None -> fatal (Invalid_self_variable_type (fld, Left "unequal parameters"))
@@ -2686,7 +2710,7 @@ and check_fields : type mode a b c s m n mn et.
       match errs with
       | Emp -> (tms, ctms)
       | Snoc _ -> fatal (Accumulated ("check_struct", errs)))
-  | Entry (fld, cdf) :: fields, Potential (name, args, hyp) ->
+  | Entry (fld, cdf) :: fields, Potential (name, args, _, hyp) ->
       (* Temporarily bind the current constant to the up-until-now value (or an error, if any have occurred yet), for (co)recursive purposes.  Note that this means as soon as one field fails, no other fields can be typechecked if they depend *at all* on earlier ones, even ones that didn't fail.  This could be improved in the future. *)
       run_with_definition name
         (hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }))
@@ -2764,7 +2788,7 @@ and check_field : type mode a b c s m n mn i et.
                 Ctx.lock ctx right in
               let mkstatus lbl : (mode, b, s) status -> (gmode, bl, s) status = function
                 | Kinetic l -> Kinetic l
-                | Potential (c, args, hyp) ->
+                | Potential (c, args, convoy, hyp) ->
                     let args = Value.Field (args, left_filter, fld, D.plus_zero m, ins) in
                     let hyp tm =
                       let ctms =
@@ -2774,7 +2798,7 @@ and check_field : type mode a b c s m n mn i et.
                               (fld, Term.Structfield.Lower (adj, ctx_plus_lock, tm, lbl)) ) in
                       hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status })
                     in
-                    Potential (c, args, hyp) in
+                    Potential (c, args, convoy, hyp) in
               let key = Some (Field.to_string fld, []) in
               let tm, tms, lbl =
                 match
@@ -2909,9 +2933,10 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
         match status with
         | Potential
             (type hm aa any)
-            ((head, args, hyp) :
+            ((head, args, convoy, hyp) :
               (hm, aa) potential_head
               * (hm, mode, any) apps
+              * int
               * ((mode, b, potential) term -> (hm, aa, potential) term)) ->
             (* We eval-readback the args to raise them to degctx.  We also increase the dimension of the potential_head; this happens at the bottom of the spine recursion, where the accumulated locks from any modal field projections put the contexts at the head's mode. *)
             let rec erapps : type m2 any2 x2 z2.
@@ -3029,7 +3054,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
               let ctms = Snoc (ctms, Entry (fld, hsf)) in
               hyp (Term.Struct { eta = Noeta; dim = m; fields = ctms; energy = energy status })
             in
-            Potential (head, args, hyp) in
+            Potential (head, args, convoy, hyp) in
       (* Get the user's supplied term for this partial bijection *)
       let key = Some (Field.to_string fld, strings_of_pbij pbij) in
       let tm, tms =
@@ -3633,12 +3658,14 @@ and synth : type mode a b s.
             let newstatus : (mode, (b, (modality, D.zero) dim_entry) snoc, s) status =
               match status with
               | Kinetic l -> Kinetic l
-              | Potential (c, args, hyp) ->
-                  let arg = CubeOf.singleton xnf in
-                  Potential
-                    ( c,
-                      Arg (args, filter, arg, ins_zero D.zero),
-                      fun tm -> hyp (Lam (xs, D.zero, Modality.filter_zero modality, tm)) ) in
+              | Potential (c, args, convoy, hyp) -> (
+                  let hyp tm = hyp (Term.Lam (xs, D.zero, Modality.filter_zero modality, tm)) in
+                  (* As in the Lam case of check: a lambda a convoy's application consumes belongs to the match rather than to the head being defined. *)
+                  match convoy with
+                  | _ when convoy > 0 -> Potential (c, args, convoy - 1, hyp)
+                  | _ ->
+                      let arg = CubeOf.singleton xnf in
+                      Potential (c, Arg (args, filter, arg, ins_zero D.zero), 0, hyp)) in
             let cbody, scod = synth newstatus newctx body in
             let ty =
               eval_term (Ctx.env ctx)
@@ -3668,7 +3695,7 @@ and synth : type mode a b s.
             let meta =
               Meta.make_def "match" None (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx)
                 Potential in
-            let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun x -> x) in
+            let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, 0, fun x -> x) in
             (* First we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
             Global.add_meta_error meta (Typeless_meta (meta, `Bare));
             (* We wrap the supplied ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
@@ -3872,7 +3899,9 @@ and synth_apps : type mode a b s.
     (* The obvious thing we can "apply" is an element of a pi-type. *)
     | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) ->
         let Eq = eq_of_ins_zero ins in
-        synth_app energy ctx filter sfn doms cods tyargs fn args
+        let wrap, newloc, aty, afn, aargs =
+          synth_app energy ctx filter sfn.loc doms cods tyargs fn args in
+        ({ value = wrap sfn.value; loc = newloc }, aty, afn, aargs)
     (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
     | Canonical (_, UU _, _, tyargs) -> synth_inst energy ctx sfn tyargs fn args
     (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
@@ -4017,52 +4046,78 @@ and synth_arg_cube : type dom modality mode a b n c.
       [ doms ] (Cons (Cons Nil)) in
   ((Modal (modality, plus, cargs), eargs), !state)
 
+(* This returns a function that will wrap the application around the function term, rather than the applied term itself, and takes only the function's location rather than the function.  A convoy needs that: its arguments must be checked before the match's branches are, so that they know how many of their leading lambdas the applications consume, but the match term doesn't exist until the branches have been checked.  The ordinary caller applies the wrapper immediately. *)
 and synth_app : type dom modality mode a b k n s.
     s energy ->
     (mode, a, b) Ctx.t ->
     (dom, modality, mode, k, n) Modality.filter_dim ->
-    (mode, b, s) term located ->
+    Asai.Range.t option ->
     (k, (dom, kinetic) value) CubeOf.t ->
     (n, mode * modality * dom) BindCube.t ->
     (D.zero, n, n, mode normal) TubeOf.t ->
     a check located ->
     (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
-    (mode, b, s) term located
+    ((mode, b, s) term -> (mode, b, s) term)
+    * Asai.Range.t option
     * (mode, kinetic) value
     * a check located
     * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
- fun energy ctx filter sfn doms cods tyargs fn args ->
+ fun energy ctx filter sfnloc doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
     synth_arg_cube ~not_enough:Not_enough_arguments_to_function
       ~which:"higher-dimensional application" ctx (Modality.filter_modality filter)
       (fun tm _ -> tm)
-      doms (sfn.loc, fn, args) in
+      doms (sfnloc, fn, args) in
   (* Evaluate cod at these evaluated arguments and instantiate it at the appropriate values of tyargs. *)
   let output = tyof_app cods tyargs filter eargs in
-  ( {
-      value =
-        Term.App
-          ( energy,
-            sfn.value,
-            BindCube.dim cods,
-            filter,
-            cargs,
-            (* A potential application records its arguments' types, since its function may evaluate to a stuck case tree, which has none to read them off.  They are the pi-type's domains, which we have right here. *)
-            match energy with
-            | Kinetic -> No_arg_tys
-            | Potential ->
-                let modality = Modality.filter_modality filter in
-                let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-                Arg_tys
-                  (Modal
-                     ( modality,
-                       plus,
-                       CubeOf.mmap { map = (fun _ [ dom ] -> readback_val lctx dom) } [ doms ] )) );
-      loc = newloc;
-    },
+  ( (fun sfn ->
+      Term.App
+        ( energy,
+          sfn,
+          BindCube.dim cods,
+          filter,
+          cargs,
+          (* A potential application records its arguments' types, since its function may evaluate to a stuck case tree, which has none to read them off.  They are the pi-type's domains, which we have right here. *)
+          match energy with
+          | Kinetic -> No_arg_tys
+          | Potential ->
+              let modality = Modality.filter_modality filter in
+              let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+              Arg_tys
+                (Modal
+                   ( modality,
+                     plus,
+                     CubeOf.mmap { map = (fun _ [ dom ] -> readback_val lctx dom) } [ doms ] )) )),
+    newloc,
     output,
     newfn,
     rest )
+
+(* Check the arguments of a convoy -- a match, inside a case tree, applied to arguments -- against the match's type, which check_match_branches knows before it checks any branch.  We return a function that will wrap the applications around the match once it has been built, the type of the whole application, and how many applications there are, which is how many of each branch body's leading lambdas belong to the convoy rather than to the head being defined.
+
+   This is synth_apps specialized to a potential spine whose function term is not yet available.  Annotations are skipped for such a spine anyway, so nothing is lost by not having it.  A convoy can only apply, not instantiate: a potential instantiation is not something evaluation accepts. *)
+and synth_convoy_apps : type mode a b.
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    Asai.Range.t option ->
+    a check located ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    ((mode, b, potential) term -> (mode, b, potential) term) * (mode, kinetic) value option * int =
+ fun ctx sty loc fn args ->
+  match view_type sty "synthesizing convoy application spine" with
+  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) -> (
+      let Eq = eq_of_ins_zero ins in
+      let wrap, newloc, aty, afn, aargs =
+        synth_app Potential ctx filter loc doms cods tyargs fn args in
+      match aargs with
+      | [] -> (wrap, Some aty, 1)
+      | _ :: _ ->
+          let rest, resty, n = synth_convoy_apps ctx aty newloc afn aargs in
+          ((fun tm -> rest (wrap tm)), resty, n + 1))
+  | Canonical (_, UU _, _, _) ->
+      fatal ?loc (Unimplemented "instantiating a match inside a case tree")
+  (* We have the match's type but not its term, which does not exist yet, so the message names it by its keyword. *)
+  | _ -> fatal ?loc (Applying_nonfunction_nontype (PString "match", PVal (ctx, sty)))
 
 (* Pick up enough arguments to form a tube for instantiating a higher-dimensional type by a single direction, and return the result along with the remaining arguments not yet picked up.  *)
 and synth_inst : type mode a b n s.
@@ -4136,9 +4191,10 @@ and synth_or_check_convoy_apps : type mode a b s.
     (mode, b, s) term * (mode, kinetic) value =
  fun status ctx fn args ty ->
   match (fn.value, status) with
-  | Synth (Match { sort = `Explicit _; _ } as m), Potential _ ->
-      let sfn, sty = synth status ctx { value = m; loc = fn.loc } in
-      synth_apps Potential ctx { value = sfn; loc = fn.loc } sty fn args
+  (* The applications are handed to the match rather than wrapped around it here, because its branches have to be checked knowing how many of their leading lambdas the applications consume, and that is settled before any of them is checked. *)
+  | ( Synth (Match { tm = m; window; sort = `Explicit motive; branches; refutables = _; highers }),
+      Potential _ ) ->
+      synth_dep_match ~convoy:(fn, args) status ctx m window branches highers motive
   | _ ->
       let stm, sty = synth_or_check_apps ctx fn args ty in
       (realize status stm, sty)

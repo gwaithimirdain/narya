@@ -60,7 +60,7 @@ let def (name : string) (ty : string) (tm : string) : unit =
         (Definition { mode = test_mode; tm = `Axiom; parametric = `Parametric; ty = cty });
       let tree =
         check
-          (Potential (Constant (const, test_mode, D.zero), Emp, fun x -> x))
+          (Potential (Constant (const, test_mode, D.zero), Emp, 0, fun x -> x))
           (Ctx.empty test_mode) rtm ety in
       Global.add const
         (Definition { mode = test_mode; tm = `Defined tree; parametric = `Parametric; ty = cty })
@@ -126,7 +126,7 @@ let unparse_def (name : string) (ty : string) (tm : string) : string =
         (Definition { mode = test_mode; tm = `Axiom; parametric = `Parametric; ty = cty });
       let tree =
         check
-          (Potential (Constant (const, test_mode, D.zero), Emp, fun x -> x))
+          (Potential (Constant (const, test_mode, D.zero), Emp, 0, fun x -> x))
           (Ctx.empty test_mode) rtm ety in
       Global.add const
         (Definition { mode = test_mode; tm = `Defined tree; parametric = `Parametric; ty = cty });

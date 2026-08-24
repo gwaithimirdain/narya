@@ -28,10 +28,13 @@ let mode_of_potential : type mode a. (mode, a) potential_head -> mode Mode.t = f
 
 type (_, _, _) status =
   | Kinetic : [ `Let | `Nolet ] -> ('mode, 'b, kinetic) status
-  (* The head (the constant or metavariable being defined) lives at its own mode, which differs from the current checking mode when the spine of arguments crosses a modal field projection (i.e. when we are checking the component of a modal field in a comatch or tuple).  The hypothesizing callback takes a term in the current context to a definition of the head in its own context. *)
+  (* The head (the constant or metavariable being defined) lives at its own mode, which differs from the current checking mode when the spine of arguments crosses a modal field projection (i.e. when we are checking the component of a modal field in a comatch or tuple).  The hypothesizing callback takes a term in the current context to a definition of the head in its own context.
+
+     The integer counts the *convoy* applications still to be consumed: those a case tree applies a match to, which are eliminations of the match rather than of the head being defined.  The branch bodies of such a match begin with that many lambdas, and those lambdas belong to the convoy, not to the head; so descending one of them must not add an argument to the spine, on pain of applying the head beyond its own arity.  It is zero everywhere except inside the branches of a convoy, and counts down as those lambdas are passed.  See check_match_branches, which computes it, and the Lam case of check, which spends it. *)
   | Potential :
       ('hmode, 'a) potential_head
       * ('hmode, 'mode, 'any) apps
+      * int
       * (('mode, 'b, potential) term -> ('hmode, 'a, potential) term)
       -> ('mode, 'b, potential) status
 
@@ -48,4 +51,4 @@ let realize : type mode b s. (mode, b, s) status -> (mode, b, kinetic) term -> (
 let pop_status : type mode b n modality s.
     (mode, (b, (modality, n) dim_entry) snoc, s) status -> (mode, b, s) status = function
   | Kinetic l -> Kinetic l
-  | Potential (head, apps, hyp) -> Potential (head, apps, fun x -> hyp (Weaken x))
+  | Potential (head, apps, convoy, hyp) -> Potential (head, apps, convoy, fun x -> hyp (Weaken x))

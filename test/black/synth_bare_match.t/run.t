@@ -1,4 +1,6 @@
-When a match in a let-binding or anonymous metavariable synthesizes a function type, with at least one of its branches involving a higher comatch, and then is applied to an argument, we would get an anomaly if the metavariable doesn't have its type assigned *before* checking the match, since even though the user can't refer directly to the metavariable, the higher comatch still needs the head to have a type so as to degenerate it.  This applies to matches that synthesize a type from an explicit motive:
+When a match in a let-binding or anonymous metavariable synthesizes a function type, with at least one of its branches involving a higher comatch, and then is applied to an argument, we would get an anomaly if the metavariable doesn't have its type assigned *before* checking the match, since even though the user can't refer directly to the metavariable, the higher comatch still needs the head to have a type so as to degenerate it.
+
+A match with an explicit motive, applied to arguments inside a case tree, is a convoy: it stays a case-tree node rather than being lifted to a metavariable, so it does not exercise that at all.  It has its own version of the same requirement -- the leading lambdas of its branches belong to the convoy's applications rather than to the head being defined, so descending them must not extend the head's application spine, or the head would be applied beyond its own arity and the higher comatch would again degenerate a self with no type.  The example is kept here because it is the same source text as the ones below, and because it used to be an anomaly on both routes:
 
   $ narya -v synth_bare_match.ny -e "def k (c : Bool) (x : N) : √N ≔ (match c return z ↦ N → √N [ true. ↦ w ↦ [ .root.e ↦ zero. ] | false. ↦ w ↦ [ .root.e ↦ zero. ] ]) x"
    ￫ info[I0000]
@@ -12,11 +14,6 @@ When a match in a let-binding or anonymous metavariable synthesizes a function t
   
    ￫ info[I0001]
    ￮ axiom f assumed
-  
-   ￫ hint[H0403]
-   ￭ command-line exec string
-   1 | def k (c : Bool) (x : N) : √N ≔ (match c return z ↦ N → √N [ true. ↦ w ↦ [ .root.e ↦ zero. ] | false. ↦ w ↦ [ .root.e ↦ zero. ] ]) x
-     ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
    ￮ constant k defined
