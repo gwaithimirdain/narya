@@ -681,7 +681,7 @@ let rec check : type mode a b s.
         check_implicit_match status ctx tm window branches refutables highers ty
     (* A match the parser nested inside a deep match becomes whatever the match it is nested in turned out to be, so that the nest the user wrote as one match is uniform. *)
     (* Until the convoy is built, a nested match still behaves as the implicit one it used to be. *)
-    | Synth (Match { tm; window; sort = `Nested; branches; refutables; highers }), Potential _ ->
+    | Synth (Match { tm; window; sort = `Nested _; branches; refutables; highers }), Potential _ ->
         check_implicit_match status ctx tm window branches refutables highers ty
     | Synth (Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }), Potential _
       ->
@@ -3720,7 +3720,7 @@ and synth : type mode a b s.
             (Term.Meta (meta, Kinetic), svty))
     | Match { tm; window; sort = `Explicit motive; branches; refutables = _; highers }, Potential _
       -> synth_dep_match ?synthed status ctx tm window branches highers motive
-    | ( Match { tm; window; sort = `Implicit | `Nested; branches; refutables = _; highers },
+    | ( Match { tm; window; sort = `Implicit | `Nested _; branches; refutables = _; highers },
         Potential _ ) ->
         emit (Matching_wont_refine ("match in synthesizing position", None));
         synth_nondep_match ?synthed status ctx tm window branches highers None
