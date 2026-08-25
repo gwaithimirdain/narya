@@ -951,6 +951,14 @@ A convoy in a *degenerated* environment displays too, branches, motive and all. 
     : N⁽ᵉ⁾ (g y0) (g y1)
   
 
+A deep match is compiled into a nest of matches, of which the user wrote only the outermost.  When the user gave that one a motive, the nested ones get motives too, so that the whole nest displays as the user's one match did.  A nested match with nothing after its discriminee gets the goal abstracted over it -- here "𝑥 ↦ T (w. 𝑥)", which is what a hand-written convoy on that variable would have to say.  Without it this fell back on its application spine, since a branch body that is a bare constructor does not synthesize and an implicit match has no motive to read it back at.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def W : Type ≔ data [ w. (_ : Bool) ]' -e 'def T : W → Type ≔ [ w. true. ↦ N → N | w. false. ↦ N ]' -e 'axiom b : Bool' -e 'about (let f : (x : W) → T x ≔ x ↦ match x return y ↦ T y [ w. true. ↦ n ↦ n | w. false. ↦ zero. ] in f (w. b))'
+  match b
+  return 𝑥 ↦ T (w. 𝑥) [ false. ↦ 0 | true. ↦ n ↦ n ]
+    : T (w. b)
+  
+
 A higher-dimensional match reads back at its own dimension, with cube abstractions for its pattern variables.  Refining its branches means rebinding the discriminee to the whole cube of the constructor's instances, so a dependent one works too.  The dimension can come from the match itself, in which case the discriminee is an ordinary variable of a higher-dimensional type whose boundary is the separate variables that instantiate that type, and they are rebound to the constructor's corresponding faces.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom b0 : Bool' -e 'axiom b1 : Bool' -e 'axiom b2 : Id Bool b0 b1' -e 'def f (x0 x1 : Bool) (x2 : Id Bool x0 x1) : N ≔ match x2 [ true. ⤇ zero. | false. ⤇ suc. zero. ]' -e 'about (f b0 b1 b2)' -e 'def U (x0 x1 : Bool) (x2 : Id Bool x0 x1) : Type ≔ match x2 [ true. ⤇ N | false. ⤇ Bool ]' -e 'about (let p : (x0 x1 : Bool) (x2 : Id Bool x0 x1) → U x0 x1 x2 ≔ x0 ↦ x1 ↦ x2 ↦ match x2 [ true. ⤇ zero. | false. ⤇ true. ] in p)'

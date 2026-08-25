@@ -680,9 +680,27 @@ let rec check : type mode a b s.
     | Synth (Match { tm; window; sort = `Implicit; branches; refutables; highers }), Potential _ ->
         check_implicit_match status ctx tm window branches refutables highers ty
     (* A match the parser nested inside a deep match becomes whatever the match it is nested in turned out to be, so that the nest the user wrote as one match is uniform. *)
-    (* Until the convoy is built, a nested match still behaves as the implicit one it used to be. *)
-    | Synth (Match { tm; window; sort = `Nested _; branches; refutables; highers }), Potential _ ->
-        check_implicit_match status ctx tm window branches refutables highers ty
+    (* A match the parser nested inside a deep match becomes whatever the match it is nested in turned out to be, so that the nest the user wrote as one match is uniform.  Inside a match with a motive it becomes a convoy: a match with a motive of its own, quantifying over the context entries after its discriminee -- all of them pattern variables of matches already emitted -- and applied back to them.  Inside a refining implicit match it stays implicit and refines in its turn. *)
+    | Synth (Match { tm; window; sort = `Nested later; branches; refutables; highers }), Potential _
+      -> (
+        let fallback () = check_implicit_match status ctx tm window branches refutables highers ty in
+        match (Nested.read (), later) with
+        | `Implicit, _ -> fallback ()
+        (* Only the degenerate convoy, with nothing to quantify over, is built so far.  With something to quantify over the branch bodies would have to be lambdas over it, which is the parser's half of the work and is not done. *)
+        | `Convoy, _ :: _ -> fallback ()
+        | `Convoy, [] -> (
+            (* With nothing after the discriminee, the motive is the goal abstracted over it -- a plain abstraction, since the discriminee is then the last entry of the context.  Ctx.pop_lam does the abstraction, and declines if that entry is anything but a whole cube variable, in which case we fall back. *)
+            match Ctx.pop_lam ctx (readback_val ctx ty) with
+            | None -> fallback ()
+            | Some cmotive -> (
+                let stm, sty =
+                  synth_dep_match status ctx tm window branches highers (`Checked cmotive) in
+                match subtype_of ctx sty ty with
+                | Ok () -> stm
+                | Error why ->
+                    fatal
+                      (Unequal_synthesized_type
+                         { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))))
     | Synth (Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }), Potential _
       ->
         let (Wrap window) = get_window (Ctx.mode ctx) window in
@@ -1641,7 +1659,8 @@ and synth_dep_match : type mode a b.
     string located list located option ->
     (Constr.t, a branch) Abwd.t ->
     bool ref located list ->
-    a check located ->
+    (* The motive is the user's, to be checked, or one we built ourselves for a convoy, already checked. *)
+    [ `Raw of a check located | `Checked of (mode, b, kinetic) term ] ->
     (mode, b, potential) term * (mode, kinetic) value =
  fun ?synthed ?convoy status ctx tm window_name brs highers motive ->
   (* We synthesize the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
@@ -1662,7 +1681,10 @@ and synth_dep_match : type mode a b.
                    let emotivety =
                      eval_term (Ctx.env ctx)
                        (motive_of_family ctx window tyfam.tm (Lazy.force tyfam.ty)) in
-                   let cmotive = check (Kinetic `Nolet) ctx motive emotivety in
+                   let cmotive =
+                     match motive with
+                     | `Raw motive -> check (Kinetic `Nolet) ctx motive emotivety
+                     | `Checked cmotive -> cmotive in
                    let emotive = eval_term (Ctx.env ctx) cmotive in
                    (* Note that the motive object here is a *type family* value, not a single type.  Therefore, the "use" and "return" callbacks have to apply that function to appropriate arguments.  We keep the checked term alongside it, to be stored in the Match for readback. *)
                    (Some (cmotive, emotive), Emp, Constr.Map.empty, user_branches));
@@ -3719,7 +3741,7 @@ and synth : type mode a b s.
             Global.set_meta meta sv;
             (Term.Meta (meta, Kinetic), svty))
     | Match { tm; window; sort = `Explicit motive; branches; refutables = _; highers }, Potential _
-      -> synth_dep_match ?synthed status ctx tm window branches highers motive
+      -> synth_dep_match ?synthed status ctx tm window branches highers (`Raw motive)
     | ( Match { tm; window; sort = `Implicit | `Nested _; branches; refutables = _; highers },
         Potential _ ) ->
         emit (Matching_wont_refine ("match in synthesizing position", None));
@@ -4206,7 +4228,7 @@ and synth_or_check_convoy_apps : type mode a b s.
   (* The applications are handed to the match rather than wrapped around it here, because its branches have to be checked knowing how many of their leading lambdas the applications consume, and that is settled before any of them is checked. *)
   | ( Synth (Match { tm = m; window; sort = `Explicit motive; branches; refutables = _; highers }),
       Potential _ ) ->
-      synth_dep_match ~convoy:(fn, args) status ctx m window branches highers motive
+      synth_dep_match ~convoy:(fn, args) status ctx m window branches highers (`Raw motive)
   | _ ->
       let stm, sty = synth_or_check_apps ctx fn args ty in
       (realize status stm, sty)

@@ -563,6 +563,16 @@ module Ordered = struct
     | Snoc (ctx, _, Suc Zero) -> Some (Pop (ctx, Eq, Eq))
     | _ -> None
 
+  (* Abstract a term over the last entry of a context and weaken the result back into that context, giving the term as a function of the last variable, expressed where that variable is still in scope.  This is what the motive of a convoy on the last variable is: the goal, as a function of the discriminee.  The abstraction has to be built here rather than by the caller because the entry's modality and dimension are what the binder needs and popping alone does not hand them over.  Like pop, it works only if the last entry is a whole cube variable with no fields. *)
+  let pop_lam : type mode a b s. (mode, a, b) t -> (mode, b, s) term -> (mode, b, s) term option =
+   fun ctx tm ->
+    match ctx with
+    | Snoc (_, Vis { dim; plusdim; vars; filter; bindings; fplus = Zero; _ }, Suc Zero)
+      when all_free bindings ->
+        Some
+          (Term.Weaken (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, tm)))
+    | _ -> None
+
   (* Generate a case tree consisting of a sequence of abstractions corresponding to the (checked) variables in a context.  The context must contain NO LET-BOUND VARIABLES, including field-access variables, since abstracting over them would not be well-defined.  (In general, we couldn't just omit them, because some of the variables in a cube could be bound but not others, and cubes in the context yield cube abstractions.  However, at least when this comment was written, this function was only used for contexts consisting entirely of 0-dimensional cubes without let-bound variables.)  Likewise it must contain NO MODAL LOCKS. *)
   let rec lam : type mode a b.
       (mode, a, b) t -> (mode, b, potential) term -> (mode, mode emp, potential) term =
@@ -878,6 +888,10 @@ type (_, _, _) pop =
   | Pop :
       ('mode, 'a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, ('modality, 'n) dim_entry) snoc, 'bn) Eq.t
       -> ('mode, 'asuc, 'bn) pop
+
+(* Abstract a term over the last entry of a context; see Ordered.pop_lam. *)
+let pop_lam : type mode a b s. (mode, a, b) t -> (mode, b, s) term -> (mode, b, s) term option =
+ fun (Permute { ctx; _ }) tm -> Ordered.pop_lam ctx tm
 
 let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
  fun (Permute { ctx; perm; level; env }) ->
