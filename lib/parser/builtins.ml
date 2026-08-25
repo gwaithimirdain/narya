@@ -1421,6 +1421,7 @@ module Matchscope : sig
   val lookup_num : int -> 'a t -> 'a N.index option
   val ext : 'a t -> string option -> 'a N.suc t
   val last_num : 'a t -> int
+  val nums_after : int -> 'a t -> int list
   val exts : ('a, 'm, 'am) Raw.Indexed.bplus -> 'a t -> 'am t * (int, 'm) Vec.t
   val make : (string option, 'a) Bwv.t -> 'a t
   val names : 'a t -> (string option, 'a) Bwv.t
@@ -1456,6 +1457,11 @@ end = struct
     Matchscope (base, Suc ab, Snoc (scope, (name, i)), i + 1)
 
   let last_num : type a. a t -> int = fun (Matchscope (_, _, _, i)) -> i - 1
+
+  (* The variables introduced after a given one, in order.  These are exactly the entries of the context that come after it, all of them pattern variables of matches already emitted on this path, and they are what a convoy on that variable quantifies over. *)
+  let nums_after : type a. int -> a t -> int list =
+   fun i (Matchscope (_, _, scope, _)) ->
+    Bwv.fold_left (fun acc (_, j) -> if j > i then j :: acc else acc) [] scope |> List.rev
 
   let rec exts : type a m am. (a, m, am) Raw.Indexed.bplus -> a t -> am t * (int, m) Vec.t =
    fun am scope ->
@@ -1558,18 +1564,13 @@ let process_obs_or_ix : type a.
       | None -> fatal (Anomaly "invalid parse-level in processing match"))
 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
-(* A step that consumes a discriminee without emitting a match moves the next match one variable along, so one fewer of the constructor's pattern variables comes after it. *)
-let drop_later = function
-  | `Nested (_ :: later) -> `Nested later
-  | sort -> sort
-
 let rec process_branches : type a n.
     a Matchscope.t ->
     ((discriminee located, int) Either.t, n) Vec.t ->
     int Bwd.t ->
     (a, n) branch list ->
     Asai.Range.t option ->
-    [ `Implicit | `Nested of int list | `Explicit of wrapped_parse | `Nondep of int located ] ->
+    [ `Implicit | `Nested | `Explicit of wrapped_parse | `Nondep of int located ] ->
     a check located * bool ref located list =
  fun xctx xs seen branches loc sort ->
   match branches with
@@ -1594,7 +1595,7 @@ let rec process_branches : type a n.
         | _ -> fatal (Anomaly "multiple match with return-type") in
       match sort with
       (* A nested match with no branches is a refutation like an implicit one: there is nothing to give a motive to. *)
-      | `Implicit | `Nested _ -> (locate (Refute (tms, `Implicit)) loc, [])
+      | `Implicit | `Nested -> (locate (Refute (tms, `Implicit)) loc, [])
       | `Explicit (Wrap motive) -> explicit_or_nondep (`Explicit (process ctx motive))
       | `Nondep i -> explicit_or_nondep (`Nondep i))
   (* If there are no patterns left, and hence no discriminees either, we require that there must be exactly one branch. *)
@@ -1627,7 +1628,7 @@ let rec process_branches : type a n.
                 | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
               branches in
           let seen = Snoc (seen, i) in
-          process_branches xctx xs seen branches loc (drop_later sort)
+          process_branches xctx xs seen branches loc sort
       | Left { value = { window = Some _; _ }; loc } ->
           fatal ?loc
             (Parse_error
@@ -1646,7 +1647,7 @@ let rec process_branches : type a n.
             (fun () ->
               let xctx = Matchscope.ext xctx None in
               let seen = Snoc (seen, Matchscope.last_num xctx) in
-              let mtch, any_constrs = process_branches xctx xs seen branches loc (drop_later sort) in
+              let mtch, any_constrs = process_branches xctx xs seen branches loc sort in
               (locate (Synth (Let (name.value, locate_opt None [], stm, mtch))) loc, any_constrs))
             ~fatal:(fun d ->
               if
@@ -1712,12 +1713,7 @@ let rec process_branches : type a n.
                     else fatal_diagnostic d)
                 @@ fun () ->
                 (* The matches after the first are ones we are emitting rather than ones the user wrote, so they are marked as such: what they become is decided when the match they are nested in is checked, so that a deep match written with an explicit motive has explicit motives throughout, one written without has implicit matches throughout, and one that ends up non-dependent is non-dependent throughout.  The parser cannot decide that itself, since whether refinement succeeds is not known until typechecking. *)
-                (* The match the recursive call emits is on the first of this constructor's pattern variables, so the ones after it are what its convoy quantifies over.  Each step that consumes a discriminee without matching on it drops one, so the annotation always names the variables after the discriminee of the next match emitted. *)
-                let later =
-                  match Vec.to_list newnums with
-                  | [] -> []
-                  | _ :: rest -> rest in
-                let rest, bs = process_branches newxctx newxs seen newbrs loc (`Nested later) in
+                let rest, bs = process_branches newxctx newxs seen newbrs loc `Nested in
                 Hlist.Hlist.cons (x, Raw.Branch (locate names loc, cube, rest)) [ bs ])
           [ cbranches ] (Cons (Cons Nil)) in
       let tm, window = process_obs_or_ix xctx x in
@@ -1733,7 +1729,11 @@ let rec process_branches : type a n.
       let sort =
         match sort with
         | `Implicit -> `Implicit
-        | `Nested later -> `Nested (List.map (process_ix xctx) later)
+        (* A convoy quantifies over everything in the context after its discriminee, and is applied back to it.  Those are all pattern variables of matches already emitted on this path -- including ones from an earlier sibling's match, which is why it is not enough to take only the later variables of the discriminee's own constructor pattern.  A discriminee that is a term rather than a variable has nothing after it to convoy. *)
+        | `Nested -> (
+            match x with
+            | Either.Right i -> `Nested (List.map (process_ix xctx) (Matchscope.nums_after i xctx))
+            | Either.Left _ -> `Nested [])
         | `Nondep i -> `Nondep i
         | `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
       ( locate (Synth (Match { tm; window; sort; branches; refutables; highers = [] })) loc,
