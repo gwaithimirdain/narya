@@ -166,6 +166,7 @@ module Code = struct
     | Unequal_indices : printable * printable * Unequal.t -> t
     | Unbound_variable : string * (string list * string list) list -> t
     | Ill_scoped_connection : t
+    | Unattached_assumption : t
     | Undefined_constant : printable -> t
     | Undefined_metavariable : printable -> t
     | Nonsynthesizing : string -> t
@@ -360,6 +361,7 @@ module Code = struct
     | Unequal_indices _ -> Error
     | Unbound_variable _ -> Error
     | Ill_scoped_connection -> Error
+    | Unattached_assumption -> Error
     | Undefined_constant _ -> Bug
     | Undefined_metavariable _ -> Bug
     | No_such_field _ -> Error
@@ -512,6 +514,7 @@ module Code = struct
     | Undefined_constant _ -> "E0301"
     | Undefined_metavariable _ -> "E0302"
     | Ill_scoped_connection -> "E0303"
+    | Unattached_assumption -> "E0304"
     | Locked_variable -> "E0310"
     | Locked_constant _ -> "E0311"
     | Axiom_in_parametric_definition _ -> "E0312"
@@ -1204,6 +1207,7 @@ module Code = struct
           | `Other where -> textf "%s cannot contain holes" where)
       | Invalid_instant instant -> textf "invalid instant: %s" instant
       | Ill_scoped_connection -> text "ill-scoped connection"
+      | Unattached_assumption -> text "assumption of an unattached block"
       | Cyclic_term -> text "cycle in graphical term"
       | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm)
       | Invalid_flags -> text "invalid combination of command-line flags" in
