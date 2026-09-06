@@ -288,6 +288,75 @@ Notations are used from explicitly imported files, but not transitively.
     : A
   
 
+A notation that arrives twice is the same notation, not two ambiguous ones: importing the file
+that defines it a second time changes nothing.
+
+  $ cat >n5.ny <<EOF
+  > import "n1"
+  > import "n2"
+  > import "n2"
+  > echo a & a
+  > EOF
+
+  $ narya -source-only n5.ny
+  a & a
+    : A
+  
+
+Neither does meeting it along two different paths.
+
+  $ cat >n6.ny <<EOF
+  > export "n2"
+  > EOF
+
+  $ cat >n7.ny <<EOF
+  > import "n1"
+  > import "n2"
+  > import "n6"
+  > echo a & a
+  > EOF
+
+  $ narya -source-only n7.ny
+  a & a
+    : A
+  
+
+That holds when the notation arrives from compiled files too, although each of them has to compile
+it anew when it is loaded: the identity is linked like a constant's, so the copies are still one
+notation.  (The first run here is what writes the compiled files, so it is the second one that
+reads them.)
+
+  $ cat >m1.ny <<EOF
+  > axiom B:Type
+  > axiom g : B -> B -> B
+  > axiom b:B
+  > notation(0) x "@" y := g x y
+  > EOF
+
+  $ cat >m2.ny <<EOF
+  > export "m1"
+  > EOF
+
+  $ cat >m3.ny <<EOF
+  > export "m1"
+  > EOF
+
+  $ cat >m4.ny <<EOF
+  > import "m2"
+  > import "m3"
+  > echo b @ b
+  > EOF
+
+  $ narya m4.ny
+  b @ b
+    : B
+  
+
+  $ narya m4.ny
+  b @ b
+    : B
+  
+
 Quitting in imports quits only that file
 
   $ cat >qone.ny <<EOF

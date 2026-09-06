@@ -13,6 +13,7 @@ let () =
     Scope.Situation.add_user
       (User
          {
+           id = User.Id.make ();
            name = "amp";
            fixity = Infix No.zero;
            pattern = Var (("x", `Nobreak, []), Var_nil ((Op "&", `Break, []), ("y", [])));

@@ -1015,7 +1015,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       (match unbounds args [] pattern with
       | [] -> ()
       | _ :: _ as unbound -> fatal (Unbound_variable_in_notation (List.map fst unbound)));
-      let user = User { name; fixity; pattern; key; val_vars = List.map fst args } in
+      let user =
+        User { id = User.Id.make (); name; fixity; pattern; key; val_vars = List.map fst args }
+      in
       let shadow = Scope.define_notation user ?loc notation_name in
       List.iter
         (fun key ->

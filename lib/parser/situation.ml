@@ -20,6 +20,9 @@ end
 
 module PrintMap = Map.Make (PrintKey)
 
+(* The user notations that a situation has already got, keyed by the identity they were given when they were defined. *)
+module IdMap = Map.Make (User.Id)
+
 (* This module doesn't deal with the reasons why notations are turned on and off.  Instead we just provide a data structure that stores a "notation situation", which can be used for parsing, and let other modules manipulate those situations by adding notations to them.  (Because we store precomputed trees, removing a notation doesn't work as well; it's probably better to just pull out the set of all notations in a situation, remove some, and then create a new situation with just those.) *)
 type t = {
   (* For each upper tightness interval, we store a pre-merged tree of all left-closed trees along with all left-open trees whose tightness lies in that interval.  In particular, for the empty interval (+ω,+ω] this contains only the left-closed trees, and for the entire interval [-ω,+ω] it contains all notation trees. *)
@@ -28,6 +31,8 @@ type t = {
   left_opens : No.interval TokMap.t;
   (* For unparsing we also store backwards maps turning constants and constructors into notations.  Since the arguments of a notation can occur in a different order from those of the constant or constructor, we store lists of the argument names in the order they occur in the pattern and in the term value.  Note that these permutations are only used for printing; when parsing, the postprocessor function must ALSO incorporate the inverse permutation. *)
   unparse : User.notation PrintMap.t;
+  (* Finally, we remember which user notations we have merged into the trees above.  Merging one in a second time would make it ambiguous with itself, and a notation can arrive more than once: the namespace containing it can be made visible or imported again, and each arrival compiles it anew. *)
+  users : unit IdMap.t;
 }
 
 let empty : t =
@@ -38,6 +43,7 @@ let empty : t =
       |> EntryMap.add No.minus_omega { strict = empty_entry; nonstrict = empty_entry };
     left_opens = TokMap.empty;
     unparse = PrintMap.empty;
+    users = IdMap.empty;
   }
 
 (* Add a new notation to the current situation of available ones. *)
@@ -108,21 +114,32 @@ let add : type left tight right. (left, tight, right) notation -> t -> t =
   (* We don't update the printing map since this is used for builtins that are printed specially. *)
   { s with tighters; left_opens }
 
-(* Add a notation along with the information about how to unparse a constant or constructor into that notation. *)
-let add_with_print : User.notation -> t -> t =
+(* Record how to unparse a constant or constructor into a notation. *)
+let add_print : User.notation -> t -> t =
  fun notn sit ->
-  let (Wrap n) = notn.notn in
-  let sit = add n sit in
   {
     sit with
     unparse = List.fold_left (fun up key -> up |> PrintMap.add key notn) sit.unparse notn.keys;
   }
 
+(* Add a notation along with the information about how to unparse a constant or constructor into that notation. *)
+let add_with_print : User.notation -> t -> t =
+ fun notn sit ->
+  let (Wrap n) = notn.notn in
+  add_print notn (add n sit)
+
+(* Add a user notation, which we know by the identity it was given when it was defined.  If we already have that notation, we leave the trees alone, since merging it in again would only make it ambiguous with itself; but we still record how to print with it, since it is the notation that arrived last that says how its constants are printed. *)
+let add_user_notation : User.Id.t -> User.notation -> t -> t =
+ fun id notn sit ->
+  if IdMap.mem id sit.users then add_print notn sit
+  else { (add_with_print notn sit) with users = IdMap.add id () sit.users }
+
 let add_user_to : User.prenotation -> t -> (User.notation * User.key list) * t =
  fun user sit ->
   let notn = User.make_user user in
   let shadow = List.filter (fun key -> PrintMap.mem key sit.unparse) notn.keys in
-  ((notn, shadow), add_with_print notn sit)
+  let (User.User { id; _ }) = user in
+  ((notn, shadow), add_user_notation id notn sit)
 
 let left_closeds : t -> (No.plus_omega, No.strict) entry =
  fun s -> (EntryMap.find_opt No.plus_omega s.tighters <|> Anomaly "missing left_closeds").strict

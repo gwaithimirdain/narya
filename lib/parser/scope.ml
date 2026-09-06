@@ -135,7 +135,8 @@ module Situation = struct
     Seq.fold_left
       (fun state (_, ((data, _), _)) ->
         match data with
-        | `Notation (user, _) -> snd (Situation.add_user_to user state)
+        (* We install the notation that was compiled when this one was defined, rather than compiling the prenotation over again, and tell the situation which notation it is, so that it can recognize one it already has. *)
+        | `Notation (User.User { id; _ }, notn) -> Situation.add_user_notation id notn state
         | _ -> state)
       sit
       (Trie.to_seq (Trie.find_subtree [ "notations" ] trie))
@@ -371,12 +372,12 @@ let from_istream chan find_in_table =
       match data with
       | `Constant c, loc -> ((`Constant (redefine old_original_names find_in_table c), loc), tag)
       | `Notation (User.User u), loc ->
-          (* We also have to re-make the notation objects since they contain constant names (print keys) and their own autonumbers (but those are only used for comparison locally so don't need to be walked elsewhere). *)
+          (* We also have to link the notation objects, since they contain constant names (print keys) and their own identities, both of which are scoped by the file that defined them.  The notation tree itself has to be compiled afresh, since it contains functions and so can't be marshaled; that gives it a new runtime identity, but its linked Id still says which notation it is. *)
           let key =
             match u.key with
             | `Constant c -> `Constant (Constant.remake find_in_table c)
             | `Constr (c, i) -> `Constr (c, i) in
-          let u = User.User { u with key } in
+          let u = User.User { u with key; id = User.Id.remake find_in_table u.id } in
           ((`Notation (u, User.make_user u), loc), tag))
     (Istream.unmarshal chan
       : ( [ `Constant of Constant.t | `Notation of User.prenotation ] * Asai.Range.t option,

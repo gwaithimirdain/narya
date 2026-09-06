@@ -86,11 +86,39 @@ let pp_pattern : type left right. (left, right) Pattern.t -> document * Whitespa
     | Op_nil (op, ws) -> (group (optional (pp_ws `Break) prews ^^ dquotes (Token.pp op)), ws) in
   go pattern None
 
+(* Like a constant, a user notation is identified by an autonumber scoped by the origin where its "notation" command was executed.  Compiling a prenotation into a notation gives it a *runtime* identity too (an extension constructor, see below), but that one is minted afresh every time we compile, and can't be marshaled; so it is this identity that says when two notations arriving in a scope -- imported along two paths, or unmarshaled from two different compiled files -- are really the same notation.  Like constant identities, it is linked when loading a compiled file. *)
+
+module Id = struct
+  open Origin
+
+  type t = Origin.t * int
+
+  let compare : t -> t -> int = compare
+
+  (* Autonumber counters, one per origin. *)
+  let counters = Versioned.make ~default:(fun _ -> 0) ~inherit_values:false
+
+  let make () : t =
+    let current = Origin.current () in
+    let number = Versioned.get counters in
+    Versioned.set counters (number + 1);
+    (current, number)
+
+  (* Recreate an id with an altered file identifier, as when linking. *)
+  let remake f ((o : Origin.t), i) =
+    match o with
+    | File n -> (Origin.File (f n), i)
+    (* A notation defined interactively is never marshaled, so it is never linked either. *)
+    | Top -> (o, i)
+    | Instant _ -> raise (Failure "User.Id: can't remake interactive notation")
+end
+
 (* A user "prenotation" includes all the information from a "notation" command, parsed and validated into a pattern, fixity, and so on, but not yet compiled into a notation tree. *)
 
 type key = [ `Constant of Core.Constant.t | `Constr of Core.Constr.t * int ]
 
 type ('left, 'tight, 'right) prenotation_data = {
+  id : Id.t;
   name : string;
   fixity : ('left, 'tight, 'right) fixity;
   pattern : ('left, 'right) Pattern.t;
@@ -133,7 +161,9 @@ let global_processor : global_processor ref =
 let make_user : prenotation -> notation =
  fun notn ->
   let open Notation in
-  let (User (type l t r) ({ name; fixity; pattern; key; val_vars } : (l, t, r) prenotation_data)) =
+  let (User
+         (type l t r)
+         ({ id = _; name; fixity; pattern; key; val_vars } : (l, t, r) prenotation_data)) =
     notn in
   let module New = Make (struct
     type nonrec left = l
