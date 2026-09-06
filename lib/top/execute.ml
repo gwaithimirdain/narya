@@ -148,7 +148,7 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
           if
             Bwd.for_all
               (fun (_, ifile) ->
-                let oifile = FilePath.replace_extension filename "nyo" in
+                let oifile = FilePath.replace_extension ifile "nyo" in
                 FileUtil.test Is_file oifile
                 && (not (FileUtil.test (Is_older_than ifile) oifile))
                 && not (FileUtil.test (Is_newer_than ofile) ifile))
@@ -190,11 +190,14 @@ and load_file filename top =
   let filename = FilePath.reduce filename in
   match Loaded.get_file filename with
   | Some ({ trie; globals; file; old_imports; explicit = top' }, mtime) ->
-      (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded. *)
+      (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded.  Each file is compared against its own loading time; an import is quite normally newer than the file that imports it. *)
       if (FileUtil.stat filename).modification_time > mtime then fatal (Library_modified filename);
       Bwd.iter
         (fun (_, f) ->
-          if (FileUtil.stat filename).modification_time > mtime then fatal (Library_modified f))
+          match Loaded.get_file f with
+          | Some (_, fmtime) ->
+              if (FileUtil.stat f).modification_time > fmtime then fatal (Library_modified f)
+          | None -> ())
         old_imports;
       (* We add it back into Global, and to the 'all' namespace if it wasn't already there. *)
       Global.add_file file globals;

@@ -371,6 +371,32 @@ only through n2.
     : A
   
 
+An import that is merely newer than the file importing it hasn't been "modified": what counts is
+whether it changed since it was loaded, which is asked of each file about itself.
+
+  $ cat >mone.ny <<EOF
+  > axiom M : Type
+  > EOF
+
+  $ cat >mtwo.ny <<EOF
+  > import "mone"
+  > axiom m0 : M
+  > EOF
+
+  $ touch mone.ny
+
+  $ cat >mthree.ny <<EOF
+  > import "mone"
+  > import "mtwo"
+  > import "mtwo"
+  > echo m0
+  > EOF
+
+  $ narya -source-only mthree.ny
+  m0
+    : M
+  
+
 Quitting in imports quits only that file
 
   $ cat >qone.ny <<EOF
