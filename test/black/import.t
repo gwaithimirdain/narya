@@ -357,6 +357,20 @@ reads them.)
     : B
   
 
+Linking a compiled file can reach further than the files it names: n6 exports n2, whose notation
+refers to a constant belonging to n1, so loading n6 compiled has to link a file that n6 imports
+only through n2.
+
+  $ narya n7.ny
+  a & a
+    : A
+  
+
+  $ narya n7.ny
+  a & a
+    : A
+  
+
 Quitting in imports quits only that file
 
   $ cat >qone.ny <<EOF

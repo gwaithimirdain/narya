@@ -202,8 +202,9 @@ and load_file filename top =
         Loaded.add_to_scope trie;
         (* Ensure that it's marked as having been loaded explicitly. *)
         Loaded.add_to_files filename trie globals file old_imports true);
-      (* We also add it to the list of things imported by the current ambient file.  TODO: Should that go in execute_command Import? *)
-      Loading.modify (fun s -> { s with imports = Snoc (s.imports, (file, filename)) });
+      (* We also add it, and the files it imports, to the list of things imported by the current ambient file, since that list is supposed to be transitive.  (The other branch appends the same thing, in the same order, after loading the file.)  TODO: Should that go in execute_command Import? *)
+      Loading.modify (fun s ->
+          { s with imports = Bwd_extra.append (Snoc (s.imports, (file, filename))) old_imports });
       (* Return its saved export namespace. *)
       trie
   | None ->
