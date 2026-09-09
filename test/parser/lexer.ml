@@ -184,4 +184,12 @@ let () =
   assert (lex "x ^ y" = [ (Ident [ "x" ], []); (Op "^", []); (Ident [ "y" ], []) ]);
   assert (lex "x⁽¹⁻²⁾" = [ (Ident [ "x" ], []); (Superscript "1-2", []) ]);
 
-  assert (lex "x⁽¹⁾⁽²⁾" = [ (Ident [ "x" ], []); (Superscript "1", []); (Superscript "2", []) ])
+  assert (lex "x⁽¹⁾⁽²⁾" = [ (Ident [ "x" ], []); (Superscript "1", []); (Superscript "2", []) ]);
+
+  (* A # immediately followed by an identifier is a Key token, split on dots. *)
+  assert (lex "x #a.b.c" = [ (Ident [ "x" ], []); (Key [ "a"; "b"; "c" ], []) ]);
+  assert (lex "#a" = [ (Key [ "a" ], []) ]);
+  (* A # not immediately followed by an identifier falls back to (Op "#"). *)
+  assert (lex "# a" = [ (Op "#", []); (Ident [ "a" ], []) ]);
+  assert (lex "#(a)" = [ (Op "#", []); (LParen, []); (Ident [ "a" ], []); (RParen, []) ]);
+  assert (lex "#= a" = [ (Op "#=", []); (Ident [ "a" ], []) ])

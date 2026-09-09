@@ -6,7 +6,7 @@ Narya's support for parametricity builds on the primitives discussed in :ref:`Ob
 Names for parametricity
 -----------------------
 
-Parametricity mode is activated by the command-line flag ``-parametric``.  In addition, when this flag is given, the command-line flag ``-direction`` can be used to rename or remove the formally-synonymous primitives ``refl``, ``Id``, and ``ap``, as well as the superscript letter ``e``.  The notation of HOTT, which we used in :ref:`Observational higher dimensions` is equivalent to the command-line argument ``-direction e,refl,Id,ap``.  In general, the argument of ``-direction`` is a comma-separated list of names, where the first must be a single lowercase letter to be used in generic degeneracies, and the others (if any) are names for the basic degeneracy.  If there is a second name such as ``refl``, it is used as the default for 1-dimensional degeneracies.  If there is a third name such as ``Id``, it is used for 1-dimensional degeneracies of types and type families.  And if there is a fourth name such as ``ap``, it is used for 1-dimensional degeneracies of other functions.  (The name of ``sym`` cannot be changed or removed, and likewise for the digits used in generic degeneracies to indicate permuted dimensions.)
+Parametricity mode is activated by the command-line flag ``-parametric``.  In addition, when this flag is given, the command-line flag ``-direction`` can be used to rename or remove the formally-synonymous primitives ``refl``, ``Id``, and ``ap``, as well as the superscript letter ``e``.  The notation of HOTT, which we used in :ref:`Observational higher dimensions` and is the default if no ``-direction`` argument is given, is equivalent to the command-line argument ``-direction e,refl,Id,ap``.  In general, the argument of ``-direction`` is a comma-separated list of names, where the first must be a single lowercase letter to be used in generic degeneracies, and the others (if any) are prefix names for the basic degeneracy.  If there is a second name such as ``refl``, it is used as the default for 1-dimensional degeneracies.  If there is a third name such as ``Id``, it is used for 1-dimensional degeneracies of types and type families.  And if there is a fourth name such as ``ap``, it is used for 1-dimensional degeneracies of other functions.  (The name of ``sym`` cannot be changed or removed, and likewise for the digits used in generic degeneracies to indicate permuted dimensions.)
 
 In the rest of our discussion of parametricity we will assume the flags
 
@@ -22,31 +22,27 @@ In particular, when working in parametricity mode you may want to start all your
 
    {` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-direction" "p,rel,Br") -*- `}
 
+Remember that this is a directive to Emacs, not to Narya, so that after adding it to the top of a new file you must run ``M-x normal-mode`` to load it, and when switching from one file to another with a different set of flags you must quit ProofGeneral entirely with ``C-c C-x``.
+
 
 Bridge types of the universe
 ----------------------------
 
-This principle suggests that we should be able to *introduce* elements of ``Br Type A₀ A₁`` by abstraction such as ``x₀ x₁ ↦ …``.  However, if allowed unrestrictedly, this would lead to instantiations of higher-dimensional types *reducing* to syntaxes that cannot be easily recognized as such, which would cause problems for Narya's typechecker.  Therefore, we impose the requirement that the body of such an abstraction must be a *newly declared canonical type* rather than a pre-existing one.  Moreover, the current implementation allows this body to be a *record type* or *codatatype*, but not a *datatype*, and it does not permit other case tree operations in between such as pattern-matching.  We call these *higher-dimensional record types* or *codatatypes*.
+The above principle of parametricity suggests that we should be able to *introduce* elements of ``Br Type A₀ A₁`` by abstraction such as ``x₀ x₁ ↦ …``.  However, if allowed unrestrictedly, this would lead to instantiations of higher-dimensional types *reducing* to syntaxes that cannot be easily recognized as such, which would cause problems for Narya's typechecker.  Therefore, we impose the requirement that the body of such an abstraction must be a *newly declared canonical type* rather than a pre-existing one.  Moreover, the current implementation allows this body to be a *record type* or *codatatype*, but not a *datatype*, and it does not permit other case tree operations in between such as pattern-matching.
 
-In the case of record types, there is a syntax that reflects this restriction: instead of the expected ``x y ↦ sig (⋯)`` we write ``sig x y ↦ (⋯)``, explicitly binding all the boundary variables as part of the record type syntax.  For example, here is the universal 1-dimensional record type, traditionally called "Gel":
+We call these *higher-dimensional record types* or *codatatypes*.  Their definition is almost the same as an ordinary record type or codatatype, except that (1) they belong to a (fully instantiated) bridge type of the universe rather than to the universe itself, (2) they must be defined using :ref:`self variable syntax <Self variables for record types>` even in the case of record types, and (3) the self variable becomes a :ref:`cube variable <Cubes of variables>` representing elements of the boundary as well as the "actual" self variable at the top face.
 
-.. code-block:: none
-
-   def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ sig a b ↦ ( ungel : R a b )
-
-For codatatypes, we simply use the ordinary syntax, but the "self" variable automatically becomes a cube variable of the appropriate dimension.  For instance, here is a codatatype version of Gel:
+For example, here is the universal 1-dimensional record type, traditionally called ``Gel``:
 
 .. code-block:: none
 
-   def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ codata [ x .ungel : R x.0 x.1 ]
+   def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ sig ( a .ungel : R a.0 a.1 )
 
-We can also use :ref:`Self variables for record types`:
+*(An older alternative syntax* ``sig a b ↦ ( ungel : R a b )`` *is now deprecated.)*
 
-.. code-block:: none
+We may allow more flexibility in the future, but in practice the current restrictions do not seem very onerous.  For most applications, the above ``Gel`` record type can simply be defined once and used everywhere, rather than declaring new higher-dimensional types all the time.
 
-   def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ sig ( x .ungel : R x.0 x.1 )
-
-We may allow more flexibility in the future, but in practice the current restrictions do not seem very onerous.  For most applications, the above "Gel" record type can simply be defined once and used everywhere, rather than declaring new higher-dimensional types all the time.  Note that because record-types satisfy η-conversion, ``Gel A B R a b`` is definitionally isomorphic to ``R a b``.  Thus, ``Br Type A B`` contains ``A → B → Type`` as a "retract up to definitional isomorphism".  This appears to be sufficient for all applications of internal parametricity.  (``Br Type`` does not itself satisfy any η-conversion rule.)
+In particular, note that because record-types satisfy η-conversion, ``Gel A B R a b`` is definitionally isomorphic to ``R a b``.  Thus, ``Br Type A B`` contains ``A → B → Type`` as a "retract up to definitional isomorphism".  This appears to be sufficient for all applications of internal parametricity.  (``Br Type`` does not itself satisfy any η-conversion rule.)
 
 There is one additional subtlety involving higher-dimensional record and codata types, specifically in their degeneracies.  Since ordinary canonical types are "intrinsically" 0-dimensional, any degeneracy operations on them reduce to a "pure degeneracy" consisting entirely of ``p`` s, e.g. ``M⁽ᵖᵖ⁾⁽²¹⁾`` reduces to simply ``M⁽ᵖᵖ⁾``.  These *pure* degeneracies of canonical types are again canonical types of the same form, as discussed in :ref:`Observational higher dimensions`.
 
@@ -58,34 +54,25 @@ For instance, ``Gel A B R`` is a 1-dimensional type, belonging to ``Br Type A B`
 Varying the arity of parametricity
 ----------------------------------
 
-The parametricity described above, which is Narya's default, is *binary* in that the bridge type ``Br A x y`` takes *two* elements of ``A`` as arguments.  However, a different "arity" can be specified with the ``-arity`` command-line flag (which also requires the ``-parametric`` flag).  For instance, under ``-arity 1`` we have bridge types ``Br A x``, and under ``-arity 3`` they look like ``Br A x y z``.  Everything else also alters according, e.g. under ``-arity 1`` the type ``Br (A → B) f`` is isomorphic to ``{x₀ : A} (x₁ : Br A x) → Br B (f x)``, and a cube variable has pieces numbered with only ``0`` s and ``1`` s.
+The parametricity described above, which is Narya's default, is *binary* in that the bridge type ``Br A x y`` takes *two* elements of ``A`` as arguments.  However, a different "arity" can be specified with the ``-arity`` command-line flag (which also requires the ``-parametric`` flag).  For instance, under ``-arity 1`` we have bridge types ``Br A x``, and under ``-arity 3`` they look like ``Br A x y z``.  Everything else also alters according, e.g. under ``-arity 1`` the type ``Br (A → B) f`` is isomorphic to ``{x₀ : A} (x₁ : Br A x) → Br B (f x)``, and a cube variable has pieces numbered with only ``0`` s and ``1`` s.  This also applies to higher-dimensional types, for instance in arity 1 the definition of ``Gel`` is
+
+.. code-block:: none
+
+   def Gel (A : Type) (R : A → Type) : Br Type A ≔ sig ( a .ungel : R a.0 )
+
+Semantically, parametric Narya with arity *n* has a model in the topos of *n*-ary semicartesian cubical sets (or spaces, or objects of some other topos).  Semicartesian cubical sets have faces, degeneracies, and symmetries, but no diagonals or connections, and to say they are *n*-ary means that each 1-cube has *n* "endpoints".  For instance, 1-ary cubes can be thought of as powers of a half-open interval; the category of 1-ary cubes happens to be equivalent to the category of augmented symmetric simplicial sets.
 
 In principle, the arity could be any natural number, but for syntactic reasons Narya currently requires it to be between 0 and 9 inclusive.  The problem with arities greater than 9 is that the syntax ``x.10`` for cube variables would become ambiguous: does ``10`` mean "one-zero" or "ten"?  It would probably be possible to resolve this similarly to how we deal with degeneracies for dimensions above 9, for instance writing ``x..1.0`` for one-zero and ``x..10`` for ten (while keeping the simpler ``x.10`` to mean ``x..1.0``), but this is not a priority because at present we are unaware of any applications of n-ary parametricity for n>2.
 
 Syntactically, nullary parametricity is a bit special because when instantiating a higher-dimensional type there are zero arguments to be supplied, so it is not obvious how to indicate that an instantiation has happened.  To resolve this, each dimension of instantiation that takes zero arguments is indicated by syntactic application to a dot ``.`` that denotes "zero arguments".  Thus, if ``A : Type`` then ``Br A : Type⁽ᵖ⁾ .``, and if ``a : A`` then ``rel a : A⁽ᵖ⁾ .``, while ``rel (rel a) : A⁽ᵖᵖ⁾ . .``, and so on.  Note that each dot must be separated from others by spaces.
 
 
-Internal versus external parametricity
---------------------------------------
+Strictly discrete datatypes (experimental and deprecated)
+---------------------------------------------------------
 
-Parametricity can also be set to be *internal* or *external* with the like-named flags ``-internal`` and ``-external``.  Internal is the default and the behavior that we have described up until now.  Setting it to external instead means that dimension-changing degeneracies (such as ``rel``, but not ``sym``) can only be applied to *closed terms*.  Since degeneracies also compute fully on closed terms (at least in the "up-to-definitional-isomorphism" sense), we can then more or less think of these operations as meta-operations on syntax rather than intrinsic aspects of the theory.  This is the usual meaning of "external parametricity", although Narya's is of course at least partially internalized.  (Semantically, what Narya calls "external parametricity" is modeled in a diagram of *semi-cubical* types, in contrast to internal parametricity which is modeled in *cubical* types.)
+*Discreteness was an experimental feature that is now deprecated in favor of modal treatments.  See* :ref:`Discrete modalities`.  *We include the old documentation of this feature here for reference, but it will eventually go away along with the feature.*
 
-
-When parametricity is external, there are two different possibilities for how to treat *axioms*.  The default kind of axiom is a *parametric axiom*, which can have dimension-changing degeneracies applied to it like a defined constant.  But it is also possible to define a *nonparametric axiom*, which is treated like a variable and thus cannot appear inside of dimension-changing degeneracies.  For example, axioms such as excluded middle that are inconsistent with parametricity can be assumed as nonparametric axioms.  To define a nonparametric axiom, use the attribute ``nonparametric``:
-
-.. code-block:: none
-
-   axiom #(nonparametric) LEM : (P : Type) → P ⊔ ¬ P
-
-Other constants that use nonparametric axioms in their types or definitions, hereditarily, must also be nonparametric.  For definitions, this is deduced automatically, while for axioms it must be marked explicitly with ``nonparametric``.  Similarly, if any of the definitions in a mutual block use a nonparametric constant, then all the constants in the mutual block are nonparametric.
-
-When a definition contains :ref:`holes` but does not (yet) use any nonparametric constants, it is considered parametric, and hence can have dimension-changing degeneracies applied to it.  Therefore, if you later try to fill one of those holes with a term that uses a nonparametric constant, an error will be emitted; it is not possible to retroactively set a definition to be nonparametric since it might already have had dimension-changing degeneracies applied to it by other definitions.  In this case, you have to undo back to the original definition and manually copy your desired nonparametric term in place of the hole.  (If there is significant demand, we may implement an easier solution.)
-
-
-Parametrically discrete types
------------------------------
-
-Discreteness is an experimental (and probably temporary) feature.  A (strictly parametrically) *discrete* type, in the sense meant here, is one whose higher-dimensional versions are all definitionally subsingletons.  That is, if ``b1 : A⁽ᵈ⁾ a`` and ``b2 : A⁽ᵈ⁾ a``, then ``b1`` and ``b2`` are convertible (this is implemented as an η-rule).  Discreteness is currently restricted to arity 1 (including dTT), and can be enabled by the ``-discreteness`` flag.  When discreteness is enabled, a mutual family of datatypes will be marked as discrete if
+A (strictly parametrically) *discrete* type is one whose higher-dimensional versions are all definitionally subsingletons.  That is, if ``b1 : A⁽ᵈ⁾ a`` and ``b2 : A⁽ᵈ⁾ a``, then ``b1`` and ``b2`` are convertible (this is implemented as an η-rule).  Discreteness is restricted to arity 1 and enabled by the ``-discreteness`` flag.  When discreteness is enabled, a mutual family of datatypes is marked as discrete if
 
 1. All elements of the mutual family are datatypes; and
 2. The types of all of their parameters, indices, and constructor arguments are either types belonging to the same family or previously defined discrete datatypes.
@@ -137,5 +124,5 @@ The higher-dimensional versions of a discrete datatype are also still themselves
    ]
 
 
-Currently, the test for discreteness is performed immediately and only upon completion of the ``def`` command that defines a family of datatypes.  In particular, if the definition of a datatype contains a hole, it will not be considered discrete, even if the hole is later filled to make the definition one that would have been discrete if given from the get-go.  This could in theory be improved, but I am more likely to feel like putting effort into implementing the "correct" replacement for discrete types, namely modally-guarded parametricity such as full dTT.  Note that if you are using :ref:`ProofGeneral mode` (as you should be), you can just retract and re-process the ``def`` command after filling all the holes in it, and it will then be discrete.
+The test for discreteness is performed immediately and only upon completion of the ``def`` command that defines a family of datatypes.  In particular, if the definition of a datatype contains a hole, it will not be considered discrete, even if the hole is later filled to make the definition one that would have been discrete if given from the get-go.  If you are using :ref:`ProofGeneral mode` (as you should be), you can just retract and re-process the ``def`` command after filling all the holes in it, and it will then be discrete.  However, a better approach is to use :ref:`Modal datatypes`.
 

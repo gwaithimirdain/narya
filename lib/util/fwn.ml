@@ -23,6 +23,7 @@ let suc : type n. n t -> n suc t = function
   | n -> Suc n
 
 let one : one t = suc zero
+let bplus_zero : type a. a N.t -> (a, zero, a) bplus = fun _ -> Zero
 
 let rec bplus_right : type a b ab. (a, b, ab) bplus -> b t = function
   | Zero -> Zero
@@ -72,6 +73,12 @@ type (_, _, _) fplus =
 let rec fplus_left : type a b ab. (a, b, ab) fplus -> a N.t = function
   | Zero -> N.zero
   | Suc ab -> N.suc (fplus_left ab)
+
+let rec fplus_out : type a b ab. (a, b, ab) fplus -> b t -> ab t =
+ fun ab b ->
+  match ab with
+  | Zero -> b
+  | Suc ab -> fplus_out ab (Suc b)
 
 let rec fplus_uniq : type a b ab ab'. (a, b, ab) fplus -> (a, b, ab') fplus -> (ab, ab') Eq.t =
  fun ab ab' ->

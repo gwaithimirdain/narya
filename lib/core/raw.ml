@@ -1,5 +1,6 @@
 open Util
 open Dim
+open Modal
 include Energy
 
 type 'a located = 'a Asai.Range.located
@@ -69,32 +70,38 @@ module rec Make : functor (I : Indices) -> sig
 
   type 'a index = 'a I.index * any_sface option
 
-  module DomFam : sig
-    type (_, _, _) t = DomFam : I.name * 'left Make(I).check located -> ('left, 'n, 'b) t
-  end
-
-  module DomCube : module type of struct
-    include Icube (I) (DomFam)
-  end
-
   type _ synth =
     | Var : 'a index -> 'a synth
     | Const : Constant.t -> 'a synth
-    | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
-    | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
-    | HigherPi : I.name * 'a synth located * 'a I.suc synth located -> 'a synth
-    | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
+    | Field :
+        'a synth located
+        * [ `Name of string * int list | `Int of int ]
+        * string located list located option
+        -> 'a synth
+    | Key : 'a synth located * string list located -> 'a synth
+    | Pi :
+        I.name * string located list located * 'a check located * 'a I.suc check located
+        -> 'a synth
+    | HigherPi :
+        I.name * string located list located * 'a synth located * 'a I.suc synth located
+        -> 'a synth
+    | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
     | App :
         'a check located * 'a check option located * [ `Implicit | `Explicit ] located
         -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
-    | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
-    | UU : 'a synth
-    | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
+    | AscLam :
+        I.name located * string located list located * 'a check located * 'a I.suc synth located
+        -> 'a synth
+    | UU : 'mode Mode.t -> 'a synth
+    | Let :
+        I.name * string located list located * 'a synth located * 'a I.suc check located
+        -> 'a synth
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
     | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
     | Match : {
         tm : 'a synth located;
+        window : string located list located option;
         sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
         branches : (Constr.t, 'a branch) Abwd.t;
         refutables : 'a refutables option;
@@ -115,7 +122,7 @@ module rec Make : functor (I : Indices) -> sig
         name : I.name located;
         cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
         implicit : [ `Explicit | `Implicit ];
-        dom : 'a check located option;
+        dom : (string located list located * 'a check located) option;
         body : 'a I.suc check located;
       }
         -> 'a check
@@ -131,8 +138,10 @@ module rec Make : functor (I : Indices) -> sig
     | Record :
         ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity * Variables.hints
         -> 'a check
-    | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
-    | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
+    | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * opacity * Variables.hints -> 'a check
+    | Refute :
+        ('a synth located * string located list located option) list * [ `Explicit | `Implicit ]
+        -> 'a check
     | Hole : {
         scope : 'a I.scope;
         loc : Asai.Range.t;
@@ -158,14 +167,25 @@ module rec Make : functor (I : Indices) -> sig
         -> 'a branch
 
   and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
-  and _ codatafield = Codatafield : I.name * 'a I.suc check located -> 'a codatafield
+
+  and _ codatafield =
+    | Codatafield :
+        I.name
+        * string located list located option
+        * 'a check located option
+        * 'a I.suc check located
+        -> 'a codatafield
+
   and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
 
   and (_, _, _) tel =
     | Emp : ('a, Fwn.zero, 'a) tel
-    | Ext : I.name * 'a check located * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
+    | Ext :
+        I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
+        -> ('a, 'b Fwn.suc, 'ab) tel
 
   val fwn_of_tel : ('a, 'b, 'c) tel -> 'b Fwn.t
+  val mods_of_tel : ('a, 'b, 'c) tel -> string located list located list
 end =
 functor
   (I : Indices)
@@ -228,31 +248,42 @@ functor
     (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
     type 'a index = 'a I.index * any_sface option
 
-    module DomFam = struct
-      type (_, _, _) t = DomFam : I.name * 'left Make(I).check located -> ('left, 'n, 'b) t
-    end
-
-    module DomCube = Icube (I) (DomFam)
-
     (* Synthesizable raw terms *)
     type _ synth =
       | Var : 'a index -> 'a synth
       | Const : Constant.t -> 'a synth
       (* A field projection from a possibly-higher-coinductive type comes with a suffix that is a string of integers, denoting a partial bijection between n and m that is total on n.  This is the same as an injection from n to m, or equivalently an insertion of n into m∖l to produce m, where l = image(n). *)
-      | Field : 'a synth located * [ `Name of string * int list | `Int of int ] -> 'a synth
-      | Pi : I.name * 'a check located * 'a I.suc check located -> 'a synth
-      | HigherPi : I.name * 'a synth located * 'a I.suc synth located -> 'a synth
-      | InstHigherPi : 'n D.pos * ('a, 'n, unit, 'an) DomCube.t * 'an check located -> 'a synth
+      (* A modal field projection additionally records the name of the locking modality (the left adjoint of the field's adjunction), specified by the user with a modal variable ascription such as "(x : f | _) .fld". *)
+      | Field :
+          'a synth located
+          * [ `Name of string * int list | `Int of int ]
+          * string located list located option
+          -> 'a synth
+      (* A modal key operation applied postfix to a synthesizing term, written "x #a.b.c".  The dot-separated pieces of the key name are stored as strings, to be resolved into a 2-cell at typechecking time. *)
+      | Key : 'a synth located * string list located -> 'a synth
+      | Pi :
+          I.name * string located list located * 'a check located * 'a I.suc check located
+          -> 'a synth
+      | HigherPi :
+          I.name * string located list located * 'a synth located * 'a I.suc synth located
+          -> 'a synth
+      (* An n-dimensional pi-type, fully instantiated, with all its domains supplied.  The dimension 'n is the outer (unfiltered) dimension; the domains form a telescope whose length must match the number of faces of the *filtered* dimension, which is not known until typechecking (since parsing the modality annotations requires knowing the modes). *)
+      | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :
           'a check located * 'a check option located * [ `Implicit | `Explicit ] located
           -> 'a synth
       | Asc : 'a check located * 'a check located -> 'a synth
-      (* Abstraction with ascribed variable.  Currently can't be a cube or implicit.  *)
-      | AscLam : I.name located * 'a check located * 'a I.suc synth located -> 'a synth
-      | UU : 'a synth
+      (* Abstraction with ascribed variable and synthesizing body.  Currently can't be a cube or implicit.  *)
+      | AscLam :
+          I.name located * string located list located * 'a check located * 'a I.suc synth located
+          -> 'a synth
+      (* A universe knows its mode. *)
+      | UU : 'mode Mode.t -> 'a synth
       (* A Let can either synthesize or (sometimes) check.  It synthesizes only if its body also synthesizes, but we wait until typechecking type to look for that, so that if it occurs in a checking context the body can also be checking.  Thus, we make it a "synthesizing term".  The term being bound must also synthesize; the shorthand notation "let x : A := M" is expanded during parsing to "let x := M : A". *)
-      | Let : I.name * 'a synth located * 'a I.suc check located -> 'a synth
+      | Let :
+          I.name * string located list located * 'a synth located * 'a I.suc check located
+          -> 'a synth
       (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
       | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
       (* An Act can also often check, but can also synthesizes if its body does.  *)
@@ -260,6 +291,8 @@ functor
       (* A Match can also sometimes check, but synthesizes if it has an explicit return type or if it is nondependent and its first branch synthesizes. *)
       | Match : {
           tm : 'a synth located;
+          (* An optionally specified window modality *)
+          window : string located list located option;
           (* Implicit means no "return" statement was given, so Narya has to guess what to do.  Explicit means a "return" statement was given with a motive.  "Nondep" means a placeholder return statement like "_ ↦ _" was given, indicating that a non-dependent matching is intended (to silence hints about fallback from the implicit case). *)
           sort : [ `Implicit | `Explicit of 'a check located | `Nondep of int located ];
           branches : (Constr.t, 'a branch) Abwd.t;
@@ -287,7 +320,8 @@ functor
           name : I.name located;
           cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
           implicit : [ `Explicit | `Implicit ];
-          dom : 'a check located option;
+          (* An abstraction can have its variable ascribed to a type.  If in addition the body is synthesizing, then it is a synthesizing term called AscLam.  If the body is only checking, then it's still a Lam, but with a "dom" supplied here. *)
+          dom : (string located list located * 'a check located) option;
           body : 'a I.suc check located;
         }
           -> 'a check
@@ -308,9 +342,11 @@ functor
           ('a, 'c, 'ac) Namevec.t located * ('ac, 'd, 'acd) tel * opacity * Variables.hints
           -> 'a check
       (* There's also a notation for record types that uses self variables like codata. *)
-      | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * Variables.hints -> 'a check
-      (* Empty match against the first one of the arguments belonging to an empty type. *)
-      | Refute : 'a synth located list * [ `Explicit | `Implicit ] -> 'a check
+      | SelfRecord : (Field.wrapped, 'a codatafield) Abwd.t * opacity * Variables.hints -> 'a check
+      (* Empty match against the first one of the arguments belonging to an empty type.  Each argument carries an optional window modality. *)
+      | Refute :
+          ('a synth located * string located list located option) list * [ `Explicit | `Implicit ]
+          -> 'a check
       (* A hole must store the entire "state" from when it was entered, so that the user can later go back and fill it with a term that would have been valid in its original position.  This includes the variables in lexical scope, which are available only during parsing, so we store them here at that point.  During typechecking, when the actual metavariable is created, we save the lexical scope along with its other context and type data.  A hole also stores its source location so that proofgeneral can create an overlay at that place, and the notation tightnesses of the hole location. *)
       | Hole : {
           scope : 'a I.scope;
@@ -348,7 +384,14 @@ functor
     and _ dataconstr = Dataconstr : ('a, 'b, 'ab) tel * 'ab check located option -> 'a dataconstr
 
     (* A field of a codatatype has a self variable and a type.  At the raw level we don't need any more information about higher fields. *)
-    and _ codatafield = Codatafield : I.name * 'a I.suc check located -> 'a codatafield
+    (* A codata field records the name of the locking modality (the left adjoint of its adjunction), if any, specified by the user with a modal ascription of the self variable such as "(x :f| _) .fld : A".  The type can be supplied instead of a placeholder. *)
+    and _ codatafield =
+      | Codatafield :
+          I.name
+          * string located list located option
+          * 'a check located option
+          * 'a I.suc check located
+          -> 'a codatafield
 
     (* A raw match stores the information about the pattern variables available from previous matches that could be used to refute missing cases.  But it can't store them as raw terms, since they have to be in the correct context extended by the new pattern variables generated in any such case.  So it stores them as a callback that puts them in any such extended context. *)
     and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
@@ -356,12 +399,19 @@ functor
     (* An ('a, 'b, 'ab) tel is a raw telescope of length 'b in context 'a, with 'ab = 'a+'b the extended context. *)
     and (_, _, _) tel =
       | Emp : ('a, Fwn.zero, 'a) tel
-      | Ext : I.name * 'a check located * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
+      | Ext :
+          I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
+          -> ('a, 'b Fwn.suc, 'ab) tel
 
     (* The length of a telescope is a forwards nat. *)
     let rec fwn_of_tel : type a b c. (a, b, c) tel -> b Fwn.t = function
       | Emp -> Zero
-      | Ext (_, _, tel) -> Suc (fwn_of_tel tel)
+      | Ext (_, _, _, tel) -> Suc (fwn_of_tel tel)
+
+    (* The modality annotations of the entries of a telescope. *)
+    let rec mods_of_tel : type a b c. (a, b, c) tel -> string located list located list = function
+      | Emp -> []
+      | Ext (_, modality, _, tel) -> modality :: mods_of_tel tel
   end
 
 module Indexed = Make (DeBruijnIndices)
@@ -438,12 +488,6 @@ module Resolve (R : Resolver) = struct
         let ab = R.T2.bplus_suc ab in
         R.rename ctx x :: renames (R.snoc ctx x) xs ab
 
-  module DomTraverse =
-    IcubeTraverse2 (R.I1) (R.I2) (R.T1.DomFam) (R.T2.DomFam)
-      (struct
-        type ('a1, 'a2) t = ('a1, 'a2) R.scope
-      end)
-
   let rec synth : type a1 a2. (a1, a2) R.scope -> a1 R.T1.synth located -> a2 R.T2.synth located =
    fun ctx tm ->
     let newtm : a2 R.T2.synth =
@@ -454,19 +498,16 @@ module Resolve (R : Resolver) = struct
           | Ok ix -> Var (ix, fa)
           | Error e -> Fail e)
       | Const c -> Const c
-      | Field (tm, fld) -> Field (synth ctx tm, fld)
-      | Pi (x, dom, cod) -> Pi (R.rename ctx x, check ctx dom, check (R.snoc ctx x) cod)
-      | HigherPi (x, dom, cod) -> HigherPi (R.rename ctx x, synth ctx dom, synth (R.snoc ctx x) cod)
+      | Field (tm, fld, lock) -> Field (synth ctx tm, fld, lock)
+      | Key (tm, parts) -> Key (synth ctx tm, parts)
+      | Pi (x, modality, dom, cod) ->
+          Pi (R.rename ctx x, modality, check ctx dom, check (R.snoc ctx x) cod)
+      | HigherPi (x, modality, dom, cod) ->
+          HigherPi (R.rename ctx x, modality, synth ctx dom, synth (R.snoc ctx x) cod)
       | InstHigherPi (n, doms, cod) ->
-          let (Gfolded (doms, ctx)) =
-            DomTraverse.fold_map_left
-              {
-                foldmap =
-                  (fun _ ctx (DomFam (x, dom)) ->
-                    (DomFam (R.rename ctx x, check ctx dom), R.snoc ctx x));
-              }
-              ctx doms in
-          InstHigherPi (n, doms, check ctx cod)
+          let (Bplus ab) = R.T2.bplus (R.T1.fwn_of_tel doms) in
+          let doms2, ctx2 = tel ctx doms ab in
+          InstHigherPi (n, doms2, check ctx2 cod)
       | App (fn, arg, impl) ->
           let arg =
             match arg.value with
@@ -476,17 +517,19 @@ module Resolve (R : Resolver) = struct
             | None -> locate_opt arg.loc None in
           App (check ctx fn, arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)
-      | AscLam (x, dom, body) ->
-          AscLam (locate_map (R.rename ctx) x, check ctx dom, synth (R.snoc ctx x.value) body)
-      | UU -> UU
-      | Let (x, tm, body) -> Let (R.rename ctx x, synth ctx tm, (check (R.snoc ctx x)) body)
+      | AscLam (x, modality, dom, body) ->
+          AscLam
+            (locate_map (R.rename ctx) x, modality, check ctx dom, synth (R.snoc ctx x.value) body)
+      | UU mode -> UU mode
+      | Let (x, modality, tm, body) ->
+          Let (R.rename ctx x, modality, synth ctx tm, (check (R.snoc ctx x)) body)
       | Letrec (tys, tms, body) ->
           let (Bplus ab) = R.T2.bplus (Vec.length tms) in
           let tys2, ctx2 = tel ctx tys ab in
           let tms2 = Vec.map (check ctx2) tms in
           Letrec (tys2, tms2, check ctx2 body)
       | Act (s, fa, tm) -> Act (s, fa, Option.map (check ctx) tm)
-      | Match { tm; sort; branches; refutables = r; highers } ->
+      | Match { tm; window; sort; branches; refutables = r; highers } ->
           let tm = synth ctx tm in
           let sort =
             match sort with
@@ -495,7 +538,7 @@ module Resolve (R : Resolver) = struct
             | `Implicit -> `Implicit in
           let branches = Abwd.map (branch ctx) branches in
           let refutables = Option.map (refutables ctx) r in
-          Match { tm; sort; branches; refutables; highers }
+          Match { tm; window; sort; branches; refutables; highers }
       | Fail e -> Fail e
       | ImplicitSApp (fn, apploc, arg) -> ImplicitSApp (synth ctx fn, apploc, synth ctx arg)
       | SFirst (tms, arg) ->
@@ -520,7 +563,7 @@ module Resolve (R : Resolver) = struct
               name = locate_map (R.rename ctx) name;
               cube;
               implicit;
-              dom = Option.map (check ctx) dom;
+              dom = Option.map (fun (mu, dom) -> (mu, check ctx dom)) dom;
               body = check (R.snoc ctx name.value) body;
             }
       | Struct (eta, fields) ->
@@ -532,16 +575,19 @@ module Resolve (R : Resolver) = struct
       | Codata (fields, hints) ->
           Codata
             ( Abwd.map
-                (fun (R.T1.Codatafield (x, fld)) ->
-                  R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
+                (fun (R.T1.Codatafield (x, lock, ty, fld)) ->
+                  R.T2.Codatafield
+                    (R.rename ctx x, lock, Option.map (check ctx) ty, check (R.snoc ctx x) fld))
                 fields,
               hints )
-      | SelfRecord (fields, hints) ->
+      | SelfRecord (fields, opaq, hints) ->
           SelfRecord
             ( Abwd.map
-                (fun (R.T1.Codatafield (x, fld)) ->
-                  R.T2.Codatafield (R.rename ctx x, check (R.snoc ctx x) fld))
+                (fun (R.T1.Codatafield (x, lock, ty, fld)) ->
+                  R.T2.Codatafield
+                    (R.rename ctx x, lock, Option.map (check ctx) ty, check (R.snoc ctx x) fld))
                 fields,
+              opaq,
               hints )
       | Record (xs, fields, opaq, hints) ->
           let (Bplus ac2) = R.T2.bplus (R.T1.Namevec.length xs.value) in
@@ -550,7 +596,7 @@ module Resolve (R : Resolver) = struct
           let (Bplus ad) = R.T2.bplus (R.T1.fwn_of_tel fields) in
           let fields2, _ = tel ctx2 fields ad in
           Record (locate_opt xs.loc xs2, fields2, opaq, hints)
-      | Refute (args, sort) -> Refute (List.map (synth ctx) args, sort)
+      | Refute (args, sort) -> Refute (List.map (fun (tm, w) -> (synth ctx tm, w)) args, sort)
       | Hole { scope; loc; li; ri; num } -> Hole { scope = R.rescope ctx scope; loc; li; ri; num }
       | Realize x -> Realize (check ctx (locate_opt tm.loc x)).value
       | ImplicitApp (fn, args) ->
@@ -601,11 +647,11 @@ module Resolve (R : Resolver) = struct
     | Emp ->
         let Eq = R.T2.bplus_zero ab in
         (Emp, ctx)
-    | Ext (x, ty, rest) ->
+    | Ext (x, modality, ty, rest) ->
         let ctx2 = R.snoc ctx x in
         let ab = R.T2.bplus_suc ab in
         let rest3, ctx3 = tel ctx2 rest ab in
-        (Ext (R.rename ctx x, check ctx ty, rest3), ctx3)
+        (Ext (R.rename ctx x, modality, check ctx ty, rest3), ctx3)
 end
 
 (* Since the De Bruijn index version is the standard one, we include that here. *)
@@ -625,9 +671,9 @@ let rec namevec_of_vec : type a b ab.
 let rec dataconstr_of_pi : type a. a check located -> a dataconstr =
  fun ty ->
   match ty.value with
-  | Synth (Pi (x, dom, cod)) ->
+  | Synth (Pi (x, modality, dom, cod)) ->
       let (Dataconstr (tel, out)) = dataconstr_of_pi cod in
-      Dataconstr (Ext (x, dom, tel), out)
+      Dataconstr (Ext (x, modality, dom, tel), out)
   | _ -> Dataconstr (Emp, Some ty)
 
 (* Produces only explicit lambdas. *)
@@ -656,4 +702,4 @@ let rec lams : type a b ab.
 
 let rec bplus_of_tel : type a b c. (a, b, c) tel -> (a, b, c) Fwn.bplus = function
   | Emp -> Zero
-  | Ext (_, _, tel) -> Suc (bplus_of_tel tel)
+  | Ext (_, _, _, tel) -> Suc (bplus_of_tel tel)

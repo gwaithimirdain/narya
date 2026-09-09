@@ -686,3 +686,22 @@ axiom binop : A → A → A
 
 notation(1.5) x "*+*" y ≔ binop x y
 
+
+{` comments before case-tree bodies `}
+
+def commented_branches : ℕ → A ≔ [
+| zero. ↦
+  {` first comment `}
+  {` second comment `}
+  blahblah (blahblah2 blahblah3) (blahblah2 (blahblah2 blahblah3))
+    (blahblah blahblah3 blahblah3 blahblah3)
+| suc. _ ↦
+  {` a comment `}
+  blahblah3]
+
+def commented_field : prod A A ≔ (
+  fst ≔
+  {` a comment `}
+  blahblah (blahblah2 blahblah3) (blahblah2 (blahblah2 blahblah3))
+    (blahblah blahblah3 blahblah3 blahblah3),
+  snd ≔ blahblah3)

@@ -16,8 +16,8 @@ let () =
     | `Set _ -> Some "unhandled Subtype set effect")
 
 let add subtype supertype =
-  match (Global.find subtype, Global.find supertype) with
-  | (UU subdim, _), (UU superdim, _) -> (
+  match (Global.find_const subtype, Global.find_const supertype) with
+  | Definition { ty = UU (_, subdim); _ }, Definition { ty = UU (_, superdim); _ } -> (
       match (D.compare_zero subdim, D.compare_zero superdim) with
       | Zero, Zero ->
           S.modify
@@ -26,9 +26,10 @@ let add subtype supertype =
               | None -> Some (Constant.Map.add supertype () Constant.Map.empty)))
       (* This shouldn't happen, since higher-dimensional universes aren't types unless instantiated. *)
       | _ -> fatal (Anomaly "higher-dimensional universe in subtyping"))
-  | (Inst _, _), _ | _, (Inst _, _) ->
+  | Definition { ty = Inst _; _ }, _ | _, Definition { ty = Inst _; _ } ->
       fatal (Unimplemented "subtyping between higher-dimensional types")
-  | (Pi _, _), _ | _, (Pi _, _) -> fatal (Unimplemented "subtyping relations with parameters")
+  | Definition { ty = Pi _; _ }, _ | _, Definition { ty = Pi _; _ } ->
+      fatal (Unimplemented "subtyping relations with parameters")
   | _ -> fatal (Anomaly "non-type in subtyping")
 
 let run ?(init = Constant.Map.empty) = S.run ~init
@@ -45,7 +46,10 @@ let subtype_of ctx subtype supertype =
          @@ let* m = Constant.Map.find_opt subname (S.get ()) in
             let* () = Constant.Map.find_opt supername m in
             (* Higher-dimensional versions of subtypes are also subtypes, as long as they are instantiated at equal tubes. *)
-            let* () = equal_ins subins superins in
-            equal_tyargs ctx subargs superargs -> Ok ()
+            let* _ = equal_ins subins superins in
+            (* Only a successful comparison counts: equal_tyargs can also return Some (Error _) for a definite inequality. *)
+            match equal_tyargs ctx subargs superargs with
+            | Some (Ok ()) -> Some ()
+            | _ -> None -> Ok ()
   (* If there is no subtyping relaton, we revert to checking type equality. *)
   | _ -> equal_val ctx subtype supertype

@@ -4,7 +4,7 @@ names for unnamed variables belonging to that type.
 
   $ cat - >hints.ny <<EOF
   > def ℕ : Type ≔ data #(variables ≔ n,m,k) [ zero. | pair. (_ : ℕ) (_ : ℕ) ]
-  > def kpair : ℕ → ℕ → ℕ ≔ ((x : ℕ → ℕ → ℕ) ↦ x : ℕ → ℕ → ℕ) pair.
+  > def kpair : ℕ → ℕ → ℕ ≔ ((x : ℕ → ℕ → ℕ) ↦ (x : ℕ → ℕ → ℕ)) pair.
   > echo kpair
   > def prod (A B : Type) : Type ≔ sig #(transparent) #(variables ≔ u,v) (fst : A, snd : B)
   > def Stream (A : Type) : Type ≔ codata #(variables ≔ s) [ x .head : A | x .tail : Stream A ]
@@ -36,7 +36,7 @@ The file is reformatted with the attributes preserved.
   | zero.
   | pair. (_ : ℕ) (_ : ℕ) ]
   
-  def kpair : ℕ → ℕ → ℕ ≔ ((x : ℕ → ℕ → ℕ) ↦ x : ℕ → ℕ → ℕ) pair.
+  def kpair : ℕ → ℕ → ℕ ≔ ((x : ℕ → ℕ → ℕ) ↦ (x : ℕ → ℕ → ℕ)) pair.
   
   echo kpair
   
@@ -62,7 +62,7 @@ When the hints are given with ≔, they replace the global default names, so if
 there are more unnamed variables than hints, primed versions of the hints are
 used rather than the global defaults.
 
-  $ narya -e "def P : Type ≔ data #(variables ≔ p) [ mk. (_ : P) (_ : P) ] def kmk : P → P → P ≔ ((x : P → P → P) ↦ x : P → P → P) mk. echo kmk"
+  $ narya -e "def P : Type ≔ data #(variables ≔ p) [ mk. (_ : P) (_ : P) ] def kmk : P → P → P ≔ ((x : P → P → P) ↦ (x : P → P → P)) mk. echo kmk"
   p p′ ↦ mk. p p′
     : P → P → P
   
@@ -71,7 +71,7 @@ used rather than the global defaults.
 When the hints are given with ⩲ instead, they are prepended to the global
 default names, which are therefore used as a fallback if the hints run out.
 
-  $ narya -e "def P : Type ≔ data #(variables ⩲ p) [ mk. (_ : P) (_ : P) ] def kmk : P → P → P ≔ ((x : P → P → P) ↦ x : P → P → P) mk. echo kmk"
+  $ narya -e "def P : Type ≔ data #(variables ⩲ p) [ mk. (_ : P) (_ : P) ] def kmk : P → P → P ≔ ((x : P → P → P) ↦ (x : P → P → P)) mk. echo kmk"
   p 𝑥 ↦ mk. p 𝑥
     : P → P → P
   
@@ -80,7 +80,7 @@ default names, which are therefore used as a fallback if the hints run out.
 Type-specific hints take precedence over the global default names set with
 the -variables flag.
 
-  $ narya -variables a,b -e "def ℕ : Type ≔ data #(variables ≔ n) [ zero. | suc. (_ : ℕ) ] def ksuc : ℕ → ℕ ≔ ((x : ℕ → ℕ) ↦ x : ℕ → ℕ) suc. echo ksuc def B : Type ≔ data [ true. | false. ] def kif : B → B ≔ ((x : B → B) ↦ x : B → B) (_ ↦ true.)"
+  $ narya -variables a,b -e "def ℕ : Type ≔ data #(variables ≔ n) [ zero. | suc. (_ : ℕ) ] def ksuc : ℕ → ℕ ≔ ((x : ℕ → ℕ) ↦ (x : ℕ → ℕ)) suc. echo ksuc def B : Type ≔ data [ true. | false. ] def kif : B → B ≔ ((x : B → B) ↦ (x : B → B)) (_ ↦ true.)"
   n ↦ suc. n
     : ℕ → ℕ
   
@@ -179,7 +179,7 @@ The contexts of holes also use the hints for anonymous variables.
 The "split" interactive command also uses the hints when generating names
 for the variables of the abstractions and matches that it proposes.
 
-  $ narya -fake-interact "def ℕ : Type ≔ data #(variables ≔ n,m,k) [ zero. | suc. (_ : ℕ) | pair. (_ : ℕ) (_ : ℕ) ] def foo : ℕ → ℕ → ℕ ≔ ? split 0 ≔ _ def bar (x : ℕ) : ℕ ≔ ? split 1 ≔ x"
+  $ narya -fake-interact 'def ℕ : Type ≔ data #(variables ≔ n,m,k) [ zero. | suc. (_ : ℕ) | pair. (_ : ℕ) (_ : ℕ) ] def foo : ℕ → ℕ → ℕ ≔ ? split 0 ≔ _ def bar (x : ℕ) : ℕ ≔ ? split 1 ≔ x'
    ￫ info[I0000]
    ￮ constant ℕ defined
   

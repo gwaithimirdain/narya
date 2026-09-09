@@ -658,3 +658,21 @@ This bug was in highlighting the whole degeneracy term rather than just its argu
        does not equal
          AESC[m
   
+  $ narya ascvar.ny
+  b
+    : B
+  
+
+  $ narya -v -parametric -direction p,rel,Br glued-match.ny
+   ￫ info[I0000]
+   ￮ constant eq defined
+  
+   ￫ info[I0000]
+   ￮ constant eq.trl2 defined
+  
+   ￫ info[I0000]
+   ￮ constant iso defined
+  
+   ￫ info[I0000]
+   ￮ constant Id_eq_rfl defined
+  

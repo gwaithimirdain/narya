@@ -1,4 +1,6 @@
-{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-arity" "2" "-direction" "p" "-external") -*- `}
+{` -*- narya-prog-args: ("-proofgeneral" "-parametric" "-arity" "2" "-direction" "p") -*- `}
+
+` This should be -external, but we don't yet have a mode theory that supports external for arity≠1.
 
 ` (Binary) semi-cubical types
 def SCT : Type ≔ codata [ X .z : Type | X .s : SCT⁽ᵖ⁾ X X ]

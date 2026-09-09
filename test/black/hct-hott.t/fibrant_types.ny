@@ -172,8 +172,8 @@ def 𝕗∅ : isFibrant ∅ ≔ [
 
 {` Gel types `}
 
-def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ sig a b ↦ (
-  ungel : R a b )
+def Gel (A B : Type) (R : A → B → Type) : Br Type A B ≔ sig (
+  a .ungel : R a.0 a.1 )
 
 def Gel_iso (A B : Type) (R : A → B → Type) (a : A) (b : B)
   : R a b ≅ Gel A B R a b

@@ -1,164 +1,108 @@
 open Signatures
 open Tlist
+open Tbwd
 
-(* A "tuple" is an intrinsically well-typed *total* map whose keys are insertions into some (backwards) nat, and whose values are parametrized by the result of removing that inserted element. *)
+(* A "tuple" is an intrinsically well-typed map whose keys are insertions into some Word over a chosen generator type.  It is parametrized by an explicit "target" generator 'g0, and stores a value only at those keys whose inserted generator equals 'g0; at keys with any other generator it stores only an apartness witness (no closures, hence marshallable).  Callers therefore need not deal with the mismatched case themselves. *)
 
-module Make (F : Fam2) : sig
-  type ('a, 'b, 'p) gt
-  type ('a, 'p) t = ('a, Fwn.zero, 'p) gt
+module Make (G : Decidable) (F : Fam2) = struct
+  module W = Word.Make (G)
 
-  val empty : (N.zero, 'p) t
-  val find : ('a, 'asuc) N.insert -> ('asuc, 'p) t -> ('a, 'p) F.t
-  val set : ('a, 'asuc) N.insert -> ('a, 'p) F.t -> ('asuc, 'p) t -> ('asuc, 'p) t
-
-  val update :
-    ('a, 'asuc) N.insert -> (('a, 'p) F.t -> ('a, 'p) F.t) -> ('asuc, 'p) t -> ('asuc, 'p) t
-
-  type ('asuc, 'p) builder = { build : 'a. ('a, 'asuc) N.insert -> ('a, 'p) F.t }
-
-  val build : 'a N.t -> ('a, 'p) builder -> ('a, 'p) t
-
-  module Heter : sig
-    type (_, _) hft =
-      | [] : ('a, nil) hft
-      | ( :: ) : ('a, 'p) F.t * ('a, 'ps) hft -> ('a, ('p, 'ps) cons) hft
-
-    type (_, _, _) hgt =
-      | [] : ('a, 'b, nil) hgt
-      | ( :: ) : ('a, 'b, 'p) gt * ('a, 'b, 'ps) hgt -> ('a, 'b, ('p, 'ps) cons) hgt
-  end
-
-  module Applicatic (M : Applicative.Plain) : sig
-    type ('asuc, 'ps, 'qs) pmapperM = {
-      map : 'a. ('a, 'asuc) N.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft M.t;
-    }
-
-    val pmapM :
-      ('a, ('p, 'ps) cons, 'qs) pmapperM ->
-      ('a, Fwn.zero, ('p, 'ps) cons) Heter.hgt ->
-      'qs Tlist.t ->
-      ('a, Fwn.zero, 'qs) Heter.hgt M.t
-
-    type ('asuc, 'ps, 'q) mmapperM = {
-      map : 'a. ('a, 'asuc) N.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t M.t;
-    }
-
-    val mmapM :
-      ('a, ('p, 'ps) cons, 'q) mmapperM ->
-      ('a, Fwn.zero, ('p, 'ps) cons) Heter.hgt ->
-      ('a, Fwn.zero, 'q) gt M.t
-
-    type ('asuc, 'ps) miteratorM = {
-      it : 'a. ('a, 'asuc) N.insert -> ('a, 'ps) Heter.hft -> unit M.t;
-    }
-
-    val miterM :
-      ('a, ('p, 'ps) cons) miteratorM -> ('a, Fwn.zero, ('p, 'ps) cons) Heter.hgt -> unit M.t
-  end
-
-  module Monadic (M : Monad.Plain) : sig
-    module A : module type of Applicative.OfMonad (M)
-    include module type of Applicatic (A)
-  end
-
-  module IdM : module type of Monadic (Monad.Identity)
-
-  val pmap :
-    ('a, ('p, 'ps) cons, 'qs) IdM.pmapperM ->
-    ('a, Fwn.zero, ('p, 'ps) cons) Heter.hgt ->
-    'qs Tlist.t ->
-    ('a, Fwn.zero, 'qs) Heter.hgt
-
-  val mmap :
-    ('a, ('p, 'ps) cons, 'q) IdM.mmapperM ->
-    ('a, Fwn.zero, ('p, 'ps) cons) Heter.hgt ->
-    ('a, Fwn.zero, 'q) gt
-
-  val miter :
-    ('a, ('p, 'ps) cons) IdM.miteratorM -> ('a, Fwn.zero, ('p, 'ps) cons) Heter.hgt -> unit
-end = struct
-  (* The intermediate pieces of such a map are additionally parametrized by a forwards nat 'b that is to be added on the right to produce the true "outer" parameter. *)
-  type (_, _, _) gt =
-    | Emp : (N.zero, 'b, 'p) gt
-    | Map : {
-        now : ('a, 'b, 'ab) Fwn.bplus * ('ab, 'p) F.t;
-        later : ('a, 'b Fwn.suc, 'p) gt;
+  type (_, _, _, _) gt =
+    | Emp : (W.zero, 'b, 'g0, 'p) gt
+    (* A key whose generator matches the target 'g0: we store an actual value. *)
+    | Match : {
+        bplus : ('a, 'b, 'ab) W.bplus;
+        now : ('ab, 'p) F.t;
+        later : ('a, ('g0, 'b) cons, 'g0, 'p) gt;
       }
-        -> ('a N.suc, 'b, 'p) gt
+        -> (('a, 'g0) snoc, 'b, 'g0, 'p) gt
+    (* A key whose generator is apart from the target: we store only the apartness witness. *)
+    | Miss : {
+        gen : 'g G.t;
+        apart : ('g, 'g0) G.apart;
+        bplus : ('a, 'b, 'ab) W.bplus;
+        later : ('a, ('g, 'b) cons, 'g0, 'p) gt;
+      }
+        -> (('a, 'g) snoc, 'b, 'g0, 'p) gt
 
-  type ('a, 'p) t = ('a, Fwn.zero, 'p) gt
+  type ('a, 'g0, 'p) t = ('a, nil, 'g0, 'p) gt
 
-  let empty : type b p. (N.zero, b, p) gt = Emp
+  let empty : type b g0 p. (W.zero, b, g0, p) gt = Emp
 
-  let rec gfind : type a asuc b ab p.
-      (a, asuc) N.insert -> (asuc, b, p) gt -> (a, b, ab) Fwn.bplus -> (ab, p) F.t =
+  let rec gfind : type a asuc g0 b ab p.
+      (a, g0, asuc) W.insert -> (asuc, b, g0, p) gt -> (a, b, ab) W.bplus -> (ab, p) F.t =
    fun i m ab ->
-    match i with
-    | Now ->
-        let (Map { now = ab', v; _ }) = m in
-        let Eq = Fwn.bplus_uniq ab ab' in
-        v
-    | Later i ->
-        let (Map { later; _ }) = m in
-        gfind i later (Suc ab)
+    match (i, m) with
+    | Now, Match { bplus; now; _ } ->
+        let Eq = W.bplus_uniq ab bplus in
+        now
+    | Now, Miss { apart; _ } -> ( match G.apart_irrefl apart with _ -> . )
+    | Later i, Match { later; _ } -> gfind i later (Append_cons ab)
+    | Later i, Miss { later; _ } -> gfind i later (Append_cons ab)
 
-  let find : type a asuc p. (a, asuc) N.insert -> (asuc, p) t -> (a, p) F.t =
-   fun i m -> gfind i m Zero
+  let find : type a asuc g0 p. (a, g0, asuc) W.insert -> (asuc, g0, p) t -> (a, p) F.t =
+   fun i m -> gfind i m Append_nil
 
-  let rec gset : type a asuc b ab p.
-      (a, asuc) N.insert ->
+  let rec gset : type a asuc g0 b ab p.
+      (a, g0, asuc) W.insert ->
       (ab, p) F.t ->
-      (asuc, b, p) gt ->
-      (a, b, ab) Fwn.bplus ->
-      (asuc, b, p) gt =
+      (asuc, b, g0, p) gt ->
+      (a, b, ab) W.bplus ->
+      (asuc, b, g0, p) gt =
    fun i v m ab ->
-    match i with
-    | Now ->
-        let (Map { now = ab', _; later }) = m in
-        let Eq = Fwn.bplus_uniq ab ab' in
-        Map { now = (ab', v); later }
-    | Later i ->
-        let (Map { later; now }) = m in
-        Map { later = gset i v later (Suc ab); now }
+    match (i, m) with
+    | Now, Match m ->
+        let Eq = W.bplus_uniq ab m.bplus in
+        Match { m with now = v }
+    | Now, Miss { apart; _ } -> ( match G.apart_irrefl apart with _ -> . )
+    | Later i, Match m -> Match { m with later = gset i v m.later (Append_cons ab) }
+    | Later i, Miss m -> Miss { m with later = gset i v m.later (Append_cons ab) }
 
-  let set : type a asuc p. (a, asuc) N.insert -> (a, p) F.t -> (asuc, p) t -> (asuc, p) t =
-   fun i v m -> gset i v m Zero
+  let set : type a asuc g0 p.
+      (a, g0, asuc) W.insert -> (a, p) F.t -> (asuc, g0, p) t -> (asuc, g0, p) t =
+   fun i v m -> gset i v m Append_nil
 
-  let rec gupdate : type a asuc b ab p.
-      (a, asuc) N.insert ->
+  let rec gupdate : type a asuc g0 b ab p.
+      (a, g0, asuc) W.insert ->
       ((ab, p) F.t -> (ab, p) F.t) ->
-      (asuc, b, p) gt ->
-      (a, b, ab) Fwn.bplus ->
-      (asuc, b, p) gt =
+      (asuc, b, g0, p) gt ->
+      (a, b, ab) W.bplus ->
+      (asuc, b, g0, p) gt =
    fun i f m ab ->
-    match i with
-    | Now ->
-        let (Map { now = ab', v; later }) = m in
-        let Eq = Fwn.bplus_uniq ab ab' in
-        Map { now = (ab', f v); later }
-    | Later i ->
-        let (Map { later; now }) = m in
-        Map { later = gupdate i f later (Suc ab); now }
+    match (i, m) with
+    | Now, Match m ->
+        let Eq = W.bplus_uniq ab m.bplus in
+        Match { m with now = f m.now }
+    | Now, Miss { apart; _ } -> ( match G.apart_irrefl apart with _ -> . )
+    | Later i, Match m -> Match { m with later = gupdate i f m.later (Append_cons ab) }
+    | Later i, Miss m -> Miss { m with later = gupdate i f m.later (Append_cons ab) }
 
-  let update : type a asuc p.
-      (a, asuc) N.insert -> ((a, p) F.t -> (a, p) F.t) -> (asuc, p) t -> (asuc, p) t =
-   fun i f m -> gupdate i f m Zero
+  let update : type a asuc g0 p.
+      (a, g0, asuc) W.insert -> ((a, p) F.t -> (a, p) F.t) -> (asuc, g0, p) t -> (asuc, g0, p) t =
+   fun i f m -> gupdate i f m Append_nil
 
-  type ('asuc, 'p) builder = { build : 'a. ('a, 'asuc) N.insert -> ('a, 'p) F.t }
+  type ('asuc, 'g0, 'p) builder = { build : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'p) F.t }
 
-  let rec gbuild : type a b ab p. a N.t -> (a, b, ab) Fwn.bplus -> (ab, p) builder -> (a, b, p) gt =
-   fun a ab builder ->
+  let rec gbuild : type a b ab g0 p.
+      a W.t -> g0 G.t -> (a, b, ab) W.bplus -> (ab, g0, p) builder -> (a, b, g0, p) gt =
+   fun a g0 ab builder ->
     match a with
-    | Nat Zero -> Emp
-    | Nat (Suc a) ->
-        let (Bplus ab') = Fwn.bplus (Fwn.bplus_right ab) in
-        Map
-          {
-            now = (ab', builder.build (Fwn.insert_bplus Now ab' ab));
-            later = gbuild (Nat a) (Suc ab) builder;
-          }
+    | Word Zero -> Emp
+    | Word (Suc (a', g)) -> (
+        let (Bplus bplus) = W.bplus_of_tlist (W.bplus_right ab) in
+        match G.decide g g0 with
+        | Same ->
+            Match
+              {
+                bplus;
+                now = builder.build (W.insert_bplus Now bplus ab);
+                later = gbuild (Word a') g0 (Append_cons ab) builder;
+              }
+        | Distinct apart ->
+            Miss { gen = g; apart; bplus; later = gbuild (Word a') g0 (Append_cons ab) builder })
 
-  let build : type a p. a N.t -> (a, p) builder -> (a, p) t = fun a builder -> gbuild a Zero builder
+  let build : type a g0 p. a W.t -> g0 G.t -> (a, g0, p) builder -> (a, g0, p) t =
+   fun a g0 builder -> gbuild a g0 Append_nil builder
 
   (* Generic traversal *)
 
@@ -167,32 +111,62 @@ end = struct
       | [] : ('a, nil) hft
       | ( :: ) : ('a, 'p) F.t * ('a, 'ps) hft -> ('a, ('p, 'ps) cons) hft
 
-    type (_, _, _) hgt =
-      | [] : ('a, 'b, nil) hgt
-      | ( :: ) : ('a, 'b, 'p) gt * ('a, 'b, 'ps) hgt -> ('a, 'b, ('p, 'ps) cons) hgt
+    type (_, _, _, _) hgt =
+      | [] : ('a, 'b, 'g0, nil) hgt
+      | ( :: ) :
+          ('a, 'b, 'g0, 'p) gt * ('a, 'b, 'g0, 'ps) hgt
+          -> ('a, 'b, 'g0, ('p, 'ps) cons) hgt
 
-    let rec emp : type b ps. ps Tlist.t -> (N.zero, b, ps) hgt = function
+    let rec emp : type b g0 ps. ps Tlist.t -> (W.zero, b, g0, ps) hgt = function
       | Nil -> []
       | Cons ps -> Emp :: emp ps
 
-    let rec map : type a b ab ps.
-        (a, b, ab) Fwn.bplus -> (ab, ps) hft -> (a, b Fwn.suc, ps) hgt -> (a N.suc, b, ps) hgt =
-     fun ab nows laters ->
-      match (nows, laters) with
-      | [], [] -> []
-      | now :: nows, later :: laters -> Map { now = (ab, now); later } :: map ab nows laters
-
-    let rec now : type a b ab ps. (a, b, ab) Fwn.bplus -> (a N.suc, b, ps) hgt -> (ab, ps) hft =
+    (* Extract the values from a heterogeneous list of Match nodes. *)
+    let rec nows : type a b ab g0 ps.
+        (a, b, ab) W.bplus -> ((a, g0) snoc, b, g0, ps) hgt -> (ab, ps) hft =
      fun ab m ->
       match m with
       | [] -> []
-      | Map { now = ab', n; _ } :: ms ->
-          let Eq = Fwn.bplus_uniq ab ab' in
-          n :: now ab ms
+      | Match { bplus; now = n; _ } :: ms ->
+          let Eq = W.bplus_uniq ab bplus in
+          n :: nows ab ms
+      | Miss { apart; _ } :: _ -> ( match G.apart_irrefl apart with _ -> . )
 
-    let rec later : type a b ps. (a N.suc, b, ps) hgt -> (a, b Fwn.suc, ps) hgt = function
+    (* Extract the sub-tuples of a heterogeneous list of Match (resp. Miss) nodes. *)
+    let rec later_match : type a b g0 ps.
+        ((a, g0) snoc, b, g0, ps) hgt -> (a, (g0, b) cons, g0, ps) hgt = function
       | [] -> []
-      | Map { later = l; _ } :: ms -> l :: later ms
+      | Match { later = l; _ } :: ms -> l :: later_match ms
+      | Miss { apart; _ } :: _ -> ( match G.apart_irrefl apart with _ -> . )
+
+    let rec later_miss : type a b g g0 ps.
+        (g, g0) G.apart -> ((a, g) snoc, b, g0, ps) hgt -> (a, (g, b) cons, g0, ps) hgt =
+     fun apart -> function
+      | [] -> []
+      | Miss { later = l; _ } :: ms -> l :: later_miss apart ms
+      | Match _ :: _ -> ( match G.apart_irrefl apart with _ -> . )
+
+    (* Reassemble a heterogeneous list of Match (resp. Miss) nodes. *)
+    let rec map_match : type a b ab g0 ps.
+        (a, b, ab) W.bplus ->
+        (ab, ps) hft ->
+        (a, (g0, b) cons, g0, ps) hgt ->
+        ((a, g0) snoc, b, g0, ps) hgt =
+     fun ab nows laters ->
+      match (nows, laters) with
+      | [], [] -> []
+      | now :: nows, later :: laters -> Match { bplus = ab; now; later } :: map_match ab nows laters
+
+    let rec map_miss : type a b ab g g0 ps.
+        g G.t ->
+        (g, g0) G.apart ->
+        (a, b, ab) W.bplus ->
+        (a, (g, b) cons, g0, ps) hgt ->
+        ((a, g) snoc, b, g0, ps) hgt =
+     fun gen apart ab laters ->
+      match laters with
+      | [] -> []
+      | later :: laters -> Miss { gen; apart; bplus = ab; later } :: map_miss gen apart ab laters
   end
 
   (* OCaml can't always tell from context what [x ; xs] should be; in particular it often fails to notice hfts.  So we also give a different syntax that is unambiguous.  *)
@@ -205,67 +179,69 @@ end = struct
 
   open Infix
 
-  module Applicatic (M : Applicative.Plain) = struct
-    open Applicative.Ops (M)
+  type ('asuc, 'g0, 'ps, 'qs) pmapper = {
+    map : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft;
+  }
 
-    type ('asuc, 'ps, 'qs) pmapperM = {
-      map : 'a. ('a, 'asuc) N.insert -> ('a, 'ps) Heter.hft -> ('a, 'qs) Heter.hft M.t;
-    }
+  let rec gpmap : type a b ab g0 p ps qs.
+      (a, b, ab) W.bplus ->
+      (ab, g0, (p, ps) cons, qs) pmapper ->
+      (a, b, g0, (p, ps) cons) Heter.hgt ->
+      qs Tlist.t ->
+      (a, b, g0, qs) Heter.hgt =
+   fun ab f mss qs ->
+    match mss with
+    | Emp :: _ -> Heter.emp qs
+    | Match { bplus = ab'; now = v; later } :: mss ->
+        let fnow = f.map (W.insert_bplus Now ab' ab) (v :: Heter.nows ab' mss) in
+        let flater = gpmap (Append_cons ab) f (later :: Heter.later_match mss) qs in
+        Heter.map_match ab' fnow flater
+    | Miss { gen; apart; bplus = ab'; later } :: mss ->
+        let flater = gpmap (Append_cons ab) f (later :: Heter.later_miss apart mss) qs in
+        Heter.map_miss gen apart ab' flater
 
-    let rec gpmapM : type a b ab p ps qs.
-        (a, b, ab) Fwn.bplus ->
-        (ab, (p, ps) cons, qs) pmapperM ->
-        (a, b, (p, ps) cons) Heter.hgt ->
-        qs Tlist.t ->
-        (a, b, qs) Heter.hgt M.t =
-     fun ab f mss qs ->
-      match mss with
-      | Emp :: _ -> return (Heter.emp qs)
-      | Map { now = ab', v; later } :: mss ->
-          M.apply
-            (M.zip
-               (fun () -> f.map (Fwn.insert_bplus Now ab' ab) (v :: Heter.now ab' mss))
-               (fun () -> gpmapM (Suc ab) f (later :: Heter.later mss) qs))
-          @@ fun (fnow, flater) -> Heter.map ab' fnow flater
+  let pmap : type a g0 p ps qs.
+      (a, g0, (p, ps) cons, qs) pmapper ->
+      (a, nil, g0, (p, ps) cons) Heter.hgt ->
+      qs Tlist.t ->
+      (a, nil, g0, qs) Heter.hgt =
+   fun f mss qs -> gpmap Append_nil f mss qs
 
-    let pmapM : type a p ps qs.
-        (a, (p, ps) cons, qs) pmapperM ->
-        (a, Fwn.zero, (p, ps) cons) Heter.hgt ->
-        qs Tlist.t ->
-        (a, Fwn.zero, qs) Heter.hgt M.t =
-     fun f mss qs -> gpmapM Zero f mss qs
+  type ('asuc, 'g0, 'ps, 'q) mmapper = {
+    map : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t;
+  }
 
-    type ('asuc, 'ps, 'q) mmapperM = {
-      map : 'a. ('a, 'asuc) N.insert -> ('a, 'ps) Heter.hft -> ('a, 'q) F.t M.t;
-    }
+  let mmap : type a g0 p ps q.
+      (a, g0, (p, ps) cons, q) mmapper ->
+      (a, nil, g0, (p, ps) cons) Heter.hgt ->
+      (a, nil, g0, q) gt =
+   fun f xs ->
+    let [ ys ] =
+      pmap
+        {
+          map =
+            (fun i x ->
+              let y = f.map i x in
+              y @: hnil);
+        }
+        xs (Cons Nil) in
+    ys
 
-    let mmapM : type a p ps q.
-        (a, (p, ps) cons, q) mmapperM ->
-        (a, Fwn.zero, (p, ps) cons) Heter.hgt ->
-        (a, Fwn.zero, q) gt M.t =
-     fun f xs ->
-      M.apply (pmapM { map = (fun i x -> M.apply (f.map i x) @@ fun y -> y @: hnil) } xs (Cons Nil))
-      @@ fun [ ys ] -> ys
+  type ('asuc, 'g0, 'ps) miterator = {
+    it : 'a. ('a, 'g0, 'asuc) W.insert -> ('a, 'ps) Heter.hft -> unit;
+  }
 
-    type ('asuc, 'ps) miteratorM = {
-      it : 'a. ('a, 'asuc) N.insert -> ('a, 'ps) Heter.hft -> unit M.t;
-    }
-
-    let miterM : type a p ps.
-        (a, (p, ps) cons) miteratorM -> (a, Fwn.zero, (p, ps) cons) Heter.hgt -> unit M.t =
-     fun f xs ->
-      M.apply (pmapM { map = (fun i x -> M.apply (f.it i x) @@ fun () -> hnil) } xs Nil)
-      @@ fun [] -> ()
-  end
-
-  module Monadic (M : Monad.Plain) = struct
-    module A = Applicative.OfMonad (M)
-    include Applicatic (A)
-  end
-
-  module IdM = Monadic (Monad.Identity)
-
-  let pmap f xs qs = IdM.pmapM f xs qs
-  let mmap f xs = IdM.mmapM f xs
-  let miter f xs = IdM.miterM f xs
+  let miter : type a g0 p ps.
+      (a, g0, (p, ps) cons) miterator -> (a, nil, g0, (p, ps) cons) Heter.hgt -> unit =
+   fun f xs ->
+    let [] =
+      pmap
+        {
+          map =
+            (fun i x ->
+              f.it i x;
+              hnil);
+        }
+        xs Nil in
+    ()
 end

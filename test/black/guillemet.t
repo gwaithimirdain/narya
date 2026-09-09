@@ -32,7 +32,7 @@
    ￫ error[E0200]
    ￭ command-line exec string
    1 | def «foo.bar» : Type := sig () import «foo def x : bar» := ()
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
 
@@ -43,7 +43,7 @@
    ￫ error[E0200]
    ￭ command-line exec string
    1 | def «foo.bar» : Type := sig () import «foo def x : bar := ()‹EOF›
-     ^ parse error
+     ^ parse error: invalid syntax
   
   [1]
 

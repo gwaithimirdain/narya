@@ -1,0 +1,180 @@
+(* Test that [plus_comp_pbij] agrees with an independent model of partial bijection composition.
+
+   A partial bijection ('e,'i,'r) pbij is equivalent to its "total insertion" ('r+'e, 'res, 'i), obtained by adjoining the remaining dimension on the left of the evaluation dimension, and hence to the permutation ('r+'e) -> ('res+'i) that this insertion induces.  Composing partial bijections should correspond to composing those permutations:
+
+     r12 + e1 + e2  --(p1 * id)-->  res1 + r2 + e2  --(id * p2)-->  res1 + res2 + i
+
+   so we check that against the permutation induced by [plus_comp_pbij]. *)
+
+open Dim
+
+let () =
+  Endpoints.set ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true ~hott:false
+
+let dim : int -> D.wrapped =
+ fun n ->
+  let rec go n =
+    if n <= 0 then D.Wrap D.zero
+    else
+      let (D.Wrap m) = go (n - 1) in
+      let (D.Plus p) = D.plus D.one in
+      D.Wrap (D.plus_out m p) in
+  go n
+
+let check : type e1 e2 e12 i r2 r12.
+    (e1, e2, e12) D.plus -> (e2, i, r2) pbij -> (e1, r2, r12) pbij -> bool =
+ fun e1e2 p2 p1 ->
+  let (Pbij (ins1, shuf1)) = p1 in
+  let (Pbij (ins2, shuf2)) = p2 in
+  let p12 = plus_comp_pbij e1e2 p2 p1 in
+  let (Pbij (ins12, shuf12)) = p12 in
+  let e2dim = D.plus_right e1e2 in
+  (* p1 induces a degeneracy (r12+e1) -> (res1+r2). *)
+  let (D.Plus r12e1) = D.plus (dom_pbij p1) in
+  let tins1 = ins_plus_of_pbij ins1 shuf1 r12e1 in
+  let res1 = cod_left_ins tins1 in
+  let (D.Plus res1r2) = D.plus (cod_pbij p1) in
+  let deg1 = deg_of_ins_plus tins1 res1r2 in
+  (* p2 induces a degeneracy (r2+e2) -> (res2+i). *)
+  let (D.Plus r2e2) = D.plus (dom_pbij p2) in
+  let tins2 = ins_plus_of_pbij ins2 shuf2 r2e2 in
+  let (D.Plus res2i) = D.plus (cod_pbij p2) in
+  let deg2 = deg_of_ins_plus tins2 res2i in
+  let res2idim = D.plus_out (cod_left_ins tins2) res2i in
+  (* Whisker the first with e2 on the right: (r12+e1)+e2 -> (res1+r2)+e2. *)
+  let (D.Plus res1r2_e2) = D.plus e2dim in
+  let (D.Plus r12e1_e2) = D.plus e2dim in
+  let first = deg_plus_deg deg1 res1r2_e2 r12e1_e2 (id_deg e2dim) in
+  (* Whisker the second with res1 on the left: res1+(r2+e2) -> res1+(res2+i). *)
+  let res1_r2e2 = D.plus_assocr res1r2 r2e2 res1r2_e2 in
+  let (D.Plus res1_res2i) = D.plus res2idim in
+  let second = deg_plus_deg (id_deg res1) res1_res2i res1_r2e2 deg2 in
+  let expected = comp_deg second first in
+  (* And compare with the degeneracy induced by the composite, whose domain r12+(e1+e2) is the same as (r12+e1)+e2. *)
+  let r12_e12 = D.plus_assocr r12e1 e1e2 r12e1_e2 in
+  let tins12 = ins_plus_of_pbij ins12 shuf12 r12_e12 in
+  let (D.Plus res12i) = D.plus (cod_pbij p12) in
+  let actual = deg_of_ins_plus tins12 res12i in
+  match (D.compare (cod_deg expected) (cod_deg actual), deg_equiv expected actual) with
+  | Eq, Some () -> true
+  | _ ->
+      Printf.printf "  expected %s, got %s\n" (string_of_deg expected) (string_of_deg actual);
+      false
+
+(* Decomposing a composite with [pbij_of_plus] should give back its two factors. *)
+let check_split : type e1 e2 e12 i r2 r12.
+    (e1, e2, e12) D.plus -> (e2, i, r2) pbij -> (e1, r2, r12) pbij -> bool =
+ fun e1e2 p2 p1 ->
+  let (Pbij_of_plus (q2, q1)) = pbij_of_plus e1e2 (plus_comp_pbij e1e2 p2 p1) in
+  match (equal_pbij q2 p2, equal_pbij q1 p1) with
+  | Some Eq, Some Eq -> true
+  | _ -> false
+
+(* And recomposing a decomposition should give back the original. *)
+let check_join : type e1 e2 e12 i r12. (e1, e2, e12) D.plus -> (e12, i, r12) pbij -> bool =
+ fun e1e2 p12 ->
+  let (Pbij_of_plus (q2, q1)) = pbij_of_plus e1e2 p12 in
+  match equal_pbij (plus_comp_pbij e1e2 q2 q1) p12 with
+  | Some Eq -> true
+  | None -> false
+
+(* A partial bijection is faithfully described by its evaluation dimension together with its string representation, which lists, for each element of the intrinsic dimension, either "refl" (if it is remaining) or the position in the evaluation dimension that it is matched with. *)
+
+type wrapped_pbij = Wrapped : ('e, 'i, 'r) pbij -> wrapped_pbij
+
+let () =
+  let dims = List.init 4 dim in
+  let all =
+    List.concat_map
+      (fun (D.Wrap e) ->
+        List.concat_map
+          (fun (D.Wrap i) ->
+            List.of_seq (Seq.map (fun (Pbij_between p) -> Wrapped p) (all_pbij_between e i)))
+          dims)
+      dims in
+  let count = ref 0 in
+  let bad = ref 0 in
+  List.iter
+    (fun (Wrapped p) ->
+      List.iter
+        (fun (Wrapped q) ->
+          incr count;
+          let expected =
+            string_of_dim (dom_pbij p) = string_of_dim (dom_pbij q)
+            && string_of_dim (cod_pbij p) = string_of_dim (cod_pbij q)
+            && string_of_pbij p = string_of_pbij q in
+          let actual =
+            match equal_pbij p q with
+            | Some Eq ->
+                (* The equations really do identify the parameters: with them in scope, the two partial bijections have the same type, so we can compare them with the built-in structural equality. *)
+                if p <> q then Printf.printf "  identified but unequal!\n";
+                true
+            | None -> false in
+          if expected <> actual then (
+            incr bad;
+            Printf.printf "FAIL equal_pbij (%s : %s -> %s) (%s : %s -> %s) = %b\n"
+              (string_of_pbij p)
+              (string_of_dim (dom_pbij p))
+              (string_of_dim (cod_pbij p))
+              (string_of_pbij q)
+              (string_of_dim (dom_pbij q))
+              (string_of_dim (cod_pbij q))
+              actual))
+        all)
+    all;
+  if !bad > 0 then
+    failwith (Printf.sprintf "compared %d pairs of partial bijections, %d failures\n" !count !bad)
+
+let () =
+  let dims = List.init 4 dim in
+  let count = ref 0 in
+  let bad = ref 0 in
+  List.iter
+    (fun (D.Wrap e1) ->
+      List.iter
+        (fun (D.Wrap e2) ->
+          List.iter
+            (fun (D.Wrap i) ->
+              let (D.Plus e1e2) = D.plus e2 in
+              Seq.iter
+                (fun (Pbij_between p2) ->
+                  Seq.iter
+                    (fun (Pbij_between p1) ->
+                      incr count;
+                      if not (check e1e2 p2 p1 && check_split e1e2 p2 p1) then (
+                        incr bad;
+                        Printf.printf "FAIL e1=%s e2=%s i=%s: p2=%s p1=%s gave %s\n"
+                          (string_of_dim e1) (string_of_dim e2) (string_of_dim i)
+                          (string_of_pbij p2) (string_of_pbij p1)
+                          (string_of_pbij (plus_comp_pbij e1e2 p2 p1))))
+                    (all_pbij_between e1 (remaining p2)))
+                (all_pbij_between e2 i))
+            dims)
+        dims)
+    dims;
+  if !bad > 0 then failwith (Printf.sprintf "checked %d compositions, %d failures\n" !count !bad)
+
+let () =
+  let dims = List.init 4 dim in
+  let count = ref 0 in
+  let bad = ref 0 in
+  List.iter
+    (fun (D.Wrap e1) ->
+      List.iter
+        (fun (D.Wrap e2) ->
+          let (D.Plus e1e2) = D.plus e2 in
+          let e12 = D.plus_out e1 e1e2 in
+          List.iter
+            (fun (D.Wrap i) ->
+              Seq.iter
+                (fun (Pbij_between p12) ->
+                  incr count;
+                  if not (check_join e1e2 p12) then (
+                    incr bad;
+                    Printf.printf "FAIL e1=%s e2=%s i=%s: %s does not rejoin\n" (string_of_dim e1)
+                      (string_of_dim e2) (string_of_dim i) (string_of_pbij p12)))
+                (all_pbij_between e12 i))
+            dims)
+        dims)
+    dims;
+  if !bad > 0 then failwith (Printf.sprintf "checked %d decompositions, %d failures\n" !count !bad)

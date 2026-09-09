@@ -10,5 +10,5 @@ def isBisim (A : Type) (B : Type) (R : A → B → Type) : Type ≔ codata [
 
 def glue (A : Type) (B : Type) (R : A → B → Type) (Rb : isBisim A B R)
   : Id Type A B
-  ≔ sig x y ↦ (
-  unglue : R x y )
+  ≔ sig (
+  x .unglue : R x.0 x.1 )

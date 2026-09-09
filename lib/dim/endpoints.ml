@@ -6,39 +6,46 @@ type 'l len = 'l N.t
 type wrapped = Wrap : 'l len -> wrapped
 type 'l t = 'l len * 'l N.index
 
-module Data = struct
-  type t = {
-    arity : wrapped;
-    refl_string : string;
-    refl_names : string list;
-    internal : bool;
-    hott : unit option;
-  }
-end
+type data = {
+  arity : wrapped;
+  refl_string : string;
+  refl_names : string list;
+  internal : bool;
+  hott : bool;
+}
 
-module Config = Algaeff.Reader.Make (Data)
+let data : data option ref = ref None
 
-let () = Config.register_printer (function `Read -> Some "unhandled Endpoints.Config.read effect")
+let read () =
+  match !data with
+  | Some d -> d
+  | None -> failwith "Endpoints.data not set"
 
 let hott : unit -> N.two len option =
  fun () ->
-  if Option.is_some (Config.read ()).hott then
-    let (Wrap arity) = (Config.read ()).arity in
-    match D.compare arity N.two with
+  if (read ()).hott then
+    let (Wrap arity) = (read ()).arity in
+    match N.compare arity N.two with
     | Eq -> Some N.two
     | Neq -> None
   else None
 
-let run ~arity ~refl_char ~refl_names ~internal ?hott f =
+let unary : unit -> N.one len option =
+ fun () ->
+  let (Wrap arity) = (read ()).arity in
+  match N.compare arity N.one with
+  | Eq -> Some N.one
+  | Neq -> None
+
+let set ~arity ~refl_char ~refl_names ~internal ~hott =
   let (Plus_something arity) = N.plus_of_int arity in
   let refl_string = String.make 1 refl_char in
-  let env : Data.t = { arity = Wrap (Nat arity); refl_string; refl_names; internal; hott } in
-  Config.run ~env f
+  data := Some { arity = Wrap (Nat arity); refl_string; refl_names; internal; hott }
 
-let wrapped () = (Config.read ()).arity
-let refl_string () = (Config.read ()).refl_string
-let refl_names () = (Config.read ()).refl_names
-let internal () = (Config.read ()).internal
+let wrapped () = (read ()).arity
+let refl_string () = (read ()).refl_string
+let refl_names () = (read ()).refl_names
+let internal () = (read ()).internal
 
 let uniq : type l1 l2. l1 len -> l2 len -> (l1, l2) Eq.t =
  fun l1 l2 ->
@@ -48,8 +55,23 @@ let uniq : type l1 l2. l1 len -> l2 len -> (l1, l2) Eq.t =
 
 let len l = l
 
+(* Since 'indices' is called at every branch node of the generic cube and tube traversals, and rebuilding it is quadratic in the arity, we memoize it per arity.  The cache is keyed by the length with N.compare, recomputing on a mismatch, so it remains correct even if different arities appear in one process. *)
+type indices_cache = Indices : 'l len * ('l t, 'l) Bwv.t -> indices_cache
+
+let indices_cache : indices_cache list ref = ref []
+
 let indices : type l. l len -> (l t, l) Bwv.t =
- fun l -> Bwv.map (fun i -> (l, i)) (Bwv.all_indices (len l))
+ fun l ->
+  let rec lookup = function
+    | [] ->
+        let ixs = Bwv.map (fun i -> (l, i)) (Bwv.all_indices (len l)) in
+        indices_cache := Indices (l, ixs) :: !indices_cache;
+        ixs
+    | Indices (l', ixs) :: rest -> (
+        match N.compare l' l with
+        | Eq -> ixs
+        | Neq -> lookup rest) in
+  lookup !indices_cache
 
 let subscripts = [| "₀"; "₁"; "₂"; "₃"; "₄"; "₅"; "₆"; "₇"; "₈"; "₉" |]
 
@@ -72,3 +94,12 @@ let of_char : type l. l len -> char -> (l t option, unit) result =
       | Some j -> Ok (Some (l, j))
       | None -> Error ()
   with Failure _ -> Error ()
+
+(* A dimension is totally nullary if all its directions have arity zero.  Currently there is only one direction, so it suffices to test whether the overall arity is zero.  *)
+
+let totally_nullary : type a. a D.t -> bool =
+ fun _ ->
+  let (Wrap l) = wrapped () in
+  match len l with
+  | N.Nat Zero -> true
+  | N.Nat (Suc _) -> false

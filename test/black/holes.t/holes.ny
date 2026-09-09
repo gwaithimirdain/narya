@@ -63,11 +63,11 @@ def foo : Type ≔ sig (
 
 def foo' : Type ≔ sig ( bar : Type, baz : (x : bar) → ? )
 
-def gel0 (A B : Type) : Id Type A B ≔ sig x y ↦ ( one : ? )
+def gel0 (A B : Type) : Id Type A B ≔ sig ( x .one : ? )
 
-def gel1 (A B : Type) : Id Type A B ≔ sig x y ↦ ( one : Type, two : ? )
+def gel1 (A B : Type) : Id Type A B ≔ sig ( x .one : Type, x .two : ? )
 
-def gel2 (A B : Type) : Id Type A B ≔ sig x y ↦ ( one : ?, two : ? )
+def gel2 (A B : Type) : Id Type A B ≔ sig ( x .one : ?, x .two : ? )
 
 def gel3 (A B : Type) : Id Type A B ≔ codata [
 | x .one : ?

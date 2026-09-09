@@ -1,23 +1,18 @@
 open Signatures
 open Tlist
 open Tbwd
+open Monoid
 
 (* Type-level free monoids.  The type of generators is specified by a type family in a module parameter.  If there is exactly one generator, the result should be isomorphic to the type-level (backwards) natural numbers. *)
 
-module type Gen = sig
-  type 'g t
-
-  val compare : 'g1 t -> 'g2 t -> ('g1, 'g2) Eq.compare
-end
-
-module Make (G : Gen) = struct
-  (* As the words themselves, we use type-level backwards lists (Tbwd) of generators.  *)
+module Make (G : Comparable) = struct
+  (* As the words themselves, we use type-level backwards lists (Tbwd) of generators. *)
   type zero = emp
   type ('n, 'g) suc = ('n, 'g) snoc
 
   (* ********** Addition ********** *)
 
-  (* Addition is appending two Tbwds.  Note that this is different from Tbwd.append, which appends a *forwards* list on the right of a backwards one.  It also ensures that the appended list consists of valid generators. *)
+  (* Addition is appending two words.  Note that this is different from bplus, below, which appends a *forwards* word on the right of a backwards one.  It also ensures that the appended list consists of valid generators. *)
 
   type (_, _, _) plus =
     | Zero : ('m, zero, 'm) plus
@@ -33,6 +28,10 @@ module Make (G : Gen) = struct
    fun n g ->
     match n with
     | Word n -> Word (Suc (n, g))
+
+  let rec length : type n. n t -> int = function
+    | Word Zero -> 0
+    | Word (Suc (n, _)) -> 1 + length (Word n)
 
   type (_, _) has_plus = Plus : ('m, 'n, 'mn) plus -> ('m, 'n) has_plus
 
@@ -66,6 +65,13 @@ module Make (G : Gen) = struct
         let Eq = plus_uniq mn mn' in
         Eq
 
+  (* A plus with zero on the left is an equality. *)
+  let rec zero_plus_uniq : type n p. (zero, n, p) plus -> (n, p) Eq.t = function
+    | Zero -> Eq
+    | Suc (p, _) ->
+        let Eq = zero_plus_uniq p in
+        Eq
+
   (* Shifting successors *)
 
   type (_, _, _, _) plus_suc =
@@ -79,19 +85,6 @@ module Make (G : Gen) = struct
     | Suc (x, h) ->
         let (Plus_suc (y, z)) = plus_suc g x in
         Plus_suc (Suc (y, h), Suc (z, h))
-
-  (* We postpone suc_plus_eq_suc until after we have indices, to characterize its output value more correctly. *)
-
-  type (_, _, _, _) suc_plus =
-    | Suc_plus :
-        (('m, 'h) suc, 'q, 'p) plus * ((zero, 'h) suc, 'q, ('n, 'g) suc) plus
-        -> ('m, 'n, 'g, 'p) suc_plus
-
-  let rec suc_plus : type m n g p. (m, (n, g) suc, p) plus -> (m, n, g, p) suc_plus = function
-    | Suc (Zero, _) -> Suc_plus (Zero, Zero)
-    | Suc ((Suc _ as mn), g) ->
-        let (Suc_plus (mq, kq)) = suc_plus mn in
-        Suc_plus (Suc (mq, g), Suc (kq, g))
 
   (* Associativity *)
 
@@ -130,62 +123,176 @@ module Make (G : Gen) = struct
 
   (* ********** Well-scoped De Bruijn indices ********** *)
 
-  (* The analogue of these for words is just Tbwd.insert. *)
+  (* ('a, 'g, 'b) insert says that the word 'b is obtained by inserting the generator 'g somewhere in the word 'a.  Or, put differently, 'a is obtained from 'b by deleting a generator 'g in a specified location.  Thus it is also a well-scoped De Bruijn index into 'b, pointing at an occurrence of 'g. *)
+  type (_, _, _) insert =
+    | Now : ('a, 'g, ('a, 'g) suc) insert
+    | Later : ('a, 'g, 'b) insert -> (('a, 'k) suc, 'g, ('b, 'k) suc) insert
 
-  type (_, _, _, _) plus_insert =
-    | Plus_index : ('m, 'p, 'mp) plus * ('mp, 'g, 'mn) Tbwd.insert -> ('m, 'p, 'mn, 'g) plus_insert
+  let rec int_of_insert : type a g b. (a, g, b) insert -> int = function
+    | Now -> 0
+    | Later i -> 1 + int_of_insert i
 
-  let rec plus_insert : type m n mn p g.
-      (m, n, mn) plus -> (p, g, n) Tbwd.insert -> (m, p, mn, g) plus_insert =
-   fun mn i ->
+  (* Two successive insertions can be performed in the other order. *)
+  type (_, _, _, _) comp_insert =
+    | Comp_insert : ('a, 'k, 'd) insert * ('d, 'g, 'c) insert -> ('a, 'g, 'k, 'c) comp_insert
+
+  let rec comp_insert : type a g k b c.
+      (a, g, b) insert -> (b, k, c) insert -> (a, g, k, c) comp_insert =
+   fun ab bc ->
+    match (ab, bc) with
+    | Now, Now -> Comp_insert (Now, Later Now)
+    | Now, Later bc -> Comp_insert (bc, Now)
+    | Later ab, Now -> Comp_insert (Now, Later (Later ab))
+    | Later ab, Later bc ->
+        let (Comp_insert (ad, dc)) = comp_insert ab bc in
+        Comp_insert (Later ad, Later dc)
+
+  let rec plus_insert : type a b c g ab ac.
+      (a, b, ab) plus -> (a, c, ac) plus -> (b, g, c) insert -> (ab, g, ac) insert =
+   fun ab ac i ->
     match i with
     | Now ->
-        let (Suc (mn, _)) = mn in
-        Plus_index (mn, Now)
+        let (Suc (ac, _)) = ac in
+        let Eq = plus_uniq ab ac in
+        Now
     | Later i ->
-        let (Suc (mn, g)) = mn in
-        let (Plus_index (mp, j)) = plus_insert mn i in
-        Plus_index (Suc (mp, g), Later j)
+        let Suc (ab, _), Suc (ac, _) = (ab, ac) in
+        Later (plus_insert ab ac i)
 
   type (_, _, _, _) insert_plus =
-    | Index_plus : ('p, 'n, 'pn) plus * ('pn, 'g, 'mn) Tbwd.insert -> ('p, 'n, 'mn, 'g) insert_plus
+    | Insert_plus : ('p, 'n, 'pn) plus * ('pn, 'g, 'mn) insert -> ('p, 'n, 'mn, 'g) insert_plus
 
   let rec insert_plus : type m n mn g p.
-      (p, g, m) Tbwd.insert -> (m, n, mn) plus -> (p, n, mn, g) insert_plus =
+      (p, g, m) insert -> (m, n, mn) plus -> (p, n, mn, g) insert_plus =
    fun i mn ->
     match mn with
-    | Zero -> Index_plus (Zero, i)
+    | Zero -> Insert_plus (Zero, i)
     | Suc (mn, g) ->
-        let (Index_plus (pn, j)) = insert_plus i mn in
-        Index_plus (Suc (pn, g), Later j)
+        let (Insert_plus (pn, j)) = insert_plus i mn in
+        Insert_plus (Suc (pn, g), Later j)
+
+  type (_, _, _, _) insert_in_plus =
+    | Left :
+        ('pred_m, 'g, 'm) insert * ('pred_m, 'n, 'pred_mn) plus
+        -> ('g, 'm, 'n, 'pred_mn) insert_in_plus
+    | Right :
+        ('pred_n, 'g, 'n) insert * ('m, 'pred_n, 'pred_mn) plus
+        -> ('g, 'm, 'n, 'pred_mn) insert_in_plus
+
+  let rec insert_in_plus : type m n g pred_mn mn.
+      (m, n, mn) plus -> (pred_mn, g, mn) insert -> (g, m, n, pred_mn) insert_in_plus =
+   fun mn i ->
+    match mn with
+    | Zero -> Left (i, Zero)
+    | Suc (mn, g) -> (
+        match i with
+        | Now -> Right (Now, mn)
+        | Later i -> (
+            match insert_in_plus mn i with
+            | Left (j, pred_mn) -> Left (j, Suc (pred_mn, g))
+            | Right (k, pred_mn) -> Right (Later k, Suc (pred_mn, g))))
+
+  type (_, _, _, _) insert_into_plus =
+    | Left :
+        ('m, 'g, 'msuc) insert * ('msuc, 'n, 'mn_suc) plus
+        -> ('g, 'm, 'n, 'mn_suc) insert_into_plus
+    | Right :
+        ('n, 'g, 'suc) insert * ('m, 'suc, 'mn_suc) plus
+        -> ('g, 'm, 'n, 'mn_suc) insert_into_plus
+
+  let rec insert_into_plus : type g m n mn mn_suc.
+      g G.t -> (m, n, mn) plus -> (mn, g, mn_suc) insert -> (g, m, n, mn_suc) insert_into_plus =
+   fun g mn i ->
+    match i with
+    | Now -> Right (Now, Suc (mn, g))
+    | Later i -> (
+        match mn with
+        | Zero -> Left (Later i, Zero)
+        | Suc (mn, h) -> (
+            match insert_into_plus g mn i with
+            | Left (j, mn_suc) -> Left (j, Suc (mn_suc, h))
+            | Right (k, mn_suc) -> Right (Later k, Suc (mn_suc, h))))
 
   type (_, _, _, _) swap_inserts =
-    | Swap_indices :
-        ('q, 'l, 'm) Tbwd.insert * ('p, 'k, 'q) Tbwd.insert
-        -> ('m, 'k, 'l, 'p) swap_inserts
+    | Swap_inserts : ('q, 'l, 'm) insert * ('p, 'k, 'q) insert -> ('m, 'k, 'l, 'p) swap_inserts
 
   let rec swap_inserts : type m n p k l.
-      (n, k, m) Tbwd.insert -> (p, l, n) Tbwd.insert -> (m, k, l, p) swap_inserts =
+      (n, k, m) insert -> (p, l, n) insert -> (m, k, l, p) swap_inserts =
    fun k l ->
     match k with
     | Now -> (
         match l with
-        | Now -> Swap_indices (Later l, Now)
-        | Later _ -> Swap_indices (Later l, Now))
+        | Now -> Swap_inserts (Later l, Now)
+        | Later _ -> Swap_inserts (Later l, Now))
     | Later k' -> (
         match l with
-        | Now -> Swap_indices (Now, k')
+        | Now -> Swap_inserts (Now, k')
         | Later l' ->
-            let (Swap_indices (l'', k'')) = swap_inserts k' l' in
-            Swap_indices (Later l'', Later k''))
+            let (Swap_inserts (l'', k'')) = swap_inserts k' l' in
+            Swap_inserts (Later l'', Later k''))
 
-  let rec insert_equiv : type m n g p q.
-      (p, g, m) Tbwd.insert -> (q, g, n) Tbwd.insert -> unit option =
+  type (_, _, _) compare_inserts =
+    | Eq_inserts : ('m, 'g, 'm) compare_inserts
+    | Neq_inserts : ('r, 'g, 'm) insert * ('r, 'g, 'n) insert -> ('m, 'g, 'n) compare_inserts
+
+  let rec compare_inserts : type m n g p.
+      (m, g, p) insert -> (n, g, p) insert -> (m, g, n) compare_inserts =
+   fun m n ->
+    match (m, n) with
+    | Now, Now -> Eq_inserts
+    | Now, Later m -> Neq_inserts (m, Now)
+    | Later n, Now -> Neq_inserts (Now, n)
+    | Later m, Later n -> (
+        match compare_inserts m n with
+        | Eq_inserts -> Eq_inserts
+        | Neq_inserts (m', n') -> Neq_inserts (Later m', Later n'))
+
+  (* Compare two insertions into the same word whose removed elements may have different generator types.  If they remove the same position, the generators and smaller words agree; otherwise each insert transfers to the other's smaller word. *)
+  type (_, _, _, _, _) compare_gen_inserts =
+    | Eq_gen_inserts : ('a, 'g, 'a, 'g, 'p) compare_gen_inserts
+    | Neq_gen_inserts :
+        ('r, 'h, 'a) insert * ('r, 'g, 'b) insert
+        -> ('a, 'g, 'b, 'h, 'p) compare_gen_inserts
+
+  let rec compare_gen_inserts : type a g b h p.
+      (a, g, p) insert -> (b, h, p) insert -> (a, g, b, h, p) compare_gen_inserts =
+   fun j k ->
+    match (j, k) with
+    | Now, Now -> Eq_gen_inserts
+    | Now, Later k -> Neq_gen_inserts (k, Now)
+    | Later j, Now -> Neq_gen_inserts (Now, j)
+    | Later j, Later k -> (
+        match compare_gen_inserts j k with
+        | Eq_gen_inserts -> Eq_gen_inserts
+        | Neq_gen_inserts (k', j') -> Neq_gen_inserts (Later k', Later j'))
+
+  (* Two insertions of the same generator into the same word are equal exactly when they insert it in the same place, in which case their outputs agree. *)
+  let rec insert_equal : type a g b1 b2.
+      (a, g, b1) insert -> (a, g, b2) insert -> (b1, b2) Eq.compare =
+   fun i1 i2 ->
+    match (i1, i2) with
+    | Now, Now -> Eq
+    | Later i1, Later i2 -> (
+        match insert_equal i1 i2 with
+        | Eq -> Eq
+        | Neq -> Neq)
+    | _ -> Neq
+
+  let rec insert_equiv : type m n g p q. (p, g, m) insert -> (q, g, n) insert -> unit option =
    fun k l ->
     match (k, l) with
     | Now, Now -> Some ()
     | Later k, Later l -> insert_equiv k l
     | _, _ -> None
+
+  type _ insert_into = Into : 'g G.t * ('m, 'g, 'msuc) insert -> 'msuc insert_into
+
+  let rec all_inserts : type n. n t -> n insert_into Seq.t = function
+    | Word Zero -> Seq.empty
+    | Word (Suc (n, g)) ->
+        Seq.cons
+          (Into (g, Now))
+          (Seq.map (fun (Into (h, k)) -> Into (h, Later k)) (all_inserts (Word n)))
 
   let rec compare : type m n. m t -> n t -> (m, n) Eq.compare =
    fun m n ->
@@ -201,21 +308,21 @@ module Make (G : Gen) = struct
             | Eq -> Eq
             | Neq -> Neq))
 
-  (* Now we can define suc_plus_eq_suc in a way that correctly records the relationship between 'q and 'p.  *)
-  type (_, _, _, _) suc_plus_eq_suc =
-    | Suc_plus_eq_suc :
-        (('m, 'g) suc, 'n, 'q) plus * ('p, 'g, 'q) Tbwd.insert
-        -> ('m, 'g, 'n, 'p) suc_plus_eq_suc
+  (* Strip the leftmost generator from a [((m, g) suc, n, p) plus]: returns the inner [(m, n, p_inner) plus] and an insertion that recovers p as p_inner with g inserted at the appropriate position. *)
+  type (_, _, _, _) strip_plus_left =
+    | Strip_plus_left : ('m, 'n, 'q) plus * ('q, 'g, 'p) insert -> ('m, 'g, 'n, 'p) strip_plus_left
 
-  let rec suc_plus_eq_suc : type m g n p. (m, n, p) plus -> (m, g, n, p) suc_plus_eq_suc = function
-    | Zero -> Suc_plus_eq_suc (Zero, Now)
-    | Suc (x, g) ->
-        let (Suc_plus_eq_suc (y, i)) = suc_plus_eq_suc x in
-        Suc_plus_eq_suc (Suc (y, g), Later i)
+  let rec strip_plus_left : type m g n p.
+      g G.t -> ((m, g) suc, n, p) plus -> (m, g, n, p) strip_plus_left =
+   fun g -> function
+    | Zero -> Strip_plus_left (Zero, Now)
+    | Suc (ab, h) ->
+        let (Strip_plus_left (q, i)) = strip_plus_left g ab in
+        Strip_plus_left (Suc (q, h), Later i)
 
   (* ********** More about insertion ********** *)
 
-  let rec insert : type a n b. (a, n, b) Tbwd.insert -> a t -> n G.t -> b t =
+  let rec insert : type a n b. (a, n, b) insert -> a t -> n G.t -> b t =
    fun i (Word a) n ->
     match i with
     | Now -> Word (Suc (a, n))
@@ -224,7 +331,7 @@ module Make (G : Gen) = struct
         let (Word ins) = insert i (Word a) n in
         Word (Suc (ins, k))
 
-  let rec uninsert : type a n b. (a, n, b) Tbwd.insert -> b t -> a t =
+  let rec uninsert : type a n b. (a, n, b) insert -> b t -> a t =
    fun i b ->
     match i with
     | Now ->
@@ -235,7 +342,7 @@ module Make (G : Gen) = struct
         let (Word ins) = uninsert i (Word b) in
         Word (Suc (ins, n))
 
-  let rec inserted : type a n b. (a, n, b) Tbwd.insert -> b t -> n G.t =
+  let rec inserted : type a n b. (a, n, b) insert -> b t -> n G.t =
    fun i b ->
     match i with
     | Now ->
@@ -245,13 +352,134 @@ module Make (G : Gen) = struct
         let (Word (Suc (b, _))) = b in
         inserted i (Word b)
 
-  let rec permute : type a b. (a, b) Tbwd.permute -> b t -> a t =
-   fun p b ->
-    match p with
-    | Id -> b
-    | Insert (p, i) ->
-        let (Word permuted) = permute p (uninsert i b) in
-        Word (Suc (permuted, inserted i b))
+  (* ********** Permutations ********** *)
+
+  (* A free monoid is not commutative, but it is the object set of a free symmetric strict monoidal category.  Here are the morphisms in that category: ('m, 'n) permute is a permutation with domain the word 'm and codomain the word 'n.  Like a degeneracy (see Dim.Deg, whose definition this deliberately matches, since every permutation of dimensions is a degeneracy), a permutation is defined inductively by insertion: the codomain grows on the right by a generator, and the domain records with an insert where the preimage of that generator lies in it.  As with degeneracies, each step stores its generator, so that both the domain and the codomain can be recovered from a permutation alone. *)
+  type (_, _) permute =
+    | Zero : (zero, zero) permute
+    | Suc : ('a, 'b) permute * 'g G.t * ('a, 'g, 'c) insert -> ('c, ('b, 'g) suc) permute
+
+  let rec perm_dom : type m n. (m, n) permute -> m t = function
+    | Zero -> zero
+    | Suc (p, g, i) -> insert i (perm_dom p) g
+
+  let rec perm_cod : type m n. (m, n) permute -> n t = function
+    | Zero -> zero
+    | Suc (p, g, _) -> suc (perm_cod p) g
+
+  let rec perm_id : type a. a t -> (a, a) permute = function
+    | Word Zero -> Zero
+    | Word (Suc (a, g)) -> Suc (perm_id (Word a), g, Now)
+
+  (* A permutation is the identity exactly when every element is inserted at the far end. *)
+  let rec perm_is_id : type m n. (m, n) permute -> (m, n) Eq.compare = function
+    | Zero -> Eq
+    | Suc (p, _, i) -> (
+        match perm_is_id p with
+        | Neq -> Neq
+        | Eq -> (
+            match i with
+            | Now -> Eq
+            | Later _ -> Neq))
+
+  (* By "residual" of a permutation, given an element of its codomain, we mean the preimage of that element together with the permutation obtained by removing that element from the codomain and its preimage from the domain. *)
+  type (_, _, _) perm_residual =
+    | Residual : ('m, 'n) permute * 'g G.t * ('m, 'g, 'msuc) insert -> ('msuc, 'n, 'g) perm_residual
+
+  let rec perm_residual : type m n g npred.
+      (m, n) permute -> (npred, g, n) insert -> (m, npred, g) perm_residual =
+   fun s k ->
+    match (k, s) with
+    | Now, Suc (s, g, i) -> Residual (s, g, i)
+    | Later k, Suc (s, g, i) ->
+        let (Residual (s, g', j)) = perm_residual s k in
+        let (Swap_inserts (i, j)) = swap_inserts i j in
+        Residual (Suc (s, g, j), g', i)
+
+  (* Dually, by "coresidual" of a permutation, given an element of its domain, we mean the image of that element together with the permutation obtained by removing that element from the domain and its image from the codomain.  Unlike a degeneracy, a permutation always has such an image. *)
+  type (_, _, _) perm_coresidual =
+    | Coresidual :
+        ('mpred, 'npred) permute * ('npred, 'g, 'n) insert
+        -> ('mpred, 'g, 'n) perm_coresidual
+
+  let rec perm_coresidual : type mpred g m n.
+      (m, n) permute -> (mpred, g, m) insert -> (mpred, g, n) perm_coresidual =
+   fun s k ->
+    match s with
+    | Zero -> (
+        match k with
+        | _ -> .)
+    | Suc (s, g, j) -> (
+        match compare_gen_inserts j k with
+        | Eq_gen_inserts -> Coresidual (s, Now)
+        | Neq_gen_inserts (k, j) ->
+            let (Coresidual (s, i)) = perm_coresidual s k in
+            Coresidual (Suc (s, g, j), Later i))
+
+  (* Using residuals, we can compose permutations. *)
+  let rec perm_comp : type a b c. (a, b) permute -> (b, c) permute -> (a, c) permute =
+   fun ab bc ->
+    match bc with
+    | Zero ->
+        let Zero = ab in
+        Zero
+    | Suc (s, _, k) ->
+        let (Residual (t, g', i)) = perm_residual ab k in
+        Suc (perm_comp t s, g', i)
+
+  (* To invert permutations, we first define the dual of Suc that adds a generator to the domain and inserts it anywhere in the codomain. *)
+  let rec coinsert : type m n g nsuc.
+      (m, n) permute -> g G.t -> (n, g, nsuc) insert -> ((m, g) suc, nsuc) permute =
+   fun p g -> function
+    | Now -> Suc (p, g, Now)
+    | Later i ->
+        let Suc (p, h, j), _ = (p, i) in
+        Suc (coinsert p g i, h, Later j)
+
+  let rec perm_inv : type m n. (m, n) permute -> (n, m) permute = function
+    | Zero -> Zero
+    | Suc (p, g, i) -> coinsert (perm_inv p) g i
+
+  let rec insert_of_plus : type b a ba bga g.
+      (b, a, ba) plus -> ((b, g) suc, a, bga) plus -> (ba, g, bga) insert =
+   fun ba bga ->
+    match (ba, bga) with
+    | Zero, Zero -> Now
+    | Suc (ba, _), Suc (bga, _) -> Later (insert_of_plus ba bga)
+
+  (* Two words can be swapped past each other with a permutation. *)
+  let rec perm_swap : type a b ab ba. (a, b, ab) plus -> (b, a, ba) plus -> (ab, ba) permute =
+   fun ab ba ->
+    match ba with
+    | Zero ->
+        let b = plus_right ab in
+        let Eq = plus_uniq ab (zero_plus b) in
+        perm_id b
+    | Suc (ba, g) ->
+        let (Plus ab') = plus (plus_right ab) in
+        Suc (perm_swap ab' ba, g, insert_of_plus ab' ab)
+
+  (* Extend a permutation by the identity on an additional word. *)
+  let rec perm_plus : type m n k mk nk.
+      (m, n) permute -> (n, k, nk) plus -> (m, k, mk) plus -> (mk, nk) permute =
+   fun s nk mk ->
+    match (nk, mk) with
+    | Zero, Zero -> s
+    | Suc (nk, g), Suc (mk, _) -> Suc (perm_plus s nk mk, g, Now)
+
+  (* Two permutations can be placed side by side. *)
+  let rec perm_plus_perm : type a b ab c d cd.
+      (a, c) permute -> (a, b, ab) plus -> (c, d, cd) plus -> (b, d) permute -> (ab, cd) permute =
+   fun p ab cd q ->
+    match q with
+    | Zero ->
+        let Zero = cd in
+        let Zero = ab in
+        p
+    | Suc (q, g, i) ->
+        let (Suc (cd', _)) = cd in
+        let (Plus ab') = plus (perm_dom q) in
+        Suc (perm_plus_perm p ab' cd' q, g, plus_insert ab' ab i)
 
   (* ********** Subtraction ********** *)
 
@@ -291,16 +519,167 @@ module Make (G : Gen) = struct
   (* ********** Forwards words ********** *)
 
   type 'b fwd = Nil : nil fwd | Cons : 'n G.t * 'b fwd -> ('n, 'b) cons fwd
-  type _ to_fwd = To_fwd : 'a fwd * (emp, 'a, 'b) Tbwd.append -> 'b to_fwd
+  type fwd_zero = nil
+
+  let fwd_zero : fwd_zero fwd = Nil
+
+  (* As with lists and backwards lists, a forwards word can naturally be appended to a backwards one. *)
+  type (_, _, _) bplus =
+    | Append_nil : ('a, nil, 'a) bplus
+    | Append_cons : (('a, 'x) suc, 'b, 'c) bplus -> ('a, ('x, 'b) cons, 'c) bplus
+
+  type (_, _) has_bplus = Bplus : ('a, 'b, 'ab) bplus -> ('a, 'b) has_bplus
+
+  let rec bplus : type a b. b fwd -> (a, b) has_bplus = function
+    | Nil -> Bplus Append_nil
+    | Cons (_, b) ->
+        let (Bplus ab) = bplus b in
+        Bplus (Append_cons ab)
+
+  (* The generators of a forwards word are irrelevant to computing a bplus, so a Tlist of them suffices. *)
+  let rec bplus_of_tlist : type a b. b Tlist.t -> (a, b) has_bplus = function
+    | Nil -> Bplus Append_nil
+    | Cons xs ->
+        let (Bplus ab) = bplus_of_tlist xs in
+        Bplus (Append_cons ab)
+
+  type _ to_fwd = To_fwd : 'a fwd * (emp, 'a, 'b) bplus -> 'b to_fwd
 
   let to_fwd : type c. c t -> c to_fwd =
    fun c ->
-    let rec go : type a b c. a t -> b fwd -> (a, b, c) Tbwd.append -> c to_fwd =
+    let rec go : type a b c. a t -> b fwd -> (a, b, c) bplus -> c to_fwd =
      fun a b abc ->
       match a with
       | Word Zero -> To_fwd (b, abc)
       | Word (Suc (a, x)) -> go (Word a) (Cons (x, b)) (Append_cons abc) in
     go c Nil Append_nil
+
+  let rec bplus_right : type a b ab. (a, b, ab) bplus -> b Tlist.t = function
+    | Append_nil -> Nil
+    | Append_cons ab -> Cons (bplus_right ab)
+
+  let rec bplus_uniq : type a b ab ab'. (a, b, ab) bplus -> (a, b, ab') bplus -> (ab, ab') Eq.t =
+   fun ab ab' ->
+    match (ab, ab') with
+    | Append_nil, Append_nil -> Eq
+    | Append_cons ab, Append_cons ab' ->
+        let Eq = bplus_uniq ab ab' in
+        Eq
+
+  let rec insert_bplus : type a asuc g b ab asucb.
+      (a, g, asuc) insert -> (a, b, ab) bplus -> (asuc, b, asucb) bplus -> (ab, g, asucb) insert =
+   fun i ab asucb ->
+    match (ab, asucb) with
+    | Append_nil, Append_nil -> i
+    | Append_cons ab, Append_cons asucb -> insert_bplus (Later i) ab asucb
+
+  (* The generator inserted at a given position of a forwards word, and the word with it removed. *)
+  let rec fwd_inserted : type a g b. (a, g, b) Tlist.insert -> b fwd -> g G.t =
+   fun i b ->
+    match (i, b) with
+    | Now, Cons (g, _) -> g
+    | Later i, Cons (_, b) -> fwd_inserted i b
+
+  let rec fwd_uninsert : type a g b. (a, g, b) Tlist.insert -> b fwd -> a fwd =
+   fun i b ->
+    match (i, b) with
+    | Now, Cons (_, b) -> b
+    | Later i, Cons (g, b) -> Cons (g, fwd_uninsert i b)
+
+  (* Extend a permutation by the identity on an appended forwards word.  This is perm_plus for bplus rather than plus, and like it needs the generators of the appended word to grow the codomain. *)
+  let rec perm_bplus : type a b c ac bc.
+      c fwd -> (a, b) permute -> (a, c, ac) bplus -> (b, c, bc) bplus -> (ac, bc) permute =
+   fun c p ac bc ->
+    match (c, ac, bc) with
+    | Nil, Append_nil, Append_nil -> p
+    | Cons (g, c), Append_cons ac, Append_cons bc -> perm_bplus c (Suc (p, g, Now)) ac bc
+
+  (* When appending a forwards word to a backwards one, if we insert the same generator on the left and on the right, the results are permuted.  The forwards word passed is the one *containing* the inserted generator, so that it supplies both that generator and those of the part appended after it. *)
+  let rec perm_of_ins_ins : type a b g c d ad bc.
+      a t ->
+      d fwd ->
+      (a, g, b) insert ->
+      (c, g, d) Tlist.insert ->
+      (b, c, bc) bplus ->
+      (a, d, ad) bplus ->
+      (bc, ad) permute =
+   fun a d ab cd bc ad' ->
+    match (cd, d) with
+    | Now, Cons (g, c) ->
+        let (Append_cons ad') = ad' in
+        perm_bplus c (Suc (perm_id a, g, ab)) bc ad'
+    | Later cd, Cons (h, d) ->
+        let Append_cons ad', Append_cons bc = (ad', bc) in
+        perm_of_ins_ins (suc a h) d (Later ab) cd bc ad'
+
+  (* ('a, 'b, 'c) bplus_permute says that the backwards word 'c is obtained from the backwards word 'a by appending a permutation of the forwards word 'b.  In particular, (zero, 'b, 'c) says that the backwards word 'c is a permutation of the forwards word 'b. *)
+  type (_, _, _) bplus_permute =
+    | Bp_nil : ('a, nil, 'a) bplus_permute
+    | Bp_insert :
+        ('b, 'g, 'd) Tlist.insert * (('a, 'g) suc, 'b, 'c) bplus_permute
+        -> ('a, 'd, 'c) bplus_permute
+
+  let rec bplus_permute_right : type a b c. (a, b, c) bplus_permute -> b Tlist.t = function
+    | Bp_nil -> Nil
+    | Bp_insert (ins, b) -> Tlist.inserted ins (bplus_permute_right b)
+
+  (* If we bplus and also bplus_permute the same words, the two results are related by a permutation.  Since permutations record their generators, we need the backwards word being appended to and the generators of the forwards word appended. *)
+  let rec perm_of_bplus_permute : type a b c d.
+      a t -> b fwd -> (a, b, d) bplus_permute -> (a, b, c) bplus -> (d, c) permute =
+   fun a b d c ->
+    match d with
+    | Bp_nil ->
+        let Append_nil = c in
+        perm_id a
+    | Bp_insert (ins, d) ->
+        let g = fwd_inserted ins b in
+        let (Bplus a') = bplus_of_tlist (bplus_permute_right d) in
+        let perm1 = perm_of_bplus_permute (suc a g) (fwd_uninsert ins b) d a' in
+        let perm2 = perm_of_ins_ins a b Now ins a' c in
+        perm_comp perm1 perm2
+
+  (* Concatenation of two *forwards* words: (a, b, ab) fplus means the forwards word ab is a followed by b. *)
+  type (_, _, _) fplus =
+    | Nil : (nil, 'b, 'b) fplus
+    | Cons : ('a, 'b, 'ab) fplus -> (('g, 'a) cons, 'b, ('g, 'ab) cons) fplus
+
+  (* Appending two forwards words onto a backwards word, one after the other, is the same as appending their concatenation.  This is just associativity of word concatenation, so it holds for any generators. *)
+  let rec bplus_bplus : type z a za b ab zab.
+      (z, a, za) bplus -> (za, b, zab) bplus -> (a, b, ab) fplus -> (z, ab, zab) bplus =
+   fun za zab fp ->
+    match fp with
+    | Nil ->
+        let Append_nil = za in
+        zab
+    | Cons fp ->
+        let (Append_cons za) = za in
+        Append_cons (bplus_bplus za zab fp)
+
+  (* Conversely, if we know how to append a concatenation, we can strip off the second factor. *)
+  let rec unbplus_bplus : type z a b ab zab.
+      (z, ab, zab) bplus -> (a, b, ab) fplus -> (z, a) has_bplus =
+   fun zab fp ->
+    match fp with
+    | Nil -> Bplus Append_nil
+    | Cons fp ->
+        let (Append_cons zab) = zab in
+        let (Bplus za) = unbplus_bplus zab fp in
+        Bplus (Append_cons za)
+
+  (* Prepending a *backwards* word to a *forwards* one, giving a forwards word: (a, b, ab) bfplus means the forwards word ab is the backwards word a followed by the forwards word b.  Analogous to Fwn.fplus.  As with that, the induction moves generators one at a time from the inner (snoc) end of a to the head (cons) of b. *)
+  type (_, _, _) bfplus =
+    | Zero : (emp, 'b, 'b) bfplus
+    | Suc : ('a, ('g, 'b) cons, 'ab) bfplus -> (('a, 'g) snoc, 'b, 'ab) bfplus
+
+  type (_, _) has_bfplus = Bfplus : 'ab fwd * ('a, 'b, 'ab) bfplus -> ('a, 'b) has_bfplus
+
+  let rec bfplus : type a b. a t -> b fwd -> (a, b) has_bfplus =
+   fun a b ->
+    match a with
+    | Word Zero -> Bfplus (b, Zero)
+    | Word (Suc (a, g)) ->
+        let (Bfplus (ab, bfp)) = bfplus (Word a) (Cons (g, b)) in
+        Bfplus (ab, Suc bfp)
 
   (* ********** Positive words ********** *)
 
@@ -322,17 +701,100 @@ module Make (G : Gen) = struct
     let (Plus_suc (_, Suc (ab, h))) = plus_suc g ab in
     Pos (plus_out a ab, h)
 
+  let rec insert_pos : type m g n. m t -> g G.t -> (m, g, n) insert -> n pos =
+   fun m g i ->
+    match i with
+    | Now -> Pos (m, g)
+    | Later i ->
+        let (Word (Suc (m, h))) = m in
+        let (Pos (mi, k)) = insert_pos (Word m) g i in
+        Pos (suc mi k, h)
+
   let pos : type a. a pos -> a t = fun (Pos (Word a, g)) -> Word (Suc (a, g))
+
+  (* A permutation of a positive word has positive domain. *)
+  let perm_pos : type m n. n pos -> (m, n) permute -> m pos =
+   fun n s ->
+    match (n, s) with
+    | Pos _, Suc (s, g, i) -> insert_pos (perm_dom s) g i
 
   type _ compare_zero = Zero : zero compare_zero | Pos : 'n pos -> 'n compare_zero
 
   let compare_zero : type a. a t -> a compare_zero = function
     | Word Zero -> Zero
     | Word (Suc (a, g)) -> Pos (Pos (Word a, g))
+
+  (* ********** Factoring ********** *)
+
+  type (_, _) factor = Factor : ('n, 'k, 'nk) plus -> ('nk, 'n) factor
+
+  (* This is a hot path: it is called from pushout, and thence from Deg.comp_deg_extending, many millions of times in higher-dimensional normalization.  So we match on the option explicitly rather than going through Monad.Maybe, whose let* allocates a closure at every level of the recursion. *)
+  let rec factor : type nk n. nk t -> n t -> (nk, n) factor option =
+   fun nk n ->
+    match compare nk n with
+    | Eq -> Some (Factor Zero)
+    | Neq -> (
+        match nk with
+        | Word Zero -> None
+        | Word (Suc (nk, g)) -> (
+            match factor (Word nk) n with
+            | Some (Factor n_k) -> Some (Factor (Suc (n_k, g)))
+            | None -> None))
+
+  type (_, _) cofactor = Cofactor : ('n, 'k, 'nk) plus -> ('nk, 'k) cofactor
+
+  let rec cofactor : type nk k. nk t -> k t -> (nk, k) cofactor option =
+   fun nk k ->
+    match (nk, k) with
+    | Word Zero, Word Zero -> Some (Cofactor Zero)
+    | Word (Suc (nk, g)), Word (Suc (k, h)) -> (
+        match G.compare g h with
+        | Eq -> (
+            match cofactor (Word nk) (Word k) with
+            | Some (Cofactor n) -> Some (Cofactor (Suc (n, g)))
+            | None -> None)
+        | Neq -> None)
+    | Word (Suc _), Word Zero -> Some (Cofactor (plus_zero nk))
+    | _ -> None
+
+  (* Trichotomy.  With multiple generators, two words need not be comparable, so there is a fourth case. *)
+
+  type (_, _) trichotomy =
+    | Eq : ('n, 'n) trichotomy
+    | Lt : ('m, ('n, 'g) suc, 'mn) plus -> ('m, 'mn) trichotomy
+    | Gt : ('m, ('n, 'g) suc, 'mn) plus -> ('mn, 'm) trichotomy
+    | Incomparable : ('m, 'n) trichotomy
+
+  let trichotomy : type m n. m t -> n t -> (m, n) trichotomy =
+   fun m n ->
+    match factor m n with
+    | Some (Factor Zero) -> Eq
+    | Some (Factor (Suc _ as k)) -> Gt k
+    | _ -> (
+        match factor n m with
+        | Some (Factor Zero) -> Eq
+        | Some (Factor (Suc _ as k)) -> Lt k
+        | _ -> Incomparable)
+
+  type (_, _) pushout = Pushout : ('a, 'c, 'p) plus * ('b, 'd, 'p) plus -> ('a, 'b) pushout
+
+  (* Building the pair (factor a b, factor b a) evaluated both factorizations even when only the first branch was taken.  Testing them in the order the branches consume them avoids that; measured effect is small (~0.5%), since the redundant call is usually cheap. *)
+  let pushout : type a b. a t -> b t -> (a, b) pushout =
+   fun a b ->
+    match factor b a with
+    | Some (Factor ab) -> Pushout (ab, Zero)
+    | None -> (
+        match factor a b with
+        | Some (Factor ba) -> Pushout (Zero, ba)
+        | None -> raise (Failure "Word.pushout"))
 end
 
-module type GenExp = sig
-  include Gen
+module MakeCheck (G : Comparable) : Monoid = Make (G)
+module MakeCheckPos (G : Comparable) : MonoidPos = Make (G)
+module MakeCheckPerm (G : Comparable) : MonoidPerm = Make (G)
+
+module type ComparableExp = sig
+  include Comparable
 
   type ('g, 'n) endpoints
   type _ has_endpoints = Endpoints : ('g, 'n) endpoints -> 'g has_endpoints
@@ -343,7 +805,62 @@ module type GenExp = sig
   val endpoints_uniq : ('g, 'n1) endpoints -> ('g, 'n2) endpoints -> ('n1, 'n2) Eq.t
 end
 
-module MakeExp (G : GenExp) = struct
+(* ********** Occurrence ********** *)
+
+module MakeDecidable (G : Decidable) = struct
+  include Make (G)
+
+  type (_, _) occurs = Occurs : ('m, 'g, 'mg) insert -> ('g, 'mg) occurs
+
+  type (_, _) unoccurs =
+    | Unoccurs_emp : ('g, emp) unoccurs
+    | Unoccurs_suc : ('g, 'm) unoccurs * ('g, 'h) G.apart -> ('g, ('m, 'h) suc) unoccurs
+
+  let rec occurs : type g m. g G.t -> m t -> ((g, m) occurs, (g, m) unoccurs) Either.t =
+   fun g -> function
+    | Word Zero -> Right Unoccurs_emp
+    | Word (Suc (m, h)) -> (
+        match G.decide g h with
+        | Same -> Left (Occurs Now)
+        | Distinct ap -> (
+            match occurs g (Word m) with
+            | Left (Occurs o) -> Left (Occurs (Later o))
+            | Right u -> Right (Unoccurs_suc (u, ap))))
+
+  let rec occurs_unoccurs : type g m r. (g, m) occurs -> (g, m) unoccurs -> r =
+   fun o u ->
+    match (o, u) with
+    | Occurs Now, Unoccurs_suc (_, ap) -> (
+        match G.apart_irrefl ap with
+        | _ -> .)
+    | Occurs (Later i), Unoccurs_suc (u, _) -> occurs_unoccurs (Occurs i) u
+
+  let rec occurs_plus_right : type g m n mn. (m, n, mn) plus -> (g, n) occurs -> (g, mn) occurs =
+   fun mn (Occurs i) ->
+    match (mn, i) with
+    | Zero, _ -> .
+    | Suc _, Now -> Occurs Now
+    | Suc (mn, _), Later i ->
+        let (Occurs i) = occurs_plus_right mn (Occurs i) in
+        Occurs (Later i)
+
+  let rec occurs_plus_left : type g m n mn. (m, n, mn) plus -> (g, m) occurs -> (g, mn) occurs =
+   fun mn o ->
+    match mn with
+    | Zero -> o
+    | Suc (mn, _) ->
+        let (Occurs i) = occurs_plus_left mn o in
+        Occurs (Later i)
+
+  let rec unoccurs_plus : type g m n mn.
+      (m, n, mn) plus -> (g, m) unoccurs -> (g, n) unoccurs -> (g, mn) unoccurs =
+   fun mn um un ->
+    match (mn, un) with
+    | Zero, Unoccurs_emp -> um
+    | Suc (mn, _), Unoccurs_suc (un, ap) -> Unoccurs_suc (unoccurs_plus mn um un, ap)
+end
+
+module MakeExp (G : ComparableExp) = struct
   include Make (G)
 
   (* ********** Exponentiation ********** *)
@@ -413,7 +930,7 @@ end
 
 (* We define the word-maps as a sort of "rose tree" consisting of generator-maps whose entries are word-maps.  Since the output families of the generator-maps are specified with a module parameter, this requires a recursive module.  For some reason it doesn't seem to work to use a destructive substitution here, so we use a type equation and a handicrafted module later so that we can expose a destructive substitution one to the user. *)
 
-module rec Def : functor (G : Gen) (GM : MAP_MAKER with module Key = G) (F : Fam2) -> sig
+module rec Def : functor (G : Comparable) (GM : MAP_MAKER with module Key = G) (F : Fam2) -> sig
   (* We have to use the extra parameter of the generator-maps to determine the rest of the word after that generator, but we also want to carry through an extra parameter on the word-maps (so that in particular the operation can be iterated).  So we use a GADT to pair up the two parameters as their product. *)
   module M : sig
     type (_, _) t = Wrapmap : ('a, ('b, 'n) snoc) Def(G)(GM)(F).map -> ('a * 'b, 'n) t
@@ -424,7 +941,7 @@ module rec Def : functor (G : Gen) (GM : MAP_MAKER with module Key = G) (F : Fam
   type ('a, 'b) map = Empty | Entry of ('a, 'b) F.t option * ('a * 'b) DM.t
 end =
 functor
-  (G : Gen)
+  (G : Comparable)
   (GM : MAP_MAKER with module Key = G)
   (F : Fam2)
   ->
@@ -438,12 +955,12 @@ functor
     type ('a, 'b) map = Empty | Entry of ('a, 'b) F.t option * ('a * 'b) DM.t
   end
 
-module Internal (G : Gen) (GM : MAP_MAKER with module Key = G) (F : Fam2) = struct
+module Internal (G : Comparable) (GM : MAP_MAKER with module Key = G) (F : Fam2) = struct
   module W = Make (G)
   module Map = Def (G) (GM) (F)
 
   let rec find_opt : type a b c bc.
-      (b, c, bc) Tbwd.append -> c W.fwd -> (a, b) Map.map -> (a, bc) F.t option =
+      (b, c, bc) W.bplus -> c W.fwd -> (a, b) Map.map -> (a, bc) F.t option =
    fun bc c map ->
     let open Monad.Ops (Monad.Maybe) in
     match map with
@@ -456,7 +973,7 @@ module Internal (G : Gen) (GM : MAP_MAKER with module Key = G) (F : Fam2) = stru
             find_opt bc c xs)
 
   let rec add : type a b c bc.
-      (b, c, bc) Tbwd.append -> c W.fwd -> (a, bc) F.t -> (a, b) Map.map -> (a, b) Map.map =
+      (b, c, bc) W.bplus -> c W.fwd -> (a, bc) F.t -> (a, b) Map.map -> (a, b) Map.map =
    fun bc c x map ->
     match (bc, c, map) with
     | Append_nil, Nil, Empty -> Entry (Some x, Map.DM.empty)
@@ -474,7 +991,7 @@ module Internal (G : Gen) (GM : MAP_MAKER with module Key = G) (F : Fam2) = stru
               xs )
 
   let rec update : type a b c bc.
-      (b, c, bc) Tbwd.append ->
+      (b, c, bc) W.bplus ->
       c W.fwd ->
       ((a, bc) F.t option -> (a, bc) F.t option) ->
       (a, b) Map.map ->
@@ -495,8 +1012,8 @@ module Internal (G : Gen) (GM : MAP_MAKER with module Key = G) (F : Fam2) = stru
                 | None -> Some (Map.M.Wrapmap (update bc c f Empty)))
               xs )
 
-  let rec remove : type a b c bc.
-      (b, c, bc) Tbwd.append -> c W.fwd -> (a, b) Map.map -> (a, b) Map.map =
+  let rec remove : type a b c bc. (b, c, bc) W.bplus -> c W.fwd -> (a, b) Map.map -> (a, b) Map.map
+      =
    fun bc c map ->
     match (bc, c, map) with
     | _, _, Empty -> Empty
@@ -530,8 +1047,8 @@ module Internal (G : Gen) (GM : MAP_MAKER with module Key = G) (F : Fam2) = stru
         Map.DM.iter { it = (fun w (Wrapmap x) -> iter f (W.suc b w) x) } xs
 end
 
-module Map (G : Gen) (GM : MAP_MAKER with module Key := G) : MAP_MAKER with module Key := Make(G) =
-struct
+module Map (G : Comparable) (GM : MAP_MAKER with module Key := G) :
+  MAP_MAKER with module Key := Make(G) = struct
   module Make (F : Fam2) = struct
     module GM2 = struct
       module Key = G
@@ -587,3 +1104,362 @@ module WMap2 = Map (W) (WMap)
 module W3 = Make (W2)
 module WMap3 = Map (W2) (WMap2)
 *)
+
+(* Monoid homomorphisms determined by a map on generators *)
+
+module Hom (G : Comparable) (Cod : Monoid) (F : Function with module Dom = G and module Cod = Cod) =
+struct
+  module Dom = Make (G)
+  module Cod = Cod
+
+  type (_, _) t =
+    | Zero : (Dom.zero, Cod.zero) t
+    | Suc : ('m, 'n1) t * ('g, 'n2) F.t * ('n1, 'n2, 'n3) Cod.plus -> (('m, 'g) Dom.suc, 'n3) t
+
+  let rec dom : type a x. (a, x) t -> a Dom.t = function
+    | Zero -> Word Zero
+    | Suc (fm, fg, _) -> Dom.suc (dom fm) (F.dom fg)
+
+  let rec cod : type a x. (a, x) t -> x Cod.t = function
+    | Zero -> Cod.zero
+    | Suc (fm, _, n12) -> Cod.plus_out (cod fm) n12
+
+  type _ exists = Exists : ('a, 'x) t -> 'a exists
+
+  let rec exists : type a. a Dom.t -> a exists = function
+    | Word Zero -> Exists Zero
+    | Word (Suc (m, g)) ->
+        let (Exists fm) = exists (Word m) in
+        let (Exists fg) = F.exists g in
+        let (Plus n12) = Cod.plus (F.cod fg) in
+        Exists (Suc (fm, fg, n12))
+
+  let rec uniq : type a x1 x2. (a, x1) t -> (a, x2) t -> (x1, x2) Eq.t =
+   fun f1 f2 ->
+    match (f1, f2) with
+    | Zero, Zero -> Eq
+    | Suc (m1, g1, n1), Suc (m2, g2, n2) ->
+        let Eq = uniq m1 m2 in
+        let Eq = F.uniq g1 g2 in
+        let Eq = Cod.plus_uniq n1 n2 in
+        Eq
+
+  let zero : (Dom.zero, Cod.zero) t = Zero
+
+  type (_, _, _) plus = Plus : ('c, 'z) t * ('x, 'y, 'z) Cod.plus -> ('x, 'y, 'c) plus
+
+  let rec plus : type a b c x y. (a, x) t -> (b, y) t -> (a, b, c) Dom.plus -> (x, y, c) plus =
+   fun fa fb ab ->
+    match (fb, ab) with
+    | Zero, Zero -> Plus (fa, Cod.plus_zero (cod fa))
+    | Suc (fb, fg, y_fg), Suc (ab, _) ->
+        let (Plus (fc, xy)) = plus fa fb ab in
+        let (Plus xy_fg) = Cod.plus (F.cod fg) in
+        let x_yfg = Cod.plus_assocr xy y_fg xy_fg in
+        Plus (Suc (fc, fg, xy_fg), x_yfg)
+end
+
+module HomCheck
+    (G : Comparable)
+    (Cod : Monoid)
+    (F : Function with module Dom = G and module Cod = Cod) : Function with module Cod = Cod =
+  Hom (G) (Cod) (F)
+
+module HomPerm
+    (G : Comparable)
+    (Cod : MonoidPerm)
+    (F : Function with module Dom = G and module Cod = Cod) =
+struct
+  module H = Hom (G) (Cod) (F)
+  module Dom = H.Dom
+
+  type (_, _, _, _) uninsert =
+    | Uninsert :
+        ('a, 'x) H.t * ('m, 'n) F.t * ('x, 'n, 'xn) Cod.plus * ('xn, 'y) Cod.permute
+        -> ('a, 'm, 'b, 'y) uninsert
+
+  let rec uninsert : type a m b y. (a, m, b) Dom.insert -> (b, y) H.t -> (a, m, b, y) uninsert =
+   fun i fb ->
+    match i with
+    | Now ->
+        let (Suc (fa, fm, xn)) = fb in
+        Uninsert (fa, fm, xn, Cod.perm_id (Cod.plus_out (H.cod fa) xn))
+    | Later i ->
+        let (Suc (fb, fk, yl)) = fb in
+        let (Uninsert (fa, fm, xn, perm_xn_y)) = uninsert i fb in
+        let x = H.cod fa in
+        let l = Cod.plus_right yl in
+        let n = Cod.plus_right xn in
+        let (Plus nl) = Cod.plus l in
+        let (Plus ln) = Cod.plus n in
+        let (Plus xl) = Cod.plus l in
+        let (Plus xn_l) = Cod.plus l in
+        let (Plus xl_n) = Cod.plus n in
+        let x_ln = Cod.plus_assocr xl ln xl_n in
+        let x_nl = Cod.plus_assocr xn nl xn_l in
+        let perm_xln_xnl = Cod.perm_plus_perm (Cod.perm_id x) x_ln x_nl (Cod.perm_swap ln nl) in
+        let perm_xnl_yl = Cod.perm_plus_perm perm_xn_y xn_l yl (Cod.perm_id l) in
+        let perm_xln_yl = Cod.perm_comp perm_xln_xnl perm_xnl_yl in
+        Uninsert (Suc (fa, fk, xl), fm, xl_n, perm_xln_yl)
+
+  (* A permutation grows its codomain by a generator and its domain by an insertion, so we peel a generator off the homomorphism on the codomain and uninsert the one on the domain. *)
+  let rec permute : type a x b y.
+      (a, x) H.t -> (b, y) H.t -> (a, b) Dom.permute -> (x, y) Cod.permute =
+   fun fa fb p ->
+    match p with
+    | Zero ->
+        let Eq = H.uniq fa fb in
+        Cod.perm_id (H.cod fa)
+    | Suc (p, _, i) ->
+        let (Suc (fb, fg, wy)) = fb in
+        let (Uninsert (fa, fg', xn, xn_x)) = uninsert i fa in
+        let Eq = F.uniq fg' fg in
+        let x_w = permute fa fb p in
+        Cod.perm_comp (Cod.perm_inv xn_x)
+          (Cod.perm_plus_perm x_w xn wy (Cod.perm_id (Cod.plus_right xn)))
+end
+
+(* Homomorphisms with forwards-ness *)
+
+module HomFwd
+    (G : Comparable)
+    (Cod : MonoidFwd)
+    (F : Function with module Dom = G and module Cod = Cod) =
+struct
+  module H = Hom (G) (Cod) (F)
+
+  type (_, _) fwd =
+    | Zero : (nil, Cod.fwd_zero) fwd
+    | Suc : ('g, 'n1) F.t * ('m, 'n2) fwd * ('n1, 'n2, 'n3) Cod.fplus -> (('g, 'm) cons, 'n3) fwd
+
+  let rec fwd_dom : type a x. (a, x) fwd -> a H.Dom.fwd = function
+    | Zero -> Nil
+    | Suc (fn, fa, _) -> Cons (F.dom fn, fwd_dom fa)
+
+  type (_, _, _) bplus = Bplus : ('c, 'z) H.t * ('x, 'y, 'z) Cod.bplus -> ('x, 'y, 'c) bplus
+
+  let rec bplus : type a b c x y.
+      (a, x) H.t -> (b, y) fwd -> (a, b, c) H.Dom.bplus -> (x, y, c) bplus =
+   fun fa fb ab ->
+    match (fb, ab) with
+    | Zero, Append_nil -> Bplus (fa, Cod.bplus_zero (H.cod fa))
+    | Suc (fg, fb, fg_y), Append_cons ab ->
+        let (Plus x_fg) = Cod.plus (F.cod fg) in
+        let (Bplus (fc, xfg_y)) = bplus (Suc (fa, fg, x_fg)) fb ab in
+        let x_fgy = Cod.bfplus_assocr x_fg fg_y xfg_y in
+        Bplus (fc, x_fgy)
+
+  include H
+end
+
+(* Homomorphisms with permutations AND forwardsness *)
+
+module HomPermFwd
+    (G : Comparable)
+    (Cod : MonoidPermFwd)
+    (F : Function with module Dom = G and module Cod = Cod) =
+struct
+  include HomPerm (G) (Cod) (F)
+  include HomFwd (G) (Cod) (F)
+end
+
+(* Parametrized homomorphisms *)
+
+module Hom2 (G : Comparable) (Cod : Monoid) (F : Function2 with module Dom = G and module Cod = Cod) =
+struct
+  module Param = F.Param
+  module Dom = Make (G)
+  module Cod = Cod
+
+  type (_, _, _) t =
+    | Zero : ('param, Dom.zero, Cod.zero) t
+    | Suc :
+        ('param, 'm, 'n1) t * ('param, 'g, 'n2) F.t * ('n1, 'n2, 'n3) Cod.plus
+        -> ('param, ('m, 'g) Dom.suc, 'n3) t
+
+  let zero = Zero
+  let suc fa fg xy = Suc (fa, fg, xy)
+
+  let rec dom : type param a x. (param, a, x) t -> a Dom.t = function
+    | Zero -> Word Zero
+    | Suc (fm, fg, _) -> Dom.suc (dom fm) (F.dom fg)
+
+  let rec cod : type param a x. param Param.t -> (param, a, x) t -> x Cod.t =
+   fun p -> function
+    | Zero -> Cod.zero
+    | Suc (fm, _, n12) -> Cod.plus_out (cod p fm) n12
+
+  type (_, _) exists = Exists : ('param, 'a, 'x) t -> ('param, 'a) exists
+
+  let rec exists : type param a. param Param.t -> a Dom.t -> (param, a) exists =
+   fun param -> function
+    | Word Zero -> Exists Zero
+    | Word (Suc (m, g)) ->
+        let (Exists fm) = exists param (Word m) in
+        let (Exists fg) = F.exists param g in
+        let (Plus n12) = Cod.plus (F.cod param fg) in
+        Exists (Suc (fm, fg, n12))
+
+  let rec uniq : type param a x1 x2. (param, a, x1) t -> (param, a, x2) t -> (x1, x2) Eq.t =
+   fun f1 f2 ->
+    match (f1, f2) with
+    | Zero, Zero -> Eq
+    | Suc (m1, g1, n1), Suc (m2, g2, n2) ->
+        let Eq = uniq m1 m2 in
+        let Eq = F.uniq g1 g2 in
+        let Eq = Cod.plus_uniq n1 n2 in
+        Eq
+
+  type (_, _, _, _) plus =
+    | Plus : ('param, 'c, 'z) t * ('x, 'y, 'z) Cod.plus -> ('param, 'x, 'y, 'c) plus
+
+  let rec plus : type param a b c x y.
+      param Param.t ->
+      (param, a, x) t ->
+      (param, b, y) t ->
+      (a, b, c) Dom.plus ->
+      (param, x, y, c) plus =
+   fun param fa fb ab ->
+    match (fb, ab) with
+    | Zero, Zero -> Plus (fa, Cod.plus_zero (cod param fa))
+    | Suc (fb, fg, y_fg), Suc (ab, _) ->
+        let (Plus (fc, xy)) = plus param fa fb ab in
+        let (Plus xy_fg) = Cod.plus (F.cod param fg) in
+        let x_yfg = Cod.plus_assocr xy y_fg xy_fg in
+        Plus (Suc (fc, fg, xy_fg), x_yfg)
+end
+
+module Hom2Perm
+    (G : Comparable)
+    (Cod : MonoidPerm)
+    (F : Function2 with module Dom = G and module Cod = Cod) =
+struct
+  module H = Hom2 (G) (Cod) (F)
+  module Param = F.Param
+  module Dom = H.Dom
+
+  type (_, _, _, _, _) uninsert =
+    | Uninsert :
+        ('param, 'a, 'x) H.t * ('param, 'm, 'n) F.t * ('x, 'n, 'xn) Cod.plus * ('xn, 'y) Cod.permute
+        -> ('param, 'a, 'm, 'b, 'y) uninsert
+
+  let rec uninsert : type param a m b y.
+      param Param.t -> (a, m, b) Dom.insert -> (param, b, y) H.t -> (param, a, m, b, y) uninsert =
+   fun param i fb ->
+    match i with
+    | Now ->
+        let (Suc (fa, fm, xn)) = fb in
+        Uninsert (fa, fm, xn, Cod.perm_id (Cod.plus_out (H.cod param fa) xn))
+    | Later i ->
+        let (Suc (fb, fk, yl)) = fb in
+        let (Uninsert (fa, fm, xn, perm_xn_y)) = uninsert param i fb in
+        let x = H.cod param fa in
+        let l = Cod.plus_right yl in
+        let n = Cod.plus_right xn in
+        let (Plus nl) = Cod.plus l in
+        let (Plus ln) = Cod.plus n in
+        let (Plus xl) = Cod.plus l in
+        let (Plus xn_l) = Cod.plus l in
+        let (Plus xl_n) = Cod.plus n in
+        let x_ln = Cod.plus_assocr xl ln xl_n in
+        let x_nl = Cod.plus_assocr xn nl xn_l in
+        let perm_xln_xnl = Cod.perm_plus_perm (Cod.perm_id x) x_ln x_nl (Cod.perm_swap ln nl) in
+        let perm_xnl_yl = Cod.perm_plus_perm perm_xn_y xn_l yl (Cod.perm_id l) in
+        let perm_xln_yl = Cod.perm_comp perm_xln_xnl perm_xnl_yl in
+        Uninsert (Suc (fa, fk, xl), fm, xl_n, perm_xln_yl)
+
+  let rec permute : type param a x b y.
+      param Param.t ->
+      (param, a, x) H.t ->
+      (param, b, y) H.t ->
+      (a, b) Dom.permute ->
+      (x, y) Cod.permute =
+   fun param fa fb p ->
+    match p with
+    | Zero ->
+        let Eq = H.uniq fa fb in
+        Cod.perm_id (H.cod param fa)
+    | Suc (p, _, i) ->
+        let (Suc (fb, fg, wy)) = fb in
+        let (Uninsert (fa, fg', xn, xn_x)) = uninsert param i fa in
+        let Eq = F.uniq fg' fg in
+        let x_w = permute param fa fb p in
+        Cod.perm_comp (Cod.perm_inv xn_x)
+          (Cod.perm_plus_perm x_w xn wy (Cod.perm_id (Cod.plus_right xn)))
+end
+
+(* (Parametrized) functoriality is the homomorphism induced by a function composed with the monad unit. *)
+
+module Fmap
+    (Dom : Comparable)
+    (Cod : Comparable)
+    (F : Function2 with module Dom = Dom and module Cod = Cod) =
+struct
+  module CodMonoid = Make (Cod)
+  module C = Cod
+
+  module FMonoid = struct
+    module Param = F.Param
+    module Dom = Dom
+    module Cod = CodMonoid
+
+    type (_, _, _) t = Inject : ('p, 'a, 'b) F.t -> ('p, 'a, (Cod.zero, 'b) Cod.suc) t
+
+    let dom : type p a b. (p, a, b) t -> a Dom.t = fun (Inject x) -> F.dom x
+
+    let cod : type p a b. p Param.t -> (p, a, b) t -> b Cod.t =
+     fun p (Inject x) -> Cod.suc Cod.zero (F.cod p x)
+
+    type (_, _) exists = Exists : ('p, 'a, 'b) t -> ('p, 'a) exists
+
+    let exists : type p a. p Param.t -> a Dom.t -> (p, a) exists =
+     fun p x ->
+      let (Exists fx) = F.exists p x in
+      Exists (Inject fx)
+
+    let uniq : type p a b1 b2. (p, a, b1) t -> (p, a, b2) t -> (b1, b2) Eq.t =
+     fun f1 f2 ->
+      match (f1, f2) with
+      | Inject f1, Inject f2 ->
+          let Eq = F.uniq f1 f2 in
+          Eq
+  end
+
+  include Hom2 (Dom) (CodMonoid) (FMonoid)
+
+  let suc p fa fg = Suc (fa, Inject fg, Suc (Zero, F.cod p fg))
+
+  (* In this case, we have insertions in the codomain too, so we can be more precise about how the homomorphism acts on them. *)
+
+  type (_, _, _, _) uninsert =
+    | Uninsert :
+        ('p, 'x, 'fx) F.t * ('zs, 'fx, 'ws) CodMonoid.insert * ('p, 'xs, 'zs) t
+        -> ('p, 'x, 'xs, 'ws) uninsert
+
+  let rec uninsert : type p xs x ys ws.
+      (xs, x, ys) Dom.insert -> (p, ys, ws) t -> (p, x, xs, ws) uninsert =
+   fun i fxs ->
+    match (fxs, i) with
+    | Suc (fxs, Inject fx, Suc (Zero, _)), Now -> Uninsert (fx, Now, fxs)
+    | Suc (fxs, fx, Suc (Zero, yy)), Later i ->
+        let (Uninsert (u, fi, fxs)) = uninsert i fxs in
+        Uninsert (u, Later fi, Suc (fxs, fx, Suc (Zero, yy)))
+    | Zero, _ -> .
+
+  type (_, _, _, _) uncoinsert =
+    | Uncoinsert :
+        ('p, 'x, 'z) F.t * ('xs, 'x, 'ys) Dom.insert * ('p, 'xs, 'zs) t
+        -> ('p, 'z, 'ys, 'zs) uncoinsert
+
+  let rec uncoinsert : type p ys z zs ws.
+      (zs, z, ws) CodMonoid.insert -> (p, ys, ws) t -> (p, z, ys, zs) uncoinsert =
+   fun i fxs ->
+    match i with
+    | Now ->
+        let (Suc (fxs, Inject fx, Suc (Zero, _))) = fxs in
+        Uncoinsert (fx, Now, fxs)
+    | Later i ->
+        let (Suc (fxs, fx, Suc (Zero, yy))) = fxs in
+        let (Uncoinsert (fx', fi, fxs)) = uncoinsert i fxs in
+        Uncoinsert (fx', Later fi, Suc (fxs, fx, Suc (Zero, yy)))
+end

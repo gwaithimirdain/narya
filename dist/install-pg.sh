@@ -123,7 +123,10 @@ echo -n "Locating the ProofGeneral installation directory..."
 
 PGDIR=$(find ~/.emacs.d/elpa/ -maxdepth 1 -type d -name "proof-general-*" | sort -r | head -n1)
 
-if [ -n $PGDIR && -d $PGDIR ]
+echo
+echo "Result: $PGDIR"
+
+if [ -n $PGDIR ] && [ -d $PGDIR ]
 then
     echo "Found."
 else

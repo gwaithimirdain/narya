@@ -988,6 +988,19 @@ With a negative prefix argument,set display of type boundaries off."
          "display type boundaries := off")
      "display type boundaries := toggle")))
 
+(defun narya-display-unique-keys (arg)
+  "Set, unset, or toggle display of unique keys.
+With no prefix argument, toggle display of unique keys.
+With a positive prefix argument, set display of unique keys on.
+With a negative prefix argument, set display of unique keys off."
+  (interactive "P")
+  (proof-shell-invisible-command
+   (if arg
+       (if (> (prefix-numeric-value arg) 0)
+           "display unique keys := on"
+         "display unique keys := off")
+     "display unique keys := toggle")))
+
 (defun narya-display-variables (vars)
   "Set, unset, or toggle display of type boundaries.
 With no prefix argument, toggle display of type boundaries.
@@ -1007,7 +1020,9 @@ With a negative prefix argument,set display of type boundaries off."
     "display function boundaries ≔ on"
     "display function boundaries ≔ off"
     "display type boundaries ≔ on"
-    "display type boundaries ≔ off"))
+    "display type boundaries ≔ off"
+    "display unique keys ≔ on"
+    "display unique keys ≔ off"))
 
 (defun narya-minibuffer-cmd (cmd)
   "Wrapper around `proof-minibuffer-cmd' with completion for Narya commands."
@@ -1115,6 +1130,7 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
 (keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
 (keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-type-boundaries)
+(keymap-set narya-mode-map "C-c C-d C-k" 'narya-display-unique-keys)
 (keymap-set narya-mode-map "C-c C-d C-v" 'narya-display-variables)
 (keymap-set narya-mode-map "C-M-q" 'narya-reformat-command)
 

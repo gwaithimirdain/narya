@@ -84,6 +84,7 @@ and (_, _, _, _) parse =
   | Ident : string list * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Constr : string * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Field : string * string list * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
+  | Key : string list located * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Superscript :
       ('lt, 'ls, No.plus_omega, No.strict) parse located option * string located * Whitespace.t list
       -> ('lt, 'ls, 'rt, 'rs) parse
@@ -115,7 +116,7 @@ type ('left, 'tight, 'right) data = {
   pattern : observation list -> Asai.Range.t option -> Matchpattern.t;
   print_term : (observation list -> PPrint.document * Whitespace.t list) option;
   print_case :
-    ([ `Trivial | `Nontrivial ] ->
+    ([ `Trivial | `Nontrivial of Whitespace.t list ] ->
     observation list ->
     PPrint.document * PPrint.document * Whitespace.t list)
     option;
@@ -188,7 +189,7 @@ val print_term :
 
 val print_case :
   ('left, 'tight, 'right) notation ->
-  ([ `Trivial | `Nontrivial ] ->
+  ([ `Trivial | `Nontrivial of Whitespace.t list ] ->
   observation list ->
   PPrint.document * PPrint.document * Whitespace.t list)
   option

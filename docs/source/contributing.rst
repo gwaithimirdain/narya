@@ -9,3 +9,4 @@ Please try to keep your git history relatively clean, but don't waste a lot of t
 
 Narya is licensed under the GPL v3.0.  When submitting a pull request, you retain the copyright to your code, but you consent to its distribution in perpetuity under this license or any other open-source license that may later be adopted by the maintainers.
 
+AI-assisted contributions are allowed, but a human must take responsibility for the correctness of all code submitted to Narya.  In general, this means inspecting and understanding all AI-generated code.

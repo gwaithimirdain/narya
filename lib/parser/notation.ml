@@ -102,7 +102,7 @@ and ('t, 's) entry = ('t, 's) tokmap
 and observation =
   | Term : ('lt, 'ls, 'rt, 'rs) parse located -> observation
   | Token : token_ws -> observation
-  (* Superscripted tokens are only used here when there is at least one superscript. *)
+  (* Superscripted tokens are used whenever the parse tree instructions indicate that superscripts are allowed. *)
   | Ss_token : ss_token_ws -> observation
 
 and observations =
@@ -152,6 +152,8 @@ and (_, _, _, _) parse =
   | Ident : string list * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Constr : string * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Field : string * string list * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
+  (* A modal key operation "#a.b.c", applied postfix to a synthesizing term.  The dot-separated pieces of the key name are stored as strings, to be resolved into a 2-cell at typechecking time. *)
+  | Key : string list located * Whitespace.t list -> ('lt, 'ls, 'rt, 'rs) parse
   | Superscript :
       ('lt, 'ls, No.plus_omega, No.strict) parse located option * string located * Whitespace.t list
       -> ('lt, 'ls, 'rt, 'rs) parse
@@ -198,7 +200,7 @@ type ('left, 'tight, 'right) data = {
 
      In addition, we distinguish between "trivial" and "nontrivial" introductions.  A trivial introduction is a 0- or 1-character one, like the opening parenthesis of a tuple.  A trivial introduction is treated specially IF the form introducing the case tree is empty, so that there would literally be only 0 or 1 characters on the introduction line; in that case, there should be no linebreak after the introduction even when the body is being linebreaked.  Thus, the function to print a notation as a case tree must be told whether it is in a trivial context or not (which it may choose to ignore, if it is adding nontrivial introductions). *)
   print_case :
-    ([ `Trivial | `Nontrivial ] ->
+    ([ `Trivial | `Nontrivial of Whitespace.t list ] ->
     observation list ->
     PPrint.document * PPrint.document * Whitespace.t list)
     option;
@@ -513,6 +515,9 @@ let rec split_ending_whitespace : type lt ls rt rs.
       | Field (f, b, ws) ->
           let first, rest = Whitespace.split ws in
           ({ value = Field (f, b, first); loc }, rest)
+      | Key (parts, ws) ->
+          let first, rest = Whitespace.split ws in
+          ({ value = Key (parts, first); loc }, rest)
       | Superscript (x, s, ws) ->
           let first, rest = Whitespace.split ws in
           ({ value = Superscript (x, s, first); loc }, rest)

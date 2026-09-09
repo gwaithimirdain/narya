@@ -24,6 +24,7 @@ module Config = struct
     holes : holes;
     function_boundaries : show;
     type_boundaries : show;
+    unique_keys : show;
     variables : string list;
   }
 end
@@ -37,6 +38,7 @@ let default : Config.t =
     holes = `Without_number;
     function_boundaries = `Hide;
     type_boundaries = `Hide;
+    unique_keys = `Hide;
     variables = [ "𝑥"; "𝑦"; "𝑧"; "𝑤"; "𝑢"; "𝑣" ];
   }
 
@@ -54,6 +56,7 @@ let argstyle () = (State.get ()).argstyle
 let spacing () = (State.get ()).spacing
 let function_boundaries () = (State.get ()).function_boundaries
 let type_boundaries () = (State.get ()).type_boundaries
+let unique_keys () = (State.get ()).unique_keys
 let holes () = (State.get ()).holes
 let variables () = (State.get ()).variables
 
@@ -95,6 +98,16 @@ let modify_type_boundaries fb =
     | `Toggle, `Hide -> `Show in
   State.set { s with type_boundaries };
   type_boundaries
+
+let modify_unique_keys uk =
+  let s = State.get () in
+  let unique_keys =
+    match (uk, s.unique_keys) with
+    | `Set x, _ -> x
+    | `Toggle, `Show -> `Hide
+    | `Toggle, `Hide -> `Show in
+  State.set { s with unique_keys };
+  unique_keys
 
 (* For now, we hardcode this. *)
 let columns () = 75

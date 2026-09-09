@@ -28,6 +28,7 @@ let parenthesize_arguments = ref false
 let extra_spaces = ref true
 let show_function_boundaries = ref false
 let show_type_boundaries = ref false
+let show_unique_keys = ref false
 let variables = ref None
 
 (* Marshal the current flags to a file. *)
@@ -95,6 +96,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         spacing = (if !extra_spaces then `Wide else `Narrow);
         function_boundaries = (if !show_function_boundaries then `Show else `Hide);
         type_boundaries = (if !show_type_boundaries then `Show else `Hide);
+        unique_keys = (if !show_unique_keys then `Show else `Hide);
         holes = `Without_number;
         variables =
           (match !variables with
@@ -105,6 +107,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
   Core.Discrete.run ~env:!discreteness @@ fun () ->
+  Core.Positivity.run @@ fun () ->
   (* A temporary Reporter.run to report these errors *)
   ( Reporter.run
       ~emit:(fun d ->
@@ -114,7 +117,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         Reporter.display ?use_ansi ~output:stderr d;
         raise Exit)
   @@ fun () ->
-    if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [1,9]");
+    if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [0,9]");
     if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
     if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags;
     if !hott_deprecated then Reporter.emit (Deprecated "-hott (this is now the default)");
@@ -130,10 +133,9 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
             | _ -> Reporter.fatal (Invalid_variable [ x ]))
           (String.split_on_char ',' str)
     | None -> () );
-  Dim.Endpoints.run ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
-    ?hott:(if !hott then Some () else None)
-  @@ fun () ->
-  (* We have to put the main Reporter.run inside Endpoints.run, so we can display dimensions *)
+  Dim.Endpoints.set ~arity:!arity ~refl_char:!refl_char ~refl_names:!refl_names ~internal:!internal
+    ~hott:!hott;
+  (* We have to put the main Reporter.run after Endpoints.run, so we can display dimensions. *)
   Reporter.run
     ~emit:(fun d ->
       if !verbose || d.severity = Error || d.severity = Warning then

@@ -69,8 +69,8 @@ def abort1 : ⊥ → Type → ⊥ ≔ [ ]
 def abort2 : Type → ⊥ → ⊥ ≔ [ ]
 
 {` Matching lambdas can be higher-dimensional `}
-def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig a b ↦ (
-  ungel : R a b )
+def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig (
+  a .ungel : R a.0 a.1 )
 def ⊤ : Type ≔ sig ()
 def ⊤eq⊥ : Id Type ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
 

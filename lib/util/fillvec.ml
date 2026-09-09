@@ -23,6 +23,19 @@ let remaining : type a n mn. (a, n, mn) t -> n Fwn.t = function
 let get : type a mn. (a, Fwn.zero, mn) t -> (a, mn) Vec.t = function
   | Filled xs -> xs
 
+let to_list : type a n mn. (a, n, mn) t -> a list = function
+  | Filled xs -> Vec.to_list xs
+  | Unfilled (xs, _, _) -> Bwv.to_list xs
+
+let expected_length : type a n mn. (a, n, mn) t -> mn Fwn.t = function
+  | Filled xs -> Vec.length xs
+  | Unfilled (_, n, mn) -> Fwn.fplus_out mn (Suc n)
+
+(* Whether the intended length is positive, regardless of how much has been filled. *)
+let intended_pos : type a n mn. (a, n, mn) t -> bool = function
+  | Filled [] -> false
+  | _ -> true
+
 let map : type a b n mn. (a -> b) -> (a, n, mn) t -> (b, n, mn) t =
  fun f -> function
   | Filled xs -> Filled (Vec.mmap (fun [ x ] -> f x) [ xs ])

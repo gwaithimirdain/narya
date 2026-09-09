@@ -38,8 +38,8 @@ axiom a12 : A12 .t a10 a11
 
 {` 1-uniform transport acting on 1-dimensional functions `}
 echo ((X Y ↦ Π𝕗 X Y) : ((X : Fib) (Y : X .t → Fib) → Fib))⁽ᵖᵖ⁾ A22 B22
-  .f
-  .trr.1 f02 a12
+       .f
+       .trr.1 f02 a12
 
 {` B22 (A22 .f .liftl.1 a12) .f .trr.1 (f02 (A22 .f .trl.1 a12))
   : B12 a12
@@ -64,9 +64,9 @@ axiom a21 : A21 .t a01 a11
 
 {` 1-box-filling acting on 1-dimensional functions `}
 echo ((X Y ↦ Π𝕗 X Y) : ((X : Fib) (Y : X .t → Fib) → Fib))⁽ᵖᵖ⁾ A22 B22
-  .f
-  .id.1 f02 f12
-  .trr f20 a21
+       .f
+       .id.1 f02 f12
+       .trr f20 a21
 
 {` B22 (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .liftl a21)
   .f
@@ -77,10 +77,11 @@ echo ((X Y ↦ Π𝕗 X Y) : ((X : Fib) (Y : X .t → Fib) → Fib))⁽ᵖᵖ⁾
 
 {` Double-check that the computed result indeed has the correct type. `}
 echo B22 (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .liftl a21)
-  .f
-  .id.1 (f02 (A02 .f .liftl a01)) (f12 (A12 .f .liftl a11))
-  .trr.1
-    (f20 (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .trl a21))
+       .f
+       .id.1 (f02 (A02 .f .liftl a01)) (f12 (A12 .f .liftl a11))
+       .trr.1
+         (f20
+            (A22 .f .id.1 (A02 .f .liftl a01) (A12 .f .liftl a11) .trl a21))
 
 {` Note that the above uses box-filling in A where the tube consists of lifts.  This operation has the same type as 1-uniform transport, so we could just as well use that.  It doesn't give the *same* result, but it would be another valid, and simpler-looking definition.  The coinductive definition of 𝕗Π can't give this simpler version; the builtin fibrancy of Π-types could, but that would require defining it at all dimensions directly rather than coinductively, which is simpler. `}
 

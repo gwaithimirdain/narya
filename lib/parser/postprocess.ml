@@ -9,6 +9,9 @@ open Notation
 open Monad.Ops (Monad.Maybe)
 module StringMap = Map.Make (String)
 
+(* An alias for Notation.args, so we can still reach it where the local parameter [args] shadows it. *)
+let notation_args = args
+
 (* Process a term into a list of strings, to be a multi-word attribute *)
 let strings_of_term : type ls lt rs rt.
     (ls, lt, rs, rt) parse -> string list * Whitespace.t list list =
@@ -31,10 +34,14 @@ type (_, _, _) identity +=
   | Parens : (closed, No.plus_omega, closed) identity
   | Braces : (closed, No.plus_omega, closed) identity
   | Dot : (closed, No.plus_omega, closed) identity
+  | (* AscVar is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a modal ascription "(x :f| _)" used as the head of a field projection. *)
+      AscVar :
+      (closed, No.plus_omega, closed) identity
 
 let parens : (closed, No.plus_omega, closed) notation = (Parens, Outfix)
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
 let dot : (closed, No.plus_omega, closed) notation = (Dot, Outfix)
+let ascvar : (closed, No.plus_omega, closed) notation = (AscVar, Outfix)
 
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
 let process_ident ctx loc parts =
@@ -105,7 +112,10 @@ let rec process : type n lt ls rt rs.
   | Constr (ident, _) -> { value = Raw.Constr ({ value = Constr.intern ident; loc }, []); loc }
   | Field _ ->
       (* This can happen if the user tries to project a field from a constructor. *)
-      fatal Parse_error
+      fatal (Parse_error "invalid location for field projection")
+  | Key _ ->
+      (* A key operation can only be applied postfix to a synthesizing term, never appear in head position. *)
+      fatal (Parse_error "invalid location for key operation")
   | Superscript (Some x, str, _) -> (
       match deg_of_string str.value with
       | Some (Any_deg s) ->
@@ -131,6 +141,74 @@ and process_spine : type n lt ls rt rs.
   | _ -> process_apps ctx tm args
 
 and process_apps : type n lt ls rt rs.
+    (string option, n) Bwv.t ->
+    (lt, ls, rt, rs) parse located ->
+    (wrapped_parse * Asai.Range.t option) list ->
+    n check located =
+ fun ctx tm args ->
+  match (tm.value, args) with
+  (* A modal field projection "(x :f| _) .field" has the modal ascription "(x :f| _)" as the head of a field application.  We recognize it here, extracting the term x and the locking modality f, and attach the modality name to the raw field projection.  If a non-placeholder type is supplied, we put it on the term as an ascription. *)
+  | Notn ((AscVar, _), n), (Wrap { value = Field (fld, pbij, _); loc = fldloc }, _) :: rest -> (
+      let Wrap x, modality, Wrap ty = args_of_ascvar (notation_args n) in
+      let x = process ctx x in
+      let fn =
+        match ty.value with
+        | Placeholder _ -> (
+            match x.value with
+            | Synth sfn -> { value = sfn; loc = x.loc }
+            | _ -> fatal (Nonsynthesizing "head of modal field projection"))
+        | _ ->
+            let ty = process ctx ty in
+            { value = Asc (x, ty); loc = tm.loc } in
+      try
+        let fld =
+          match int_of_string_opt fld with
+          | Some k -> `Int k
+          | None -> `Name (fld, List.map int_of_string pbij) in
+        process_apply ctx { value = Synth (Field (fn, fld, Some modality)); loc = fldloc } rest
+      with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
+  | _ -> process_apps_head ctx tm args
+
+(* Extract the term and locking-modality name from the observations of a modal ascription "(x :f| _)". *)
+and args_of_ascvar :
+    ?loc:Asai.Range.t ->
+    observation list ->
+    wrapped_parse * string located list located * wrapped_parse =
+ fun ?loc -> function
+  | [ Token (ldelim, _); Term x; Token (Colon, _); Term ty; Token (rdelim, _) ] -> (
+      match (ldelim, rdelim) with
+      | LParen, RParen -> (Wrap x, locate_opt None [], Wrap ty)
+      | _ -> fatal ?loc (Parse_error "invalid braces"))
+  | [
+      Token (ldelim, _);
+      Term x;
+      Token (Colon, _);
+      Term modality;
+      Token (Op "|", _);
+      Term ty;
+      Token (rdelim, _);
+    ] -> (
+      match (ldelim, rdelim) with
+      | LParen, RParen -> (Wrap x, modality_name modality, Wrap ty)
+      | _ -> fatal ?loc (Parse_error "invalid braces"))
+  | _ -> fatal ?loc (Anomaly "invalid notation arguments for ascvar")
+
+(* Extract a modality name (a sequence of identifiers) from its parse tree. *)
+and modality_name : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string located list located
+    =
+ fun m ->
+  let rec go : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string located Bwd.t =
+   fun { value; loc } ->
+    match value with
+    | App { fn; arg; _ } -> (
+        match arg.value with
+        | Ident ([ x ], _) -> Snoc (go fn, locate_opt arg.loc x)
+        | _ -> fatal ?loc:arg.loc (Parse_error "invalid modality"))
+    | Ident ([ x ], _) -> Snoc (Emp, locate_opt loc x)
+    | _ -> fatal ?loc (Parse_error "invalid modality") in
+  locate_opt m.loc (Bwd.to_list (go m))
+
+and process_apps_head : type n lt ls rt rs.
     (string option, n) Bwv.t ->
     (lt, ls, rt, rs) parse located ->
     (wrapped_parse * Asai.Range.t option) list ->
@@ -189,8 +267,14 @@ and process_apply : type n.
           match fn.value with
           | Synth sfn -> { value = sfn; loc = fn.loc }
           | _ -> fatal (Nonsynthesizing "head of field application") in
-        process_apply ctx { value = Synth (Field (fn, fld)); loc } args
+        process_apply ctx { value = Synth (Field (fn, fld, None)); loc } args
       with Failure _ -> fatal (Invalid_field (String.concat "." ("" :: fld :: pbij))))
+  | (Wrap { value = Key (parts, _); _ }, loc) :: args ->
+      let fn =
+        match fn.value with
+        | Synth sfn -> { value = sfn; loc = fn.loc }
+        | _ -> fatal (Nonsynthesizing "head of key operation") in
+      process_apply ctx { value = Synth (Key (fn, parts)); loc } args
   | (Wrap { value = Notn ((Braces, _), n); loc = braceloc }, loc) :: rest -> (
       match args n with
       | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
@@ -229,26 +313,40 @@ type _ processed_tel =
       ('n, 'k, 'nk) Raw.tel * (string option, 'nk) Bwv.t * (Whitespace.t list, 'k) Vec.t
       -> 'n processed_tel
 
+let locate_modality : 'a Asai.Range.located list -> 'a located list located =
+ fun modality ->
+  let rec last = function
+    | [] -> None
+    | [ x ] -> Some x
+    | _ :: xs -> last xs in
+  match last modality with
+  | None -> locate_opt None []
+  | Some l -> locate_opt (Range.merge_opt (List.hd modality).loc l.loc) modality
+
 let rec process_tel : type n. (string option, n) Bwv.t -> Parameter.t list -> n processed_tel =
  fun ctx parameters ->
   match parameters with
   | [] -> Processed_tel (Emp, ctx, [])
-  | { names; ty; _ } :: parameters -> process_vars ctx names ty parameters
+  | { names; modality; ty; _ } :: parameters ->
+      process_vars ctx names
+        (locate_modality (List.map (fun x -> locate_opt x.loc (fst x.value)) modality))
+        ty parameters
 
 and process_vars : type n.
     (string option, n) Bwv.t ->
     (string option * Whitespace.t list) list ->
+    string located list located ->
     wrapped_parse ->
     Parameter.t list ->
     n processed_tel =
- fun ctx names (Wrap ty) parameters ->
+ fun ctx names modality (Wrap ty) parameters ->
   match names with
   | [] -> process_tel ctx parameters
   | (name, w) :: names ->
       let pty = process ctx ty in
       let (Processed_tel (tel, ctx, ws)) =
-        process_vars (Bwv.snoc ctx name) names (Wrap ty) parameters in
-      Processed_tel (Ext (name, pty, tel), ctx, w :: ws)
+        process_vars (Bwv.snoc ctx name) names modality (Wrap ty) parameters in
+      Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
 
 let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
  fun pat ->
@@ -259,19 +357,19 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
     | Ident ([ x ], _) when Lexer.valid_var x -> (
         match pats.value with
         | [] -> Var (locate_opt pat.loc (Some x))
-        | _ -> fatal ?loc:pat.loc Parse_error)
+        | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern identifier"))
     | Ident (xs, _) -> fatal ?loc:pat.loc (Invalid_variable xs)
     | Placeholder _ -> (
         match pats.value with
         | [] -> Var (locate_opt pat.loc None)
-        | _ -> fatal ?loc:pat.loc Parse_error)
+        | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern placeholder"))
     | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
     | App { fn; arg; _ } ->
         go fn
           (locate_opt pats.loc
              (go arg (locate_opt arg.loc Vec.[]) :: pats.value : (Matchpattern.t, n Fwn.suc) Vec.t))
     | Notn (notn, n) -> pattern notn (args n) pat.loc
-    | _ -> fatal ?loc:pat.loc Parse_error in
+    | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern") in
   go pat (locate_opt pat.loc Vec.[])
 
 (* Now that we've defined these functions, we can pass them back to User. *)
