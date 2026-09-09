@@ -2,6 +2,10 @@ open Bwd
 open Core
 open Top
 
+(* Loading a file needs a mode theory installed, so that the name of its mode ("Type") is bound.
+   Mentioning the test mode installs it, as the other white-box tests do by using it. *)
+let () = ignore Testutil.Testmode.test_mode
+
 (* A file that was loaded earlier is checked, when it comes up again, to make sure that neither it
    nor anything it imports has changed on disk since it was loaded; each file is compared against
    its own loading time, since an import is quite normally *older* or *newer* than the file that
