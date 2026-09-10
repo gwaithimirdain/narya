@@ -1,5 +1,9 @@
 (library
-  (name modal)
-  (public_name narya.modal)
-  (libraries util dim asai uutf))
-(env (_ (flags (:standard -w -37 -w -30))))
+ (name modal)
+ (public_name narya.modal)
+ (libraries util dim asai uutf))
+
+(env
+ (_
+  (flags
+   (:standard -w -37 -w -30))))

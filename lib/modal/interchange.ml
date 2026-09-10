@@ -128,8 +128,12 @@ module InterchangeCell
   let tld_lf = Modality.Path (Suc (Suc (Zero, Lf.modality), Tld.modality), cmode)
 
   (* The four whiskered 2-cells forming the sides of the interchange square. *)
-  let alpha_rt = Modalcell.postwhisker (Suc (Zero, Tri.modality)) (Suc (Zero, Tld.modality)) rt alpha
-  let alpha_lf = Modalcell.postwhisker (Suc (Zero, Tri.modality)) (Suc (Zero, Tld.modality)) lf alpha
+  let alpha_rt =
+    Modalcell.postwhisker (Suc (Zero, Tri.modality)) (Suc (Zero, Tld.modality)) rt alpha
+
+  let alpha_lf =
+    Modalcell.postwhisker (Suc (Zero, Tri.modality)) (Suc (Zero, Tld.modality)) lf alpha
+
   let beta_tri = Modalcell.prewhisker (Suc (Zero, Tri.modality)) (Suc (Zero, Tri.modality)) beta tri
   let beta_tld = Modalcell.prewhisker (Suc (Zero, Tld.modality)) (Suc (Zero, Tld.modality)) beta tld
 

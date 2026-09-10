@@ -28,9 +28,7 @@ module Make (G : Decidable) (F : Fam2) : sig
 
     type (_, _, _, _) hgt =
       | [] : ('a, 'b, 'g0, nil) hgt
-      | ( :: ) :
-          ('a, 'b, 'g0, 'p) gt * ('a, 'b, 'g0, 'ps) hgt
-          -> ('a, 'b, 'g0, ('p, 'ps) cons) hgt
+      | ( :: ) : ('a, 'b, 'g0, 'p) gt * ('a, 'b, 'g0, 'ps) hgt -> ('a, 'b, 'g0, ('p, 'ps) cons) hgt
   end
 
   type ('asuc, 'g0, 'ps, 'qs) pmapper = {
