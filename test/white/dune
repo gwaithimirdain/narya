@@ -1,4 +1,4 @@
 (tests
-  (names readback pbij)
-	(libraries core parser testutil zarith))
+  (names readback pbij library_modified)
+	(libraries core parser testutil top unix zarith))
 (env (_ (flags (:standard -w -26 -w -27))))
