@@ -127,6 +127,37 @@ Files are recompiled if their dependencies need to be
    ￮ axiom a2 assumed
   
 
+A file is loaded from source if a file it imports has no compiled version at all: whether an
+import is compiled and up to date is asked about that import, not about the file importing it.
+
+  $ cat >five.ny <<EOF
+  > import "two"
+  > EOF
+
+  $ narya five.ny
+
+  $ rm one.nyo
+
+  $ narya -v five.ny
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/two.ny
+  
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/one.ny
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/one.ny (source)
+  
+   ￫ info[I0001]
+   ￮ axiom a0 assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/two.ny (source)
+  
+
 Circular dependency
 
   $ cat >foo.ny <<EOF

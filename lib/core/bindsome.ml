@@ -163,7 +163,10 @@ module Ordered = struct
     Some
       {
         tm = eval_term (Ctx.Ordered.env newctx) (readback_nf (Ctx.of_ordered ~level oldctx) nf);
-        ty = Lazy.from_val (eval_term (Ctx.Ordered.env newctx) (readback_val (Ctx.of_ordered ~level oldctx) (Lazy.force nf.ty)));
+        ty =
+          Lazy.from_val
+            (eval_term (Ctx.Ordered.env newctx)
+               (readback_val (Ctx.of_ordered ~level oldctx) (Lazy.force nf.ty)));
       }
 
   let eval_readback_val : type mode a b.
@@ -253,9 +256,10 @@ module Ordered = struct
                       (* Otherwise, we readback-eval only its type, and create a new De Bruijn level for the new context. *)
                       let oldnf = Binding.value b in
                       let oldty = oldnf.ty in
-                      match eval_readback_val ~level ~oldctx ~newctx (Lazy.force (oldty)) with
+                      match eval_readback_val ~level ~oldctx ~newctx (Lazy.force oldty) with
                       | Some newty ->
-                          let newnf = { tm = var modality new_level newty; ty = (Lazy.from_val (newty)) } in
+                          let newnf =
+                            { tm = var modality new_level newty; ty = Lazy.from_val newty } in
                           Binding.force oldb;
                           Binding.specify newb (Some new_level) newnf
                       | None -> raise_notrace Short_circuit)

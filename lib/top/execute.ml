@@ -148,7 +148,7 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
           if
             Bwd.for_all
               (fun (_, ifile) ->
-                let oifile = FilePath.replace_extension filename "nyo" in
+                let oifile = FilePath.replace_extension ifile "nyo" in
                 FileUtil.test Is_file oifile
                 && (not (FileUtil.test (Is_older_than ifile) oifile))
                 && not (FileUtil.test (Is_newer_than ofile) ifile))
@@ -190,11 +190,14 @@ and load_file filename top =
   let filename = FilePath.reduce filename in
   match Loaded.get_file filename with
   | Some ({ trie; globals; file; old_imports; explicit = top' }, mtime) ->
-      (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded. *)
+      (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded.  Each file is compared against its own loading time; an import is quite normally newer than the file that imports it. *)
       if (FileUtil.stat filename).modification_time > mtime then fatal (Library_modified filename);
       Bwd.iter
         (fun (_, f) ->
-          if (FileUtil.stat filename).modification_time > mtime then fatal (Library_modified f))
+          match Loaded.get_file f with
+          | Some (_, fmtime) ->
+              if (FileUtil.stat f).modification_time > fmtime then fatal (Library_modified f)
+          | None -> ())
         old_imports;
       (* We add it back into Global, and to the 'all' namespace if it wasn't already there. *)
       Global.add_file file globals;
@@ -202,8 +205,9 @@ and load_file filename top =
         Loaded.add_to_scope trie;
         (* Ensure that it's marked as having been loaded explicitly. *)
         Loaded.add_to_files filename trie globals file old_imports true);
-      (* We also add it to the list of things imported by the current ambient file.  TODO: Should that go in execute_command Import? *)
-      Loading.modify (fun s -> { s with imports = Snoc (s.imports, (file, filename)) });
+      (* We also add it, and the files it imports, to the list of things imported by the current ambient file, since that list is supposed to be transitive.  (The other branch appends the same thing, in the same order, after loading the file.)  TODO: Should that go in execute_command Import? *)
+      Loading.modify (fun s ->
+          { s with imports = Bwd_extra.append (Snoc (s.imports, (file, filename))) old_imports });
       (* Return its saved export namespace. *)
       trie
   | None ->
