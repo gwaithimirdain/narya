@@ -217,6 +217,19 @@ subdivisions."
 Used for examining Narya terms in temporary buffers, which are not in
 Narya mode and hence don't have its syntax table.")
 
+(defconst narya-superscript-regexp
+  (concat
+   "\\(?:"
+   ;; A unicode superscript: superscript letters, digits, and minus
+   ;; signs between superscript parentheses.
+   "⁽[⁰¹²³⁴⁵⁶⁷⁸⁹ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖ𐞥ʳˢᵗᵘᵛʷˣʸᶻ⁻]+⁾"
+   "\\|"
+   ;; An ASCII superscript: the same, un-superscripted, between
+   ;; ordinary parentheses after a double caret.
+   "\\^\\^([0-9a-z-]+)"
+   "\\)")
+  "Regexp matching one superscript degeneracy operator.")
+
 (defconst narya-atomic-term-regexp
   (concat
    ;; An identifier is a maximal run of characters that are not
@@ -227,21 +240,35 @@ Narya mode and hence don't have its syntax table.")
    "\\`[^][(){}~!@#$%&*/=+|,<>:;^`?⁇¿ʔ↦⤇→⇒≔⩴⩲…⁽⁾ \t\n\r"
    ;; Unicode tag characters are special too.
    (string #xE0020) "-" (string #xE007F)
-   "-]+\\'")
+   "-]+"
+   ;; The identifier can be followed by superscript degeneracies, which
+   ;; bind tighter than application.
+   narya-superscript-regexp "*"
+   "\\'")
   "Regexp matching a Narya term that consists of a single identifier.
-Such a term never needs to be parenthesized to be used as an argument.
-This is an approximation of the Narya lexer, which is what decides where
-one identifier ends and the next token begins.")
+The identifier can be decorated with superscript degeneracies, which
+bind tighter than application.  Such a term never needs to be
+parenthesized to be used as an argument.  This is an approximation of the
+Narya lexer, which is what decides where one identifier ends and the next
+token begins.")
+
+(defconst narya-superscripts-regexp
+  (concat "\\`" narya-superscript-regexp "*\\'")
+  "Regexp matching a possibly-empty string of superscript degeneracies.")
 
 (defun narya-delimited-term-p (term)
   "Whether TERM is entirely enclosed in one matching pair of brackets.
-The brackets can be parentheses, square brackets, or curly braces."
+The brackets can be parentheses, square brackets, or curly braces, and
+can be followed by superscript degeneracies."
   (and (string-match-p "\\`[[({]" term)
        (with-temp-buffer
          (set-syntax-table narya-mode-syntax-table-for-terms)
          (insert term)
          (let ((end (ignore-errors (scan-sexps (point-min) 1))))
-           (and end (= end (point-max)))))))
+           (and end
+                ;; Buffer positions are one more than string indices.
+                (string-match-p narya-superscripts-regexp
+                                (substring term (1- end))))))))
 
 (defun narya-term-needs-parentheses-p (term)
   "Whether TERM must be parenthesized to be used as an argument.
