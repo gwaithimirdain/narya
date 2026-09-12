@@ -791,9 +791,13 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                                 (insert term))
                               (insert "\n")
                               (setq n (+ n 1))
+                              ;; Terms after the first are being
+                              ;; applied as arguments to the first, so
+                              ;; they may need parentheses.
                               (setq concatenated
                                     (if concatenated
-                                        (concat concatenated " " term)
+                                        (concat concatenated " "
+                                                (narya-parenthesize-term term))
                                       term))
                               (list term)))
                           terms))

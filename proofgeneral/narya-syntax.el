@@ -1,5 +1,7 @@
 ;; narya-syntax.el --- Proof General instance for Narya - syntax file
 
+(require 'subr-x)
+
 ;; We omit "display", "solve", "split", "show", "undo", and "chdir" because these should NOT appear in source files.
 (defconst narya-commands
   "\\_<\\(axiom\\|def\\|echo\\|synth\\|notation\\|import\\|export\\|quit\\|section\\|option\\|end\\)\\_>")
@@ -204,6 +206,60 @@ subdivisions."
    '(?\? ".")
    '(?⁇ ".")
    ))
+
+(defvar narya-mode-syntax-table-for-terms
+  (let ((table (make-syntax-table))
+        (entries narya-mode-syntax-table-entries))
+    (while entries
+      (modify-syntax-entry (pop entries) (pop entries) table))
+    table)
+  "A syntax table built from `narya-mode-syntax-table-entries'.
+Used for examining Narya terms in temporary buffers, which are not in
+Narya mode and hence don't have its syntax table.")
+
+(defconst narya-atomic-term-regexp
+  (concat
+   ;; An identifier is a maximal run of characters that are not
+   ;; whitespace, comment-starters, hole characters, ASCII symbols, or
+   ;; single-character operators (including the superscript
+   ;; parentheses).  Dots are allowed, since they only separate the
+   ;; pieces of an identifier (or mark a constructor or a field).
+   "\\`[^][(){}~!@#$%&*/=+|,<>:;^`?⁇¿ʔ↦⤇→⇒≔⩴⩲…⁽⁾ \t\n\r"
+   ;; Unicode tag characters are special too.
+   (string #xE0020) "-" (string #xE007F)
+   "-]+\\'")
+  "Regexp matching a Narya term that consists of a single identifier.
+Such a term never needs to be parenthesized to be used as an argument.
+This is an approximation of the Narya lexer, which is what decides where
+one identifier ends and the next token begins.")
+
+(defun narya-delimited-term-p (term)
+  "Whether TERM is entirely enclosed in one matching pair of brackets.
+The brackets can be parentheses, square brackets, or curly braces."
+  (and (string-match-p "\\`[[({]" term)
+       (with-temp-buffer
+         (set-syntax-table narya-mode-syntax-table-for-terms)
+         (insert term)
+         (let ((end (ignore-errors (scan-sexps (point-min) 1))))
+           (and end (= end (point-max)))))))
+
+(defun narya-term-needs-parentheses-p (term)
+  "Whether TERM must be parenthesized to be used as an argument.
+This is a pure-elisp approximation of what Narya itself would say: we
+answer no if TERM is a single identifier, or if it is already enclosed in
+a matching pair of parentheses, brackets, or braces, and yes otherwise.
+Thus we may parenthesize a term unnecessarily, but the result should
+always be correct."
+  (let ((term (string-trim term)))
+    (not (or (string-match-p narya-atomic-term-regexp term)
+             (narya-delimited-term-p term)))))
+
+(defun narya-parenthesize-term (term)
+  "Parenthesize TERM if necessary for it to be used as an argument."
+  (let ((term (string-trim term)))
+    (if (narya-term-needs-parentheses-p term)
+        (concat "(" term ")")
+      term)))
 
 (provide 'narya-syntax)
 
