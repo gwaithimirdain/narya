@@ -1,4 +1,4 @@
-;;; narya.el --- Proof General instance for Narya
+;;; narya.el --- Proof General instance for Narya  -*- lexical-binding: t -*-
 
 ;; URL: https://github.com/gwaithimirdain/narya
 ;; Version: 0.1
@@ -35,7 +35,7 @@
 (require 'font-lock)
 (require 'ansi-color)
 
-(defun narya-script-preprocess (file start end cmd)
+(defun narya-script-preprocess (_file _start _end cmd)
   "Add a formfeed at the end of a command, as a delimiter."
   (list (concat cmd "\n\x0C\n")))
 
@@ -64,8 +64,9 @@
   "Temporary storage for parenthesization of hole-filling term.")
 
 (defun narya-create-hole-overlays (start-position relative-positions)
-  "Create overlays for holes given a starting position and a list of relative positions.
-Each entry in RELATIVE-POSITIONS should be a list of the form (START-OFFSET END-OFFSET HOLE-ID).
+  "Create overlays for holes at START-POSITION plus RELATIVE-POSITIONS.
+Each entry in RELATIVE-POSITIONS should be a list of the form
+\(START-OFFSET END-OFFSET HOLE-ID), with offsets in bytes.
 Also replaces single ? holes with ¿ʔ.
 Return the number of such overlays created."
   (let ((positions
@@ -193,8 +194,9 @@ Return the number of such overlays created."
     count))
 
 (defun narya-get-hole-overlay (pos)
-  "Find the hole overlay that strictly contains the given position, if any.
-Does *not* find overlays that we are at the beginning or end of (outside the markers)."
+  "Find the hole overlay that strictly contains POS, if any.
+Does *not* find overlays that POS is at the beginning or end of (outside
+the markers)."
   ;; `overlays-at' finds overlays we're at the beginning of, but not
   ;; those we're at the end of.  So we filter out the beginning ones.
   (cl-find-if
@@ -203,17 +205,24 @@ Does *not* find overlays that we are at the beginning or end of (outside the mar
           (< (overlay-start ovl) pos (overlay-end ovl))))
    (overlays-at pos)))
 
+(defvar font-lock-beg)
+(defvar font-lock-end)
+
 (defun narya-extend-font-lock-region ()
   "Extend the font-lock region so it includes any processed hole.
-For unprocessed holes, you're on your own."
+For unprocessed holes, you're on your own.
+For `font-lock-extend-region-functions'; returns non-nil if the region
+was changed."
   (let ((beg-ovl (narya-get-hole-overlay font-lock-beg))
-        (end-ovl (narya-get-hole-overlay font-lock-beg)))
-    (or (and beg-ovl
-             (< (overlay-start beg-ovl) font-lock-beg)
-             (setq font-lock-beg (overlay-start beg-ovl)))
-        (and end-ovl
-             (> (overlay-end end-ovl) font-lock-end)
-             (setq font-lock-end (overlay-end end-ovl))))))
+        (end-ovl (narya-get-hole-overlay font-lock-end))
+        (changed nil))
+    (when (and beg-ovl (< (overlay-start beg-ovl) font-lock-beg))
+      (setq font-lock-beg (overlay-start beg-ovl)
+            changed t))
+    (when (and end-ovl (> (overlay-end end-ovl) font-lock-end))
+      (setq font-lock-end (overlay-end end-ovl)
+            changed t))
+    changed))
 
 (defun narya-skip-comments-backwards ()
   "Skip backwards to the last non-whitespace, non-comment character."
@@ -343,7 +352,7 @@ Some code copied from Coq."
 (defvar narya-current-error-start nil)
 
 (define-advice proof-shell-error-or-interrupt-action
-    (:before (err-or-int) narya-save-start)
+    (:before (_err-or-int) narya-save-start)
   (save-excursion
     (proof-with-script-buffer
      ;; For an invisible command, there is no overlay, and no error highlighting.
@@ -391,14 +400,13 @@ For `after-change-functions' in Narya-mode buffers."
 (defun narya-clear-error-highlights-on-visible-cmd ()
   "Clear error highlights whenever a non-invisible command is executed."
   (unless (member 'invisible (nth 3 (car proof-action-list)))
-    (narya-clear-error-highlights)
-    (setq narya-pre-change-unprocessed-begin nil)))
+    (narya-clear-error-highlights)))
 
 (add-hook 'proof-state-change-hook #'narya-clear-error-highlights-on-visible-cmd)
   
-(defun narya-handle-output (cmd string)
-  "Parse and handle Narya's output.
-If called with an invisible command (such as 'solve'), store hole data
+(defun narya-handle-output (_cmd string)
+  "Parse and handle Narya's output STRING.
+If called with an invisible command (such as `solve'), store hole data
 in a global variable instead of creating overlays immediately.
 Otherwise, create overlays for new holes.
 
@@ -530,12 +538,13 @@ handling in Proof General."
           ;; In May 2025, pg-goals-display added a third argument.  For now, we stay backwards-compatible.
           (if (= (car (func-arity 'pg-goals-display)) 3)
               (pg-goals-display proof-shell-last-goals-output t nil)
-            (pg-goals-display proof-shell-last-goals-output t))))
+            (with-suppressed-warnings ((callargs pg-goals-display))
+              (pg-goals-display proof-shell-last-goals-output t)))))
       ;; Update output kind to avoid redundant handling by `proof-shell-handle-delayed-output`
       (setq proof-shell-last-output-kind 'goals))
     ;; Optionally handle proof tree output
     (when proof-tree-external-display
-      (proof-tree-handle-delayed-output old-proof-marker cmd flags span))
+      (proof-tree-handle-delayed-output proof-shell-old-proof-marker-position cmd flags span))
     (run-hooks 'proof-shell-handle-delayed-output-hook)))
 
 (defun narya-delete-undone-holes ()
@@ -556,6 +565,10 @@ handling in Proof General."
   (let ((start (point)))
     (apply 'insert args)
     (ansi-color-apply-on-region start (point))))
+
+;; Proof General doesn't declare these, although `proof-easy-config' uses them.
+(defvar proof-goals-syntax-table-entries)
+(defvar proof-response-syntax-table-entries)
 
 ;; Easy configuration
 (proof-easy-config
@@ -613,7 +626,7 @@ handling in Proof General."
  proof-shell-handle-output-system-specific 'narya-handle-output
  ;; We don't have "save" commands yet, so silence the warning about their absence.
  proof-save-command-regexp             ""
- proof-really-save-command-p           (lambda (span cmd) nil)
+ proof-really-save-command-p           (lambda (_span _cmd) nil)
 
  ;; Silencing unnecessary output (TODO)
                                         ;proof-shell-start-silent-cmd          ""
@@ -757,7 +770,7 @@ handling in Proof General."
   "Get the contents of the current subdivision of the current hole."
   (let ((ovl (narya-get-hole-overlay (point)))
         (pos (point))
-        start
+        start data
         (result nil))
     (when ovl
       (save-excursion
@@ -774,7 +787,7 @@ handling in Proof General."
   "Parse and return the non-empty subdivisions in a hole overlay, if any.
 Here \"empty\" means containing only whitespace; comments are nonempty."
   (let ((subdivisions nil)
-        data str)
+        start data str)
     (save-excursion
       (goto-char (+ (overlay-start ovl) 1))
       (setq start (point))
@@ -904,8 +917,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                   (insert "(" term ")")
                   (setq shift 1))
               (insert term)))
-          (let ((insert-end (point-marker))
-                (new-holes 0))
+          (progn
             (delete-region (point) (overlay-end hole-overlay))
             ;; Delete the overlay for the solved hole and update the hole list.
             (narya-delete-hole-overlay hole-overlay)
@@ -915,7 +927,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                 ;; If the new term was reformatted, then its holes
                 ;; were printed using the ⁇0? syntax, so we can use
                 ;; narya-create-marked-hole-overlays.
-                ;; (narya-create-marked-hole-overlays insert-start insert-end)
+                ;; (narya-create-marked-hole-overlays insert-start (point))
                 (narya-reformat-command cmd-span)
               ;; Otherwise, we get the hole position information
               ;; from the [data] block.
@@ -1210,6 +1222,9 @@ With a negative prefix argument,set display of type boundaries off."
 ;; C-c C-r refine/apply
 ;; C-c C-t show goal type
 ;; C-c C-w why in scope
+
+;; Defined by `proof-easy-config' above.
+(defvar narya-mode-map)
 
 (keymap-set narya-mode-map "C-c C-SPC" 'narya-solve-hole)
 (keymap-set narya-mode-map "C-c C-y" 'narya-split-hole)
