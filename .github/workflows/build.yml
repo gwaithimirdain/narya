@@ -55,7 +55,16 @@ jobs:
       if: steps.cache-gmp.outputs.cache-hit != 'true'
       working-directory: ${{ runner.temp }}
       run: |
-        curl -fsSL "https://ftpmirror.gnu.org/gmp/gmp-$GMP_VERSION.tar.xz" -o gmp.tar.xz
+        # GNU mirrors are sometimes slow or unreachable, so try several sources.
+        for url in "https://ftpmirror.gnu.org/gmp/gmp-$GMP_VERSION.tar.xz" \
+                   "https://ftp.gnu.org/gnu/gmp/gmp-$GMP_VERSION.tar.xz" \
+                   "https://gmplib.org/download/gmp/gmp-$GMP_VERSION.tar.xz"; do
+          if curl -fsSL --retry 3 --retry-all-errors --connect-timeout 30 --max-time 300 "$url" -o gmp.tar.xz; then
+            break
+          fi
+          echo "Download from $url failed"
+          rm -f gmp.tar.xz
+        done
         tar -xf gmp.tar.xz
         cd "gmp-$GMP_VERSION"
         # --with-pic is needed on x86_64, where GMP's assembly is otherwise
