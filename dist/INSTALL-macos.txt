@@ -1,0 +1,33 @@
+This is a build for MacOS of the master branch of Narya, an experimental proof assistant for higher-dimensional type theory.  The executable 'narya' is a universal binary that should run on any Mac with MacOS 11 (Big Sur) or later, on both Apple Silicon and Intel processors.
+
+
+INSTALLING NARYA
+================
+
+Place the executable 'narya' in a directory that is in your PATH.  For instance, you can run the following commands in a terminal, from this directory:
+
+  mkdir -p ~/bin
+  cp narya ~/bin
+  echo 'export PATH="$HOME/bin:$PATH"' >>~/.zshrc
+
+(The last command is only needed the first time.  If your shell is bash rather than the default zsh, use ~/.bash_profile instead of ~/.zshrc.)  Then open a new terminal window and try running 'narya'.
+
+If you downloaded this bundle with a web browser, MacOS may refuse to run 'narya' because it can't verify the developer.  In that case, run
+
+  xattr -d com.apple.quarantine ~/bin/narya
+
+and try again.  (Downloading the bundle from the terminal, e.g. with 'curl -LO', avoids this.)
+
+
+INSTALLING PROOFGENERAL
+=======================
+
+To install the recommended ProofGeneral interactive mode, first make sure Emacs is installed.  If you use Homebrew, you can install Emacs with
+
+  brew install --cask emacs
+
+For other options, see https://narya.readthedocs.io/en/latest/installation.html.  Then run the supplied shell script 'install-pg.sh' from this directory:
+
+  ./install-pg.sh
+
+If that doesn't work, please report a bug at https://github.com/gwaithimirdain/narya.  In the meantime, you can follow the instructions in the Narya documentation for installing ProofGeneral manually (https://narya.readthedocs.io/en/latest/installation.html#proofgeneral-emacs-mode).  You will need to repeat this every time Emacs, ProofGeneral, or Narya is updated.  Finally, you can run Emacs and create or open a .ny file to start Narya ProofGeneral.

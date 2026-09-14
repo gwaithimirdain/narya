@@ -25,6 +25,97 @@ jobs:
       uses: actions/upload-pages-artifact@v3
       with:
         path: dist/build/
+  build-macos:
+    # MacOS doesn't support fully static executables, but a binary that
+    # dynamically links only system libraries runs on any MacOS at least as
+    # new as its deployment target.  Narya's only other C dependency is GMP
+    # (through zarith), so we link a static build of it.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      GMP_VERSION: "6.3.0"
+    steps:
+    - uses: actions/checkout@v4
+    - run: echo "GMP_PREFIX=$RUNNER_TEMP/gmp-static" >> "$GITHUB_ENV"
+    - name: Cache static GMP
+      id: cache-gmp
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/gmp-static
+        key: gmp-${{ env.GMP_VERSION }}-static-${{ matrix.runner }}-macos${{ env.MACOSX_DEPLOYMENT_TARGET }}
+    - name: Build static GMP
+      if: steps.cache-gmp.outputs.cache-hit != 'true'
+      working-directory: ${{ runner.temp }}
+      run: |
+        curl -fsSL "https://ftpmirror.gnu.org/gmp/gmp-$GMP_VERSION.tar.xz" -o gmp.tar.xz
+        tar -xf gmp.tar.xz
+        cd "gmp-$GMP_VERSION"
+        ./configure --prefix="$GMP_PREFIX" --disable-shared --enable-static
+        make -j"$(sysctl -n hw.ncpu)"
+        make install
+    - uses: ocaml/setup-ocaml@v3
+      with:
+        ocaml-compiler: "5.3"
+    - run: opam install dune --yes
+    - run: opam exec -- dune build narya.opam
+    - name: Install dependencies, with zarith using the static GMP
+      run: |
+        # zarith takes its GMP link flags from pkg-config, and records them
+        # for linking executables, so this keeps Homebrew's libgmp.dylib
+        # (if present) out of the final link.
+        export PKG_CONFIG_PATH="$GMP_PREFIX/lib/pkgconfig"
+        export CPPFLAGS="-I$GMP_PREFIX/include" LDFLAGS="-L$GMP_PREFIX/lib"
+        opam install . --deps-only --yes
+    - run: opam exec -- dune build -p narya
+    - name: Check that only system libraries are linked dynamically
+      run: |
+        BIN=_build/install/default/bin/narya
+        otool -L "$BIN"
+        vtool -show-build "$BIN"
+        extra=$(otool -L "$BIN" | tail -n +2 | grep -v -E '^[[:space:]]*(/usr/lib/|/System/Library/)' || true)
+        if [ -n "$extra" ]; then
+          echo "::error::narya links non-system dynamic libraries:"
+          echo "$extra"
+          exit 1
+        fi
+    - name: Smoke test
+      run: |
+        BIN=_build/install/default/bin/narya
+        "$BIN" -version
+        "$BIN" -e 'def A : Type := Type' -e 'echo A'
+    - uses: actions/upload-artifact@v4
+      with:
+        name: narya-macos-${{ matrix.arch }}
+        path: _build/install/default/bin/narya
+  package-macos:
+    needs: build-macos
+    runs-on: macos-15
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: narya-macos-*
+        path: binaries
+    - name: Combine into a universal binary
+      run: |
+        lipo -create binaries/narya-macos-arm64/narya binaries/narya-macos-x86_64/narya -output narya-universal
+        chmod +x narya-universal
+        lipo -info narya-universal
+        ./narya-universal -e 'def A : Type := Type' -e 'echo A'
+        arch -x86_64 ./narya-universal -e 'def A : Type := Type' -e 'echo A'
+    - run: cd dist && ./build.sh ../narya-universal macos INSTALL-macos.txt
+    - uses: actions/upload-artifact@v4
+      with:
+        name: narya-master-macos
+        path: dist/build/releases/narya-master-macos.tar.gz
   deploy:
     if: github.event_name == 'push' && github.ref_name == 'master'
     environment:
