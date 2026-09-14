@@ -50,7 +50,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/gmp-static
-        key: gmp-${{ env.GMP_VERSION }}-static-${{ matrix.runner }}-macos${{ env.MACOSX_DEPLOYMENT_TARGET }}
+        key: gmp-${{ env.GMP_VERSION }}-static-pic-${{ matrix.runner }}-macos${{ env.MACOSX_DEPLOYMENT_TARGET }}
     - name: Build static GMP
       if: steps.cache-gmp.outputs.cache-hit != 'true'
       working-directory: ${{ runner.temp }}
@@ -58,7 +58,9 @@ jobs:
         curl -fsSL "https://ftpmirror.gnu.org/gmp/gmp-$GMP_VERSION.tar.xz" -o gmp.tar.xz
         tar -xf gmp.tar.xz
         cd "gmp-$GMP_VERSION"
-        ./configure --prefix="$GMP_PREFIX" --disable-shared --enable-static
+        # --with-pic is needed on x86_64, where GMP's assembly is otherwise
+        # position-dependent and can't be linked into zarith's shared library.
+        ./configure --prefix="$GMP_PREFIX" --disable-shared --enable-static --with-pic
         make -j"$(sysctl -n hw.ncpu)"
         make install
     - uses: ocaml/setup-ocaml@v3
