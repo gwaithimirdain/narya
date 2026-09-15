@@ -48,7 +48,7 @@ Currently user notations cannot bind variables, so it is not possible to define 
       snd : B,
       )
 
-   notation 2 prod : A "×" B ≔ prod A B
+   notation(2) A "×" B ≔ prod A B
 
 The fact that parameters can equivalently be abstracted over in the type and the term applies also to record type declarations.  That is, the above definition of Σ-types is entirely equivalent to
 
