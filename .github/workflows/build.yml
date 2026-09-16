@@ -20,11 +20,10 @@ jobs:
     - run: nix profile install nixpkgs#cachix
     - run: env GIT_COMMIT=${GITHUB_SHA:0:8} CACHIX_AUTH_TOKEN=${{ secrets.CACHIX_AUTH_TOKEN }} cachix watch-exec narya -- nix build --impure --accept-flake-config .
     - run: cd dist && ./build.sh
-    - name: Upload static files as artifact
-      id: deployment
-      uses: actions/upload-pages-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
-        path: dist/build/
+        name: narya-master-static
+        path: dist/build/releases/narya-master-static.tar.gz
   build-macos:
     # MacOS doesn't support fully static executables, but a binary that
     # dynamically links only system libraries runs on any MacOS at least as
@@ -127,13 +126,29 @@ jobs:
       with:
         name: narya-master-macos
         path: dist/build/releases/narya-master-macos.tar.gz
+  pages:
+    # The Linux and MacOS releases are published together, so that they stay
+    # in sync: if either fails to build, neither is deployed.
+    needs: [build, package-macos]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: narya-master-*
+        path: site/releases
+        merge-multiple: true
+    - run: ls -l site/releases
+    - name: Upload static files as artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: site/
   deploy:
     if: github.event_name == 'push' && github.ref_name == 'master'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: pages
     permissions:
       pages: write
       id-token: write

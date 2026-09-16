@@ -3,9 +3,8 @@ Installation
 
 There are several ways to install Narya.
 
-- If you are using Linux, and you don't want to edit or contribute to the Narya source code, the easiest way to run Narya is to use the :ref:`Static binary`.
-- If you are on Windows, and you have (or can install) Windows Subsystem for Linux (WSL), you can also use the :ref:`Static binary`.
-- If you are on MacOS, or you want to edit the Narya source code, you'll need :ref:`Compiling from source` instead.
+- If you don't want to edit or contribute to the Narya source code, the easiest way to run Narya is to use a :ref:`Binary distribution`.  These are available for Linux, MacOS, and Windows with Windows Subsystem for Linux (WSL).
+- If you want to edit the Narya source code, you'll need :ref:`Compiling from source` instead.
 - You can also use an in-browser version called :ref:`Installing jsNarya` without installing anything, although its functionality is limited and the currently posted version is way out of date.
 
 In addition to installing the basic Narya executable, the following are highly recommended:
@@ -17,10 +16,17 @@ In addition to installing the basic Narya executable, the following are highly r
 We have tried to make the installation process as easy and painless as possible.  If you run into any problems, please ask for help!  See :ref:`Support and community` for places to ask.
 
 
-Static binary
--------------
+.. _Binary distribution:
 
-A statically compiled binary, built automatically with Nix from the up-to-date development version, can be downloaded `here <https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz>`_.  This ought to work on any Linux computer, including on Windows using WSL (see :ref:`On Windows`).
+Binary distributions
+--------------------
+
+Binaries are built automatically from the up-to-date development version, and can be downloaded here:
+
+- `Linux (and Windows with WSL) <https://gwaithimirdain.github.io/narya/releases/narya-master-static.tar.gz>`_: a statically linked binary, built with Nix, that ought to work on any Linux computer (see :ref:`On Windows` for WSL).
+- `MacOS <https://gwaithimirdain.github.io/narya/releases/narya-master-macos.tar.gz>`_: a universal binary that runs on MacOS 11 (Big Sur) and later, on both Apple Silicon and Intel processors.
+
+Both distributions also contain the ProofGeneral mode, the ctags language definition file, and the installation script for them.
 
 On Linux
 ^^^^^^^^
@@ -72,13 +78,31 @@ to enter a Linux command prompt.  If you downloaded the static distribtion in Wi
 On Mac
 ^^^^^^
 
-The static binary does not work on a Mac, but you can compile Narya from source as below.
+After downloading and unpacking the `MacOS distribution <https://gwaithimirdain.github.io/narya/releases/narya-master-macos.tar.gz>`_, place the ``narya`` executable in a directory that's in your ``PATH``.  For instance, from the directory ``narya-XXXXXXX-YYYYMMDD`` created by unpacking it, you can run:
+
+.. code-block:: bash
+
+  mkdir -p ~/bin
+  cp narya ~/bin
+  echo 'export PATH="$HOME/bin:$PATH"' >>~/.zshrc
+
+The last command is only necessary the first time, and assumes you use the default shell ``zsh``; if you use ``bash``, replace ``~/.zshrc`` by ``~/.bash_profile``.  Then open a new terminal window and try running ``narya``.
+
+If you downloaded the distribution with a web browser, MacOS may refuse to run the executable because it can't verify the developer.  This is because we don't (yet) pay Apple to sign and notarize it.  You can remove the quarantine flag that MacOS attached to the downloaded file with
+
+.. code-block:: bash
+
+  xattr -d com.apple.quarantine ~/bin/narya
+
+Downloading the distribution from a terminal instead, such as with ``curl -LO``, avoids this.
+
+Once you can run Narya from the command prompt, proceed to :ref:`Installing ProofGeneral mode`.  To update to a newer version, download the most recent distribution again and replace the ``narya`` executable in your ``bin``.
 
 
 Compiling from source
 ---------------------
 
-If the static binary does not work for you (such as if you are on MacOS), or if you want to edit the Narya code, you will have to compile it yourself.  This requires a recent version of OCaml and various libraries.  Narya requires OCaml 5.3.0 or later.  You can set up a :ref:`Manual development environment` or look into :ref:`Compiling with nix`.
+If the binary distributions don't work for you, or if you want to edit the Narya code, you will have to compile it yourself.  This requires a recent version of OCaml and various libraries.  Narya requires OCaml 5.3.0 or later.  You can set up a :ref:`Manual development environment` or look into :ref:`Compiling with nix`.
 
 
 Manual development environment
@@ -228,7 +252,7 @@ Once Emacs is installed, you have two options for installing the Narya ProofGene
 Automatic installation
 ^^^^^^^^^^^^^^^^^^^^^^
 
-Narya comes with a shell script that should install ProofGeneral, and the ProofGeneral Narya mode, on any machine where Emacs is already installed, including Linux, Windows with WSL, and MacOS.  The script is called ``install-pg.sh``; it is included in the static distribution, while in the source repository it is in the subdirectory ``dist``.  In either case, navigate to the directory that contains the script and run it with:
+Narya comes with a shell script that should install ProofGeneral, and the ProofGeneral Narya mode, on any machine where Emacs is already installed, including Linux, Windows with WSL, and MacOS.  The script is called ``install-pg.sh``; it is included in the binary distributions, while in the source repository it is in the subdirectory ``dist``.  In either case, navigate to the directory that contains the script and run it with:
 
 .. code-block:: bash
 
@@ -272,7 +296,7 @@ If the automatic ProofGeneral installer doesn't work for you, you can follow the
 
 3. Find the ProofGeneral installation directory, which may be something like ``$HOME/.emacs.d/elpa/proof-general-XXXXXXXX-XXXX``.
 
-4. In this directory, create a subdirectory called ``narya`` and copy (or, better, symlink) the ``.el`` files in the ``proofgeneral`` directory of the Narya repository into that subdirectory.  If you are using the static distribution, the ``.el`` files are included there as well.
+4. In this directory, create a subdirectory called ``narya`` and copy (or, better, symlink) the ``.el`` files in the ``proofgeneral`` directory of the Narya repository into that subdirectory.  If you are using a binary distribution, the ``.el`` files are included there as well.
 
 5. Edit the file ``proof-site.el`` in the subdirectory ``generic`` of the ProofGeneral installation directory and add this line
 
