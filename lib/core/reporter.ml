@@ -141,7 +141,7 @@ module Code = struct
     | Checking_tuple_at_nonrecord : printable -> t
     | Choice_mismatch : printable -> t
     | Calc_error : printable -> t
-    | No_implicit_goal_arg : int * printable -> t
+    | No_implicit_goal_arg : printable * printable -> t
     | Comatching_at_noncodata : printable -> t
     | Comatching_at_degenerated_codata : printable -> t
     | No_such_constructor :
@@ -804,9 +804,9 @@ module Code = struct
           textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed
             (print ~sort:`Type ty)
       | Calc_error e -> textf "error in calc: %a" pp_printed (print e)
-      | No_implicit_goal_arg (i, ty) ->
-          textf "@[<hv 0>can't find an implicit argument at position %d of type@;<1 2>%a@]" i
-            pp_printed (print ~sort:`Type ty)
+      | No_implicit_goal_arg (fn, ty) ->
+          textf "@[<hv 0>can't take an implicit argument for@;<1 2>%a@ from type@;<1 2>%a@]"
+            pp_printed (print fn) pp_printed (print ~sort:`Type ty)
       | Comatching_at_noncodata ty ->
           textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed
             (print ~sort:`Type ty)

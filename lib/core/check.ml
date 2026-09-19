@@ -993,19 +993,16 @@ let rec check : type mode a b s.
                           fatal ?loc:fn.loc
                             (Anomaly "first argument of an ImplicitApp is not of type Type"))
                   | `Goal_arg i -> (
-                      let nf = implicit_goal_arg ctx ty i in
-                      (* The first argument must have the type of the argument we found. *)
-                      match equal_val ctx (Lazy.force nf.ty) dom with
-                      | Ok () -> (nf.tm, readback_nf ctx nf)
-                      | Error why ->
-                          fatal ?loc:fn.loc
-                            (Unequal_synthesized_type
-                               {
-                                 got = PVal (ctx, Lazy.force nf.ty);
-                                 expected = PVal (ctx, dom);
-                                 which = None;
-                                 why;
-                               })) in
+                      (* The argument we find must also have the type of the function's first argument; if it doesn't, the goal isn't of the shape this function proves, which is the same mistake as its not having such an argument at all, so we report it the same way. *)
+                      match implicit_goal_arg ctx ty i with
+                      | Some nf when Result.is_ok (equal_val ctx (Lazy.force nf.ty) dom) ->
+                          (nf.tm, readback_nf ctx nf)
+                      | _ ->
+                          let pfn =
+                            match fn.value with
+                            | Const c -> PConstant c
+                            | _ -> PTerm (ctx, sfn) in
+                          fatal ?loc:fn.loc (No_implicit_goal_arg (pfn, PVal (ctx, ty)))) in
                 (* We build the implicit application term and its type. *)
                 let mode = Ctx.mode ctx in
                 let idm = Modality.id mode in
@@ -2379,11 +2376,12 @@ and check_data : type mode a b i.
                 checked_constrs raw_constrs errs
           | Suc _ -> fatal (Missing_constructor_type c)))
 
-(* The argument at position i of the constant that a type is an application of, for an ImplicitApp.  It must be an ordinary 0-dimensional non-modal argument at the ambient mode. *)
+(* The argument at position i of the constant that a type is an application of, for an ImplicitApp.  It must be an ordinary 0-dimensional non-modal argument at the ambient mode; if there is no such argument, the caller reports the goal as not having the shape it was looking for. *)
 and implicit_goal_arg : type mode a b.
-    (mode, a, b) Ctx.t -> (mode, kinetic) value -> int -> mode normal =
- fun ctx ty i ->
-  let err () = fatal (No_implicit_goal_arg (i, PVal (ctx, ty))) in
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> int -> mode normal option =
+ fun _ctx ty i ->
+  (* A spine entry that can't be an implicit argument aborts the search: the mode equation the recursion returns isn't available at such an entry, so we can't just return "not found" from inside it. *)
+  let exception No_arg in
   (* As in get_indices, the mode equation between the start of the remaining spine and the ambient mode only becomes available once we reach its end, so we return it from the recursion. *)
   let rec go : type m1. (m1, mode) Fwd_app.fwd -> int -> (m1, mode) Eq.t * m1 normal option =
    fun apps j ->
@@ -2405,17 +2403,18 @@ and implicit_goal_arg : type mode a b.
             (is_id_ins ins, Modality.compare_id modality, D.compare (CubeOf.dim arg) D.zero)
           with
           | Some _, Eq, Eq -> (Eq, Some (CubeOf.find_top arg))
-          | _ -> err ())
-    | Cons (Field _, _) -> err () in
+          | _ -> raise No_arg)
+    | Cons (Field _, _) -> raise No_arg in
   match ty with
   | Neu { head = Const _; args; value = _; ty = _ } -> (
       match args with
-      | Inst _ -> err ()
+      | Inst _ -> None
       | Emp | Arg _ | Field _ -> (
-          match go (Fwd_app.of_apps args) i with
-          | Eq, Some nf -> nf
-          | _, None -> err ()))
-  | _ -> err ()
+          try
+            match go (Fwd_app.of_apps args) i with
+            | Eq, nf -> nf
+          with No_arg -> None))
+  | _ -> None
 
 (* Get the indices from the codomain of a constructor's type. *)
 and get_indices : type mode hmode1 hmode2 a b any1 any2.
