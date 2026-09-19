@@ -353,7 +353,7 @@ module F = struct
     | Refute (_, _) -> fprintf ppf "Refute(?)"
     | Hole _ -> fprintf ppf "Hole"
     | Realize x -> fprintf ppf "Realize %a" check x
-    | ImplicitApp (fn, args) ->
+    | ImplicitApp (fn, _, args) ->
         fprintf ppf "ImplicitApp (%a," synth fn.value;
         List.iter
           (fun (_, (x : a check Asai.Range.located)) -> fprintf ppf "%a, " check x.value)

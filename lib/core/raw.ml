@@ -8,6 +8,9 @@ type 'a located = 'a Asai.Range.located
 let locate_opt = Asai.Range.locate_opt
 let locate_map f ({ value; loc } : 'a located) = locate_opt loc (f value)
 
+(* Where an ImplicitApp gets its implicit first argument: the type being checked against itself, or the argument at the given (0-based) position of the constant that type is an application of, such as P in "forall ℕ P".  This is a stopgap until we have unification. *)
+type implicit_source = [ `Goal | `Goal_arg of int ]
+
 (* Raw (unchecked) terms, using intrinsically well-scoped De Bruijn indices, and separated into synthesizing terms and checking terms.  These match the user-facing syntax rather than the internal syntax.  In particular, applications, abstractions, and pi-types are all unary, there is only one universe, and the only operator actions are refl (including Id) and sym. *)
 
 (* We actually formulate a more general notion of raw term that is parametrized over a notion of "index".  Narya proper only uses ordinary type-level natural numbers as indices, but other frontends may need a notion of raw term that uses explicit names or something else.  Note that all raw terms clearly separate *variables* from *constants*, and the "resolution" process detailed below that transitions between them preserves this distinction.  Therefore, even raw terms that use "explicit names" should not be regarded as an "intermediate parsing step" before turning the names into indices, because a scope of local variables is already required to separate the variables from the constant names (since local variables can shadow global constants).  Instead it is better to think of them as more like the "values" in NbE which can be silently weakened to arbitrary contexts. *)
@@ -151,7 +154,9 @@ module rec Make : functor (I : Indices) -> sig
       }
         -> 'a check
     | Realize : 'a check -> 'a check
-    | ImplicitApp : 'a synth located * (Asai.Range.t option * 'a check located) list -> 'a check
+    | ImplicitApp :
+        'a synth located * implicit_source * (Asai.Range.t option * 'a check located) list
+        -> 'a check
     | Embed : 'a I.embed -> 'a check
     | First :
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a check * bool) list
@@ -358,8 +363,10 @@ functor
           -> 'a check
       (* Force a leaf of the case tree *)
       | Realize : 'a check -> 'a check
-      (* Pass the type being checked against as the implicit first argument of a function. *)
-      | ImplicitApp : 'a synth located * (Asai.Range.t option * 'a check located) list -> 'a check
+      (* Pass the type being checked against, or one of the arguments of the constant it is an application of, as the implicit first argument of a function. *)
+      | ImplicitApp :
+          'a synth located * implicit_source * (Asai.Range.t option * 'a check located) list
+          -> 'a check
       (* Embed an arbitrary object *)
       | Embed : 'a I.embed -> 'a check
       (* Try several terms, testing for each whether the goal type has certain constructors or fields. *)
@@ -599,8 +606,8 @@ module Resolve (R : Resolver) = struct
       | Refute (args, sort) -> Refute (List.map (fun (tm, w) -> (synth ctx tm, w)) args, sort)
       | Hole { scope; loc; li; ri; num } -> Hole { scope = R.rescope ctx scope; loc; li; ri; num }
       | Realize x -> Realize (check ctx (locate_opt tm.loc x)).value
-      | ImplicitApp (fn, args) ->
-          ImplicitApp (synth ctx fn, List.map (fun (l, x) -> (l, check ctx x)) args)
+      | ImplicitApp (fn, src, args) ->
+          ImplicitApp (synth ctx fn, src, List.map (fun (l, x) -> (l, check ctx x)) args)
       | Embed e -> (
           match R.embed ctx e with
           | Left x -> (check ctx (locate_opt tm.loc x)).value
