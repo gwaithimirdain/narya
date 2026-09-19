@@ -970,10 +970,8 @@ let rec check : type mode a b s.
     | Realize ktm, Kinetic l -> check (Kinetic l) ctx (locate_opt tm.loc ktm) ty
     (* Nothing is embedded *)
     | Embed _, _ -> .
-    (* If we're using the checking type as an implicit first argument: *)
-    | ImplicitApp (fn, args), _ -> (
-        (* We read it back, so we can put it as the first argument in the generated term. *)
-        let cty = readback_val ctx ty in
+    (* If we're using the checking type, or an argument of it, as an implicit first argument: *)
+    | ImplicitApp (fn, src, args), _ -> (
         (* Now we act like synth on an application. *)
         let sfn, sty = synth (Kinetic `Nolet) ctx fn in
         match view_type sty "ImplicitApp" with
@@ -983,44 +981,60 @@ let rec check : type mode a b s.
             (* Only 0-dimensional and non-modal applications are allowed. *)
             match (D.compare (CubeOf.dim doms) D.zero, Modality.compare_id modality) with
             | Eq, Eq -> (
-                (* The first argument must be a type. *)
-                match view_type (CubeOf.find_top doms) "ImplicitApp argument" with
-                | Canonical (_, UU _, _, _) -> (
-                    (* We build the implicit application term and its type. *)
-                    let mode = Ctx.mode ctx in
-                    let idm = Modality.id mode in
-                    let new_sfn =
-                      locate_opt fn.loc
-                        (Term.App
-                           ( sfn,
-                             D.zero,
-                             Modality.filter_id mode D.zero,
-                             Modal (idm, plus_no_lock mode, CubeOf.singleton cty) )) in
-                    let new_sty = tyof_app cods tyargs filter (CubeOf.singleton ty) in
-                    (* And then proceed applying to the rest of the arguments, if any. *)
-                    let stm, sty =
-                      match args with
-                      | _ :: _ ->
-                          let args =
-                            List.map
-                              (fun (l, x) ->
-                                (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
-                              args in
-                          synth_apps ctx new_sfn new_sty
-                            { value = Synth fn.value; loc = fn.loc }
-                            args
-                      | _ -> (new_sfn.value, new_sty) in
-                    (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
-                    match equal_val ctx sty ty with
-                    | Ok () -> realize status stm
-                    | Error why ->
-                        fatal
-                          (Unequal_synthesized_type
-                             { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why })
-                    )
-                | _ ->
-                    fatal ?loc:fn.loc
-                      (Anomaly "first argument of an ImplicitMap is not of type Type"))
+                let dom = CubeOf.find_top doms in
+                (* The implicit argument, as a value, and read back so we can put it as the first argument in the generated term. *)
+                let arg, carg =
+                  match src with
+                  | `Goal -> (
+                      (* The first argument must be a type. *)
+                      match view_type dom "ImplicitApp argument" with
+                      | Canonical (_, UU _, _, _) -> (ty, readback_val ctx ty)
+                      | _ ->
+                          fatal ?loc:fn.loc
+                            (Anomaly "first argument of an ImplicitApp is not of type Type"))
+                  | `Goal_arg i -> (
+                      let nf = implicit_goal_arg ctx ty i in
+                      (* The first argument must have the type of the argument we found. *)
+                      match equal_val ctx (Lazy.force nf.ty) dom with
+                      | Ok () -> (nf.tm, readback_nf ctx nf)
+                      | Error why ->
+                          fatal ?loc:fn.loc
+                            (Unequal_synthesized_type
+                               {
+                                 got = PVal (ctx, Lazy.force nf.ty);
+                                 expected = PVal (ctx, dom);
+                                 which = None;
+                                 why;
+                               })) in
+                (* We build the implicit application term and its type. *)
+                let mode = Ctx.mode ctx in
+                let idm = Modality.id mode in
+                let new_sfn =
+                  locate_opt fn.loc
+                    (Term.App
+                       ( sfn,
+                         D.zero,
+                         Modality.filter_id mode D.zero,
+                         Modal (idm, plus_no_lock mode, CubeOf.singleton carg) )) in
+                let new_sty = tyof_app cods tyargs filter (CubeOf.singleton arg) in
+                (* And then proceed applying to the rest of the arguments, if any. *)
+                let stm, sty =
+                  match args with
+                  | _ :: _ ->
+                      let args =
+                        List.map
+                          (fun (l, x) ->
+                            (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
+                          args in
+                      synth_apps ctx new_sfn new_sty { value = Synth fn.value; loc = fn.loc } args
+                  | _ -> (new_sfn.value, new_sty) in
+                (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
+                match equal_val ctx sty ty with
+                | Ok () -> realize status stm
+                | Error why ->
+                    fatal
+                      (Unequal_synthesized_type
+                         { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
             | Neq, _ ->
                 fatal ?loc:fn.loc (Dimension_mismatch ("ImplicitApp", CubeOf.dim doms, D.zero))
             | _, Neq -> fatal ?loc:fn.loc (Anomaly "modal implicit applications not allowed"))
@@ -2364,6 +2378,44 @@ and check_data : type mode a b i.
                 ~recursive:(Positivity.merge recursive crec) ~hints ~tyfam status ctx ty Fwn.zero
                 checked_constrs raw_constrs errs
           | Suc _ -> fatal (Missing_constructor_type c)))
+
+(* The argument at position i of the constant that a type is an application of, for an ImplicitApp.  It must be an ordinary 0-dimensional non-modal argument at the ambient mode. *)
+and implicit_goal_arg : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> int -> mode normal =
+ fun ctx ty i ->
+  let err () = fatal (No_implicit_goal_arg (i, PVal (ctx, ty))) in
+  (* As in get_indices, the mode equation between the start of the remaining spine and the ambient mode only becomes available once we reach its end, so we return it from the recursion. *)
+  let rec go : type m1. (m1, mode) Fwd_app.fwd -> int -> (m1, mode) Eq.t * m1 normal option =
+   fun apps j ->
+    match apps with
+    | Nil -> (Eq, None)
+    | Cons
+        ( Fwd_app.Arg
+            (type dom modality n k m mk)
+            ((filter, arg, ins) :
+              (dom, modality, m1, n, m) Modality.filter_dim
+              * (n, dom normal) CubeOf.t
+              * (mk, m, k) insertion),
+          rest ) -> (
+        let Eq, found = go rest (j - 1) in
+        if j <> 0 then (Eq, found)
+        else
+          let modality = Modality.filter_modality filter in
+          match
+            (is_id_ins ins, Modality.compare_id modality, D.compare (CubeOf.dim arg) D.zero)
+          with
+          | Some _, Eq, Eq -> (Eq, Some (CubeOf.find_top arg))
+          | _ -> err ())
+    | Cons (Field _, _) -> err () in
+  match ty with
+  | Neu { head = Const _; args; value = _; ty = _ } -> (
+      match args with
+      | Inst _ -> err ()
+      | Emp | Arg _ | Field _ -> (
+          match go (Fwd_app.of_apps args) i with
+          | Eq, Some nf -> nf
+          | _, None -> err ()))
+  | _ -> err ()
 
 (* Get the indices from the codomain of a constructor's type. *)
 and get_indices : type mode hmode1 hmode2 a b any1 any2.
@@ -4333,7 +4385,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Refute (_, _) -> None
       | Hole _ -> None
       | Realize _ -> None
-      | ImplicitApp (_, _) -> None
+      | ImplicitApp (_, _, _) -> None
       | Embed _ -> .
       | First _ -> None
       | Oracle _ -> None
