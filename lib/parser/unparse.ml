@@ -457,14 +457,17 @@ let rec unparse : type mode n lt ls rt rs s.
       (* TODO: This doesn't print the dimension.  This is correct since constructors don't have to (and in fact *can't* be) written with their dimension, but it could also be somewhat confusing, e.g. printing "refl (0:N)" yields just "0", and similarly "refl (nil. : List N)" yields "nil.". *)
       match unparse_numeral tm with
       | Some tm -> tm.unparse li ri
-      | None ->
-          let args =
-            of_list_map
-              (* The modality isn't printed for constructor applications. *)
-              (fun (Modal (_modality, plus, x)) ->
-                make_unparser (Names.add_lock vars plus) (CubeOf.find_top x))
-              args in
-          unparse_spine vars (`Constr c) args li ri)
+      | None -> (
+          match unparse_successors vars tm li ri with
+          | Some res -> res
+          | None ->
+              let args =
+                of_list_map
+                  (* The modality isn't printed for constructor applications. *)
+                  (fun (Modal (_modality, plus, x)) ->
+                    make_unparser (Names.add_lock vars plus) (CubeOf.find_top x))
+                  args in
+              unparse_spine vars (`Constr c) args li ri))
   | Realize tm -> unparse vars tm li ri
   | Canonical _ -> fatal (Unimplemented "unparsing canonical types")
   | Struct { eta = Noeta; _ } -> fatal (Unimplemented "unparsing comatches")
@@ -820,6 +823,39 @@ and unparse_numeral : type mode n. (mode, n, kinetic) term -> unparser option =
         | Neq -> None)
     | _ -> None in
   getsucs tm 0
+
+(* A chain of 'suc' constructors ending in something that is not a numeral is not a numeral, but it
+   is still that something plus a number: "suc. (suc. x)" is x+2.  If a notation has been registered
+   to write iterated successors with (see Scope.Situation.set_successor), we unparse such a chain
+   with it, as the term the chain ends in and the count of successors; otherwise there is nothing to
+   write it with and it prints as the constructors it is.
+
+   Being the binary notation it is, it parenthesizes like one: a square of it comes out as "(x+1)²".
+   The two arguments are given in the order the notation's pattern takes them, so the notation is
+   expected to be an ordinary binary one with its term first and its count second. *)
+and unparse_successors : type mode n lt ls rt rs.
+    n Names.t ->
+    (mode, n, kinetic) term ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located option =
+ fun vars tm li ri ->
+  let suc = Constr.intern "suc" in
+  let rec getsucs : type m. m Names.t -> (mode, m, kinetic) term -> int -> (unparser * int) option =
+   fun vars tm k ->
+    match tm with
+    | Term.Constr (c, _, [ Modal (filter, plus, arg) ]) when c = suc -> (
+        (* As for numerals, only a non-modal argument can be written this way. *)
+        match Modality.compare_id (Modality.filter_modality filter) with
+        | Eq -> getsucs (Names.add_lock vars plus) (CubeOf.find_top arg) (k + 1)
+        | Neq -> None)
+    | _ -> if k = 0 then None else Some (make_unparser vars tm, k) in
+  match (getsucs vars tm 0, Scope.Situation.successor ()) with
+  | Some (base, k), Some { notn = Wrap notn; pat_vars; val_vars = _; inner_symbols; keys = _ }
+    when List.length pat_vars = 2 ->
+      let count = { unparse = (fun _ _ -> unlocated (Ident ([ string_of_int k ], []))) } in
+      Some (unparse_notation notn [ base; count ] inner_symbols li ri)
+  | _ -> None
 
 and unparse_act : type n lt ls rt rs a b.
     sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
