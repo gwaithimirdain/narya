@@ -95,19 +95,115 @@ EOF
     fi
 fi
 
-echo "Installing ProofGeneral..."
+echo -n "Checking for ProofGeneral..."
 
-TEMPINIT=$(mktemp)
-cat >"$TEMPINIT" <<EOF
+# Don't use -Q here, so that we also find a ProofGeneral installed in
+# site-lisp, e.g. by a system package manager or Nix.
+if emacs --batch --eval="(progn (require 'package) (package-initialize) (unless (locate-library \"proof-site\") (kill-emacs 1)))" >/dev/null 2>&1
+then
+    echo "Found."
+else
+    echo "Not found."
+    echo "Installing ProofGeneral..."
+
+    TEMPINIT=$(mktemp)
+    cat >"$TEMPINIT" <<EOF2
 (require 'package)
 (setq package-archives '(("melpa" . "https://melpa.org/packages/")
                          ("gnu" . "https://elpa.gnu.org/packages/")))
 (package-initialize)
 (package-refresh-contents)
 (package-install 'proof-general)
-EOF
+EOF2
 
-if emacs -Q --batch -l "$TEMPINIT"
+    if emacs -Q --batch -l "$TEMPINIT"
+    then
+        echo "Succeeded."
+        rm -f "$TEMPINIT"
+    else
+        echo "Failed."
+        echo
+        echo "Please open an issue at https://github.com/gwaithimirdain/narya/issues."
+        rm -f "$TEMPINIT"
+        exit 1
+    fi
+fi
+
+echo -n "Locating the Narya ProofGeneral files..."
+
+if [ -e narya.el ]
+then
+    NARYA_EL_SRC=`pwd`
+    NARYA_EL_LINK=false
+    echo "Found."
+elif [ -e ../proofgeneral/narya.el ]
+then
+    pushd ../proofgeneral >/dev/null
+    NARYA_EL_SRC=`pwd`
+    popd >/dev/null
+    NARYA_EL_LINK=true
+    echo "Found."
+    echo "You appear to be running this script from the Narya source tree,"
+    echo "so the elisp files will be symlinked rather than copied."
+else
+    echo "Failed."
+    echo
+    echo "I can't find narya.el."
+    echo "Please run this script from the unpacked static distribution directory"
+    echo "or from the dist/ directory in the Narya source tree."
+    exit 1
+fi
+
+echo "Installing the Narya ProofGeneral mode as an Emacs package..."
+
+# We install Narya's elisp files as a package in the directory of the Emacs
+# package manager, so that Emacs activates it automatically at startup.  This
+# works wherever ProofGeneral came from, since it doesn't modify ProofGeneral.
+# We don't record a dependency on ProofGeneral in the package description,
+# since the package manager would refuse to activate Narya if ProofGeneral
+# was installed some other way (e.g. with Nix).
+TEMPINIT=$(mktemp)
+cat >"$TEMPINIT" <<'EOF2'
+(require 'package)
+(require 'lisp-mnt)
+(let* ((src (file-name-as-directory (getenv "NARYA_EL_SRC")))
+       (link (equal (getenv "NARYA_EL_LINK") "true"))
+       (main (expand-file-name "narya.el" src))
+       (version (lm-version main))
+       (dir (expand-file-name (concat "narya-" version) package-user-dir)))
+  ;; Remove files installed by older versions of this script, which put
+  ;; Narya inside the ProofGeneral installation directory.  (Any leftover
+  ;; entry for Narya in ProofGeneral's proof-site.el is ignored once that
+  ;; directory is gone.)
+  (dolist (old (file-expand-wildcards
+                (expand-file-name "proof-general-*/narya" package-user-dir)))
+    (princ (format "Removing old installation %s\n" old))
+    (delete-directory old t))
+  ;; Remove previously installed versions of the Narya package.
+  (dolist (old (file-expand-wildcards (expand-file-name "narya-*" package-user-dir)))
+    (when (file-exists-p (expand-file-name "narya-pkg.el" old))
+      (princ (format "Removing old installation %s\n" old))
+      (if (file-symlink-p old) (delete-file old) (delete-directory old t))))
+  (make-directory dir t)
+  (dolist (file (directory-files src t "\\.el\\'"))
+    (let ((target (expand-file-name (file-name-nondirectory file) dir)))
+      (if link
+          (condition-case nil
+              (make-symbolic-link file target)
+            (error
+             (princ (format "Couldn't symlink %s, copying it instead\n" file))
+             (copy-file file target)))
+        (copy-file file target))))
+  (package-generate-description-file
+   (package-desc-create :name 'narya
+                        :version (version-to-list version)
+                        :summary (lm-summary main))
+   (expand-file-name "narya-pkg.el" dir))
+  (package-generate-autoloads 'narya dir)
+  (princ (format "Installed in %s\n" dir)))
+EOF2
+
+if NARYA_EL_SRC="$NARYA_EL_SRC" NARYA_EL_LINK="$NARYA_EL_LINK" emacs -Q --batch -l "$TEMPINIT"
 then
     echo "Succeeded."
     rm -f "$TEMPINIT"
@@ -119,120 +215,18 @@ else
     exit 1
 fi
 
-echo -n "Locating the ProofGeneral installation directory..."
+echo -n "Checking that Emacs can start the Narya ProofGeneral mode..."
 
-PGDIR=$(find ~/.emacs.d/elpa/ -maxdepth 1 -type d -name "proof-general-*" | sort -r | head -n1)
-
-echo
-echo "Result: $PGDIR"
-
-if [ -n $PGDIR ] && [ -d $PGDIR ]
+# As above, don't use -Q, so that ProofGeneral can be found anywhere.
+if emacs --batch --eval="(progn (require 'package) (package-initialize) (with-temp-buffer (setq buffer-file-name \"test.ny\") (set-auto-mode) (unless (eq major-mode 'narya-mode) (kill-emacs 1))))" >/dev/null 2>&1
 then
-    echo "Found."
+    echo "Succeeded."
 else
     echo "Failed."
     echo
-    echo "I can't find the ProofGeneral installation directory."
-    echo
-    echo "If you installed ProofGeneral in some way other than through the Emacs"
-    echo "package manager, such as with apt or nix, please remove that version"
-    echo "of ProofGeneral and then re-run this script."
-    echo
-    echo "Otherwise, please open an issue at https://github.com/gwaithimirdain/narya/issues."
+    echo "Something went wrong installing the Narya ProofGeneral mode."
+    echo "Please open an issue at https://github.com/gwaithimirdain/narya/issues."
     exit 1
-fi
-
-echo -n "Copying the Narya ProofGeneral files..."
-
-if mkdir -p $PGDIR/narya
-then
-    :
-else
-    echo "Failed."
-    echo
-    echo "I can't create a narya directory in the ProofGeneral directory."
-    echo "Make sure you have write/execute permissions to $PGDIR."
-    exit 1
-fi    
-
-# Install the narya elisp files, replacing any old ones.
-if [ -e narya.el ]
-then
-    rm -f $PGDIR/narya/*.el $PGDIR/narya/*.elc
-    if cp -f *.el $PGDIR/narya
-    then
-        echo "Succeeded."
-    else
-        echo "Failed."
-        echo
-        echo "Error copying elisp files."
-        echo "Please open an issue at https://github.com/gwaithimirdain/narya/issues."
-        exit 1
-    fi
-elif [ -e ../proofgeneral/narya.el ]
-then
-    echo
-    echo "You appear to be running this script from the Narya source tree."
-    echo -n "Symlinking the elisp files..."
-    pushd ../proofgeneral >/dev/null
-    NARYA_PGDIR=`pwd`
-    popd >/dev/null
-    pushd $PGDIR/narya >/dev/null
-    rm -f *.el *.elc
-    if ln -s $NARYA_PGDIR/*.el .
-    then
-        echo "Succeeded."
-    else
-        echo "Failed."
-        echo -n "Trying to copy them instead..."
-        if cp $NARYA_PGDIR/*.el .
-        then
-            echo "Succeeded."
-        else
-            echo "Failed."
-            echo
-            echo "Make sure you have write/execute permissions to $PGDIR/narya."
-            echo "You can also open an issue at https://github.com/gwaithimirdain/narya/issues."
-            exit 1
-        fi
-    fi
-    popd >/dev/null
-else
-    echo "Failed."
-    echo
-    echo "I can't find narya.el."
-    echo "Please run this script from the unpacked static distribution directory"
-    echo "or from the dist/ directory in the Narya source tree."
-    exit 1
-fi
-
-# Insert Narya into the ProofGeneral configuration, if it isn't already there
-if grep narya $PGDIR/generic/proof-site.el >/dev/null
-then
-    echo "ProofGeneral is already configured for Narya."
-else
-    echo -n "Configuring ProofGeneral for Narya..."
-
-    if [ -e proof-site.patch ]
-    then
-        # Also remove old byte-compiled version, if any, so the new source version is loaded instead
-        if patch -d $PGDIR/generic <proof-site.patch && rm -f $PGDIR/generic/proof-site.elc
-        then
-            echo "Succeeded."
-        else
-            echo "Failed."
-            echo
-            echo "Please open an issue at https://github.com/gwaithimirdain/narya/issues."
-            exit 1
-        fi
-    else
-        echo "Failed."
-        echo
-        echo "I can't find proof-site.patch."
-        echo "Please run this script from the unpacked static distribution directory"
-        echo "or from the dist/ directory in the Narya source tree."
-        exit 1
-    fi
 fi
 
 echo "Narya ProofGeneral mode installed."
@@ -345,4 +339,16 @@ fi
 echo
 echo "Then restart any open instances of Emacs."
 echo
-echo "You will need to run this script again every time Emacs, ProofGeneral, or Narya is updated."
+echo "The Narya ProofGeneral mode is activated by the Emacs package manager when Emacs"
+echo "starts.  If your Emacs configuration disables that (for instance, by setting"
+echo "package-enable-at-startup to nil, as some configuration frameworks do), you"
+echo "will need to call (package-initialize) or (package-activate-all) yourself."
+echo
+if $NARYA_EL_LINK
+then
+    echo "Since the Narya elisp files were symlinked from the source tree, updates to"
+    echo "them take effect when you restart Emacs.  You only need to run this script"
+    echo "again if the set of files in the proofgeneral directory changes."
+else
+    echo "You will need to run this script again every time Narya is updated."
+fi
