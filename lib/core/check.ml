@@ -3708,7 +3708,7 @@ and synth : type mode a b s.
     | ImplicitSApp (fn, apploc, arg), _ -> (
         (* We synthesize both function and argument *)
         let sfn, sfnty = synth (Kinetic `Nolet) ctx fn in
-        let _, sargty = synth (Kinetic `Nolet) ctx arg in
+        let sarg, sargty = synth (Kinetic `Nolet) ctx arg in
         (* We read back the synthesized type, so we can put it as the first argument in the generated term. *)
         let cargty = readback_val ctx sargty in
         match view_type sfnty "ImplicitSApp" with
@@ -3732,15 +3732,50 @@ and synth : type mode a b s.
                          Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty) ))
                 in
                 let new_sty = tyof_app cods tyargs filter (CubeOf.singleton sargty) in
-                (* And then apply to the argument. *)
-                let stm, sty =
-                  synth_apps ctx new_sfn new_sty
-                    { value = Synth fn.value; loc = fn.loc }
-                    [
-                      ( apploc,
-                        locate_opt arg.loc (Some (Synth arg.value)),
-                        locate_opt None `Explicit );
-                    ] in
+                (* And then apply to the argument.  We apply the term we already synthesized for it,
+                   rather than elaborating it all over again: the argument can itself be an
+                   ImplicitSApp, and elaborating each one twice would make a nest of them take
+                   exponential time. *)
+                let ((stm, sty) : (mode, b, kinetic) term * (mode, kinetic) value) =
+                  match view_type new_sty "ImplicitSApp" with
+                  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) -> (
+                      let Eq = eq_of_ins_zero ins in
+                      let modality = Modality.filter_modality filter in
+                      match
+                        (D.compare (CubeOf.dim doms) D.zero, Modality.compare_id modality)
+                      with
+                      | Eq, Eq -> (
+                          (* The domain is the type we just supplied, so this can only fail if the
+                             function's type isn't of the expected shape. *)
+                          match equal_val ctx sargty (CubeOf.find_top doms) with
+                          | Ok () ->
+                              let earg = eval_term (Ctx.env ctx) sarg in
+                              ( Term.App
+                                  ( new_sfn.value,
+                                    BindCube.dim cods,
+                                    filter,
+                                    Modal
+                                      ( Modality.id mode,
+                                        plus_no_lock mode,
+                                        CubeOf.singleton sarg ) ),
+                                tyof_app cods tyargs filter (CubeOf.singleton earg) )
+                          | Error why ->
+                              fatal ?loc:arg.loc
+                                (Unequal_synthesized_type
+                                   {
+                                     got = PVal (ctx, sargty);
+                                     expected = PVal (ctx, CubeOf.find_top doms);
+                                     which = None;
+                                     why;
+                                   }))
+                      | _ ->
+                          fatal ?loc:fn.loc
+                            (Anomaly "second argument of an ImplicitSApp is not ordinary"))
+                  | _ ->
+                      fatal ?loc:fn.loc
+                        (Applying_nonfunction_nontype
+                           (PTerm (ctx, new_sfn.value), PVal (ctx, new_sty))) in
+                ignore apploc;
                 (realize status stm, sty)
             | _, _, Neq -> fatal ?loc:fn.loc (Unimplemented "nonidentity modality in ImplicitSApp")
             | Eq, _, _ ->
