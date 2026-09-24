@@ -29,6 +29,15 @@ type printable +=
 
 type oracle_error = ..
 
+(* A client of Narya may also have errors of its own to report, which arise from how it builds the
+   terms it hands to Narya rather than from anything Narya checks.  Rather than Narya having a code
+   for each of them, "extern_error" is an extensible variant that the client extends with a tag for
+   each, and the Extern code wraps such a tag together with a code and text that Narya displays for
+   it, since Narya can't say anything about a tag it's never heard of.  They all share the same short
+   code, which the client's code is appended to as a suffix, so they don't clash with Narya's own codes. *)
+
+type extern_error = ..
+
 (* The function that actually does the work of printing a "printable" will be defined in Parser.Unparse.  But we need to be able to "call" that function in this file to define "default_text" that converts structured messages to text.  Thus, in this file we define a mutable global variable to contain that function, starting with a dummy function, and call its value to print "printable"s; then in Parser.Unparse we will set the value of that variable after defining the function it should contain. *)
 
 (* In addition, in Asai messages are emitted by performing an effect or raising an exception that carries with it the data of a function of type "formatter -> unit", which is then called by the handler Reporter.run to format the message text as part of a larger display formatting.  This causes problems if we define our printing functions naively, since it means that any effects performed by the formatting function (such as looking up names in a Yuujinchou Scope) will take place in the context of the handler, not that where the message was invoked, and hence in the wrong scope.  To deal with this, we ensure that the printable values are converted to PPrint documents directly in "default_text", before they are passed to Asai. *)
@@ -174,8 +183,6 @@ module Code = struct
         -> t
     | Unequal_indices : printable * printable * Unequal.t -> t
     | Unbound_variable : string * (string list * string list) list -> t
-    | Ill_scoped_connection : t
-    | Unattached_assumption : t
     | Undefined_constant : printable -> t
     | Undefined_metavariable : printable -> t
     | Nonsynthesizing : string -> t
@@ -309,8 +316,8 @@ module Code = struct
     | Accumulated : string * t Asai.Diagnostic.t Bwd.t -> t
     | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
     | Invalid_instant : string -> t
-    | Cyclic_term : t
     | Oracle_failed : oracle_error -> t
+    | Extern : { code : string; text : string; error : extern_error } -> t
     | Invalid_flags : t
 
   (* If an error is encountered during printing a term, we (meaning the function 'printer' to be defined in Parser.Unparse) call the function supplied by this reader effect and print it as "_UNPRINTABLE".  Usually this is a bug, but sometimes it can happen normally, particularly when accumulating errors: a term involved in a later error might be unprintable due to a previous error.  We make this a reader that supplies a function so that the function can be called at the point of *performing* the effect.  Thus, if we are not in the middle of displaying another message, there can be an outer handler for this effect that supplies the function "fatal", which is called at the point of performing the effect and is therefore inside any inner Reporter.run wrappers rather than the outermost one that just Exits. *)
@@ -370,8 +377,6 @@ module Code = struct
     | Missing_instantiation_constructor _ -> Error
     | Unequal_indices _ -> Error
     | Unbound_variable _ -> Error
-    | Ill_scoped_connection -> Error
-    | Unattached_assumption -> Error
     | Undefined_constant _ -> Bug
     | Undefined_metavariable _ -> Bug
     | No_such_field _ -> Error
@@ -492,8 +497,8 @@ module Code = struct
     | Invalid_instant _ -> Bug
     | Wrong_dimension_of_field _ -> Error
     | Invalid_field_suffix _ -> Error
-    | Cyclic_term -> Error
     | Oracle_failed _ -> Error
+    | Extern _ -> Error
     | Invalid_flags -> Error
 
   (** A short, concise, ideally Google-able string representation for each message code. *)
@@ -517,14 +522,11 @@ module Code = struct
     | No_relative_precedence _ -> "E0207"
     | Unrecognized_attribute -> "E0208"
     | Comment_end_in_string -> "E0250"
-    | Cyclic_term -> "E0280"
     | Encoding_error -> "E0299"
     (* Scope errors *)
     | Unbound_variable _ -> "E0300"
     | Undefined_constant _ -> "E0301"
     | Undefined_metavariable _ -> "E0302"
-    | Ill_scoped_connection -> "E0303"
-    | Unattached_assumption -> "E0304"
     | Locked_variable -> "E0310"
     | Locked_constant _ -> "E0311"
     | Axiom_in_parametric_definition _ -> "E0312"
@@ -674,6 +676,8 @@ module Code = struct
     | Invalid_section_name _ -> "E2601"
     (* oracles *)
     | Oracle_failed _ -> "E3000"
+    (* errors of a client's own, each numbered by the client within this one code *)
+    | Extern { code; _ } -> "E3100-" ^ code
     (* Interactive proof *)
     | Open_holes _ -> "W3000"
     | No_such_hole _ -> "E3001"
@@ -1220,10 +1224,8 @@ module Code = struct
           | `File file -> textf "imported file '%s' cannot contain holes" file
           | `Other where -> textf "%s cannot contain holes" where)
       | Invalid_instant instant -> textf "invalid instant: %s" instant
-      | Ill_scoped_connection -> text "ill-scoped connection"
-      | Unattached_assumption -> text "assumption of an unattached block"
-      | Cyclic_term -> text "cycle in graphical term"
       | Oracle_failed _ -> text "oracle failed"
+      | Extern { text = t; _ } -> text t
       | Invalid_flags -> text "invalid combination of command-line flags" in
     match !printing_errors with
     | Emp -> msg
