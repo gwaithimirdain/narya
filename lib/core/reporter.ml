@@ -597,7 +597,7 @@ module Code = struct
     | No_remaining_patterns -> "E1308"
     | Invalid_refutation -> "E1309"
     (* - Match motive *)
-    | Wrong_number_of_arguments_to_motive _ -> "E1400"
+    | Wrong_number_of_arguments_to_motive _ -> "E1310"
     (* Comatches *)
     | Comatching_at_noncodata _ -> "E1400"
     | Comatching_at_degenerated_codata _ -> "E1401"
@@ -633,8 +633,8 @@ module Code = struct
     | Modal_field_filtered_away _ -> "E1713"
     | Extra_filtered_field_in_tuple _ -> "E1714"
     | Invalid_mode_theory _ -> "E1710"
-    | Intangible_modality _ -> "E1706"
-    | Nontransparent_window_modality _ -> "E1707"
+    | Intangible_modality _ -> "E1709"
+    | Nontransparent_window_modality _ -> "E1715"
     | Nonparametric_mode_degeneracy _ -> "E1708"
     (* Commands *)
     | Too_many_commands -> "E2000"
@@ -696,7 +696,7 @@ module Code = struct
     | Display_set _ -> "I0101"
     (* Control of execution *)
     | Quit _ -> "I0200"
-    | Break -> "E0201"
+    | Break -> "E2004"
     (* Debugging *)
     | Show _ -> "I9999"
 

@@ -81,7 +81,7 @@
   
 
   $ narya -v -parametric -direction p,rel,Br -discrete-local inconsistency.ny
-   ￫ error[E1706]
+   ￫ error[E1709]
    ￮ modality ∇ is not tangible
   
   [1]

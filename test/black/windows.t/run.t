@@ -133,7 +133,7 @@ recursive datatypes, even ones with a single constructor, or datatypes that
 mention their mutual companions:
 
   $ narya -transparent-functor preserve.ny -e "def nbad (u : ○ ℕ) : ○ ℕ ≔ match u [ circle. w ↦ match (w :○| _) [ zero. ↦ u | suc. n ↦ u ] ]"
-   ￫ error[E1707]
+   ￫ error[E1715]
    ￭ command-line exec string
    1 | def nbad (u : ○ ℕ) : ○ ℕ ≔ match u [ circle. w ↦ match (w :○| _) [ zero. ↦ u | suc. n ↦ u ] ]
      ^ window modality ○ must be pellucid since the datatype has recursive constructors
@@ -141,7 +141,7 @@ mention their mutual companions:
   [1]
 
   $ narya -transparent-functor preserve.ny -e "def rbad (u : ○ R) : ⊥' ≔ match u [ circle. w ↦ match (w :○| _) [ r. y ↦ rbad (circle. y) ] ]"
-   ￫ error[E1707]
+   ￫ error[E1715]
    ￭ command-line exec string
    1 | def rbad (u : ○ R) : ⊥' ≔ match u [ circle. w ↦ match (w :○| _) [ r. y ↦ rbad (circle. y) ] ]
      ^ window modality ○ must be pellucid since the datatype has recursive constructors
@@ -149,7 +149,7 @@ mention their mutual companions:
   [1]
 
   $ narya -transparent-functor preserve.ny -e "def xbad (u : ○ X) : ○ Y ≔ match u [ circle. w ↦ match (w :○| _) [ x. v ↦ circle. v ] ]"
-   ￫ error[E1707]
+   ￫ error[E1715]
    ￭ command-line exec string
    1 | def xbad (u : ○ X) : ○ Y ≔ match u [ circle. w ↦ match (w :○| _) [ x. v ↦ circle. v ] ]
      ^ window modality ○ must be pellucid since the datatype has recursive constructors
@@ -160,7 +160,7 @@ Recursion is detected in datatypes defined by let rec, but a non-recursive
 let rec datatype is still non-recursive:
 
   $ narya -transparent-functor preserve.ny -e "def LT : DomType ≔ let rec T : DomType ≔ data [ t. (_ : T) ] in T" -e "def lbad (u : ○ LT) : ○ LT ≔ match u [ circle. w ↦ match (w :○| _) [ t. y ↦ circle. y ] ]"
-   ￫ error[E1707]
+   ￫ error[E1715]
    ￭ command-line exec string
    1 | def lbad (u : ○ LT) : ○ LT ≔ match u [ circle. w ↦ match (w :○| _) [ t. y ↦ circle. y ] ]
      ^ window modality ○ must be pellucid since the datatype has recursive constructors
@@ -177,7 +177,7 @@ Recursion hiding in the value of a let-bound variable is also detected, while
 a clean let-bound variable is fine:
 
   $ narya -transparent-functor preserve.ny -e "def DD : DomType ≔ let Z ≔ ((DD → DD) : DomType) in data [ d. (_ : Z) ]" -e "def dbad (u : ○ DD) : ○ DD ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]"
-   ￫ error[E1707]
+   ￫ error[E1715]
    ￭ command-line exec string
    1 | def dbad (u : ○ DD) : ○ DD ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]
      ^ window modality ○ must be pellucid since the datatype has recursive constructors
@@ -205,7 +205,7 @@ recursively makes it permanent:
      ----------------------------------------------------------------------
      DomType
   
-   ￫ error[E1707]
+   ￫ error[E1715]
    ￭ command line fake-interact
    1 | def H : DomType ≔ data [ h. (_ : ?) ] def hbad (u : ○ H) : ○ H ≔ match u [ circle. w ↦ match (w :○| _) [ h. y ↦ circle. (h. y) ] ]
      ^ window modality ○ must be pellucid since it is not yet known whether the datatype has recursive constructors, due to unsolved holes in its constructor types
@@ -241,7 +241,7 @@ recursively makes it permanent:
    ￫ info[I0005]
    ￮ hole solved
   
-   ￫ error[E1707]
+   ￫ error[E1715]
    ￭ command line fake-interact
    1 | def H : DomType ≔ data [ h. (_ : ?) ] solve 0 ≔ H def hbad (u : ○ H) : ○ H ≔ match u [ circle. w ↦ match (w :○| _) [ h. y ↦ circle. (h. y) ] ]
      ^ window modality ○ must be pellucid since the datatype has recursive constructors
@@ -263,7 +263,7 @@ is recursive:
    ￫ info[I0005]
    ￮ hole solved
   
-   ￫ error[E1707]
+   ￫ error[E1715]
    ￭ command line fake-interact
    1 | def K : DomType ≔ ? solve 0 ≔ data [ k. (_ : K) ] def kbad (u : ○ K) : ○ K ≔ match u [ circle. w ↦ match (w :○| _) [ k. y ↦ circle. (k. y) ] ]
      ^ window modality ○ must be pellucid since the datatype has recursive constructors
