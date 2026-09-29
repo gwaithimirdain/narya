@@ -3626,7 +3626,7 @@ and synth : type mode a b s.
                           Ctx.variables_vis ctx
                             (Modality.filter_idempotent sfilter)
                             codxs (CubeOf.subcube fb binds) in
-                        let body = readback_at codctx tm (Lazy.force ty) in
+                        let body = readback_at Kinetic codctx tm (Lazy.force ty) in
                         [ cod; Term.Lam (codxs, dom_sface s, sfilter, body) ] in
                       TubeOf.pmap { map } [ tyargs ] (Cons (Cons Nil)) in
                     (* We build the cube of codomains by reading back the lower-dimensional ones in a context extended by the appropriate partial cube of variables, and adding the top-dimensional one. *)
@@ -4047,7 +4047,7 @@ and synth_arg_cube : type dom modality mode a b n c.
                                  expected = PVal (lctx, ty);
                                  why;
                                }));
-                  let ctm = readback_at lctx etm (Lazy.force ety) in
+                  let ctm = readback_at Kinetic lctx etm (Lazy.force ety) in
                   (ctm, etm)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
               | _ ->

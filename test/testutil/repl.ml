@@ -104,7 +104,7 @@ let print (tm : string) : unit =
       let ctm, ety = synth (Kinetic `Nolet) (Ctx.empty test_mode) { value = rtm; loc } in
       let etm = eval_term (Emp (test_mode, D.zero)) ctm in
       Readback.Displaying.run ~env:true @@ fun () ->
-      let btm = readback_at (Ctx.empty test_mode) etm ety in
+      let btm = readback_at Kinetic (Ctx.empty test_mode) etm ety in
       let utm = unparse Names.empty btm No.Interval.entire No.Interval.entire in
       PPrint.ToChannel.pretty 1.0 (Display.columns ()) stdout (pp_complete_term (Wrap utm) `None);
       print_newline ()
