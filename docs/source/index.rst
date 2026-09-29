@@ -37,6 +37,7 @@ Narya is very much a work in progress. Expect breaking changes, including even i
    displayed
    nominal
    remarks
+   error-codes
    community
    contributing
    
