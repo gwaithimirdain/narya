@@ -922,28 +922,30 @@ and tyof_codatafield : type src f mode m n mn a s i et.
     (src, f, mode) Modality.t ->
     ((src, kinetic) value, Code.t) Result.t ->
     i Field.t ->
-    (i, src * a * n * et) Codatafield.t ->
+    (i, src * a * D.zero * n * et) Codatafield.t ->
     (src, m, a) env ->
     (D.zero, mn, mn, src normal) TubeOf.t ->
     m D.t ->
     (m, n, mn) D.plus ->
     (m, s, i) insertion ->
     (mode, kinetic) value =
- fun fm tm fldname fldty env tyargs m mn fldins ->
+ fun fm tm fldname (Codatafield (_, adj, plus_lock, fldty)) env tyargs m mn fldins ->
   (* The type of the field projection comes from the type associated to that field name in general, evaluated at the stored environment extended by the term itself and its boundaries. *)
   match fldty with
-  | Term.Codatafield.Lower (adj, plus_lock, fldty) -> (
+  | Lower fldty -> (
       (* The projecting modality must be the left adjoint of the field's adjunction; the caller is responsible for having checked this with a user-facing error when synthesizing. *)
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality in tyof_codatafield")
       | Eq ->
           tyof_lower_codatafield (self_values adj tm tyargs) tyargs fldname adj plus_lock fldty env
             m mn ~key:`Counit)
-  | Term.Codatafield.Higher (adj, plus_lock, fldtermctx, ic0, fldty) -> (
+  | Higher (fldtermctx, fldtys) -> (
       (* Like a lower field, the projecting modality must be the left adjoint of the field's adjunction. *)
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality of higher field in tyof_codatafield")
       | Eq ->
+          (* The codatatype was produced by typechecking, so it has evaluation dimension zero and the field has just its declared type. *)
+          let (Fieldtype (ic0, fldty)) = declared_fieldtype fldtys in
           let Eq = D.plus_uniq mn (D.plus_zero m) in
           (* A projection has no remaining dimensions, so the self value and its boundary are used as they are. *)
           tyof_higher_codatafield (self_values adj tm tyargs) tyargs (D.zero_plus m) fldname adj env
@@ -1020,7 +1022,7 @@ and tyof_field_nokey : type amode.
       | Some mn -> (
           let m = dim_env env in
           match Term.CodatafieldAbwd.find_opt fields fld with
-          | Found (Lower (adj, plus_lock, fldty)) ->
+          | Found (Codatafield (_, adj, plus_lock, Lower fldty)) ->
               Tyof_modal_field
                 ( adj,
                   tyof_lower_codatafield (self_values adj tm tyargs) tyargs fld adj plus_lock fldty
@@ -1215,7 +1217,7 @@ and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
     (potential, et) eta ->
     (src, m, a) env ->
     (m, n, mn) D.plus ->
-    (src * a * n * et) Term.CodatafieldAbwd.t ->
+    (src * a * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, src normal) TubeOf.t ->
     i Field.t ->
     (k, s, i) insertion ->
@@ -1294,7 +1296,7 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
     (potential, et) eta ->
     (src, m, c) env ->
     (m, n, mn) D.plus ->
-    (src * c * n * et) Term.CodatafieldAbwd.t ->
+    (src * c * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, src normal) TubeOf.t ->
     [ `Name of string * int list | `Int of int ] ->
     Code.t ->
@@ -1302,8 +1304,9 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
  fun fm ctx tm ty eta env mn fields tyargs infld err ->
   let m = dim_env env in
   (* Check that the locking modality supplied by the user (or the identity, if none) agrees with the left adjoint of the adjunction stored with the field, and that the field is present (not filtered away by a nonparametric modality) at the current dimension. *)
-  let check_modality : type i. i Field.t -> (i, src * c * n * et) Term.Codatafield.t -> unit =
-   fun fld fldty ->
+  let check_modality : type i.
+      i Field.t -> (i, src * c * D.zero * n * et) Term.Codatafield.t -> unit =
+   fun fld (Codatafield (_, adj, _, _)) ->
     let mismatch : type d1 m1 c1. (d1, m1, c1) Modality.t -> unit =
      fun left ->
       let field = Field.to_string fld in
@@ -1313,28 +1316,15 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
       | Neq, Eq -> fatal (Wrong_locking_modality { field; expected = Some left; got = None })
       | Neq, Neq -> fatal (Wrong_locking_modality { field; expected = Some left; got = Some fm })
     in
-    match fldty with
-    | Lower (adj, _, _) -> (
-        let left = Modalcell.adj_left adj in
-        match Modality.compare left fm with
-        | Neq -> mismatch left
-        | Eq -> (
-            (* The field disappears if its nonparametric modality filters this dimension nontrivially. *)
-            let (Has_filter left_filter) = Modality.filter left m in
-            match Modality.filter_is_trivial m left_filter with
-            | Some Eq -> ()
-            | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))))
-    | Higher (adj, _, _, _, _) -> (
-        (* Like a lower field, a higher field's projecting modality must be the left adjoint. *)
-        let left = Modalcell.adj_left adj in
-        match Modality.compare left fm with
-        | Neq -> mismatch left
-        | Eq -> (
-            (* The field disappears if its nonparametric modality filters this dimension nontrivially.  (Currently unreachable, since we require modal higher fields to be parametric at definition time; but this keeps the check robust.) *)
-            let (Has_filter left_filter) = Modality.filter left m in
-            match Modality.filter_is_trivial m left_filter with
-            | Some Eq -> ()
-            | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left)))) in
+    let left = Modalcell.adj_left adj in
+    match Modality.compare left fm with
+    | Neq -> mismatch left
+    | Eq -> (
+        (* The field disappears if its nonparametric modality filters this dimension nontrivially. *)
+        let (Has_filter left_filter) = Modality.filter left m in
+        match Modality.filter_is_trivial m left_filter with
+        | Some Eq -> ()
+        | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))) in
   let m = dim_env env in
   match infld with
   | `Name (fldname, ints) -> (
@@ -1426,7 +1416,7 @@ and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
+  | Data { indices; evaldim = _; constrs; discrete; recursive; hints; tyfam } ->
       let dim, mode = (dim_env env, mode_env env) in
       (* The type family (the datatype applied to its parameters, e.g. "Vec A") was read back when this datatype was checked; we now evaluate it, lazily to avoid the circularity of re-entering this same evaluation eagerly.  Its type we take from the resulting neutral, since that is computed fully-instantiated at the current dimension (whereas re-evaluating a read-back type term would not be). *)
       let tyfam = lazy_eval env tyfam in
@@ -1443,9 +1433,15 @@ and eval_canonical : type mode m a.
       Val
         (Canonical
            { mode; canonical; tyargs; ins = ins_zero dim; fields; inst_fields = Some fields })
-  | Codata c ->
-      eval_codata env c.eta c.opacity c.hints c.dim c.fields
-        (Fibrancy.Codata.finished (mode_env env) c)
+  | Codata c -> (
+      (* Typechecking only produces codatatypes of evaluation dimension zero, which carry a fibrancy.  A positive evaluation dimension, or a missing fibrancy, means this codatatype is the readback of a codatatype *value*, which is display-only and is never evaluated. *)
+      match c.fibrancy with
+      | Some fibrancy ->
+          let Eq = fibrancy.evaldim in
+          let Eq = D.plus_uniq c.plusdim (D.zero_plus c.dim) in
+          eval_codata env c.eta c.opacity c.hints c.dim c.fields
+            (Fibrancy.Codata.finished (mode_env env) c.fields fibrancy c.is_glue)
+      | _ -> fatal (Evaluating_display_term "codata"))
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far.  *)
 and eval_codata : type mode m a n et.
@@ -1454,7 +1450,7 @@ and eval_codata : type mode m a n et.
     opacity ->
     hints ->
     n D.t ->
-    (mode * a * n * et) CodatafieldAbwd.t ->
+    (mode * a * D.zero * n * et) CodatafieldAbwd.t ->
     (mode * (n * a * potential * no_eta)) Term.StructfieldAbwd.t ->
     (mode, potential) evaluation =
  fun env eta opacity hints n fields fibrancy_fields ->

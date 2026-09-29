@@ -23,7 +23,8 @@ let ([ ftrr; fliftr; ftrl; fliftl; fid ] : (Hott.dim Field.t, Fwn.five) Vec.t) =
 
 module Fields = struct
   type ('a, 'mode) t =
-    ('mode * ('mode emp, ('mode id, D.zero) dim_entry) snoc * D.zero * no_eta) CodatafieldAbwd.t
+    ('mode * ('mode emp, ('mode id, D.zero) dim_entry) snoc * D.zero * D.zero * no_eta)
+    CodatafieldAbwd.t
 end
 
 module FieldsMap = Mode.Map.Make (Fields)
@@ -78,7 +79,9 @@ let glue : unit GlueValuesMap.t ref = ref GlueValuesMap.empty
 
 module Codata = struct
   type (_, _, _, _, _) t =
-    | Fibrancy : ('mode, 'g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy -> ('mode, 'g, 'n, 'b, 'et) t
+    | Fibrancy :
+        ('mode, D.zero, 'g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy
+        -> ('mode, 'g, 'n, 'b, 'et) t
 
   (* We compute the fibrancy fields of a codatatype progressively field-by-field as the codatatype declaration is typechecked, starting with an empty one and adding to it. *)
 
@@ -94,22 +97,35 @@ module Codata = struct
       plusmap_exists Hott.dim length in
     let (Plus dimh) = D.plus Hott.dim in
     Fibrancy
-      { glue; dim; length; plusmap; ty; eta; dimh; trr = Emp; trl = Emp; liftr = Emp; liftl = Emp }
+      {
+        evaldim = Eq;
+        glue;
+        dim;
+        length;
+        plusmap;
+        ty;
+        eta;
+        dimh;
+        trr = Emp;
+        trl = Emp;
+        liftr = Emp;
+        liftl = Emp;
+      }
 
   (* Given the typechecked version of a field, add the corresponding behavior of the fibrancy fields. *)
   let add_field : type mode g n b et.
       mode Mode.t ->
       (mode, g, n, b, et) t ->
-      (mode * b * g * et) CodatafieldAbwd.entry ->
+      (mode * b * D.zero * g * et) CodatafieldAbwd.entry ->
       (mode, g, n, b, et) t =
-   fun mode (Fibrancy (type nh hb) (f : (mode, g, n, nh, b, hb, et) codata_fibrancy))
-       (Entry (fld, fldty)) ->
+   fun mode (Fibrancy (type nh hb) (f : (mode, D.zero, g, n, nh, b, hb, et) codata_fibrancy))
+       (Entry (fld, Codatafield (_, adj, fld_plus_lock, fldty))) ->
     match fldty with
     | Higher _ ->
         let open Reporter in
         fatal ~severity:Asai.Diagnostic.Bug (Unimplemented "higher fields of transport")
     (* MODALTODO: Fibrancy is not yet meaningful for modal fields, so we drop them from the fibrancy computation. *)
-    | Lower (adj, fld_plus_lock, fld_ty) -> (
+    | Lower fld_ty -> (
         match Modalcell.compare_adjunction_id adj with
         | Neq -> Fibrancy f
         | Eq -> (
@@ -194,10 +210,11 @@ module Codata = struct
   (* After all the codatafields have been added, we can "finish" the job at the time of evaluation, combining the StructfieldAbwds for the four user fibrancy fields, and a computation of the corecursive field id, to produce a single StructfieldAbwd whose fields are the five fibrancy fields. *)
   let rec finish : type mode g n nh b hb et.
       mode Mode.t ->
-      (mode * b * g * et) CodatafieldAbwd.t ->
-      (mode, g, n, nh, b, hb, et) codata_fibrancy ->
+      (mode * b * D.zero * g * et) CodatafieldAbwd.t ->
+      (mode, D.zero, g, n, nh, b, hb, et) codata_fibrancy ->
       (mode * (g * b * potential * no_eta)) StructfieldAbwd.t =
-   fun mode fields { glue; dim; length; plusmap; ty; eta; dimh; trr; trl; liftr; liftl } ->
+   fun mode fields
+       { evaldim = Eq; glue; dim; length; plusmap; ty; eta; dimh; trr; trl; liftr; liftl } ->
     let idm = Modality.id mode in
     let xname = singleton_variables D.zero (`Named "x") in
     let yname = singleton_variables D.zero (`Named "y") in
@@ -266,6 +283,7 @@ module Codata = struct
               let folder :
                   (mode
                   * ((hb, (mode id, D.zero) dim_entry) snoc, (mode id, D.zero) dim_entry) snoc
+                  * D.zero
                   * g
                   * et)
                   CodatafieldAbwd.t
@@ -275,9 +293,10 @@ module Codata = struct
                       ((hb, (mode id, D.zero) dim_entry) snoc, (mode id, D.zero) dim_entry) snoc,
                       et )
                     t ->
-                  (mode * b * g * et) CodatafieldAbwd.entry ->
+                  (mode * b * D.zero * g * et) CodatafieldAbwd.entry ->
                   (mode
                   * ((hb, (mode id, D.zero) dim_entry) snoc, (mode id, D.zero) dim_entry) snoc
+                  * D.zero
                   * g
                   * et)
                   CodatafieldAbwd.t
@@ -287,9 +306,10 @@ module Codata = struct
                       ((hb, (mode id, D.zero) dim_entry) snoc, (mode id, D.zero) dim_entry) snoc,
                       et )
                     t =
-               fun (fields, fib) (CodatafieldAbwd.Entry (fld, fldty)) ->
+               fun (fields, fib)
+                   (CodatafieldAbwd.Entry (fld, Codatafield (selfvar, adj, plus_lock, fldty))) ->
                 match fldty with
-                | Lower (adj, plus_lock, fldty) -> (
+                | Lower fldty -> (
                     match Modalcell.compare_adjunction_id adj with
                     | Neq ->
                         (* MODALTODO: fibrancy of modal fields *)
@@ -302,30 +322,32 @@ module Codata = struct
                         let field =
                           CodatafieldAbwd.Entry
                             ( fld,
-                              Lower
-                                ( Modalcell.id_adjunction mode,
+                              Codatafield
+                                ( selfvar,
+                                  Modalcell.id_adjunction mode,
                                   plus_no_lock mode,
-                                  Inst
-                                    ( Kinetic,
-                                      App
-                                        ( Kinetic,
-                                          Weaken
-                                            (Weaken
+                                  Lower
+                                    (Inst
+                                       ( Kinetic,
+                                         App
+                                           ( Kinetic,
+                                             Weaken
                                                (Weaken
-                                                  (Shift
-                                                     ( Hott.dim,
-                                                       plusmap,
-                                                       Lam
-                                                         ( xsname,
-                                                           D.zero,
-                                                           Modality.filter_id mode D.zero,
-                                                           fldty ) )))),
-                                          Hott.dim,
-                                          idf,
-                                          Modal (idm, plus_no_lock mode, xcube) ),
-                                      TubeOf.mmap
-                                        { map = (fun _ [ x ] -> field mode x fld) }
-                                        [ xtube ] ) ) ) in
+                                                  (Weaken
+                                                     (Shift
+                                                        ( Hott.dim,
+                                                          plusmap,
+                                                          Lam
+                                                            ( xsname,
+                                                              D.zero,
+                                                              Modality.filter_id mode D.zero,
+                                                              fldty ) )))),
+                                             Hott.dim,
+                                             idf,
+                                             Modal (idm, plus_no_lock mode, xcube) ),
+                                         TubeOf.mmap
+                                           { map = (fun _ [ x ] -> field mode x fld) }
+                                           [ xtube ] )) ) ) in
                         (Snoc (fields, field), add_field mode fib field))
                 | Higher _ ->
                     (* TODO *)
@@ -373,18 +395,20 @@ module Codata = struct
     <: Entry (fid, LazyHigher (idadj, idlock, id))
 
   (* TODO: It would be nice to memoize the "finish" computation.  But we can't store it as a mutable field inside a Term, because it contains a LazyHigher and so is not marshalable.  Maybe we could use a hashtable, but it would be tricky to ensure the output types depend correctly on the input ones.  I guess we could have a mutable Map depending on 'n' and 'a' and then hashtables inside of that.  But then it starts to get questionable how much time would be saved.  Let's wait until we do some profiling and see if this is actually a pain point. *)
-  let finished : type mode n a nh ha et.
+  let finished : type mode n nh a ha et.
       mode Mode.t ->
-      (mode, n, a, nh, ha, et) codata_args ->
+      (mode * a * D.zero * n * et) CodatafieldAbwd.t ->
+      (mode, D.zero, n, n, nh, a, ha, et) codata_fibrancy ->
+      (mode, n, a, et) is_glue option ->
       (mode * (n * a * potential * no_eta)) StructfieldAbwd.t =
-   fun mode c ->
+   fun mode fields fibrancy is_glue ->
     (* Fibrancy of glue-types is bootstrapped later and saved to the ref above, so here we detect whether the type is glue and insert that value if so. *)
-    match c.is_glue with
+    match is_glue with
     | Some Glue -> (
         match GlueValuesMap.find_opt mode !glue with
         | None -> Emp
         | Some fields -> fields)
-    | None -> finish mode c.fields c.fibrancy
+    | None -> finish mode fields fibrancy
 end
 
 let universe : type mode.
