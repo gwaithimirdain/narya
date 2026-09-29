@@ -58,8 +58,8 @@ module rec Term : sig
       | Higher :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
           * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
-          (* The context in which the field's type is checked, as a termctx, needed to eval-readback environments when degenerating them to check the field at a nontrivial partial bijection. *)
-          * ('gmode, 'd, ('ag, ('f, D.zero) dim_entry) snoc) Term.termctx
+          (* The context that the field's type closure is evaluated over, as a termctx, needed to eval-readback that environment when degenerating it to check the field at a nontrivial partial bijection.  Note this is the *locked* context, without the self variable: the self variable is supplied to the field type after the degeneration, not carried through it inside the environment. *)
+          * ('gmode, 'd, 'ag) Term.termctx
           * ('i, ('ag, ('f, D.zero) dim_entry) snoc, 'iagx, 'gmode) plusmap
           * ('gmode, 'iagx, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
@@ -345,8 +345,8 @@ end = struct
       | Higher :
           ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
           * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
-          (* The context in which the field's type is checked, as a termctx, needed to eval-readback environments when degenerating them to check the field at a nontrivial partial bijection. *)
-          * ('gmode, 'd, ('ag, ('f, D.zero) dim_entry) snoc) Term.termctx
+          (* The context that the field's type closure is evaluated over, as a termctx, needed to eval-readback that environment when degenerating it to check the field at a nontrivial partial bijection.  Note this is the *locked* context, without the self variable: the self variable is supplied to the field type after the degeneration, not carried through it inside the environment. *)
+          * ('gmode, 'd, 'ag) Term.termctx
           * ('i, ('ag, ('f, D.zero) dim_entry) snoc, 'iagx, 'gmode) plusmap
           * ('gmode, 'iagx, kinetic) Term.term
           -> ('i, 'mode * 'a * D.zero * no_eta) t
