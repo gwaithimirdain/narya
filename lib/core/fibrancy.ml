@@ -128,7 +128,8 @@ module Codata = struct
                 Hott.dim Field.t -> (mode, (hb, (mode id, D.zero) dim_entry) snoc, kinetic) term =
              fun trlift ->
               app
-                (Field (modal_id mode (Weaken (Shift (Hott.dim, f.plusmap, f.ty))), trlift, ins))
+                (Field
+                   (Kinetic, modal_id mode (Weaken (Shift (Hott.dim, f.plusmap, f.ty))), trlift, ins))
                 idm (plus_no_lock mode) x in
             let trr_x, liftr_x, trl_x, liftl_x = (onx ftrr, onx fliftr, onx ftrl, onx fliftl) in
             (* xrcube and xlcube are 1-dimensional cubes consisting of the index-zero variable 'x' and its transports right or left. *)
@@ -160,16 +161,18 @@ module Codata = struct
                           Realize
                             (app
                                (Field
-                                  ( modal_id mode
+                                  ( Kinetic,
+                                    modal_id mode
                                       (App
-                                         ( Weaken sty,
+                                         ( Kinetic,
+                                           Weaken sty,
                                            Hott.dim,
                                            idf,
                                            Modal (idm, plus_no_lock mode, xcube) )),
                                     trlift,
                                     ins ))
                                idm (plus_no_lock mode)
-                               (Field (modal_id mode x, fld, ins_zero f.dim))),
+                               (Field (Kinetic, modal_id mode x, fld, ins_zero f.dim))),
                           `Labeled ) )
                  (* TODO: Once it's written, call this from Check.check_codata too. *)
                  (* Entry (f, Higher _) *) in
@@ -303,8 +306,10 @@ module Codata = struct
                                 ( Modalcell.id_adjunction mode,
                                   plus_no_lock mode,
                                   Inst
-                                    ( App
-                                        ( Weaken
+                                    ( Kinetic,
+                                      App
+                                        ( Kinetic,
+                                          Weaken
                                             (Weaken
                                                (Weaken
                                                   (Shift
@@ -337,7 +342,7 @@ module Codata = struct
                 Bwd.fold_left folder
                   ( Emp,
                     empty glue dimh hlength00 eta
-                      (Inst (Weaken (Weaken (Shift (Hott.dim, plusmap, ty))), xtube)) )
+                      (Inst (Kinetic, Weaken (Weaken (Shift (Hott.dim, plusmap, ty))), xtube)) )
                   fields in
               let fib = finish mode fields fib in
               plusfam

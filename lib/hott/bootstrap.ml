@@ -196,10 +196,19 @@ let () =
                                             bm,
                                             Realize
                                               (App
-                                                 ( App
-                                                     ( App
-                                                         ( App
-                                                             ( App (App (Const c, _, _, _), _, _, _),
+                                                 ( Kinetic,
+                                                   App
+                                                     ( Kinetic,
+                                                       App
+                                                         ( Kinetic,
+                                                           App
+                                                             ( Kinetic,
+                                                               App
+                                                                 ( Kinetic,
+                                                                   App (Kinetic, Const c, _, _, _),
+                                                                   _,
+                                                                   _,
+                                                                   _ ),
                                                                _,
                                                                _,
                                                                _ ),
@@ -309,14 +318,27 @@ let () =
                          Realize
                            (App
                               (type dom modality n m)
-                              (( App
-                                   ( App
-                                       ( App
-                                           ( App
-                                               ( App
-                                                   ( App
-                                                       ( App
-                                                           ( App (App (Const c, _, _, _), _, _, _),
+                              (( Kinetic,
+                                 App
+                                   ( Kinetic,
+                                     App
+                                       ( Kinetic,
+                                         App
+                                           ( Kinetic,
+                                             App
+                                               ( Kinetic,
+                                                 App
+                                                   ( Kinetic,
+                                                     App
+                                                       ( Kinetic,
+                                                         App
+                                                           ( Kinetic,
+                                                             App
+                                                               ( Kinetic,
+                                                                 App (Kinetic, Const c, _, _, _),
+                                                                 _,
+                                                                 _,
+                                                                 _ ),
                                                              _,
                                                              _,
                                                              _ ),
@@ -342,6 +364,7 @@ let () =
                                  _,
                                  Modal (modality, plus, tm) ) :
                                 _
+                                * _
                                 * m D.t
                                 * _
                                 * ( n,
