@@ -1012,17 +1012,18 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           Readback.Displaying.run ~env:true @@ fun () ->
           let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
           let names = Names.of_ctx ctx in
-          (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition. *)
+          (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
           let utm =
             match mode with
             | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
             | `Echo ->
                 let etm = Norm.eval_term (Ctx.env ctx) ctm in
-                unparse names (readback_at ctx etm ety) No.Interval.entire No.Interval.entire
+                unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                  No.Interval.entire
             | `About -> (
                 let etm = Norm.eval_term (Ctx.env ctx) ctm in
                 match etm with
-                (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written, including any matches in it.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
+                (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written rather than as it computes.  This is more informative when possible, since the readback of a potential value falls back to a neutral application spine wherever a match is stuck.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
                 | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
                   when Option.is_some (is_id_ins ins)
                        &&
@@ -1033,12 +1034,16 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                     | Definition { tm = `Defined tree; _ } ->
                         unparse Names.empty tree No.Interval.entire No.Interval.entire
                     | Definition { tm = `Axiom; _ } ->
-                        unparse names (readback_at ctx etm ety) No.Interval.entire
+                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
                           No.Interval.entire)
-                (* Otherwise we show its normal form. *)
-                | _ -> unparse names (readback_at ctx etm ety) No.Interval.entire No.Interval.entire
-                ) in
-          let bty = readback_at ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
+                (* Otherwise we read back the neutral's potential value, which displays a canonical type as its declaration and a comatch as itself.  If it has no potential value at all we show its normal form. *)
+                | _ -> (
+                    match readback_about ctx etm with
+                    | Some tm -> unparse names tm No.Interval.entire No.Interval.entire
+                    | None ->
+                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                          No.Interval.entire)) in
+          let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let uty = unparse names bty No.Interval.entire No.Interval.entire in
           PPrint.(
             ToChannel.pretty 1.0 (Display.columns ()) stdout

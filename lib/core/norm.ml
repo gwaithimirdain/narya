@@ -108,12 +108,6 @@ let rec take_args : type dom window mode annotations m n k kn a b ab.
               take_args env k_n args window_modality filter_window_k_m annotate comp))
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
 
-(* The adjunction of a (lower) field of a record type, together with the non-keyed type of its component: the type at which the component of a tuple is checked or read back, living behind the lock by the right adjoint. *)
-type _ tyof_modal_field =
-  | Tyof_modal_field :
-      ('amode, 'f, 'g, 'gmode) Modalcell.adjunction * ('gmode, kinetic) value
-      -> 'amode tyof_modal_field
-
 (* Eval-readback callback for tyof_higher_codatafield *)
 type (_, _, _, _) shuffleable =
   | Trivial : ('mode, D.zero, 'i, 'i) shuffleable
@@ -1007,28 +1001,6 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
           }
           [ fst (TubeOf.split (D.zero_plus m) mn tyargs) ] in
       inst insttm instargs
-
-(* Compute the non-keyed component type of a lower field of a record type value, along with the field's adjunction: the type at which the stored component of a tuple lives, behind the lock by the right adjoint.  Used when reading back a struct at a record type. *)
-and tyof_field_nokey : type amode.
-    ((amode, kinetic) value, Code.t) Result.t ->
-    (amode, kinetic) value ->
-    D.zero Field.t ->
-    amode tyof_modal_field =
- fun tm ty fld ->
-  match view_type ty "tyof_field_nokey" with
-  | Canonical (_, Codata { env; fields; _ }, codatains, tyargs) -> (
-      match is_id_ins codatains with
-      | None -> fatal (Anomaly "degenerated record in tyof_field_nokey")
-      | Some mn -> (
-          let m = dim_env env in
-          match Term.CodatafieldAbwd.find_opt fields fld with
-          | Found (Codatafield (_, adj, plus_lock, Lower fldty)) ->
-              Tyof_modal_field
-                ( adj,
-                  tyof_lower_codatafield (self_values adj tm tyargs) tyargs fld adj plus_lock fldty
-                    env m mn ~key:`Nokey )
-          | _ -> fatal (Anomaly "field not found in tyof_field_nokey")))
-  | _ -> fatal (Anomaly "non-codatatype in tyof_field_nokey")
 
 (* This function is also called directly from check_higher_field.  In that case, the field is determined by a partial bijection that may *not* be just an insertion, and we have to frobnicate the environment in which we evaluate the type.  Some of that frobnication involves an eval-readback cycle, which requires a callback from here since readback isn't defined yet. *)
 and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
