@@ -195,7 +195,6 @@ module rec Term : sig
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
-    | Refute
 
   and (_, _) canonical =
     | Data : {
@@ -512,8 +511,6 @@ end = struct
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
-    (* A branch that was refuted during typechecking doesn't need a body to compute with, but we still mark its presence as a signal that it should be stuck (this can occur when normalizing in an inconsistent context). *)
-    | Refute
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and (_, _) canonical =
