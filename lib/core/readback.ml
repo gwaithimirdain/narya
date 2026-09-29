@@ -1,7 +1,6 @@
 open Bwd
 open Util
 open Modal
-open Tlist
 open Tbwd
 open Reporter
 open Dim
@@ -246,27 +245,11 @@ and readback_at : type mode a z.
           let (Wrap xargs) = Vec.of_list xargs in
           let lgth = Vec.length xargs in
           (* If a higher-dimensional constructor belongs to a higher version of a datatype, the instantiation arguments of the latter must be lower-dimensional versions of the same constructor.  We extract their arguments to form the boundaries of the types of the arguments of our current constructor. Specifically, tyargs is a tube of normals, each of which is expected to be a lower-dimensional instance of the same constructor, which therefore has a list of modal cubes as arguments.  We want to extract the top element of each of those cubes to form a *list of tubes* of modal values, whereas what we naturally have, after peeling off the constructors, is a *tube of lists*.  We do the conversion with our multiple-output traversal with a variable number of outputs, specifically the length of the telescope. *)
-          let (Conses (cs, bs)) = Tlist.conses lgth in
           let tyarg_args =
-            TubeOf.Heter.vec_of_hgt cs
-            @@ TubeOf.pmap
-                 {
-                   map =
-                     (fun _ [ tm ] ->
-                       match view_term tm.tm with
-                       | Constr (tmname, _, tmargs) ->
-                           if tmname = xconstr then
-                             let ys =
-                               Vec.of_list_length_map
-                                 (fun (Value.Modal (xfilt, x)) : (_, _) modal_value ->
-                                   Modal (Modality.filter_modality xfilt, CubeOf.find_top x))
-                                 lgth tmargs
-                               <|> Anomaly "inst arg wrong num args in readback at datatype" in
-                             CubeOf.Heter.hft_of_vec cs ys
-                           else fatal (Anomaly "inst arg wrong constr in readback at datatype")
-                       | _ -> fatal (Anomaly "inst arg not constr in readback at datatype"));
-                 }
-                 [ tyargs ] bs in
+            find_tyarg_args ~check_dim:"reading back constrs" xconstr lgth tyargs
+              ~wrong_arity:(fun () -> Anomaly "inst arg wrong num args in readback at datatype")
+              ~wrong_constr:(fun _ -> Anomaly "inst arg wrong constr in readback at datatype")
+              ~not_constr:(fun _ -> Anomaly "inst arg not constr in readback at datatype") in
           (* Now xargs and tyarg_args are guaranteed to have the same length, so readback_at_pi doesn't have to worry. *)
           Constr
             ( xconstr,
