@@ -376,14 +376,14 @@ module Act = struct
         let env = act_env_deg env fa cell in
         Codata { eta; opacity; hints; env; fields }
 
-  and act_dataconstr : type mode mu1 mu2 cod m n i.
-      (mode, n, i) dataconstr ->
+  and act_dataconstr : type mode mu1 mu2 cod m n.
+      (mode, n) dataconstr ->
       (m, n) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
-      (mode, m, i) dataconstr =
-   fun (Dataconstr { env; args; indices }) s cell ->
+      (mode, m) dataconstr =
+   fun (Dataconstr { env; ty }) s cell ->
     let env = act_env_deg env s cell in
-    Dataconstr { env; args; indices }
+    Dataconstr { env; ty }
 
   (* act_binder assumes that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_binder : type mode modality dom mn kn s mu1 mu2 cod.
