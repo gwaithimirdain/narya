@@ -166,7 +166,7 @@ and equal_at : type mode a b.
                         let (Locked (_, lctx)) = Ctx.lock ctx right in
                         equal_at lctx (field_term left xu fld fldins)
                           (field_term left yu fld fldins)
-                          (tyof_field left (Ok xu) tyu fld ~shuf:Trivial fldins)) in
+                          (tyof_field left (Ok xu) tyu fld fldins)) in
               do_fields fields
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
         | Noeta -> equal_val ctx x y)

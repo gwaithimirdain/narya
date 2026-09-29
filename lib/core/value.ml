@@ -187,6 +187,11 @@ module rec Value : sig
 
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }
 
+  and ('mk, 'dom) env_binding =
+    [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
+    | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
+    | `Error of Code.t ]
+
   and (_, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, 'mode emp) env
     | Ext : {
@@ -194,10 +199,7 @@ module rec Value : sig
         plus : ('m, 'k, 'mk) D.plus;
         filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
         filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
-        values :
-          [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
-          | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
-          | `Error of Code.t ];
+        values : ('mk, 'dom) env_binding;
       }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     | Act : ('mode, 'n, 'b) env * ('m, 'n) opt_op -> ('mode, 'm, 'b) env
@@ -443,6 +445,12 @@ end = struct
   (* A "normal form" is a value paired with its type.  The type is used for eta-expansion and equality-checking. *)
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }
 
+  (* The binding of one variable in an environment; see Ext below. *)
+  and ('mk, 'dom) env_binding =
+    [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
+    | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
+    | `Error of Code.t ]
+
   (* An "environment" is a context morphism *from* a De Bruijn LEVEL context *to* a (typechecked) De Bruijn INDEX context.  Specifically, an ('n, 'a) env is an 'n-dimensional substitution from a level context to an index context indexed by the hctx 'a.  Since the index context could have some variables that are labeled by integers together with faces, the values also have to allow that.  The environment is NOT parametrized by a mode: the terms in it could belong to many modes, namely the domains of the modality annotations in the codomain context.  We don't enforce the validity of those modes here. *)
   and (_, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, 'mode emp) env
@@ -453,10 +461,7 @@ end = struct
         filter : ('dom, 'modality, 'mode, 'm, 'n) Modality.filter_dim;
         filtered : ('dom, 'modality, 'mode, 'k, 'k) Modality.filter_dim;
         (* We have two kinds of variable bindings in an environment: lazy and non-lazy.   We also allow Error binding in an environment, indicating that that variable is not actually usable, usually due to an earlier error in typechecking that we've continued on from anyway.  (There's no need for errors in the lazy case, since the lazy thunk can just raise an error directly when forced.) *)
-        values :
-          [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
-          | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
-          | `Error of Code.t ];
+        values : ('mk, 'dom) env_binding;
       }
         -> ('mode, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
     | Act : ('mode, 'n, 'b) env * ('m, 'n) opt_op -> ('mode, 'm, 'b) env
