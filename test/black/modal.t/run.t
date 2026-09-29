@@ -369,6 +369,48 @@ adjoint.
   
   [1]
 
+"about" on a modal codatatype or record displays each field with the locking
+annotation on the self-variable that declares it, and its type in the context
+locked by the right adjoint.  A record with a modal field must use the
+self-variable syntax, since the field-variable syntax "sig (a : …)" has nowhere
+to put the annotation; an ordinary non-modal field is unaffected.
+
+  $ narya -spatial modalfields.ny -e "about C" -e "about R" -e "about D"
+  codata [
+  | (x :♭| _) .fld : N ]
+    : Type
+  
+  sig (
+    (x :♭| _) .fst : N )
+    : Type
+  
+  codata [
+  | y .snd : N ]
+    : Type
+  
+
+
+
+
+A comatch or tuple for a modal field displays as usual: only the declaration and
+the projection carry the locking annotation.
+
+  $ narya -spatial modalfields.ny -e "about c" -e "about r"
+  [ .fld ↦ 1 ]
+    : C
+  
+  (fst ≔ 0)
+    : R
+  
+
+Projections are displayed with the modal annotation.
+
+  $ narya -spatial modalfields.ny -e "about p"
+  (c :♭| _) .fld
+    : N
+  
+
+
 A field can only be parametrized by a sinister (left adjoint) modality; ♯ is
 not sinister.
 

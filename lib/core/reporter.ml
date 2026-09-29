@@ -212,6 +212,8 @@ module Code = struct
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
+    (* Raised by Names.lookup when an anonymous self-variable of a record being displayed with field-variable syntax is used directly rather than through a field; caught by the unparser to fall back to self-variable syntax.  A Bug because it should always be caught. *)
+    | Self_used : t
     | Redefining_constant : string list -> t
     | Invalid_constant_name : string list * string option -> t
     | Too_many_commands : t
@@ -407,6 +409,7 @@ module Code = struct
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
     | Evaluating_display_term _ -> Bug
+    | Self_used -> Bug
     | Redefining_constant _ -> Warning
     | Invalid_constant_name _ -> Error
     | Too_many_commands -> Error
@@ -497,6 +500,7 @@ module Code = struct
     | No_such_level _ -> "E0001"
     | Accumulated (_msg, _errs) -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
+    | Self_used -> "E0004"
     | Evaluating_display_term _ -> "E0005"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
@@ -1023,6 +1027,7 @@ module Code = struct
             "field %s must be omitted at this dimension: its modality %s is nonparametric and filters this dimension away"
             field (Modality.to_string m)
       | Anomaly str -> textf "anomaly: %s" str
+      | Self_used -> text "uncaught use of self-variable in a field-variable record display"
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->
           textf "redefining constant: %a" pp_printed (print (PString (String.concat "." name)))
