@@ -180,7 +180,7 @@ and equal_at : type mode a b.
         let rec equal_at_data (x : (mode, kinetic) value) (y : (mode, kinetic) value) : unit Err.t =
           match (x, y) with
           | Constr (xconstr, xn, xargs), Constr (yconstr, yn, yargs) -> (
-              let (Dataconstr { env; ty }) =
+              let (Dataconstr { env = _; ty = _; fnty }) =
                 match Abwd.find_opt xconstr constrs with
                 | Some x -> x
                 | None -> fatal (Anomaly "constr not found in equality-check") in
@@ -219,7 +219,7 @@ and equal_at : type mode a b.
                          }
                          [ tyargs ] bs in
                   (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees. *)
-                  equal_at_pi ctx xn (lazy (eval_term env ty)) xargs yargs tyarg_args)
+                  equal_at_pi ctx xn (lazy (force_eval_term fnty)) xargs yargs tyarg_args)
           | Neu _, Neu _ -> (
               (* Two neutrals are first compared as spines; a mismatch is inconclusive if either side unfolds, in which case we retry (once) on the unfoldings, which may now be constructors. *)
               match equal_neu ctx x y with

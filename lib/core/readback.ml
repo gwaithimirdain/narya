@@ -238,7 +238,7 @@ and readback_at : type mode a z.
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
       let Eq = eq_of_ins_zero ins in
       (* Pick out the constructor of the datatype that matches the one we're reading back *)
-      let (Dataconstr { env; ty }) =
+      let (Dataconstr { env; ty = _; fnty }) =
         Abwd.find_opt xconstr constrs <|> Anomaly "constr not found in readback" in
       match D.compare xn (TubeOf.inst tyargs) with
       | Neq -> fatal (Dimension_mismatch ("reading back constrs", xn, TubeOf.inst tyargs))
@@ -271,7 +271,7 @@ and readback_at : type mode a z.
           Constr
             ( xconstr,
               dim_env env,
-              readback_at_pi ctx (dim_env env) (lazy (eval_term env ty)) xargs tyarg_args ))
+              readback_at_pi ctx (dim_env env) (lazy (force_eval_term fnty)) xargs tyarg_args ))
   | _ -> readback_val ctx tm
 
 and readback_val : type mode a z.
