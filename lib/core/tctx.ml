@@ -392,20 +392,22 @@ let rec find_plus_with_locks : type ac dom modality mode.
 module VarAnnote = struct
   module Obj = Mode
 
-  type (_, _, _) t = Annote : ('dom, 'modality, 'mode) Modality.t -> ('mode, 'modality, 'mode) t
+  (* The "string option" is the display name of the variable, carried so that it can be recovered when reading back/unparsing a match branch.  It is irrelevant to the type indices and to all categorical operations (src/tgt/compare). *)
+  type (_, _, _) t =
+    | Annote : string option * ('dom, 'modality, 'mode) Modality.t -> ('mode, 'modality, 'mode) t
 
-  let src : type a m b. (a, m, b) t -> a Obj.t = fun (Annote m) -> Modality.tgt m
-  let tgt : type a m b. (a, m, b) t -> b Obj.t = fun (Annote m) -> Modality.tgt m
+  let src : type a m b. (a, m, b) t -> a Obj.t = fun (Annote (_, m)) -> Modality.tgt m
+  let tgt : type a m b. (a, m, b) t -> b Obj.t = fun (Annote (_, m)) -> Modality.tgt m
 
   let src_uniq : type a1 a2 m b1 b2. (a1, m, b1) t -> (a2, m, b2) t -> (a1, a2) Eq.t =
-   fun (Annote m1) (Annote m2) -> Modality.tgt_uniq m1 m2
+   fun (Annote (_, m1)) (Annote (_, m2)) -> Modality.tgt_uniq m1 m2
 
   let tgt_uniq : type a1 a2 m b1 b2. (a1, m, b1) t -> (a2, m, b2) t -> (b1, b2) Eq.t =
-   fun (Annote m1) (Annote m2) -> Modality.tgt_uniq m1 m2
+   fun (Annote (_, m1)) (Annote (_, m2)) -> Modality.tgt_uniq m1 m2
 
   let compare : type a1 a2 m1 m2 b1 b2.
       (a1, m1, b1) t -> (a2, m2, b2) t -> (a1 * m1 * b1, a2 * m2 * b2) Eq.compare =
-   fun (Annote m1) (Annote m2) ->
+   fun (Annote (_, m1)) (Annote (_, m2)) ->
     match Modality.compare m1 m2 with
     | Eq -> Eq
     | Neq -> Neq
@@ -440,35 +442,35 @@ module VarAnnotator = struct
 
   type (_, _, _, _, _, _, _) t =
     | Annotate :
-        ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        string option * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
         -> ('n, 'mode, 'modality, 'mode, 'mode, ('modality, 'k) dim_entry, 'mode) t
 
   type (_, _, _, _) exists =
     | Exists : ('param, 'a, 'm, 'b, 'x, 'n, 'y) t -> ('param, 'a, 'm, 'b) exists
 
   let dom : type param a m b x n y. (param, a, m, b, x, n, y) t -> (a, m, b) Dom.t =
-   fun (Annotate f) -> Annote (Modality.filter_modality f)
+   fun (Annotate (name, f)) -> Annote (name, Modality.filter_modality f)
 
   let cod : type param a m b x n y. param Param.t -> (param, a, m, b, x, n, y) t -> (x, n, y) Cod.t
       =
-   fun p (Annotate f) -> Dim (Modality.filtered p f, Modality.filter_idempotent f)
+   fun p (Annotate (_, f)) -> Dim (Modality.filtered p f, Modality.filter_idempotent f)
 
   let src : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, a, x) Obj.t =
-   fun (Annotate f) -> Eq (Modality.tgt (Modality.filter_modality f))
+   fun (Annotate (_, f)) -> Eq (Modality.tgt (Modality.filter_modality f))
 
   let tgt : type param a m b x n y. (param, a, m, b, x, n, y) t -> (param, b, y) Obj.t =
-   fun (Annotate f) -> Eq (Modality.tgt (Modality.filter_modality f))
+   fun (Annotate (_, f)) -> Eq (Modality.tgt (Modality.filter_modality f))
 
   let exists : type param a m b. param Param.t -> (a, m, b) Dom.t -> (param, a, m, b) exists =
-   fun n (Annote m) ->
+   fun n (Annote (name, m)) ->
     let (Has_filter f) = Modality.filter m n in
-    Exists (Annotate f)
+    Exists (Annotate (name, f))
 
   let uniq : type param a m b x1 n1 y1 x2 n2 y2.
       (param, a, m, b, x1, n1, y1) t ->
       (param, a, m, b, x2, n2, y2) t ->
       (x1 * n1 * y1, x2 * n2 * y2) Eq.t =
-   fun (Annotate f1) (Annotate f2) ->
+   fun (Annotate (_, f1)) (Annotate (_, f2)) ->
     let Eq = Modality.src_uniq (Modality.filter_modality f1) (Modality.filter_modality f2) in
     let Eq = Modality.filter_uniq f1 f2 in
     Eq
