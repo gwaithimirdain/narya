@@ -172,6 +172,51 @@ The adjunction ♭ ⊣ ♯ only gives cells ♭∘♯ ⇒ id and id ⇒ ♯∘�
   [1]
 
 
+A match against a variable refines the goal and the context by rebinding the
+discriminee and the index variables of its datatype.  Rebinding a variable's
+slot rebinds what its *unkeyed* uses evaluate to, so an index variable whose use
+is keyed cannot be rebound: the value we would bind is available only at the
+window's modality, not at the variable's own annotation.  Here the index of the
+discriminee's type is a ♭-annotated variable used unmodally, hence keyed by the
+counit of ♭, so the match falls back to a non-dependent one.
+
+  $ narya -v -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def len (n :♭| N) (v : Vec N n) : N ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Vec defined
+  
+   ￫ hint[E1101]
+   ￭ command-line exec string
+   1 | def len (n :♭| N) (v : Vec N n) : N ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
+     ^ match will not refine the goal or context (index variable is keyed): n
+  
+   ￫ info[I0000]
+   ￮ constant len defined
+  
+
+That it really is a non-dependent match is visible in the goal: a motive that
+depends on the index is not refined, so the branch bodies fail to check against
+it.
+
+  $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def P : N → Type ≔ [ zero. ↦ N | suc. _ ↦ N ]' -e 'def f (n :♭| N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def f (n :♭| N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
+     ^ non-datatype P n has no constructor named zero
+  
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def f (n :♭| N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
+     ^ non-datatype P n has no constructor named suc
+  
+  [1]
+
+With the same index variable unkeyed, the match refines as usual.
+
+  $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def P : N → Type ≔ [ zero. ↦ N | suc. _ ↦ N ]' -e 'def f (n : N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
+
 Modal fields of records and codata: a field parametrized by the sinister
 modality ♭ (with right adjoint ♯) is checked, supplied, and projected behind
 the corresponding locks.
