@@ -236,6 +236,8 @@ module Code = struct
     | Hole_solved : int -> t
     | Split_term : PPrint.document -> t
     | Notation_defined : string -> t
+    (* Evaluating a term form that exists only for display, such as a potential application, which readback can produce but typechecking never does. *)
+    | Evaluating_display_term : string -> t
     | Show : string * printable -> t
     | Comment_end_in_string : t
     | Checking_canonical_at_nonuniverse : string * printable -> t
@@ -404,6 +406,7 @@ module Code = struct
     | Nonparametric_mode_degeneracy _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
+    | Evaluating_display_term _ -> Bug
     | Redefining_constant _ -> Warning
     | Invalid_constant_name _ -> Error
     | Too_many_commands -> Error
@@ -494,6 +497,7 @@ module Code = struct
     | No_such_level _ -> "E0001"
     | Accumulated (_msg, _errs) -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
+    | Evaluating_display_term _ -> "E0005"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
     | Deprecated _ -> "E0110"
@@ -1074,6 +1078,7 @@ module Code = struct
                 (fun ppf names -> pp_print_list (fun ppf name -> pp_printed ppf name) ppf names)
                 (List.map (fun name -> print name) names))
       | Notation_defined name -> textf "notation %s defined" name
+      | Evaluating_display_term str -> textf "evaluating display-only %s" str
       | Show (str, x) -> textf "%s: %a" str pp_printed (print x)
       | Comment_end_in_string ->
           text "comment-end sequence `} in quoted string: cannot be commented out"

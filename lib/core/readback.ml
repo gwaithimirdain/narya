@@ -64,9 +64,9 @@ let is_canonical_const : Constant.t -> [ `Canonical | `Other ] =
 (* The same question for a term rather than a value, by looking at the head of its application spine.  This is used when annotating a degeneracy at typechecking time, so that a term displayed without being read back (e.g. by the "synth" command) is displayed the same way as one that is read back. *)
 let rec canonical_head : type mode a s. (mode, a, s) term -> [ `Canonical | `Other ] = function
   | Const c -> is_canonical_const c
-  | App (fn, _, _, _) -> canonical_head fn
-  | Inst (tm, _) -> canonical_head tm
-  | Act (tm, _, _) -> canonical_head tm
+  | App (_, fn, _, _, _) -> canonical_head fn
+  | Inst (_, tm, _) -> canonical_head tm
+  | Act (_, tm, _, _) -> canonical_head tm
   | Key { tm; _ } -> canonical_head tm
   | _ -> `Other
 
@@ -232,7 +232,7 @@ and readback_at : type mode a z.
               let ptm = act_value tm pinv (Modalcell.id2 (Ctx.mode ctx)) in
               let pty = act_ty tm ty pinv (Modalcell.id2 (Ctx.mode ctx)) in
               match readback_at_record ptm pty with
-              | Some res -> Act (res, deg_of_perm p, (`Other, `Other))
+              | Some res -> Act (Kinetic, res, deg_of_perm p, (`Other, `Other))
               | None -> readback_val ctx tm))
       | Noeta, _ -> readback_val ctx tm)
   | Canonical (_, Data { constrs; _ }, ins, tyargs), Constr (xconstr, xn, xargs) -> (
@@ -303,8 +303,10 @@ and readback_neu : type hmode mode a z any.
       let (To p) = deg_of_ins ins in
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
       Term.Act
-        ( App
-            ( readback_neu ~canonical ctx head apps,
+        ( Kinetic,
+          App
+            ( Kinetic,
+              readback_neu ~canonical ctx head apps,
               cod_left_ins ins,
               filter,
               Modal
@@ -323,22 +325,23 @@ and readback_neu : type hmode mode a z any.
       match Modality.filter_is_trivial t filter with
       | Some Eq ->
           (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
-          Term.Act (Field (Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
+          Term.Act
+            (Kinetic, Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
       | None ->
           (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
           let ft = Modality.filtered t filter in
           let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
           let fieldterm : (_, _, kinetic) Term.term =
-            Term.Field (Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
+            Term.Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
           let liftdeg = Modality.deg_of_filter t filter in
-          Term.Act (Term.Act (fieldterm, liftdeg, sort), p, sort))
+          Term.Act (Kinetic, Term.Act (Kinetic, fieldterm, liftdeg, sort), p, sort))
   | Inst (Emp, _, args), Pi _ when TubeOf.is_full args ->
       (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
-      Inst (readback_head ~canonical ctx head, args)
+      Inst (Kinetic, readback_head ~canonical ctx head, args)
   | Inst (apps, _, args), _ ->
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-      Inst (readback_neu ~canonical ctx head apps, args)
+      Inst (Kinetic, readback_neu ~canonical ctx head apps, args)
 
 and readback_head : type mode c z.
     ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
@@ -365,7 +368,8 @@ and readback_head : type mode c z.
             | None ->
                 (* The degeneracy acts on the variable itself, so its display name is determined by the sort of the variable's own type. *)
                 let sort = sort_of_val (Modality.src modality) (Lazy.force value.ty) in
-                Act (Term.Var (Index (insert, fa, filter, iplus)), deg, (sort, canonical)) in
+                Act (Kinetic, Term.Var (Index (insert, fa, filter, iplus)), deg, (sort, canonical))
+          in
           (* And if the key is nontrivial, we act by it; otherwise we leave it off. *)
           match (Modality.compare_id modality, plus_src, plus_tgt) with
           | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
@@ -390,7 +394,7 @@ and readback_head : type mode c z.
             match is_canonical_const name with
             | `Canonical -> `Canonical
             | `Other -> canonical in
-          Act (Const name, deg, (sort, canonical)))
+          Act (Kinetic, Const name, deg, (sort, canonical)))
   | Meta { meta; env; ins } -> (
       let tm = MetaEnv (meta, readback_env ctx env (Global.find_meta meta).termctx) in
       match is_id_ins ins with
@@ -398,7 +402,7 @@ and readback_head : type mode c z.
       | None ->
           (* A degeneracy on a metavariable is always a permutation, whose display doesn't depend on the sort. *)
           let (To perm) = deg_of_ins ins in
-          Act (tm, perm, (`Other, canonical)))
+          Act (Kinetic, tm, perm, (`Other, canonical)))
   | UU (mode, n) -> UU (mode, n)
   | Pi (type dom modality k n) ({ x; filter; doms; cods } : (dom, modality, mode, k, n) pi_args) ->
       let n = BindCube.dim cods in
