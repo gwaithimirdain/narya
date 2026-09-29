@@ -1451,7 +1451,8 @@ and eval_canonical : type mode m a.
       let dim, mode = (dim_env env, mode_env env) in
       (* The type family (the datatype applied to its parameters, e.g. "Vec A") was read back when this datatype was checked; we now evaluate it, lazily to avoid the circularity of re-entering this same evaluation eagerly.  Its type we take from the resulting neutral, since that is computed fully-instantiated at the current dimension (whereas re-evaluating a read-back type term would not be). *)
       let tyfam = lazy_eval env tyfam in
-      let constrs = Abwd.map (fun ty -> Value.Dataconstr { env; ty }) constrs in
+      let constrs =
+        Abwd.map (fun ty -> Value.Dataconstr { env; ty; fnty = lazy_eval env ty }) constrs in
       let canonical =
         Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; recursive; hints }
       in

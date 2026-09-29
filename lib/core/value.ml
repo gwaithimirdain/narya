@@ -180,6 +180,8 @@ module rec Value : sig
     | Dataconstr : {
         env : ('mode, 'm, 'a) env;
         ty : ('mode, 'a, kinetic) term;
+        (* The function-type evaluated in env, computed lazily and cached, so that all the constructor applications checked, compared, or read back at one datatype value share a single evaluation of it.  It is acted on along with env. *)
+        fnty : ('mode, kinetic) lazy_eval;
       }
         -> ('mode, 'm) dataconstr
 
@@ -433,6 +435,8 @@ end = struct
     | Dataconstr : {
         env : ('mode, 'm, 'a) env;
         ty : ('mode, 'a, kinetic) term;
+        (* The function-type evaluated in env, computed lazily and cached, so that all the constructor applications checked, compared, or read back at one datatype value share a single evaluation of it.  It is acted on along with env. *)
+        fnty : ('mode, kinetic) lazy_eval;
       }
         -> ('mode, 'm) dataconstr
 

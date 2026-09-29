@@ -288,7 +288,7 @@ let merge_branches : type hmode dom a m.
         (* We check at the preprocessing stage that there are no duplicate constructors in the match. *)
         if Abwd.mem constr userbrs then fatal ?loc (Duplicate_constructor_in_match constr);
         let databrs, databr = Abwd.extract constr databrs in
-        let (Value.Dataconstr { env; ty }) =
+        let (Value.Dataconstr { env; ty; fnty = _ }) =
           match databr with
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
@@ -314,7 +314,7 @@ let merge_branches : type hmode dom a m.
   (* If there are any constructors in the datatype left over that the user didn't supply branches for, we add them to the list at the end.  They will be tested for refutability. *)
   Bwd.prepend user_branches
     (Bwd_extra.to_list_map
-       (fun (c, Value.Dataconstr { env; ty }) ->
+       (fun (c, Value.Dataconstr { env; ty; fnty = _ }) ->
          let (Wrap arity) = pi_arity ty in
          let (Bplus plus_args) = Raw.Indexed.bplus arity in
          let xs = Namevec.none plus_args in
@@ -742,7 +742,7 @@ let rec check : type mode a b s.
             (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
             match Abwd.find_opt constr constrs with
             | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
-            | Some (Dataconstr { env; ty = constr_ty }) ->
+            | Some (Dataconstr { env; ty = constr_ty; fnty }) ->
                 (* We recover the constructor's arity from the pi-depth of its stored function-type, to drive the conversion of the instantiation arguments below. *)
                 let (Wrap lgth) = pi_arity constr_ty in
                 (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors.  What we naturally have is a *tube of lists*, but what check_at_pi wants is a *vector of tubes*, one per constructor argument; we do the conversion with a multiple-output traversal, as in readback and equality. *)
@@ -784,8 +784,7 @@ let rec check : type mode a b s.
                        [ tyargs ] bs in
                 (* Now we walk the evaluation of the constructor's function-type, checking each user-supplied argument against the current domain (instantiated at the corresponding arguments of the lower-dimensional constructors, from tyarg_args) and applying the codomain to the checked argument to continue.  The final codomain is then the constructor's output type (the datatype applied to the parameters and indices) evaluated at all the checked arguments. *)
                 let out, newargs =
-                  check_at_pi constr ctx (dim_env env) (eval_term env constr_ty) args tyarg_args
-                in
+                  check_at_pi constr ctx (dim_env env) (force_eval_term fnty) args tyarg_args in
                 (* The last thing to do is check that the indices of the output type are equal to those of the type we are checking against.  (So a constructor application "checks against the parameters but synthesizes the indices" in some sense.)  We extract them directly from the evaluated output, which is the datatype fully applied to its indices; this evaluation is skipped for non-indexed datatypes, where there is nothing to compare.  I *think* it should suffice to check the top-dimensional ones, the lower-dimensional ones being automatic.  For now, we check all of them, raising an anomaly in case I was wrong about that.  *)
                 (match ty_indices with
                 | [] -> ()
