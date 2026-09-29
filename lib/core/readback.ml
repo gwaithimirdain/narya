@@ -148,7 +148,7 @@ and readback_at : type mode a z.
           * (D.zero, mn, mn, mode normal) TubeOf.t),
       _ ) -> (
       match (eta, fields) with
-      | Eta, (fields : (mode * a * n * has_eta) Term.CodatafieldAbwd.t) -> (
+      | Eta, (fields : (mode * a * D.zero * n * has_eta) Term.CodatafieldAbwd.t) -> (
           let dim = cod_left_ins ins in
           let fldins = ins_zero dim in
           let readback_at_record (tm : (mode, kinetic) value) ty =
@@ -190,8 +190,8 @@ and readback_at : type mode a z.
                   Bwd.filter
                     (fun (CodatafieldAbwd.Entry
                             (type i)
-                            ((_, Lower (Adjunction { left; _ }, _, _)) :
-                              i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
+                            ((_, Codatafield (_, Adjunction { left; _ }, _, _)) :
+                              i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
                       let (Has_filter left_filter) = Modality.filter left m in
                       match Modality.filter_is_trivial m left_filter with
                       | Some Eq -> true
@@ -201,8 +201,10 @@ and readback_at : type mode a z.
                   Mbwd.map
                     (fun (CodatafieldAbwd.Entry
                             (type i)
-                            ((fld, Lower ((Adjunction { left; right; unit; _ } as adj), _, _)) :
-                              i Field.t * (i, mode * a * n * has_eta) Codatafield.t)) ->
+                            (( fld,
+                               Codatafield
+                                 (_, (Adjunction { left; right; unit; _ } as adj), _, Lower _) ) :
+                              i Field.t * (i, mode * a * D.zero * n * has_eta) Codatafield.t)) ->
                       (* Eta-expansion of a modal field: key the term by the adjunction unit, project, and read back the component in the context locked by the right adjoint (as in the eta-rule for equality). *)
                       let xu = act_value tm (id_deg D.zero) unit in
                       let tyu = act_ty tm ty (id_deg D.zero) unit in
