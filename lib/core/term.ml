@@ -163,6 +163,7 @@ module rec Term : sig
         plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
         tm : ('dom, 'aw, kinetic) term;
         dim : 'n D.t;
+        motive : ('mode, 'a, kinetic) term option;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
       }
         -> ('mode, 'a, potential) term
@@ -479,6 +480,8 @@ end = struct
         plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
         tm : ('dom, 'aw, kinetic) term;
         dim : 'n D.t;
+        (* An explicit motive supplied by the user, if any: a type family over the datatype's indices and the datatype itself.  It is stored only so that the match can be displayed with its "return" clause; evaluation never needs it, since the branch it selects carries its own body.  Matches without an explicit motive store None. *)
+        motive : ('mode, 'a, kinetic) term option;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
       }
         -> ('mode, 'a, potential) term
