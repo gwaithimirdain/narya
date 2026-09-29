@@ -232,6 +232,8 @@ However, unlike the other types and constructs we have discussed so far, matches
 
 then ``neg1`` and ``neg2`` are not convertible.  By η-expansion, when trying to convert them we do automatically introduce a new variable ``x`` and try to compare ``neg1 x`` with ``neg2 x``, but neither of these terms reduce since ``x`` is not a constructor.  In particular, datatypes do not satisfy any kind of η-conversion themselves.
 
+As usual, you can use ``about`` to see the definition of a function defined by matching.  However, ``about`` displays a match only as it appears in the definition of a named constant, such as ``about neg1``.  A match that has not reduced because the function is applied to arguments that are not constructors (or because the function has been degenerated, as with ``refl neg1``) is displayed as that application, just as ``echo`` would display it.
+
 
 Recursion
 ---------

@@ -88,8 +88,8 @@ Axiom
 
 Assert a global constant called ``NAME`` having type ``TYPE``, without any definition (an axiom).  Parameters and names are treated as for ``def``.
 
-Echo/Synth
-^^^^^^^^^^
+Echo/Synth/About
+^^^^^^^^^^^^^^^^
 
 .. code-block:: none
 
@@ -102,6 +102,13 @@ Normalize ``TERM`` and print its value and its type to standard output.  Note th
    synth TERM
 
 Like ``echo``, but does not normalize the term, only computes its type.
+
+.. code-block:: none
+
+   about TERM
+
+Like ``echo``, but after normalizing ``TERM``, display its definition rather than its value.  In particular, since functions do not evaluate until applied to arguments, if ``TERM`` is just the name of a function ``f``, then ``echo f`` will simply return ``f`` back again, while ``about f`` will display the *definition* of ``f``.  See :ref:`Eta-conversion and case trees` for further discussion.
+
 
 Notation
 ^^^^^^^^
@@ -196,7 +203,7 @@ Undo
 
    undo N
 
-Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, ``split``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``about``, ``show``, ``solve``, ``split``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
 
 Display
 ^^^^^^^
@@ -305,7 +312,7 @@ The most useful ProofGeneral key commands for Narya are the following.
 - ``C-c C-.`` : Move the cursor to the end of the processed region.
 - ``C-M-a`` : Move the cursor to the beginning of the command it is inside.
 - ``C-M-e`` : Move the cursor to the end of the command it is inside.
-- ``C-c C-v`` : Read a "state-preserving" command from the minibuffer and execute it, displaying its output in the result buffer.  Currently the only state-preserving commands are ``echo``, ``synth``, ``show``, and ``display``.
+- ``C-c C-v`` : Read a "state-preserving" command from the minibuffer and execute it, displaying its output in the result buffer.  Currently the only state-preserving commands are ``echo``, ``synth``, ``about``, ``show``, and ``display``.
 - ``C-c C-c`` : Interrupt Narya if a command is taking too long.  Narya attempts to recover, but its state may be unreliable afterwards.
 - ``C-c C-x`` : Retract the buffer and kill the Narya subprocess.
 - ``M-;`` : Insert a comment, remove a comment, or comment out a region.  This is a standard Emacs command, but is customized to use line comments on code lines and block comments elsewhere.
@@ -314,10 +321,11 @@ As noted above, Narya's ProofGeneral mode is enhanced to deal with open holes (s
 
 Narya's ProofGeneral mode also defines the following additional key commands.
 
-- ``C-c ;`` : Read a term from the minibuffer and normalize it (like ``C-c C-v`` with ``echo``), perhaps in the context of the current hole.
-- ``C-c :`` : Read a term from the minibuffer and synthesize its type (like ``C-c C-v`` with ``synth``), perhaps in the context of the current hole.
-- ``C-c C-?`` : Show the contexts and types of all open holes (like ``C-c C-v`` with ``show holes``).
-- ``C-c C-,`` : Show the context and type of the hole under point (like ``C-c C-v`` with ``show hole``, except that you don't need to know the hole number).
+- ``C-c ;`` : Read a term from the minibuffer and normalize it with ``echo``, perhaps in the context of the current hole.
+- ``C-c :`` : Read a term from the minibuffer and synthesize its type with ``synth``, perhaps in the context of the current hole.
+- ``C-c C-a`` : Read a term from the minibuffer and display its definition with ``about``, perhaps in the context of the current hole.
+- ``C-c C-?`` : Show the contexts and types of all open holes, with ``show holes``.
+- ``C-c C-,`` : Show the context and type of the hole under point, like ``show hole`` except that you don't need to know the hole number.
 - ``C-c C-j`` : Move the cursor to the position of the next open hole.
 - ``C-c C-k`` : Move the cursor to the position of the previous open hole.
 - ``C-c C-SPC`` : Fill the hole under point with a specified term, without retracting any code.
