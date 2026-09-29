@@ -204,6 +204,8 @@ module Code = struct
     | Nontransparent_window_modality :
         ('a, 'm, 'b) Modality.t * bool * [ `Nonrecursive | `Recursive | `Unknown ]
         -> t
+    (* A branch was omitted, and there is a pattern variable of empty type that would have refuted it, but its modal annotation is not one a match could use as a window. *)
+    | Nonrefutable_modal_variable : ('a, 'm, 'b) Modality.t -> t
     | Non_mode_synthesizing : string -> t
     | Invalid_mode_theory : string -> t
     | Nonparametric_mode_degeneracy : string * 'a Mode.t -> t
@@ -385,6 +387,7 @@ module Code = struct
     | Duplicate_constructor_in_data _ -> Error
     | Matching_on_nondatatype _ -> Error
     | Matching_wont_refine _ -> Hint
+    | Nonrefutable_modal_variable _ -> Hint
     | Dimension_mismatch _ -> Bug (* Sometimes Error? *)
     | Mode_mismatch (`Internal, _, _, _, _) -> Bug
     | Mode_mismatch (`User, _, _, _, _) -> Error
@@ -569,6 +572,7 @@ module Code = struct
     (* - Match variable *)
     | Unnamed_variable_in_match -> "E1100"
     | Matching_wont_refine _ -> "E1101"
+    | Nonrefutable_modal_variable _ -> "E1102"
     (* - Match type *)
     | Matching_on_nondatatype _ -> "E1200"
     | Matching_datatype_has_degeneracy _ -> "E1201"
@@ -977,6 +981,10 @@ module Code = struct
       | Nontransparent_window_modality (m, _, `Unknown) ->
           textf
             "window modality %s must be pellucid since it is not yet known whether the datatype has recursive constructors, due to unsolved holes in its constructor types"
+            (Modality.to_string m)
+      | Nonrefutable_modal_variable m ->
+          textf
+            "a pattern variable of empty type is annotated by modality %s, which a match cannot use as a window, so refuting it is not allowed either"
             (Modality.to_string m)
       | Nontransparent_window_modality (m, false, `Nonrecursive) ->
           textf "window modality %s must be pellucid or transparent" (Modality.to_string m)

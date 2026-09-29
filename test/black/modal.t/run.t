@@ -217,6 +217,34 @@ With the same index variable unkeyed, the match refines as usual.
 
   $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def P : N → Type ≔ [ zero. ↦ N | suc. _ ↦ N ]' -e 'def f (n : N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
 
+A branch of a match may be omitted if one of its pattern variables belongs to an empty type, since then the branch can never be reached.  But refuting such a variable is matching against it with no branches, so its modal annotation must be one that a match could use as a window.  A ♭-annotated variable can be matched against, since ♭ is transparent, so it can refute a branch:
+
+  $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Empty : Type ≔ data [ ]' -e 'def D : Type ≔ data [ c0. | c1. (_ :♭| Empty) ]' -e 'def g (x : D) : N ≔ match x [ c0. ↦ zero. ]'
+
+But a ♯-annotated variable cannot be matched against, so it cannot refute a branch either: the constructor needs a clause, and a hint explains why the variable doesn't suffice.
+
+  $ narya -v -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Empty : Type ≔ data [ ]' -e 'def D : Type ≔ data [ c0. | c1. (_ :♯| Empty) ]' -e 'def g (x : D) : N ≔ match x [ c0. ↦ zero. ]'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Empty defined
+  
+   ￫ info[I0000]
+   ￮ constant D defined
+  
+   ￫ hint[E1102]
+   ￭ command-line exec string
+   1 | def g (x : D) : N ≔ match x [ c0. ↦ zero. ]
+     ^ a pattern variable of empty type is annotated by modality ♯, which a match cannot use as a window, so refuting it is not allowed either
+  
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def g (x : D) : N ≔ match x [ c0. ↦ zero. ]
+     ^ missing match clause for constructor c1
+  
+  [1]
+
 Modal fields of records and codata: a field parametrized by the sinister
 modality ♭ (with right adjoint ♯) is checked, supplied, and projected behind
 the corresponding locks.
