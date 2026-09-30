@@ -2280,22 +2280,18 @@ and is_empty : type mode. (mode, kinetic) value -> D.wrapped option =
   | Canonical (_, Data { constrs = Emp; _ }, ins, _) -> Some (Wrap (cod_left_ins ins))
   | _ -> None
 
-(* Find the first of a branch's new pattern variables that belongs to an empty datatype and can be refuted -- which is to say, matched against with no branches, since that is what refuting it means.  So this is both the test of whether the branch may be refuted at all and the thing its refutation refutes, which we record in the branch so as to display it if the branch is ever reached.  In particular a variable behind a modality that a match could not use as a window does *not* refute the branch: eliminating such a variable is exactly what that modality forbids, and accepting it would admit a definition that is not total but gets stuck on the constructor in question.  The return value is either the empty match that refutes that variable, or an optional code that might warn the user about a variable they expected to refute not having a sufficiently transparent window. *)
+(* Find the first of a branch's new pattern variables that belongs to an empty datatype and can be refuted -- which is to say, matched against with no branches, since that is what refuting it means.  So this is both the test of whether the branch may be refuted at all and the thing its refutation refutes, which we record in the branch.  In particular, a variable behind a modality that a match could not use as a window does *not* refute the branch: eliminating such a variable is exactly what that modality forbids, and accepting it would admit a definition that is not total but gets stuck on the constructor in question.  The return value is either the empty match that refutes that variable, or an optional code that might warn the user about a variable they expected to refute not having a sufficiently transparent window. *)
 and empty_witness : type mode n a c.
     (mode, a, c) Ctx.t ->
+    ?errors:Reporter.Code.t list ->
     (n, mode) modal_binding_cube list ->
     ((mode, c, potential) term, Reporter.Code.t list) Result.t =
- fun ctx nfss ->
-  List.fold_left
-    (fun s (Modal (modality, nfs)) ->
-      match s with
-      | Ok _ -> s
-      | Error e1 -> (
-          match empty_witness_cube ctx modality nfs with
-          (* We accumulate all the codes to display if nothing works *)
-          | Error e2 -> Error (e1 @ e2)
-          | Ok _ as r -> r))
-    (Error []) nfss
+ fun ctx ?(errors = []) -> function
+  | [] -> Error errors
+  | Modal (modality, nfs) :: nfss -> (
+      match empty_witness_cube ctx modality nfs with
+      | Error e -> empty_witness ctx ~errors:(errors @ e) nfss
+      | Ok _ as r -> r)
 
 and empty_witness_cube : type mode dom modality k n a c.
     (mode, a, c) Ctx.t ->
@@ -2303,15 +2299,16 @@ and empty_witness_cube : type mode dom modality k n a c.
     (k, dom Binding.t) CubeOf.t ->
     ((mode, c, potential) term, Reporter.Code.t list) Result.t =
  fun ctx modality nfs ->
+  (* First we check whether there are any empty types.  If not, there is no need to inspect the modality at all, and no hint message to report if the modality is not usable.  Note that all the terms have the same modality, so there's never any need to go past the first term with an empty type. *)
   let s = ref None in
   CubeOf.miter
     {
       it =
         (fun _ [ x ] ->
-          let nf = Binding.value x in
           match !s with
           | Some _ -> ()
           | None -> (
+              let nf = Binding.value x in
               match is_empty (Lazy.force nf.ty) with
               | None -> ()
               | Some dim -> s := Some (nf, dim)));
