@@ -142,4 +142,6 @@ Whenever a file ``FILE.ny`` is successfully executed, Narya writes a "compiled" 
 
 then ``FILE.nyo`` is loaded directly instead of re-executing ``FILE.ny``, skipping the typechecking step.  This can be much faster.  If any of these conditions fail, then ``FILE.ny`` is executed from source as usual, and a new compiled version ``FILE.nyo`` is saved, overwriting the previous one.
 
+If ``FILE.ny`` is a symbolic link, then ``FILE.nyo`` is stored next to the link rather than next to its target, since the imports in the file are also resolved relative to the directory containing the link.  Paths containing ``..`` are likewise interpreted textually, so that ``a/c/../b.ny`` always refers to the same file as ``a/b.ny``.
+
 Effectual commands like ``echo`` are *not* re-executed when a file is loaded from its compiled version (they are not even stored in the compiled version).  Since this may be surprising, Narya issues a warning when loading a compiled version of a file that originally contained ``echo`` commands.  Since files explicitly specified on the command-line are never loaded from a compiled version, the best way to avoid this warning is to avoid ``echo`` statements in "library" files that are intended to be imported by other files.  Of course, you can also use ``-source-only`` to prevent all loading from compiled files.

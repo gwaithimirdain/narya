@@ -152,7 +152,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
       Bwd.fold_right
         (fun input acc ->
           match input with
-          | `File file -> FilePath.make_absolute (Sys.getcwd ()) file :: acc
+          | `File file -> Execute.normalize_filename (Sys.getcwd ()) file :: acc
           | _ -> acc)
         !inputs [] in
     Subtype.run @@ fun () ->
