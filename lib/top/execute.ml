@@ -54,6 +54,8 @@ module FlagData = struct
     unmarshal : In_channel.t -> (unit, string) Result.t;
     (* Load files from source only (not compiled versions). *)
     source_only : bool;
+    (* Don't write compiled versions of files to disk. *)
+    no_write_compiled : bool;
     (* All the filenames given explicitly on the command line. *)
     top_files : string list;
     (* Whether to reformat explicitly-loaded files *)
@@ -110,7 +112,7 @@ end
 
 (* Save all the definitions from a given loaded file to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace. *)
 let marshal (file : File.t) (filename : FilePath.filename) (trie : Scope.trie) =
-  if __COMPILE_VERSION__ > 0 then
+  if __COMPILE_VERSION__ > 0 && not (Flags.read ()).no_write_compiled then
     let ofile = FilePath.replace_extension filename "nyo" in
     try
       Out_channel.with_open_bin ofile @@ fun chan ->

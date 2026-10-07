@@ -83,6 +83,9 @@ let speclist =
     ("-deprecated-discreteness", Arg.Set discreteness, "Enable discrete datatypes (deprecated)");
     ("-discreteness", Arg.Set old_discreteness, "");
     ("-source-only", Arg.Set source_only, "Load all files from source (ignore compiled versions)");
+    ( "-no-write-compiled",
+      Arg.Set no_write_compiled,
+      "Don't write compiled versions of files (but still load existing ones)" );
     (* Mode theories *)
     ( "-coreflector",
       Arg.Unit
