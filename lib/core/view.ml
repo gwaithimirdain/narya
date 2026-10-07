@@ -44,10 +44,10 @@ let view_type : type mode.
 let force_eval : type mode s. (mode, s) lazy_eval -> (mode, s) evaluation =
  fun tm -> !eval_forcer.force tm
 
-(* Extract the variable-name hints associated to a type value, if it is a canonical datatype or codatatype with such hints declared.  This is used when generating names to display anonymous variables of that type.  We can't use view_type, since it requires higher-dimensional types to be fully instantiated, whereas the domains of a higher-dimensional pi-type are not.  Instead we force the value of the neutral directly.  Since this only affects display, if anything goes wrong (e.g. the value is not actually a type) we just return no hints rather than failing. *)
+(* Extract the variable-name hints associated to a type value, if it is a canonical datatype or codatatype with such hints declared.  This is used when generating names to display anonymous variables of that type.  We can't use view_type, since it requires higher-dimensional types to be fully instantiated, whereas the domains of a higher-dimensional pi-type are not.  Instead we force the value of the neutral directly.  Since this only affects display, if anything goes wrong (e.g. the value is not actually a type) we just return no hints rather than failing (though internal errors are still reported). *)
 let hints_of_ty : type mode. (mode, kinetic) value -> hints =
  fun ty ->
-  Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+  Reporter.backtrack ~fatal:(fun _ -> no_hints) @@ fun () ->
   match view_term ty with
   | Neu { value; _ } -> (
       match force_eval value with
