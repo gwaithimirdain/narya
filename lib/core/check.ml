@@ -3888,45 +3888,50 @@ and synth : type mode a b s.
               let cz = check (Kinetic `Nolet) ctx z ty in
               let ez = eval_term env cz in
               match yeqz with
-              | Some yeqz ->
+              | Some (yeqz, dir) -> (
                   let nz : mode normal = { tm = ez; ty = Lazy.from_val ty } in
-                  Reporter.backtrack
-                    (fun () ->
-                      let yztube =
-                        Hott.tube ny nz <|> Unimplemented "equational reasoning without -hott" in
-                      let idyz = inst idty yztube in
-                      let cyeqz = check (Kinetic `Nolet) ctx yeqz idyz in
-                      let pqtube =
-                        Hott.tube12 hh cx cx creflx cy cz cyeqz
-                        <|> Unimplemented "equational reasoning without -hott" in
-                      ( cz,
-                        nz,
-                        app
-                          (Field
-                             ( modal_id mode (Inst (ididcty, pqtube)),
-                               Field.intern "trr" Hott.dim,
-                               id_ins D.zero (D.zero_plus Hott.dim) ))
-                          idm (plus_no_lock mode) xeqy ))
-                      (* If that didn't work, we try reversing the equality and checking that instead. *)
-                    ~fatal:(fun d ->
-                      let zytube =
-                        Hott.tube nz ny <|> Unimplemented "equational reasoning without -hott" in
-                      let idzy = inst idty zytube in
-                      let czeqy =
-                        (* But if that also fails, we report only the error from the forwards direction (unless the reversed check hit an internal error). *)
-                        Reporter.backtrack ~fatal:(fun _ -> fatal_diagnostic d) @@ fun () ->
-                        check (Kinetic `Nolet) ctx yeqz idzy in
-                      let pqtube =
-                        Hott.tube12 hh cx cx creflx cz cy czeqy
-                        <|> Unimplemented "equational reasoning without -hott" in
-                      ( cz,
-                        nz,
-                        app
-                          (Field
-                             ( modal_id mode (Inst (ididcty, pqtube)),
-                               Field.intern "trl" Hott.dim,
-                               id_ins D.zero (D.zero_plus Hott.dim) ))
-                          idm (plus_no_lock mode) xeqy ))
+                  let forward () =
+                    let yztube =
+                      Hott.tube ny nz <|> Unimplemented "equational reasoning without -hott" in
+                    let idyz = inst idty yztube in
+                    let cyeqz = check (Kinetic `Nolet) ctx yeqz idyz in
+                    let pqtube =
+                      Hott.tube12 hh cx cx creflx cy cz cyeqz
+                      <|> Unimplemented "equational reasoning without -hott" in
+                    ( cz,
+                      nz,
+                      app
+                        (Field
+                           ( modal_id mode (Inst (ididcty, pqtube)),
+                             Field.intern "trr" Hott.dim,
+                             id_ins D.zero (D.zero_plus Hott.dim) ))
+                        idm (plus_no_lock mode) xeqy ) in
+                  let reversed () =
+                    let zytube =
+                      Hott.tube nz ny <|> Unimplemented "equational reasoning without -hott" in
+                    let idzy = inst idty zytube in
+                    let czeqy = check (Kinetic `Nolet) ctx yeqz idzy in
+                    let pqtube =
+                      Hott.tube12 hh cx cx creflx cz cy czeqy
+                      <|> Unimplemented "equational reasoning without -hott" in
+                    ( cz,
+                      nz,
+                      app
+                        (Field
+                           ( modal_id mode (Inst (ididcty, pqtube)),
+                             Field.intern "trl" Hott.dim,
+                             id_ins D.zero (D.zero_plus Hott.dim) ))
+                        idm (plus_no_lock mode) xeqy ) in
+                  match dir with
+                  (* A step marked as reversed is checked only in the reversed orientation. *)
+                  | `Reversed -> reversed ()
+                  | `Plain ->
+                      Reporter.backtrack
+                        forward
+                        (* If that didn't work, we try reversing the equality and checking that instead. *)
+                        ~fatal:(fun d ->
+                          (* But if that also fails, we report only the error from the forwards direction (unless the reversed check hit an internal error). *)
+                          Reporter.backtrack reversed ~fatal:(fun _ -> fatal_diagnostic d)))
               | None -> (
                   with_loc z.loc @@ fun () ->
                   match equal_at ctx ny.tm ez ty with

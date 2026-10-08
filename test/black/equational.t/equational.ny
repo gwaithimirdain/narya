@@ -62,6 +62,22 @@ def xz'def
       (A⁽ᵉᵉ⁾ (refl x) s .trl (A⁽ᵉᵉ⁾ (refl x) p .trr (refl x)))
   ≔ refl xz'
 
+def xz'' : Id A x z ≔ calc
+  x
+  = y
+      by p
+  = z
+      by ← s ∎
+
+def xz''def : Id (Id A x z) xz'' xz' ≔ refl xz''
+
+def xz''' : Id A x z ≔ calc
+  x
+  = y
+      by p
+  = z
+      by <- s ∎
+
 def ℕ : Type ≔ data [ zero. : ℕ | suc. : ℕ → ℕ ]
 def plus (m n : ℕ) : ℕ ≔ match m [ zero. ↦ n | suc. m' ↦ suc. (plus m' n) ]
 
