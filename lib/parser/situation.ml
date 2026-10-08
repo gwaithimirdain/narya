@@ -30,6 +30,12 @@ type t = {
   left_opens : No.interval TokMap.t;
   (* For unparsing we also store backwards maps turning constants and constructors into notations.  Since the arguments of a notation can occur in a different order from those of the constant or constructor, we store lists of the argument names in the order they occur in the pattern and in the term value.  Note that these permutations are only used for printing; when parsing, the postprocessor function must ALSO incorporate the inverse permutation. *)
   unparse : User.notation PrintMap.t;
+  (* A chain of 'suc' constructors ending in something that isn't a numeral has no numeral to be
+     written as, but it is still a number plus a number: "suc. (suc. x)" is x+2.  A caller that has
+     an operator to write that with registers it here, and the unparser uses it (see
+     unparse_successors); without one, such a chain prints as the constructors it is.  The notation
+     registered is expected to be a binary one, taking the term the chain ends in and the count. *)
+  successor : User.notation option;
   (* Finally, we remember which user notations we have merged into the trees above.  Merging one in a second time would make it ambiguous with itself, and a notation can arrive more than once: the namespace containing it can be made visible or imported again, and each arrival compiles it anew. *)
   users : unit IdMap.t;
 }
@@ -42,6 +48,7 @@ let empty : t =
       |> EntryMap.add No.minus_omega { strict = empty_entry; nonstrict = empty_entry };
     left_opens = TokMap.empty;
     unparse = PrintMap.empty;
+    successor = None;
     users = IdMap.empty;
   }
 
@@ -120,6 +127,10 @@ let add_print : User.notation -> t -> t =
     sit with
     unparse = List.fold_left (fun up key -> up |> PrintMap.add key notn) sit.unparse notn.keys;
   }
+
+(* Record the notation that iterated successors of a non-numeral are written with.  This says only
+   how to print them; nothing parses to a 'suc' constructor by it. *)
+let set_successor : User.notation -> t -> t = fun notn sit -> { sit with successor = Some notn }
 
 (* Add a notation along with the information about how to unparse a constant or constructor into that notation. *)
 let add_with_print : User.notation -> t -> t =

@@ -342,3 +342,76 @@ With -no-write-compiled, no compiled files are written, but existing ones are st
 
   $ test -e nw1.nyo && (test -e nw2.nyo || echo only nw1)
   only nw1
+
+A file loaded through a symlink has its compiled version next to the symlink, and is recompiled
+when the symlink's target is modified
+
+  $ mkdir symlib symproj
+
+  $ cat >symlib/one.ny <<EOF
+  > axiom A : Type
+  > EOF
+
+  $ ln -s ../symlib/one.ny symproj/one.ny
+
+  $ cat >symproj/two.ny <<EOF
+  > import "one"
+  > axiom a : A
+  > EOF
+
+  $ narya symproj/two.ny
+
+  $ test -e symproj/one.nyo && (test -e symlib/one.nyo || echo next to symlink)
+  next to symlink
+
+  $ touch -t 202001010000 symlib/one.ny symproj/one.nyo symproj/two.ny symproj/two.nyo
+
+  $ touch -h -t 202001010000 symproj/one.ny
+
+  $ cat >symlib/one.ny <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > EOF
+
+  $ narya -v symproj/two.ny
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/symproj/one.ny
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/symproj/one.ny (source)
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+
+The same file referred to with ".." is not loaded twice
+
+  $ mkdir -p dots/sub
+
+  $ cat >dots/d1.ny <<EOF
+  > axiom A : Type
+  > EOF
+
+  $ narya -v -e 'import "dots/d1"' -e 'import "dots/sub/../d1"'
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/dots/d1.ny
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/dots/d1.ny (source)
+  
+
+Nor if one of them is given on the command line
+
+  $ narya -v dots/sub/../d1.ny -e 'import "dots/d1"'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  

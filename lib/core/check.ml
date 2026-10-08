@@ -970,10 +970,8 @@ let rec check : type mode a b s.
     | Realize ktm, Kinetic l -> check (Kinetic l) ctx (locate_opt tm.loc ktm) ty
     (* Nothing is embedded *)
     | Embed _, _ -> .
-    (* If we're using the checking type as an implicit first argument: *)
-    | ImplicitApp (fn, args), _ -> (
-        (* We read it back, so we can put it as the first argument in the generated term. *)
-        let cty = readback_val ctx ty in
+    (* If we're using the checking type, or an argument of it, as an implicit first argument: *)
+    | ImplicitApp (fn, src, args), _ -> (
         (* Now we act like synth on an application. *)
         let sfn, sty = synth (Kinetic `Nolet) ctx fn in
         match view_type sty "ImplicitApp" with
@@ -983,44 +981,57 @@ let rec check : type mode a b s.
             (* Only 0-dimensional and non-modal applications are allowed. *)
             match (D.compare (CubeOf.dim doms) D.zero, Modality.compare_id modality) with
             | Eq, Eq -> (
-                (* The first argument must be a type. *)
-                match view_type (CubeOf.find_top doms) "ImplicitApp argument" with
-                | Canonical (_, UU _, _, _) -> (
-                    (* We build the implicit application term and its type. *)
-                    let mode = Ctx.mode ctx in
-                    let idm = Modality.id mode in
-                    let new_sfn =
-                      locate_opt fn.loc
-                        (Term.App
-                           ( sfn,
-                             D.zero,
-                             Modality.filter_id mode D.zero,
-                             Modal (idm, plus_no_lock mode, CubeOf.singleton cty) )) in
-                    let new_sty = tyof_app cods tyargs filter (CubeOf.singleton ty) in
-                    (* And then proceed applying to the rest of the arguments, if any. *)
-                    let stm, sty =
-                      match args with
-                      | _ :: _ ->
-                          let args =
-                            List.map
-                              (fun (l, x) ->
-                                (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
-                              args in
-                          synth_apps ctx new_sfn new_sty
-                            { value = Synth fn.value; loc = fn.loc }
-                            args
-                      | _ -> (new_sfn.value, new_sty) in
-                    (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
-                    match equal_val ctx sty ty with
-                    | Ok () -> realize status stm
-                    | Error why ->
-                        fatal
-                          (Unequal_synthesized_type
-                             { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why })
-                    )
-                | _ ->
-                    fatal ?loc:fn.loc
-                      (Anomaly "first argument of an ImplicitMap is not of type Type"))
+                let dom = CubeOf.find_top doms in
+                (* The implicit argument, as a value, and read back so we can put it as the first argument in the generated term. *)
+                let arg, carg =
+                  match src with
+                  | `Goal -> (
+                      (* The first argument must be a type. *)
+                      match view_type dom "ImplicitApp argument" with
+                      | Canonical (_, UU _, _, _) -> (ty, readback_val ctx ty)
+                      | _ ->
+                          fatal ?loc:fn.loc
+                            (Anomaly "first argument of an ImplicitApp is not of type Type"))
+                  | `Goal_arg i -> (
+                      (* The argument we find must also have the type of the function's first argument; if it doesn't, the goal isn't of the shape this function proves, which is the same mistake as its not having such an argument at all, so we report it the same way. *)
+                      match implicit_goal_arg ctx ty i with
+                      | Some nf when Result.is_ok (equal_val ctx (Lazy.force nf.ty) dom) ->
+                          (nf.tm, readback_nf ctx nf)
+                      | _ ->
+                          let pfn =
+                            match fn.value with
+                            | Const c -> PConstant c
+                            | _ -> PTerm (ctx, sfn) in
+                          fatal ?loc:fn.loc (No_implicit_goal_arg (pfn, PVal (ctx, ty)))) in
+                (* We build the implicit application term and its type. *)
+                let mode = Ctx.mode ctx in
+                let idm = Modality.id mode in
+                let new_sfn =
+                  locate_opt fn.loc
+                    (Term.App
+                       ( sfn,
+                         D.zero,
+                         Modality.filter_id mode D.zero,
+                         Modal (idm, plus_no_lock mode, CubeOf.singleton carg) )) in
+                let new_sty = tyof_app cods tyargs filter (CubeOf.singleton arg) in
+                (* And then proceed applying to the rest of the arguments, if any. *)
+                let stm, sty =
+                  match args with
+                  | _ :: _ ->
+                      let args =
+                        List.map
+                          (fun (l, x) ->
+                            (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
+                          args in
+                      synth_apps ctx new_sfn new_sty { value = Synth fn.value; loc = fn.loc } args
+                  | _ -> (new_sfn.value, new_sty) in
+                (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
+                match equal_val ctx sty ty with
+                | Ok () -> realize status stm
+                | Error why ->
+                    fatal
+                      (Unequal_synthesized_type
+                         { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
             | Neq, _ ->
                 fatal ?loc:fn.loc (Dimension_mismatch ("ImplicitApp", CubeOf.dim doms, D.zero))
             | _, Neq -> fatal ?loc:fn.loc (Anomaly "modal implicit applications not allowed"))
@@ -1560,10 +1571,13 @@ and check_match_branches : type dom window mode a b bm.
                 ( branches
                   |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm = cbody }),
                   errs )
-            (* If there is no body, the user omitted this constructor, which is valid if and only if one of the pattern variables belongs to an empty type. *)
-            | None, _ ->
-                if any_empty newnfs then (branches |> Constr.Map.add constr Term.Refute, errs)
-                else fatal (Missing_constructor_in_match constr))
+            (* If there is no body, the user omitted this constructor, which is valid if and only if one of the pattern variables belongs to an empty type and can be refuted. *)
+            | None, _ -> (
+                match any_refutable newnfs with
+                | Ok () -> (branches |> Constr.Map.add constr Term.Refute, errs)
+                | Error err ->
+                    List.iter emit err;
+                    fatal (Missing_constructor_in_match constr)))
           (branches, errs) check_branches in
       match errs with
       | Snoc _ -> fatal (Accumulated ("check_match_branches", errs))
@@ -1821,7 +1835,7 @@ and check_var_match : type dom modality mode a b bm.
       let is_fresh (x : dom normal) =
         (* With glued evaluation, an index can be a glued neutral whose stored value unfolds to a free variable, e.g. a transport along a variable that has been refined to reflexivity.  Such an index refines just as well as a bare variable, so we look through the unfolding.  (With glued evaluation off, view_term is the identity.) *)
         match view_term x.tm with
-        | Neu { head = Var { level; deg; key = _ }; args = Emp; value; ty = _ } -> (
+        | Neu { head = Var { level; deg; key }; args = Emp; value; ty = _ } -> (
             match force_eval value with
             | Unrealized ->
                 (if Option.is_none (is_id_deg deg) then
@@ -1829,6 +1843,13 @@ and check_var_match : type dom modality mode a b bm.
                    fatal
                      (Matching_wont_refine
                         ("index variable has degeneracy", Some (PNormal (lctx, x)))));
+                (* Rebinding a variable rebinds what its *unkeyed* uses evaluate to, so an index variable whose use is keyed cannot be rebound: the value we would bind is available only at the window's modality, not at the variable's own annotation.  Unkeyed means an identity 2-cell on the variable's own annotation, which for an index is the match's window. *)
+                (match Modalcell.compare key (Modalcell.id window) with
+                | Eq -> ()
+                | Neq ->
+                    let (Locked (_, lctx)) = Ctx.lock ctx window in
+                    fatal
+                      (Matching_wont_refine ("index variable is keyed", Some (PNormal (lctx, x)))));
                 (if Hashtbl.mem seen level then
                    let (Locked (_, lctx)) = Ctx.lock ctx window in
                    fatal
@@ -1995,25 +2016,29 @@ and check_var_match : type dom modality mode a b bm.
                                    (Term.Branch { annotate; comp; perm = checked_perm; tm = branch }),
                               errs )
                         (* If not, then we look for something to refute. *)
-                        | None ->
-                            (* First we check whether any of the new pattern variables created by this match belong to an empty datatype. *)
-                            if
-                              any_empty newnfs
-                              ||
-                              (* Otherwise, we check the stored "refutables", which include all the previous and succeeding pattern variables. *)
-                              List.fold_left
-                                (fun s x ->
-                                  if s then true
-                                  else
-                                    let _, sty = synth (Kinetic `Nolet) newctx x in
-                                    is_empty sty)
-                                false
-                                (Option.fold
-                                   ~some:(fun r -> r.refutables (Namevec.bplus xs))
-                                   ~none:[] refutables)
-                              (* If we found something to refute, we mark this branch as refuted in the compiled match. *)
-                            then (branches |> Constr.Map.add constr Term.Refute, errs)
-                            else fatal (Missing_constructor_in_match constr))))
+                        | None -> (
+                            let result =
+                              (* First we check whether any of the new pattern variables created by this match belong to an empty datatype and can be refuted. *)
+                              match any_refutable newnfs with
+                              | Ok () -> Ok ()
+                              | Error _ as err ->
+                                  (* Otherwise, we check the stored "refutables", which include all the previous and succeeding pattern variables.  A refutable is synthesized in the ambient context, so its refutation needs no window. *)
+                                  if
+                                    List.exists
+                                      (fun x ->
+                                        let _, sty = synth (Kinetic `Nolet) newctx x in
+                                        is_empty sty)
+                                      (Option.fold
+                                         ~some:(fun r -> r.refutables (Namevec.bplus xs))
+                                         ~none:[] refutables)
+                                  then Ok ()
+                                  else err in
+                            match result with
+                            (* If we found something to refute, we mark this branch as refuted in the compiled match. *)
+                            | Ok () -> (branches |> Constr.Map.add constr Term.Refute, errs)
+                            | Error err ->
+                                List.iter emit err;
+                                fatal (Missing_constructor_in_match constr)))))
             | _ -> fatal (Anomaly "created datatype is not a datatype with all its indices"))
           (Constr.Map.empty, Emp) user_branches in
       match errs with
@@ -2244,16 +2269,40 @@ and is_empty : type mode. (mode, kinetic) value -> bool =
   | Canonical (_, Data { constrs = Emp; _ }, _, _) -> true
   | _ -> false
 
-and any_empty : type mode n. (n, mode) modal_binding_cube list -> bool =
+(* Whether one of a branch's new pattern variables belongs to an empty datatype and can be refuted -- which is to say, matched against with no branches, since that is what refuting it means.  In particular a variable behind a modality that a match could not use as a window does *not* refute the branch: eliminating such a variable is exactly what that modality forbids, and accepting it would admit a definition that is not total but gets stuck on the constructor in question.  If no variable can be refuted, we return codes that explain which variables of empty type were ruled out by their modality, to be displayed as hints if nothing else works. *)
+and any_refutable : type mode n.
+    (n, mode) modal_binding_cube list -> (unit, Reporter.Code.t list) Result.t =
  fun nfss ->
-  let s = ref false in
-  List.iter
-    (fun (Modal (_modality, nfs)) ->
-      CubeOf.miter
-        { it = (fun _ [ x ] -> if is_empty (Lazy.force (Binding.value x).ty) then s := true) }
-        [ nfs ])
-    nfss;
-  !s
+  List.fold_left
+    (fun s (Modal (modality, nfs)) ->
+      match s with
+      | Ok () -> s
+      | Error e1 -> (
+          match refutable_cube modality nfs with
+          (* We accumulate all the codes to display if nothing works *)
+          | Error e2 -> Error (e1 @ e2)
+          | Ok () -> Ok ()))
+    (Error []) nfss
+
+and refutable_cube : type mode dom modality k n.
+    (dom, modality, mode, k, n) Modality.filter_dim ->
+    (k, dom Binding.t) CubeOf.t ->
+    (unit, Reporter.Code.t list) Result.t =
+ fun modality nfs ->
+  let empty = ref false in
+  CubeOf.miter
+    { it = (fun _ [ x ] -> if is_empty (Lazy.force (Binding.value x).ty) then empty := true) }
+    [ nfs ];
+  match !empty with
+  | false -> Error []
+  | true ->
+      let mu = Modality.filter_modality modality in
+      (* The datatype is empty, hence nonrecursive and not single-constructor, so check_window_transparency's condition on a window comes down to this. *)
+      let usable =
+        match Modality.compare_id mu with
+        | Eq -> true
+        | Neq -> Modality.pellucid mu || Modality.transparent mu in
+      if usable then Ok () else Error [ Nonrefutable_modal_variable mu ]
 
 and check_data : type mode a b i.
     discrete:unit Constant.Map.t option ->
@@ -2335,8 +2384,10 @@ and check_data : type mode a b i.
                               checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices }),
                               errs )
                         | _ ->
-                            (* I think this shouldn't ever happen, no matter what the user writes, since we know at this point that the output is a full application of the correct constant, so it must have the right number of arguments. *)
-                            fatal (Anomaly "length of indices mismatch")))
+                            (* This can happen if the number of indices expected, which is computed from the type the datatype is being checked against, differs from the number of arguments the current constant actually takes.  For instance, if a 'match' with an explicit motive is used to define an indexed family, the motive could specify fewer indices than the constant has. *)
+                            fatal ?loc:output.loc
+                              (Invalid_constructor_type (c, Left "wrong number of index arguments"))
+                        ))
                 | _ -> fatal ?loc:output.loc err)
             | _ -> fatal ?loc:output.loc err in
           check_data
@@ -2364,6 +2415,46 @@ and check_data : type mode a b i.
                 ~recursive:(Positivity.merge recursive crec) ~hints ~tyfam status ctx ty Fwn.zero
                 checked_constrs raw_constrs errs
           | Suc _ -> fatal (Missing_constructor_type c)))
+
+(* The argument at position i of the constant that a type is an application of, for an ImplicitApp.  It must be an ordinary 0-dimensional non-modal argument at the ambient mode; if there is no such argument, the caller reports the goal as not having the shape it was looking for. *)
+and implicit_goal_arg : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> int -> mode normal option =
+ fun _ctx ty i ->
+  (* A spine entry that can't be an implicit argument aborts the search: the mode equation the recursion returns isn't available at such an entry, so we can't just return "not found" from inside it. *)
+  let exception No_arg in
+  (* As in get_indices, the mode equation between the start of the remaining spine and the ambient mode only becomes available once we reach its end, so we return it from the recursion. *)
+  let rec go : type m1. (m1, mode) Fwd_app.fwd -> int -> (m1, mode) Eq.t * m1 normal option =
+   fun apps j ->
+    match apps with
+    | Nil -> (Eq, None)
+    | Cons
+        ( Fwd_app.Arg
+            (type dom modality n k m mk)
+            ((filter, arg, ins) :
+              (dom, modality, m1, n, m) Modality.filter_dim
+              * (n, dom normal) CubeOf.t
+              * (mk, m, k) insertion),
+          rest ) -> (
+        let Eq, found = go rest (j - 1) in
+        if j <> 0 then (Eq, found)
+        else
+          let modality = Modality.filter_modality filter in
+          match
+            (is_id_ins ins, Modality.compare_id modality, D.compare (CubeOf.dim arg) D.zero)
+          with
+          | Some _, Eq, Eq -> (Eq, Some (CubeOf.find_top arg))
+          | _ -> raise No_arg)
+    | Cons (Field _, _) -> raise No_arg in
+  match ty with
+  | Neu { head = Const _; args; value = _; ty = _ } -> (
+      match args with
+      | Inst _ -> None
+      | Emp | Arg _ | Field _ -> (
+          try
+            match go (Fwd_app.of_apps args) i with
+            | Eq, nf -> nf
+          with No_arg -> None))
+  | _ -> None
 
 (* Get the indices from the codomain of a constructor's type. *)
 and get_indices : type mode hmode1 hmode2 a b any1 any2.
@@ -3657,7 +3748,7 @@ and synth : type mode a b s.
     | ImplicitSApp (fn, apploc, arg), _ -> (
         (* We synthesize both function and argument *)
         let sfn, sfnty = synth (Kinetic `Nolet) ctx fn in
-        let _, sargty = synth (Kinetic `Nolet) ctx arg in
+        let sarg, sargty = synth (Kinetic `Nolet) ctx arg in
         (* We read back the synthesized type, so we can put it as the first argument in the generated term. *)
         let cargty = readback_val ctx sargty in
         match view_type sfnty "ImplicitSApp" with
@@ -3681,15 +3772,50 @@ and synth : type mode a b s.
                          Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty) ))
                 in
                 let new_sty = tyof_app cods tyargs filter (CubeOf.singleton sargty) in
-                (* And then apply to the argument. *)
-                let stm, sty =
-                  synth_apps ctx new_sfn new_sty
-                    { value = Synth fn.value; loc = fn.loc }
-                    [
-                      ( apploc,
-                        locate_opt arg.loc (Some (Synth arg.value)),
-                        locate_opt None `Explicit );
-                    ] in
+                (* And then apply to the argument.  We apply the term we already synthesized for it,
+                   rather than elaborating it all over again: the argument can itself be an
+                   ImplicitSApp, and elaborating each one twice would make a nest of them take
+                   exponential time. *)
+                let ((stm, sty) : (mode, b, kinetic) term * (mode, kinetic) value) =
+                  match view_type new_sty "ImplicitSApp" with
+                  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) -> (
+                      let Eq = eq_of_ins_zero ins in
+                      let modality = Modality.filter_modality filter in
+                      match
+                        (D.compare (CubeOf.dim doms) D.zero, Modality.compare_id modality)
+                      with
+                      | Eq, Eq -> (
+                          (* The domain is the type we just supplied, so this can only fail if the
+                             function's type isn't of the expected shape. *)
+                          match equal_val ctx sargty (CubeOf.find_top doms) with
+                          | Ok () ->
+                              let earg = eval_term (Ctx.env ctx) sarg in
+                              ( Term.App
+                                  ( new_sfn.value,
+                                    BindCube.dim cods,
+                                    filter,
+                                    Modal
+                                      ( Modality.id mode,
+                                        plus_no_lock mode,
+                                        CubeOf.singleton sarg ) ),
+                                tyof_app cods tyargs filter (CubeOf.singleton earg) )
+                          | Error why ->
+                              fatal ?loc:arg.loc
+                                (Unequal_synthesized_type
+                                   {
+                                     got = PVal (ctx, sargty);
+                                     expected = PVal (ctx, CubeOf.find_top doms);
+                                     which = None;
+                                     why;
+                                   }))
+                      | _ ->
+                          fatal ?loc:fn.loc
+                            (Anomaly "second argument of an ImplicitSApp is not ordinary"))
+                  | _ ->
+                      fatal ?loc:fn.loc
+                        (Applying_nonfunction_nontype
+                           (PTerm (ctx, new_sfn.value), PVal (ctx, new_sty))) in
+                ignore apploc;
                 (realize status stm, sty)
             | _, _, Neq -> fatal ?loc:fn.loc (Unimplemented "nonidentity modality in ImplicitSApp")
             | Eq, _, _ ->
@@ -4333,7 +4459,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Refute (_, _) -> None
       | Hole _ -> None
       | Realize _ -> None
-      | ImplicitApp (_, _) -> None
+      | ImplicitApp (_, _, _) -> None
       | Embed _ -> .
       | First _ -> None
       | Oracle _ -> None

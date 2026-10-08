@@ -455,8 +455,8 @@ let rec unparse : type mode n lt ls rt rs s.
                   wstok RParen )))
   | Constr (c, _, args) -> (
       (* TODO: This doesn't print the dimension.  This is correct since constructors don't have to (and in fact *can't* be) written with their dimension, but it could also be somewhat confusing, e.g. printing "refl (0:N)" yields just "0", and similarly "refl (nil. : List N)" yields "nil.". *)
-      match unparse_numeral tm with
-      | Some tm -> tm.unparse li ri
+      match unparse_numeral vars tm li ri with
+      | Some res -> res
       | None ->
           let args =
             of_list_map
@@ -794,32 +794,41 @@ and unparse_lam_done : type mode n lt ls rt rs s.
       parenthesize
         (unlocated (infix ~notn ~first ~inner:(Single (wstok mapsto)) ~last ~left_ok ~right_ok))
 
-(* If a term is a natural number numeral (a bunch of 'suc' constructors applied to a 'zero' constructor), unparse it as that numeral; otherwise return None. *)
-and unparse_numeral : type mode n. (mode, n, kinetic) term -> unparser option =
- fun tm ->
+(* If a term is a natural number numeral (a chain of 'suc' constructors applied to a 'zero' or a 'one' constructor), unparse it as that numeral.  If it is a "generalized numeral" (a chain of 'suc' constructors applied to something else), look for a notation registered to write iterated successors with (see Scope.Situation.set_successor), and unparse it using this notation applied to the term the chain ends in and the count of successors, for instance 'x+2' for 'suc. (suc. x)'.  If it is none of these, return None. *)
+and unparse_numeral : type mode n lt ls rt rs.
+    n Names.t ->
+    (mode, n, kinetic) term ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located option =
+ fun vars tm li ri ->
   (* As in parsing, it would be better not to hardcode these constructor names. *)
   let zero = Constr.intern "zero" in
   let one = Constr.intern "one" in
   let suc = Constr.intern "suc" in
   let make_numeral dim k =
     let tm = { unparse = (fun _ _ -> unlocated (Ident ([ string_of_int k ], []))) } in
-    Some
-      {
-        unparse =
-          (fun li ri -> unparse_act ~sort:(`Other, `Other) Names.empty tm (deg_zero dim) li ri);
-      } in
-  let rec getsucs : type m c. (m, c, kinetic) term -> int -> unparser option =
-   fun tm k ->
+    Some (unparse_act ~sort:(`Other, `Other) Names.empty tm (deg_zero dim) li ri) in
+  let rec getsucs : type c.
+      c Names.t -> (mode, c, kinetic) term -> int -> (lt, ls, rt, rs) parse located option =
+   fun vars tm k ->
     match tm with
     | Term.Constr (c, dim, []) when c = zero -> make_numeral dim k
     | Term.Constr (c, dim, []) when c = one -> make_numeral dim (k + 1)
-    | Constr (c, _, [ Modal (filter, _, arg) ]) when c = suc -> (
-        (* Currently, only "suc" constructors with non-modal argument can be displayed as numerals. *)
+    | Term.Constr (c, _, [ Modal (filter, plus, arg) ]) when c = suc -> (
+        (* Currently, only "suc" constructors with non-modal argument can be displayed as (generalized) numerals. *)
         match Modality.compare_id (Modality.filter_modality filter) with
-        | Eq -> getsucs (CubeOf.find_top arg) (k + 1)
+        | Eq -> getsucs (Names.add_lock vars plus) (CubeOf.find_top arg) (k + 1)
         | Neq -> None)
-    | _ -> None in
-  getsucs tm 0
+    | _ -> (
+        match Scope.Situation.successor () with
+        | Some { notn = Wrap notn; pat_vars; val_vars = _; inner_symbols; keys = _ }
+          when k > 0 && List.length pat_vars = 2 ->
+            let base = make_unparser vars tm in
+            let count = { unparse = (fun _ _ -> unlocated (Ident ([ string_of_int k ], []))) } in
+            Some (unparse_notation notn [ base; count ] inner_symbols li ri)
+        | _ -> None) in
+  getsucs vars tm 0
 
 and unparse_act : type n lt ls rt rs a b.
     sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
