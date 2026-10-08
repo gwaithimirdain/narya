@@ -705,3 +705,21 @@ being defined used to produce an anomaly when checking the constructor outputs.
      ^ invalid output type for constructor v1: wrong number of index arguments
   
   [1]
+
+  $ narya issue144.ny
+  A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ .trr x⁽ᵉᵉ⁾
+    : A⁽ᵉᵉ⁾ (refl x) (refl x) (refl x) (refl x)
+  
+  A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ .liftr x⁽ᵉᵉ⁾
+    : A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾
+        (A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ .trr x⁽ᵉᵉ⁾)
+  
+  A⁽ᵉᵉᵉᵉ⁾ x⁽ᵉᵉᵉ⁾ x⁽ᵉᵉᵉ⁾ x⁽ᵉᵉᵉ⁾ x⁽ᵉᵉᵉ⁾ x⁽ᵉᵉᵉ⁾ x⁽ᵉᵉᵉ⁾ .trr x⁽ᵉᵉᵉ⁾
+    : A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾
+  
+  B⁽ᵉᵉᵉ⁾ (A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ .liftr x⁽ᵉᵉ⁾) u⁽ᵉᵉ⁾ u⁽ᵉᵉ⁾ u⁽ᵉᵉ⁾
+      u⁽ᵉᵉ⁾
+    .trr u⁽ᵉᵉ⁾
+    : B⁽ᵉᵉ⁾ (A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ .trr x⁽ᵉᵉ⁾) (refl u) (refl u)
+        (refl u) (refl u)
+  
