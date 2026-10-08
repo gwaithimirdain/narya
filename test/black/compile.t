@@ -314,6 +314,108 @@ Echos are not re-executed in compiled files
    ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/echo.nyo
   
 
+With -no-write-compiled, no compiled files are written, but existing ones are still loaded
+
+  $ cat >nw1.ny <<EOF
+  > axiom A : Type
+  > EOF
+
+  $ cat >nw2.ny <<EOF
+  > import "nw1"
+  > axiom a0 : A
+  > EOF
+
+  $ narya -no-write-compiled nw2.ny
+
+  $ test -e nw1.nyo || test -e nw2.nyo || echo none
+  none
+
+  $ narya nw1.ny
+
+  $ narya -no-write-compiled -v nw2.ny
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/nw1.ny (compiled)
+  
+   ￫ info[I0001]
+   ￮ axiom a0 assumed
+  
+
+  $ test -e nw1.nyo && (test -e nw2.nyo || echo only nw1)
+  only nw1
+
+A file loaded through a symlink has its compiled version next to the symlink, and is recompiled
+when the symlink's target is modified
+
+  $ mkdir symlib symproj
+
+  $ cat >symlib/one.ny <<EOF
+  > axiom A : Type
+  > EOF
+
+  $ ln -s ../symlib/one.ny symproj/one.ny
+
+  $ cat >symproj/two.ny <<EOF
+  > import "one"
+  > axiom a : A
+  > EOF
+
+  $ narya symproj/two.ny
+
+  $ test -e symproj/one.nyo && (test -e symlib/one.nyo || echo next to symlink)
+  next to symlink
+
+  $ touch -t 202001010000 symlib/one.ny symproj/one.nyo symproj/two.ny symproj/two.nyo
+
+  $ touch -h -t 202001010000 symproj/one.ny
+
+  $ cat >symlib/one.ny <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > EOF
+
+  $ narya -v symproj/two.ny
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/symproj/one.ny
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/symproj/one.ny (source)
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+
+The same file referred to with ".." is not loaded twice
+
+  $ mkdir -p dots/sub
+
+  $ cat >dots/d1.ny <<EOF
+  > axiom A : Type
+  > EOF
+
+  $ narya -v -e 'import "dots/d1"' -e 'import "dots/sub/../d1"'
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/dots/d1.ny
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/dots/d1.ny (source)
+  
+
+Nor if one of them is given on the command line
+
+  $ narya -v dots/sub/../d1.ny -e 'import "dots/d1"'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+
 Incomplete compiled files are ignored and the source loaded instead, which writes a
 complete compiled file again
 

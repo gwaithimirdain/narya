@@ -14,6 +14,15 @@ module Trie = Yuujinchou.Trie
 let __COMPILE_VERSION__ =
   Option.value ~default:(-1) (int_of_string_opt ("0x" ^ [%blob "version.txt"]))
 
+(* The modification time of a file.  We follow symlinks, since a file loaded through a symlink is modified when its target is.  (The tests in FileUtil.test, such as Is_older_than, compare against the modification time of a symlink itself.) *)
+let mtime file = (FileUtil.stat ~dereference:true file).modification_time
+
+(* Normalize a file path, relative to a given directory, to a reduced absolute one, so we can use it as a hashtable key.  Symlinks are not resolved: a file loaded through a symlink is identified by the path of the symlink, has its compiled version stored next to the symlink, and resolves its imports relative to the symlink's directory.  Consistently with this, ".." is reduced lexically, so that "a/c/../b.ny" is the same file as "a/b.ny" even if "a/c" is a symlink. *)
+let normalize_filename cwd filename =
+  let filename =
+    if FilePath.is_relative filename then FilePath.make_absolute cwd filename else filename in
+  FilePath.reduce ~no_symlink:true filename
+
 (* This state module is for data that gets restarted when loading a new file. *)
 module Loadstate = struct
   type t = {
@@ -54,6 +63,8 @@ module FlagData = struct
     unmarshal : Istream.t -> (unit, string) Result.t;
     (* Load files from source only (not compiled versions). *)
     source_only : bool;
+    (* Don't write compiled versions of files to disk. *)
+    no_write_compiled : bool;
     (* All the filenames given explicitly on the command line. *)
     top_files : string list;
     (* Whether to reformat explicitly-loaded files *)
@@ -89,8 +100,7 @@ module Loaded = struct
     let loaded_contents : Scope.trie Lazy.t ref = ref (Lazy.from_val (Scope.get_visible ())) in
     try f () with
     | effect Add_to_files (file, data), k ->
-        let mtime = (FileUtil.stat file).modification_time in
-        Hashtbl.add loaded_files file (data, mtime);
+        Hashtbl.add loaded_files file (data, mtime file);
         continue k ()
     | effect Get_file file, k -> continue k (Hashtbl.find_opt loaded_files file)
     | effect Add_to_scope trie, k ->
@@ -127,7 +137,7 @@ let open_temp_file ofile =
 
 (* Save all the definitions from a given loaded file to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace.  We write to a temporary file and then rename it onto the compiled file, so that another run never sees a partially written compiled file, and an interrupted run doesn't leave one behind. *)
 let marshal (file : File.t) (filename : FilePath.filename) (trie : Scope.trie) =
-  if __COMPILE_VERSION__ > 0 then
+  if __COMPILE_VERSION__ > 0 && not (Flags.read ()).no_write_compiled then
     let ofile = FilePath.replace_extension filename "nyo" in
     try
       let tmpfile, chan = open_temp_file ofile in
@@ -158,10 +168,7 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
     (filename : FilePath.filename) =
   let ofile = FilePath.replace_extension filename "nyo" in
   (* To load a compiled file, first of all both the compiled file and its source file must exist, and the compiled file must be not older than the source.  (If the source was reformatted at the time of compiling, they could be exactly the same age.) *)
-  if
-    FileUtil.test Is_file filename
-    && FileUtil.test Is_file ofile
-    && not (FileUtil.test (Is_older_than filename) ofile)
+  if FileUtil.test Is_file filename && FileUtil.test Is_file ofile && mtime ofile >= mtime filename
   then
     (* We read the whole compiled file into memory, and check that it is complete (it could have been truncated, e.g. by an older version of Narya that didn't write compiled files atomically), before unmarshaling anything from it.  Otherwise we could fail partway through after having already modified the global state.  If it isn't complete, we treat it like an outdated compiled file and load the source instead. *)
     match
@@ -185,8 +192,8 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
                   (fun (_, ifile) ->
                     let oifile = FilePath.replace_extension ifile "nyo" in
                     FileUtil.test Is_file oifile
-                    && (not (FileUtil.test (Is_older_than ifile) oifile))
-                    && not (FileUtil.test (Is_newer_than ofile) ifile))
+                    && mtime oifile >= mtime ifile
+                    && mtime ifile <= mtime ofile)
                   old_imports
               then (
                 (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file. *)
@@ -220,20 +227,15 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
 (* Load a file, possibly one specified on the command line, either from source or from a compiled version. *)
 and load_file filename top =
   if not (FilePath.check_extension filename "ny") then fatal (Invalid_filename filename);
-  (* We normalize the file path to a reduced absolute one, so we can use it for a hashtable key. *)
-  let filename =
-    if FilePath.is_relative filename then FilePath.make_absolute (Loading.get ()).cwd filename
-    else filename in
-  let filename = FilePath.reduce filename in
+  let filename = normalize_filename (Loading.get ()).cwd filename in
   match Loaded.get_file filename with
-  | Some ({ trie; globals; file; old_imports; explicit = top' }, mtime) ->
+  | Some ({ trie; globals; file; old_imports; explicit = top' }, loaded_mtime) ->
       (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded.  Each file is compared against its own loading time; an import is quite normally newer than the file that imports it. *)
-      if (FileUtil.stat filename).modification_time > mtime then fatal (Library_modified filename);
+      if mtime filename > loaded_mtime then fatal (Library_modified filename);
       Bwd.iter
         (fun (_, f) ->
           match Loaded.get_file f with
-          | Some (_, fmtime) ->
-              if (FileUtil.stat f).modification_time > fmtime then fatal (Library_modified f)
+          | Some (_, fmtime) -> if mtime f > fmtime then fatal (Library_modified f)
           | None -> ())
         old_imports;
       (* We add it back into Global, and to the 'all' namespace if it wasn't already there. *)
