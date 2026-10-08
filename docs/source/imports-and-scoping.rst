@@ -142,7 +142,11 @@ Whenever a file ``FILE.ny`` is successfully executed, Narya writes a "compiled" 
 5. ``FILE.ny`` has not been modified more recently than ``FILE.nyo``, and
 6. none of the files imported by ``FILE.ny`` are newer than it or their compiled versions,
 
-then ``FILE.nyo`` is loaded directly instead of re-executing ``FILE.ny``, skipping the typechecking step.  This can be much faster.  If any of these conditions fail, then ``FILE.ny`` is executed from source as usual, and a new compiled version ``FILE.nyo`` is saved, overwriting the previous one.
+then ``FILE.nyo`` is loaded directly instead of re-executing ``FILE.ny``, skipping the typechecking step.  This can be much faster.
+
+If any of these conditions fail, then ``FILE.ny`` is executed from source as usual, and a new compiled version ``FILE.nyo`` is saved, overwriting the previous one.  If a new compiled file can't be written (e.g. because the directory isn't writable), Narya emits a warning and continues.  You can also prevent new compiled files from being written (and silence the warning) with the ``-no-write-compiled`` flag.  Note that ``-source-only`` prevents existing compiled files from being *read*, while ``-no-write-compiled`` prevents new compiled files from being *written*; they are independent.
+
+If you keep Narya files in version control, you will probably want to tell it to ignore ``*.nyo`` files, e.g. by adding that pattern to ``.gitignore``.
 
 If ``FILE.ny`` is a symbolic link, then ``FILE.nyo`` is stored next to the link rather than next to its target.  This is necessary because, as noted above, imports in a file loaded through a symlink are also resolved relative to the location of the link rather than the target, so the same file accessed through a link could behave differently because its imports could refer to different files.
 

@@ -314,6 +314,35 @@ Echos are not re-executed in compiled files
    ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/echo.nyo
   
 
+With -no-write-compiled, no compiled files are written, but existing ones are still loaded
+
+  $ cat >nw1.ny <<EOF
+  > axiom A : Type
+  > EOF
+
+  $ cat >nw2.ny <<EOF
+  > import "nw1"
+  > axiom a0 : A
+  > EOF
+
+  $ narya -no-write-compiled nw2.ny
+
+  $ test -e nw1.nyo || test -e nw2.nyo || echo none
+  none
+
+  $ narya nw1.ny
+
+  $ narya -no-write-compiled -v nw2.ny
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/nw1.ny (compiled)
+  
+   ￫ info[I0001]
+   ￮ axiom a0 assumed
+  
+
+  $ test -e nw1.nyo && (test -e nw2.nyo || echo only nw1)
+  only nw1
+
 A file loaded through a symlink has its compiled version next to the symlink, and is recompiled
 when the symlink's target is modified
 

@@ -23,6 +23,7 @@ let hott = ref true
 let hott_deprecated = ref false
 let discreteness = ref false
 let source_only = ref false
+let no_write_compiled = ref false
 let number_metas = ref true
 let parenthesize_arguments = ref false
 let extra_spaces = ref true
@@ -163,6 +164,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
           marshal = marshal_flags;
           unmarshal = unmarshal_flags;
           source_only = !source_only;
+          no_write_compiled = !no_write_compiled;
           top_files;
           reformat = !reformat;
         }

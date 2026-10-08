@@ -13,6 +13,7 @@ Execution behavior
 - ``-interactive`` or ``-i``: Enter interactive mode (see :ref:`Execution`)
 - ``-exec STRING`` or ``-e STRING``: Execute a string argument (see :ref:`Execution`)
 - ``-source-only``: Load all files from source, ignoring any compiled versions
+- ``-no-write-compiled``: Don't write compiled versions of files loaded from source
 
 Formatting output
 ^^^^^^^^^^^^^^^^^
