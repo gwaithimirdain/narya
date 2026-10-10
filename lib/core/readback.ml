@@ -57,11 +57,11 @@ let rec sort_of_ty : type mode a z.
           sort_of_ty ~isfunc:true newctx (view_type output "sort_of_ty"))
   | _ -> if isfunc then `Function else `Other
 
-(* When a degeneracy acts on a variable or constant, the name it is displayed with (e.g. "refl", "Id", or "ap") depends on the sort of the *type of that variable or constant*, not on the type of the whole neutral application in which it occurs.  Since this only affects display, and computing it involves evaluating and descending through pi-types, we catch any errors and fall back on the generic name.  We can compute it in an empty context of the appropriate mode, since sort_of_ty uses the context only to create new variables. *)
+(* When a degeneracy acts on a variable or constant, the name it is displayed with (e.g. "refl", "Id", or "ap") depends on the sort of the *type of that variable or constant*, not on the type of the whole neutral application in which it occurs.  Since this only affects display, and computing it involves evaluating and descending through pi-types, we catch any errors and fall back on the generic name (though internal errors are still reported).  We can compute it in an empty context of the appropriate mode, since sort_of_ty uses the context only to create new variables. *)
 let sort_of_val : type mode. mode Mode.t -> (mode, kinetic) value -> [ `Type | `Function | `Other ]
     =
  fun mode ty ->
-  Reporter.try_with ~fatal:(fun _ -> `Other) @@ fun () ->
+  Reporter.backtrack ~fatal:(fun _ -> `Other) @@ fun () ->
   sort_of_ty (Ctx.empty mode) (view_type ty "sort_of_val")
 
 (* Whether a constant is defined to be a canonical type, possibly a family of them.  Such a constant is displayed with a superscript degeneracy rather than a name like "Id", even if the term in which it appears is not itself a type (e.g. a field projection out of a degenerated record type). *)
@@ -72,7 +72,7 @@ let rec is_canonical_def : type mode a. (mode, a, potential) term -> bool = func
 
 let is_canonical_const : Constant.t -> [ `Canonical | `Other ] =
  fun c ->
-  Reporter.try_with ~fatal:(fun _ -> `Other) @@ fun () ->
+  Reporter.backtrack ~fatal:(fun _ -> `Other) @@ fun () ->
   let (Definition { tm; _ }) = Global.find_const c in
   match tm with
   | `Defined tm when is_canonical_def tm -> `Canonical
@@ -561,7 +561,7 @@ and readback_head : type mode c z.
       | None ->
           (* Likewise, a degeneracy acting on a constant is displayed according to the sort of the constant's own type, and according to whether that constant is (a family of) canonical types. *)
           let sort =
-            Reporter.try_with ~fatal:(fun _ -> `Other) @@ fun () ->
+            Reporter.backtrack ~fatal:(fun _ -> `Other) @@ fun () ->
             let (Definition { mode; ty; _ }) = Global.find_const name in
             sort_of_val mode (eval_term (Emp (mode, D.zero)) ty) in
           let canonical =
