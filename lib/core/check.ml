@@ -1573,8 +1573,10 @@ and check_match_branches : type dom window mode a b bm.
                   errs )
             (* If there is no body, the user omitted this constructor, which is valid if and only if one of the pattern variables belongs to an empty type and can be refuted. *)
             | None, _ -> (
-                match any_refutable newnfs with
-                | Ok () -> (branches |> Constr.Map.add constr Term.Refute, errs)
+                match empty_witness newctx newnfs with
+                | Ok tm ->
+                    ( branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm }),
+                      errs )
                 | Error err ->
                     List.iter emit err;
                     fatal (Missing_constructor_in_match constr)))
@@ -2017,25 +2019,44 @@ and check_var_match : type dom modality mode a b bm.
                               errs )
                         (* If not, then we look for something to refute. *)
                         | None -> (
+                            (* First we check whether any of the new pattern variables created by this match belong to an empty datatype and can be refuted.  The pattern variables still have their pre-refinement levels, so we look for the witness in oldctx, just as the motive is read back there; the resulting term is over the same context either way. *)
                             let result =
-                              (* First we check whether any of the new pattern variables created by this match belong to an empty datatype and can be refuted. *)
-                              match any_refutable newnfs with
-                              | Ok () -> Ok ()
+                              match empty_witness oldctx newnfs with
+                              | Ok _ as ok -> ok
                               | Error _ as err ->
-                                  (* Otherwise, we check the stored "refutables", which include all the previous and succeeding pattern variables.  A refutable is synthesized in the ambient context, so its refutation needs no window. *)
-                                  if
-                                    List.exists
-                                      (fun x ->
-                                        let _, sty = synth (Kinetic `Nolet) newctx x in
-                                        is_empty sty)
-                                      (Option.fold
-                                         ~some:(fun r -> r.refutables (Namevec.bplus xs))
-                                         ~none:[] refutables)
-                                  then Ok ()
-                                  else err in
+                                  (* Otherwise, we check the stored "refutables", which include all the previous and succeeding pattern variables. *)
+                                  let s = ref err in
+                                  List.iter
+                                    (fun x ->
+                                      match !s with
+                                      | Ok _ -> ()
+                                      | Error _ -> (
+                                          let stm, sty = synth (Kinetic `Nolet) newctx x in
+                                          match is_empty sty with
+                                          | None -> ()
+                                          | Some (Wrap dim) ->
+                                              (* A refutable is synthesized in the ambient context, so its refutation needs no window. *)
+                                              s :=
+                                                Ok
+                                                  (Term.Match
+                                                     {
+                                                       window = Modality.id (Ctx.mode newctx);
+                                                       plus_lock = plus_no_lock (Ctx.mode newctx);
+                                                       tm = stm;
+                                                       dim;
+                                                       branches = Constr.Map.empty;
+                                                     })))
+                                    (Option.fold
+                                       ~some:(fun r -> r.refutables (Namevec.bplus xs))
+                                       ~none:[] refutables);
+                                  !s in
                             match result with
-                            (* If we found something to refute, we mark this branch as refuted in the compiled match. *)
-                            | Ok () -> (branches |> Constr.Map.add constr Term.Refute, errs)
+                            (* If we found something to refute, the refuted branch records the empty match that refutes it, which is what evaluating the branch will get stuck on if it is ever reached. *)
+                            | Ok tm ->
+                                ( branches
+                                  |> Constr.Map.add constr
+                                       (Term.Branch { annotate; comp; perm = checked_perm; tm }),
+                                  errs )
                             | Error err ->
                                 List.iter emit err;
                                 fatal (Missing_constructor_in_match constr)))))
@@ -2210,7 +2231,7 @@ and check_empty_match_lam : type mode a b.
                 | Ok (firstty, ab, fa) ->
                     let ty = (Binding.value (CubeOf.find newnfs fb)).ty in
                     let firstty = Option.value firstty ~default:(Lazy.force ty) in
-                    if is_empty (Lazy.force ty) then
+                    if Option.is_some (is_empty (Lazy.force ty)) then
                       Fwrap
                         ( NFamOf (`Anon (View.hints_of_ty (Lazy.force ty))),
                           Ok (Some firstty, Suc ab, Some (SFace_of fb)) )
@@ -2263,46 +2284,69 @@ and check_empty_match_lam : type mode a b.
               | _ -> fatal_diagnostic d))
   | _ -> fatal Invalid_refutation
 
-and is_empty : type mode. (mode, kinetic) value -> bool =
+(* If a type is an empty datatype, return its dimension. *)
+and is_empty : type mode. (mode, kinetic) value -> D.wrapped option =
  fun varty ->
   match view_type varty "is_empty" with
-  | Canonical (_, Data { constrs = Emp; _ }, _, _) -> true
-  | _ -> false
+  | Canonical (_, Data { constrs = Emp; _ }, ins, _) -> Some (Wrap (cod_left_ins ins))
+  | _ -> None
 
-(* Whether one of a branch's new pattern variables belongs to an empty datatype and can be refuted -- which is to say, matched against with no branches, since that is what refuting it means.  In particular a variable behind a modality that a match could not use as a window does *not* refute the branch: eliminating such a variable is exactly what that modality forbids, and accepting it would admit a definition that is not total but gets stuck on the constructor in question.  If no variable can be refuted, we return codes that explain which variables of empty type were ruled out by their modality, to be displayed as hints if nothing else works. *)
-and any_refutable : type mode n.
-    (n, mode) modal_binding_cube list -> (unit, Reporter.Code.t list) Result.t =
- fun nfss ->
-  List.fold_left
-    (fun s (Modal (modality, nfs)) ->
-      match s with
-      | Ok () -> s
-      | Error e1 -> (
-          match refutable_cube modality nfs with
-          (* We accumulate all the codes to display if nothing works *)
-          | Error e2 -> Error (e1 @ e2)
-          | Ok () -> Ok ()))
-    (Error []) nfss
+(* Find the first of a branch's new pattern variables that belongs to an empty datatype and can be refuted -- which is to say, matched against with no branches, since that is what refuting it means.  So this is both the test of whether the branch may be refuted at all and the thing its refutation refutes, which we record in the branch.  In particular, a variable behind a modality that a match could not use as a window does *not* refute the branch: eliminating such a variable is exactly what that modality forbids, and accepting it would admit a definition that is not total but gets stuck on the constructor in question.  The return value is either the empty match that refutes that variable, or an optional code that might warn the user about a variable they expected to refute not having a sufficiently transparent window. *)
+and empty_witness : type mode n a c.
+    (mode, a, c) Ctx.t ->
+    ?errors:Reporter.Code.t list ->
+    (n, mode) modal_binding_cube list ->
+    ((mode, c, potential) term, Reporter.Code.t list) Result.t =
+ fun ctx ?(errors = []) -> function
+  | [] -> Error errors
+  | Modal (modality, nfs) :: nfss -> (
+      match empty_witness_cube ctx modality nfs with
+      | Error e -> empty_witness ctx ~errors:(errors @ e) nfss
+      | Ok _ as r -> r)
 
-and refutable_cube : type mode dom modality k n.
+and empty_witness_cube : type mode dom modality k n a c.
+    (mode, a, c) Ctx.t ->
     (dom, modality, mode, k, n) Modality.filter_dim ->
     (k, dom Binding.t) CubeOf.t ->
-    (unit, Reporter.Code.t list) Result.t =
- fun modality nfs ->
-  let empty = ref false in
+    ((mode, c, potential) term, Reporter.Code.t list) Result.t =
+ fun ctx modality nfs ->
+  (* First we check whether there are any empty types.  If not, there is no need to inspect the modality at all, and no hint message to report if the modality is not usable.  Note that all the terms have the same modality, so there's never any need to go past the first term with an empty type. *)
+  let s = ref None in
   CubeOf.miter
-    { it = (fun _ [ x ] -> if is_empty (Lazy.force (Binding.value x).ty) then empty := true) }
+    {
+      it =
+        (fun _ [ x ] ->
+          match !s with
+          | Some _ -> ()
+          | None -> (
+              let nf = Binding.value x in
+              match is_empty (Lazy.force nf.ty) with
+              | None -> ()
+              | Some dim -> s := Some (nf, dim)));
+    }
     [ nfs ];
-  match !empty with
-  | false -> Error []
-  | true ->
+  match !s with
+  | None -> Error []
+  | Some (nf, Wrap dim) ->
       let mu = Modality.filter_modality modality in
-      (* The datatype is empty, hence nonrecursive and not single-constructor, so check_window_transparency's condition on a window comes down to this. *)
+      (* Refuting a variable is matching against it with no branches, so its modality must be one a match could use as a window.  The datatype is empty, hence nonrecursive and not single-constructor, so check_window_transparency's condition comes down to this. *)
       let usable =
         match Modality.compare_id mu with
         | Eq -> true
         | Neq -> Modality.pellucid mu || Modality.transparent mu in
-      if usable then Ok () else Error [ Nonrefutable_modal_variable mu ]
+      if not usable then Error [ Nonrefutable_modal_variable mu ]
+      else
+        (* The variable is annotated by mu, so it is nameable in the context locked by mu, which is exactly the context a match through mu as its window reads its discriminee in. *)
+        let (Locked (plus_lock, lctx)) = Ctx.lock ctx mu in
+        Ok
+          (Term.Match
+             {
+               window = mu;
+               plus_lock;
+               tm = readback_val lctx nf.tm;
+               dim;
+               branches = Constr.Map.empty;
+             })
 
 and check_data : type mode a b i.
     discrete:unit Constant.Map.t option ->
