@@ -355,19 +355,14 @@ and process_vars : type n.
         process_vars (Bwv.snoc ctx name) names modality (Wrap ty) parameters in
       Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
 
-(* An argument of a constructor pattern that's enclosed in braces is an explicit name for a face of the boundary of the following higher-dimensional pattern variable.  It must be a variable name or a placeholder. *)
-let boundary_name : type lt1 ls1 rt1 rs1.
-    (lt1, ls1, rt1, rs1) parse located -> string option located option =
+(* An argument of a constructor pattern that's enclosed in braces is an explicit pattern for a face of the boundary of the following higher-dimensional pattern variable. *)
+let boundary_pattern : type lt1 ls1 rt1 rs1.
+    (lt1, ls1, rt1, rs1) parse located -> wrapped_parse option =
  fun pat ->
   match pat.value with
   | Notn ((Braces, _), n) -> (
       match args n with
-      | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] -> (
-          match arg.value with
-          | Ident ([ x ], _) when Lexer.valid_var x -> Some (locate_opt arg.loc (Some x))
-          | Ident (xs, _) -> fatal ?loc:arg.loc (Invalid_variable xs)
-          | Placeholder _ -> Some (locate_opt arg.loc None)
-          | _ -> fatal ?loc:arg.loc (Parse_error "invalid boundary pattern variable"))
+      | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] -> Some (Wrap arg)
       | _ -> fatal (Anomaly "invalid notation arguments for braces"))
   | _ -> None
 
@@ -388,16 +383,18 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
         | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern placeholder"))
     | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
     | App { fn; arg; _ } -> (
-        (* Since we accumulate the arguments from right to left, a boundary variable is prepended to the boundary of the argument we've already seen. *)
-        match boundary_name arg with
-        | Some name -> (
+        (* Since we accumulate the arguments from right to left, a boundary pattern is prepended to the boundary of the argument we've already seen. *)
+        match boundary_pattern arg with
+        | Some (Wrap bdry) -> (
             match pats.value with
             | [] ->
                 fatal ?loc:arg.loc
-                  (Parse_error
-                     "boundary pattern variable must be followed by the pattern variable it belongs to")
+                  (Parse_error "boundary pattern must be followed by the pattern it belongs to")
             | { boundary; pat = arg_pat } :: rest ->
-                let arg = Matchpattern.{ boundary = List.cons name boundary; pat = arg_pat } in
+                let arg =
+                  Matchpattern.
+                    { boundary = go bdry (locate_opt bdry.loc Vec.[]) :: boundary; pat = arg_pat }
+                in
                 go fn (locate_opt pats.loc (arg :: rest : (Matchpattern.arg, n) Vec.t)))
         | None ->
             go fn

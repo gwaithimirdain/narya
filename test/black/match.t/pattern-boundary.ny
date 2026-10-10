@@ -43,6 +43,46 @@ def baz (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [
 
 about baz
 
+{` More generally, a boundary argument can be any pattern, which is matched against as part
+of a deep match, before the top face. `}
+def pred₀ (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [
+| zero. ↦ 0
+| suc. {zero.} {_} _ ↦ 1
+| suc. {suc. k} {_} _ ↦ k]
+
+about pred₀
+
+def both (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [
+| zero. ↦ 0
+| suc. {zero.} {zero.} _ ↦ 1
+| suc. {zero.} {suc. _} _ ↦ 2
+| suc. {suc. _} {zero.} _ ↦ 3
+| suc. {suc. _} {suc. k1} _ ↦ k1]
+
+about both
+
+def bdry_top (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [
+| zero. ↦ 0
+| suc. {zero.} {m1} m2 ↦ m1
+| suc. {suc. k} {m1} (zero.) ↦ k
+| suc. {suc. k} {m1} (suc. {j0} {j1} j2) ↦ j1]
+
+about bdry_top
+
+{` With several arguments, the boundary patterns of each come before its top face. `}
+def pair_bdry (y0 y1 : P) (y2 : Id P y0 y1) : ℕ ≔ match y2 [
+| pair. {zero.} {_} _ {_} {b1} b2 ↦ b1
+| pair. {suc. k} {_} _ {_} {_} _ ↦ k]
+
+about pair_bdry
+
+def hi (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2⁽ᵉ⁾ [
+| zero. ↦ 0
+| suc. {zero.} {m01} {m02} {m10} {m11} {m12} {m20} {m21} m22 ↦ 1
+| suc. {suc. k} {_} {_} {_} {_} {_} {_} {_} _ ↦ k]
+
+about hi
+
 {` Each argument of a constructor decides separately whether to name its boundary; but if
 any of them is left as a cube variable, the branch still uses ⤇. `}
 def qux (y0 y1 : P) (y2 : Id P y0 y1) : ℕ ≔ match y2 [

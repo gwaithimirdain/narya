@@ -320,6 +320,17 @@ This is consistent with the fact that a higher-dimensional constructor can also 
 
 Since all the branches for a single constructor extend the context in the same way, they must all name the same number of variables for each argument; thus, in a :ref:`deep match <Multiple matches and deep matches>` that matches twice against the same constructor, either all or none of those branches must give it explicit boundaries.
 
+The boundary arguments in braces need not be variables: like the top face, each of them can be any pattern, which is matched against as part of a deep match.  For example:
+
+.. code-block:: none
+
+   def f (y₀ y₁ : ℕ) (y₂ : Id ℕ y₀ y₁) : ℕ ≔ match y₂ [
+   | zero. ↦ 0
+   | suc. {zero.} {_} _ ↦ 1
+   | suc. {suc. k} {_} _ ↦ k]
+
+As with other deep matches, this is compiled into a sequence of nested matches, in which the boundary faces of each argument are matched against before its top face.
+
 Narya displays a higher-dimensional match with explicit boundary variables if it was written that way, and with cube variables otherwise.  (An exception is a definition that has been degenerated, such as when displaying ``refl`` of it: then its pattern variables are cubes of a larger dimension than the boundary variables that were named, so they are displayed as cube variables named after their top faces.)
 
 It is possible to do :ref:`Multiple matches and deep matches` that combine zero- and higher-dimensional matches.  In this case the match symbol is ``⤇``, which we can think of as indicating that at least *some* of the pattern variables are nontrivial cubes, unless all of them have been given explicit boundaries.

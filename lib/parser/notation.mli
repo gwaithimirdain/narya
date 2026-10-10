@@ -106,7 +106,7 @@ and ('left, 'tight, 'right) notation =
 
 module Matchpattern : sig
   type t = Var : string option located -> t | Constr : Constr.t located * (arg, 'n) Vec.t -> t
-  and arg = { boundary : string option located list; pat : t }
+  and arg = { boundary : t list; pat : t }
 
   val explicit : t -> arg
 end

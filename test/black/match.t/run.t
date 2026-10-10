@@ -423,6 +423,66 @@ The pattern variables of a higher-dimensional match can be given explicit bounda
     : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
   
    ￫ info[I0000]
+   ￮ constant pred₀ defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {𝑥} {𝑦} 𝑧 ↦ match 𝑥 [ suc. k ↦ k | zero. ↦ 1 ]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant both defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {𝑥} {𝑦} 𝑧 ↦ match 𝑥 [
+    | suc. 𝑤 ↦ match 𝑦 [ suc. k1 ↦ k1 | zero. ↦ 3 ]
+    | zero. ↦ match 𝑦 [ suc. 𝑤 ↦ 2 | zero. ↦ 1 ]]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ hint[E1101]
+   ￭ $TESTCASE_ROOT/pattern-boundary.ny
+   64 | def bdry_top (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [
+   65 | | zero. ↦ 0
+   66 | | suc. {zero.} {m1} m2 ↦ m1
+   67 | | suc. {suc. k} {m1} (zero.) ↦ k
+   68 | | suc. {suc. k} {m1} (suc. {j0} {j1} j2) ↦ j1]
+      ^ match will not refine the goal or context (index is not a free variable):
+          suc. k
+  
+   ￫ info[I0000]
+   ￮ constant bdry_top defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {𝑥} {m1} m2 ↦ match 𝑥 [
+    | suc. k ↦ match m2 [ suc. {j0} {j1} j2 ↦ j1 | zero. ↦ k ]
+    | zero. ↦ m1]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant pair_bdry defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | pair. {𝑥} {𝑦} 𝑧 {𝑤} {b1} b2 ↦ match 𝑥 [ suc. k ↦ k | zero. ↦ b1 ]]
+    : (y0 : P) (y1 : P) (y2 : P⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant hi defined
+  
+  y0 y1 y2 ↦
+  match refl y2 [
+  | suc. {𝑥} {m01} {m02} {m10} {m11} {m12} {m20} {m21} m22 ↦ match 𝑥 [
+    | suc. k ↦ k
+    | zero. ↦ 1]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
    ￮ constant qux defined
   
   y0 y1 y2 ↦ match y2 [ pair. {a0} {a1} a2 b ⤇ b.0 ]
@@ -484,13 +544,31 @@ In particular, a zero-dimensional match has no boundary variables to name.
   
   [1]
 
-Boundary variables must be followed by the pattern variable they belong to.
+Boundary patterns must be followed by the pattern they belong to.
 
   $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} ↦ 0 ]'
    ￫ error[E0200]
    ￭ command-line exec string
    1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} ↦ 0 ]
-     ^ parse error: boundary pattern variable must be followed by the pattern variable it belongs to
+     ^ parse error: boundary pattern must be followed by the pattern it belongs to
+  
+  [1]
+
+Boundary patterns are patterns, so they have the same restrictions on variable names as other patterns.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m} {m} _ ↦ 0 ]'
+   ￫ error[E1304]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m} {m} _ ↦ 0 ]
+     ^ variable name 'm' used more than once in match patterns
+  
+  [1]
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {x.y} {_} _ ↦ 0 ]'
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {x.y} {_} _ ↦ 0 ]
+     ^ invalid local variable name: x.y
   
   [1]
 
@@ -510,6 +588,14 @@ And all the branches for a single constructor must name the same number of varia
    ￫ error[E1306]
    ￭ command-line exec string
    1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} (zero.) ↦ m0 | suc. n ⤇ n.0 ]
+     ^ inconsistent patterns in match
+  
+  [1]
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {zero.} {_} _ ↦ 1 | suc. {suc. k} _ ↦ k ]'
+   ￫ error[E1306]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {zero.} {_} _ ↦ 1 | suc. {suc. k} _ ↦ k ]
      ^ inconsistent patterns in match
   
   [1]
