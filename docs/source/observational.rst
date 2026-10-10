@@ -133,7 +133,7 @@ Similarly, identity types of codatatypes compute to types of bisimulations.  For
    | _ .head : A
    | _ .tail : Stream A ]
 
-Then ``Id (Stream A) s t`` reduces to ``Stream⁽ᵉ⁾ (Id A) s t``, which is defined as
+Then ``Id (Stream A) s t`` reduces to ``Stream⁽ᵉ⁾ (Id A) s t``, whose definition (printed with ``about``) is
 
 .. code-block:: none
 
@@ -172,7 +172,7 @@ As with records and codatatypes, the identity types of a datatype are again data
    | left. (a : A) : Sum A B
    | right. (b : B) : Sum A B ]
 
-Then ``Id (Sum A B) u v`` reduces to ``Sum⁽ᵉ⁾ (Id A) (Id B) u v``, whose definition is
+Then ``Id (Sum A B) u v`` reduces to ``Sum⁽ᵉ⁾ (Id A) (Id B) u v``, whose definition (printed with ``about``) is
 
 .. code-block:: none
 

@@ -108,7 +108,7 @@ Like ``echo``, but does not normalize the term, only computes its type.
 
    about TERM
 
-Like ``echo``, but after normalizing ``TERM``, display its definition rather than its value.  In particular, since functions do not evaluate until applied to arguments, if ``TERM`` is just the name of a function ``f``, then ``echo f`` will simply return ``f`` back again, while ``about f`` will display the *definition* of ``f``.  See :ref:`Eta-conversion and case trees` for further discussion.
+Like ``echo``, but after normalizing ``TERM``, display its definition rather than its value.  In particular, since functions do not evaluate until applied to arguments, if ``TERM`` is just the name of a function ``f``, then ``echo f`` will simply return ``f`` back again, while ``about f`` will display the *definition* of ``f``.  See :ref:`Eta-conversion and case trees` for further discussion, and :ref:`Matching and case trees` for one exception.
 
 
 Notation
