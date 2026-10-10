@@ -200,8 +200,11 @@ let add_cube : type m n b. n D.t -> b t -> binder_name -> string * (b, (m, n) di
     { ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty); used } )
 
 (* Add a cube of variables that are named individually by face, as for a pattern variable of a match branch whose boundary was given explicitly.  The names are taken from the given list, in face order with the top face last.  If there aren't enough of them the rest are anonymous, but that shouldn't happen since the checker verified that there is exactly one for each face. *)
-let add_boundary : type m n b.
-    n D.t -> b t -> string option list -> (n, string) gvariables * (b, (m, n) dim_entry) snoc t =
+let add_boundary : type m n b a c ac.
+    n D.t ->
+    b t ->
+    (a, c, ac) Indices.IndexedNamevec.t Asai.Range.located ->
+    (n, string) gvariables * (b, (m, n) dim_entry) snoc t =
  fun n { ctx; used } names ->
   let module Build = NICubeOf.Traverse (struct
     type 'b t = string option list
@@ -214,7 +217,7 @@ let add_boundary : type m n b.
             | [] -> Fwrap (NFamOf (`Anon no_hints), [])
             | x :: names -> Fwrap (NFamOf (Variables.binder_name_of_option x), names));
       }
-      names in
+      (Indices.IndexedNamevec.to_list names.value) in
   let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
   let vars = Variables (D.zero, D.zero_plus n, vars) in
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
@@ -233,11 +236,11 @@ let rec add_match_vars : type n mode annotations a b ab.
  fun names annotate comp ->
   match (annotate, comp) with
   | Zero _, Zero -> (names, [])
-  | Suc (Annotate (`Cube name, _), annotate), Suc (Dim (m, _), comp) ->
+  | Suc (Annotate (Cube name, _), annotate), Suc (Dim (m, _), comp) ->
       let x, names = add_cube m names (Variables.binder_name_of_option name) in
       let names, xs = add_match_vars names annotate comp in
       (names, Cube_var x :: xs)
-  | Suc (Annotate (`Boundary bdry, _), annotate), Suc (Dim (m, _), comp) ->
+  | Suc (Annotate (Boundary bdry, _), annotate), Suc (Dim (m, _), comp) ->
       let x, names = add_boundary m names bdry in
       let names, xs = add_match_vars names annotate comp in
       (names, Boundary_var x :: xs)

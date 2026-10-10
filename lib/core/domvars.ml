@@ -7,6 +7,7 @@ open Tctx
 open Term
 open Value
 open Norm
+open Indices
 
 (* To typecheck a lambda, do an eta-expanding equality check, check pi-types for equality, or read back a pi-type or a term at a pi-type, we must create one new variable for each argument in the boundary.  Sometimes we need these variables as values and other times as normals.  The function dom_vars creates these variables and returns them in two cubes.  It, and the function ext_pi below that follows from it, are in a separate file because it depends on Inst and Ctx and is used in Equal, Readback, and Check, and doesn't seem to be placed naturally in any of those files. *)
 
@@ -96,36 +97,6 @@ type ('dom, 'window, 'mode, 'n, 'ac, 'e) ext_pi =
       -> ('dom, 'window, 'mode, 'n, 'ac, 'e) ext_pi
 
 (* The extension of the context by the pattern variables of one argument: either a single cube variable, or one variable for each face of its boundary.  We also return the names, to be recorded in the branch's annotation so that it can be displayed as the user wrote it. *)
-type (_, _, _, _) ext_pattern_var =
-  | Ext_pattern_var :
-      ('mode, 'ac, ('e, ('modality, 'k) dim_entry) Tbwd.snoc) Ctx.t * pattern_name
-      -> ('mode, 'ac, 'e, ('modality, 'k) dim_entry) ext_pattern_var
-
-let ext_pattern_var : type dom modality mode a ac e k.
-    (mode, a, e) Ctx.t ->
-    (dom, modality, mode, k, k) Modality.filter_dim ->
-    (a, ac) Raw.Patternvars.arg ->
-    string option ->
-    (k, dom Ctx.Binding.t) CubeOf.t ->
-    (mode, ac, e, (modality, k) dim_entry) ext_pattern_var =
- fun ctx filter x pix newnfs ->
-  match x with
-  (* A single variable becomes a cube variable, whose boundary is accessed with face suffixes.  If it is anonymous, we fall back on the name of the constructor's argument. *)
-  | Cube x ->
-      let x =
-        match x with
-        | Some x -> Some x
-        | None -> pix in
-      Ext_pattern_var (Ctx.cube_vis ctx filter x newnfs, `Cube x)
-  (* Explicit boundary variables must be exactly one for each face of the cube, the last of them being the top face. *)
-  | Boundary ns ->
-      let k = CubeOf.dim newnfs in
-      let (Vars (af, names)) =
-        vars_of_names (fun j -> Wrong_boundary_of_pattern_variable j) ns.loc k ns.value in
-      Ext_pattern_var
-        ( Ctx.vis ctx filter D.zero (D.zero_plus k) names newnfs af,
-          `Boundary (Raw.Namevec.to_list ns.value) )
-
 let rec ext_pi : type dom window mode a b c ac e n.
     (mode, a, e) Ctx.t ->
     (dom, window, mode) Modality.t ->
@@ -146,7 +117,7 @@ let rec ext_pi : type dom window mode a b c ac e n.
           comp = Zero;
           out = ft;
         }
-  | x :: xs -> (
+  | ( :: ) (type a1) ((x, xs) : (a, a1) Raw.Patternvars.arg * _) -> (
       let m = dim_env env in
       (* The constructor's function-type is an uninstantiated m-dimensional pi-type; we view it as in check_at_pi (view_type would demand full instantiation). *)
       let (Viewed_pi { x = pix; filter = pifilter; doms; cods }) = view_pi "ext_pi" m ft in
@@ -165,8 +136,23 @@ let rec ext_pi : type dom window mode a b c ac e n.
           | Eq ->
               let newvars, newnfs = dom_vars ctx modality doms in
               let filter_k_k = Modality.filter_idempotent filter_k_m in
-              let pixname = option_of_binder_name (top_variable pix) in
-              let (Ext_pattern_var (newctx, x)) = ext_pattern_var ctx filter_k_k x pixname newnfs in
+              (* If a single cube variable is anonymous, we fall back on the name of the constructor's argument. *)
+              let x : (a, a1) Raw.Patternvars.arg =
+                match x with
+                | Cube None -> IndexedPatternvars.Cube (option_of_binder_name (top_variable pix))
+                | _ -> x in
+              let newctx : (mode, a1, (e, (_, _) dim_entry) Tbwd.snoc) Ctx.t =
+                match x with
+                (* A single variable becomes a cube variable, whose boundary is accessed with face suffixes. *)
+                | Cube x -> Ctx.cube_vis ctx filter_k_k x newnfs
+                (* Explicit boundary variables must be exactly one for each face of the cube, the last of them being the top face. *)
+                | Boundary ns ->
+                    let k = CubeOf.dim newnfs in
+                    let (Vars (af, names)) =
+                      vars_of_names
+                        (fun j -> Wrong_boundary_of_pattern_variable j)
+                        ns.loc k ns.value in
+                    Ctx.vis ctx filter_k_k D.zero (D.zero_plus k) names newnfs af in
               let (BindFam b) = BindCube.find_top cods in
               let output = apply_binder_term b pifilter newvars in
               let (Ext_pi { ctx; values = vars; normals = nfs; annotate; comp; out }) =
