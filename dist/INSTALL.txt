@@ -23,7 +23,7 @@ Then run the supplied shell script 'install-pg.sh' from this directory:
 
   ./install-pg.sh
 
-If that doesn't work, please report a bug at https://github.com/gwaithimirdain/narya.  In the meantime, you can follow the instructions in the Narya documentation for installing ProofGeneral manually (https://narya.readthedocs.io/en/latest/installation.html#proofgeneral-emacs-mode).  You will need to repeat this every time Emacs, ProofGeneral, or Narya is updated.  Finally, you can run
+If that doesn't work, please report a bug at https://github.com/gwaithimirdain/narya.  In the meantime, you can follow the instructions in the Narya documentation for installing ProofGeneral manually (https://narya.readthedocs.io/en/latest/installation.html#proofgeneral-emacs-mode).  You will need to repeat this every time Narya is updated.  Finally, you can run
 
   emacs
 

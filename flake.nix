@@ -60,6 +60,11 @@
       in {
         packages.default = scopesStatic.main;
 
+        # The ProofGeneral mode, built for the default Emacs.  To build it for
+        # another Emacs, see proofgeneral/package.nix.
+        packages.emacs-narya =
+          (pkgs.emacsPackagesFor pkgs.emacs).callPackage ./proofgeneral/package.nix { };
+
         devShells.default = pkgs.mkShell {
           inputsFrom = [ scopes.main ];
           buildInputs = devPackages;

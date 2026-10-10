@@ -1,12 +1,35 @@
-;;;narya.el --- Proof General instance for Narya
+;;; narya.el --- Proof General instance for Narya
+
+;; URL: https://github.com/gwaithimirdain/narya
+;; Version: 0.1
+;; Package-Requires: ((emacs "29.1") (proof-general "4.5"))
+;; Keywords: languages
+
+;;; Commentary:
+
+;; This is a Proof General mode for the proof assistant Narya.  It lives
+;; outside the Proof General directory: rather than being listed in
+;; `proof-assistant-table-default', it registers itself when loaded, and the
+;; autoloads below make visiting a .ny file load it.
+
+;;; Code:
+
+;;;###autoload (autoload 'narya-mode "narya" "Major mode for Narya proof scripts." t)
+;;;###autoload (add-to-list 'auto-mode-alist '("\\.ny\\'" . narya-mode))
+;;;###autoload (add-to-list 'completion-ignored-extensions ".nyo")
 
 (eval-and-compile
   (require 'proof-site)
+  ;; Proof General's built-in instances are registered in
+  ;; `proof-assistant-table-default'; since we aren't, add ourselves here.
+  (add-to-list 'proof-assistant-table '(narya "Narya" "ny" nil (".nyo")))
+  ;; This must precede loading `pg-custom', which defines the per-assistant
+  ;; settings (like `narya-toolbar-entries') for the assistant configured here.
+  (proof-ready-for-assistant 'narya "Narya")
   (require 'pg-custom)
   (require 'proof)
   (require 'proof-config)
-  (require 'proof-easy-config)
-  (proof-ready-for-assistant 'narya))        ;; compilation for narya
+  (require 'proof-easy-config))
 
 (require 'narya-syntax)
 (require 'font-lock)
@@ -536,7 +559,7 @@ handling in Proof General."
 
 ;; Easy configuration
 (proof-easy-config
- ;; The two names below should be the same as in proof-site.el
+ ;; The two names below should be the same as in `proof-assistant-table' above
  'narya "Narya"      
  proof-prog-name                       "narya"
  narya-prog-args                       `("-proofgeneral")
