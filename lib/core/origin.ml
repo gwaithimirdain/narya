@@ -283,4 +283,10 @@ module Versioned = struct
     let acc = f acc !(x.top) in
     let acc = Dynarray.fold_left f acc x.files in
     Dynarray.fold_left f acc x.instants
+
+  let foldi (x : 'a t) (f : 'acc -> Origin.t -> 'a -> 'acc) (acc : 'acc) : 'acc =
+    let acc = ref (f acc Top !(x.top)) in
+    Dynarray.iteri (fun file v -> acc := f !acc (File file) v) x.files;
+    Dynarray.iteri (fun instant v -> acc := f !acc (Instant instant) v) x.instants;
+    !acc
 end

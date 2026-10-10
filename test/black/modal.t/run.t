@@ -172,6 +172,79 @@ The adjunction ♭ ⊣ ♯ only gives cells ♭∘♯ ⇒ id and id ⇒ ♯∘�
   [1]
 
 
+A match against a variable refines the goal and the context by rebinding the
+discriminee and the index variables of its datatype.  Rebinding a variable's
+slot rebinds what its *unkeyed* uses evaluate to, so an index variable whose use
+is keyed cannot be rebound: the value we would bind is available only at the
+window's modality, not at the variable's own annotation.  Here the index of the
+discriminee's type is a ♭-annotated variable used unmodally, hence keyed by the
+counit of ♭, so the match falls back to a non-dependent one.
+
+  $ narya -v -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def len (n :♭| N) (v : Vec N n) : N ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Vec defined
+  
+   ￫ hint[E1101]
+   ￭ command-line exec string
+   1 | def len (n :♭| N) (v : Vec N n) : N ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
+     ^ match will not refine the goal or context (index variable is keyed): n
+  
+   ￫ info[I0000]
+   ￮ constant len defined
+  
+
+That it really is a non-dependent match is visible in the goal: a motive that
+depends on the index is not refined, so the branch bodies fail to check against
+it.
+
+  $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def P : N → Type ≔ [ zero. ↦ N | suc. _ ↦ N ]' -e 'def f (n :♭| N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def f (n :♭| N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
+     ^ non-datatype P n has no constructor named zero
+  
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def f (n :♭| N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
+     ^ non-datatype P n has no constructor named suc
+  
+  [1]
+
+With the same index variable unkeyed, the match refines as usual.
+
+  $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def P : N → Type ≔ [ zero. ↦ N | suc. _ ↦ N ]' -e 'def f (n : N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
+
+A branch of a match may be omitted if one of its pattern variables belongs to an empty type, since then the branch can never be reached.  But refuting such a variable is matching against it with no branches, so its modal annotation must be one that a match could use as a window.  A ♭-annotated variable can be matched against, since ♭ is transparent, so it can refute a branch:
+
+  $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Empty : Type ≔ data [ ]' -e 'def D : Type ≔ data [ c0. | c1. (_ :♭| Empty) ]' -e 'def g (x : D) : N ≔ match x [ c0. ↦ zero. ]'
+
+But a ♯-annotated variable cannot be matched against, so it cannot refute a branch either: the constructor needs a clause, and a hint explains why the variable doesn't suffice.
+
+  $ narya -v -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Empty : Type ≔ data [ ]' -e 'def D : Type ≔ data [ c0. | c1. (_ :♯| Empty) ]' -e 'def g (x : D) : N ≔ match x [ c0. ↦ zero. ]'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Empty defined
+  
+   ￫ info[I0000]
+   ￮ constant D defined
+  
+   ￫ hint[E1102]
+   ￭ command-line exec string
+   1 | def g (x : D) : N ≔ match x [ c0. ↦ zero. ]
+     ^ a pattern variable of empty type is annotated by modality ♯, which a match cannot use as a window, so refuting it is not allowed either
+  
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def g (x : D) : N ≔ match x [ c0. ↦ zero. ]
+     ^ missing match clause for constructor c1
+  
+  [1]
+
 Modal fields of records and codata: a field parametrized by the sinister
 modality ♭ (with right adjoint ♯) is checked, supplied, and projected behind
 the corresponding locks.
@@ -295,6 +368,65 @@ adjoint.
    ￮ command-line exec string contains open holes
   
   [1]
+
+"about" on a modal codatatype or record displays each field with the locking
+annotation on the self-variable that declares it, and its type in the context
+locked by the right adjoint.  A record with a modal field must use the
+self-variable syntax, since the field-variable syntax "sig (a : …)" has nowhere
+to put the annotation; an ordinary non-modal field is unaffected.
+
+  $ narya -spatial modalfields.ny -e "about C" -e "about R" -e "about D"
+  codata [
+  | (x :♭| _) .fld : N ]
+    : Type
+  
+  sig (
+    (x :♭| _) .fst : N )
+    : Type
+  
+  codata [
+  | y .snd : N ]
+    : Type
+  
+
+
+
+
+A comatch or tuple for a modal field displays as usual: only the declaration and
+the projection carry the locking annotation.
+
+  $ narya -spatial modalfields.ny -e "about c" -e "about r"
+  [ .fld ↦ 1 ]
+    : C
+  
+  (fst ≔ 0)
+    : R
+  
+
+Projections are displayed with the modal annotation.
+
+  $ narya -spatial modalfields.ny -e "about p"
+  (c :♭| _) .fld
+    : N
+  
+
+
+A *degeneracy* of a modal codatatype is displayed the same way, with the
+locking annotation on the self-variable cube: each field's type is instantiated
+at the projections of that field from the faces of the self-variable, which
+carry the same annotation.
+
+  $ narya -spatial modalfields.ny -e "about (refl C)" -e "about (refl R)"
+  codata⁽ᵉ⁾ [
+  | (x :♭| _) .fld : N⁽ᵉ⁾ ((x.0 :♭| _) .fld) ((x.1 :♭| _) .fld) ]
+    : Type⁽ᵉ⁾ C C
+  
+  sig⁽ᵉ⁾ (
+    (x :♭| _) .fst : N⁽ᵉ⁾ ((x.0 :♭| _) .fst) ((x.1 :♭| _) .fst) )
+    : Type⁽ᵉ⁾ R R
+  
+
+
 
 A field can only be parametrized by a sinister (left adjoint) modality; ♯ is
 not sinister.
@@ -622,6 +754,42 @@ Projecting a modal higher field without the locking annotation is an error.
      ^ field root is modal with left adjoint ♭, so projecting it requires a locking annotation such as (_ : ♭ | _) .root
   
   [1]
+
+"about" on a modal *higher* codatatype displays the field's declaration
+instance ".root.e" with its locking annotation, as for a lower field, and a
+comatch for it displays its components.  As for a lower modal field, a
+degeneracy is displayed with the annotation on the self-variable cube, listing
+each instance of the field.
+
+  $ narya -spatial -e "axiom A : Type" -e "axiom a : A" -e "def √♭A : Type ≔ codata [ (x :♭| _) .root.e : A ]" -e "def mk : √♭A ≔ [ .root.e ↦ a ]" -e "about √♭A" -e "about mk" -e "about (refl √♭A)"
+  codata [
+  | (x :♭| _) .root.e : A ]
+    : Type
+  
+  [ .root.e ↦ a ]
+    : √♭A
+  
+  codata⁽ᵉ⁾ [
+  | (x :♭| _) .root.e : Id A ((x.02 :♭| _) .root) ((x.12 :♭| _) .root)
+  | (x :♭| _) .root.1 : A ]
+    : Type⁽ᵉ⁾ √♭A √♭A
+  
+
+
+
+
+A second degeneracy displays all three instances of the field, each in a
+context degenerated by its own remaining dimensions.
+
+  $ narya -spatial -e "axiom A : Type" -e "def √♭A : Type ≔ codata [ (x :♭| _) .root.e : A ]" -e "about (refl (refl √♭A))"
+  codata⁽ᵉᵉ⁾ [
+  | (x :♭| _) .root.e
+    : A⁽ᵉᵉ⁾ ((sym x.022 :♭| _) .root.1) ((sym x.122 :♭| _) .root.1)
+        ((sym x.202 :♭| _) .root.1) ((sym x.212 :♭| _) .root.1)
+  | (x :♭| _) .root.1 : Id A ((x.20 :♭| _) .root) ((x.21 :♭| _) .root)
+  | (x :♭| _) .root.2 : Id A ((x.02 :♭| _) .root) ((x.12 :♭| _) .root) ]
+    : Type⁽ᵉᵉ⁾ √♭A⁽ᵉ⁾ √♭A⁽ᵉ⁾ √♭A⁽ᵉ⁾ √♭A⁽ᵉ⁾
+  
 
 In the discrete spatial mode theory, ♭ is nonparametric, so it filters the
 field's intrinsic dimensions; modal higher fields there are not yet supported.

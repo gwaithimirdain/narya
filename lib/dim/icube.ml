@@ -229,8 +229,7 @@ module Icube (S : Suc) (F : Fam3) = struct
           let (Wrap l) = Endpoints.wrapped () in
           let (Wrap_branches (ends, acc)) =
             gbuild_left_branches (Word m1) (Append_cons mc) d g0 g (Endpoints.indices l) acc in
-          let (Wrap (mid, acc)) =
-            gbuild_left (Word m1) (Append_cons mc) (Fw.Mid (g0, d)) g acc in
+          let (Wrap (mid, acc)) = gbuild_left (Word m1) (Append_cons mc) (Fw.Mid (g0, d)) g acc in
           Wrap (Branch (g0, l, ends, mid), acc)
 
     and gbuild_left_branches : type m1 wf cf n b left len len' g0.

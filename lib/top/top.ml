@@ -23,6 +23,7 @@ let hott = ref true
 let hott_deprecated = ref false
 let discreteness = ref false
 let source_only = ref false
+let no_write_compiled = ref false
 let number_metas = ref true
 let parenthesize_arguments = ref false
 let extra_spaces = ref true
@@ -42,12 +43,12 @@ let marshal_flags chan =
 
 (* Unmarshal saved flags from a file and check that they agree with the current ones. *)
 let unmarshal_flags chan =
-  let ar = (Marshal.from_channel chan : int) in
-  let rc = (Marshal.from_channel chan : char) in
-  let rs = (Marshal.from_channel chan : string list) in
-  let int = (Marshal.from_channel chan : bool) in
-  let disc = (Marshal.from_channel chan : bool) in
-  let ho = (Marshal.from_channel chan : bool) in
+  let ar = (Istream.unmarshal chan : int) in
+  let rc = (Istream.unmarshal chan : char) in
+  let rs = (Istream.unmarshal chan : string list) in
+  let int = (Istream.unmarshal chan : bool) in
+  let disc = (Istream.unmarshal chan : bool) in
+  let ho = (Istream.unmarshal chan : bool) in
   if
     ar = !arity
     && rc = !refl_char
@@ -152,7 +153,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
       Bwd.fold_right
         (fun input acc ->
           match input with
-          | `File file -> FilePath.make_absolute (Sys.getcwd ()) file :: acc
+          | `File file -> Execute.normalize_filename (Sys.getcwd ()) file :: acc
           | _ -> acc)
         !inputs [] in
     Subtype.run @@ fun () ->
@@ -163,6 +164,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
           marshal = marshal_flags;
           unmarshal = unmarshal_flags;
           source_only = !source_only;
+          no_write_compiled = !no_write_compiled;
           top_files;
           reformat = !reformat;
         }

@@ -21,18 +21,35 @@ type printable +=
   | PConstr : Constr.t -> printable
   | PAnd : printable * printable -> printable
 
+(* Similarly, an oracle installed with Check.Oracle reports its failures with a code of its own, but
+   what those codes are is up to the client that installs it.  So "oracle_error" is an extensible
+   variant too, extended by that client with a tag for each way its oracle can fail.  Narya can't
+   say anything about a tag it's never heard of, so its own display of Oracle_failed says only that
+   an oracle failed; a client that cares (and only a client can) reports its own errors itself. *)
+
+type oracle_error = ..
+
+(* A client of Narya may also have errors of its own to report, which arise from how it builds the
+   terms it hands to Narya rather than from anything Narya checks.  Rather than Narya having a code
+   for each of them, "extern_error" is an extensible variant that the client extends with a tag for
+   each, and the Extern code wraps such a tag together with a code and text that Narya displays for
+   it, since Narya can't say anything about a tag it's never heard of.  They all share the same short
+   code, which the client's code is appended to as a suffix, so they don't clash with Narya's own codes. *)
+
+type extern_error = ..
+
 (* The function that actually does the work of printing a "printable" will be defined in Parser.Unparse.  But we need to be able to "call" that function in this file to define "default_text" that converts structured messages to text.  Thus, in this file we define a mutable global variable to contain that function, starting with a dummy function, and call its value to print "printable"s; then in Parser.Unparse we will set the value of that variable after defining the function it should contain. *)
 
 (* In addition, in Asai messages are emitted by performing an effect or raising an exception that carries with it the data of a function of type "formatter -> unit", which is then called by the handler Reporter.run to format the message text as part of a larger display formatting.  This causes problems if we define our printing functions naively, since it means that any effects performed by the formatting function (such as looking up names in a Yuujinchou Scope) will take place in the context of the handler, not that where the message was invoked, and hence in the wrong scope.  To deal with this, we ensure that the printable values are converted to PPrint documents directly in "default_text", before they are passed to Asai. *)
 
-let printer : (sort:[ `Type | `Function | `Other ] -> printable -> PPrint.document) ref =
-  ref (fun ~sort:_ _ -> raise (Failure "print not set (hint: Parser.Unparse must be loaded)"))
+let printer : (printable -> PPrint.document) ref =
+  ref (fun _ -> raise (Failure "print not set (hint: Parser.Unparse must be loaded)"))
 
-let print ?(sort = `Other) pr = !printer ~sort pr
+let print pr = !printer pr
 
 let print_to_string pr =
   let buf = Buffer.create 5 in
-  PPrint.ToBuffer.pretty 1.0 70 buf (!printer ~sort:`Other pr);
+  PPrint.ToBuffer.pretty 1.0 70 buf (!printer pr);
   Buffer.contents buf
 
 (* Now the function that Asai carries around is basically just PPrint.ToFormatter.pretty.  It's important to know exactly what this does, although it's not described precisely in the PPrint documentation: it converts all newlines to pp_force_newline and all spaces to pp_print_space.  Note that the latter is a break hint, allowing Format to break the line!  This is not what we want; the spaces in PPrint's output are supposed to be spaces, and only the newlines in PPrint's output should be newlines.  I think the only solution, short of modifying PPrint, is to surround it in a Format hbox, which causes all break hints to never split the line.  It does still respect force_newline, of course, so this should do what we want.  *)
@@ -133,6 +150,7 @@ module Code = struct
     | Checking_tuple_at_nonrecord : printable -> t
     | Choice_mismatch : printable -> t
     | Calc_error : printable -> t
+    | No_implicit_goal_arg : printable * printable -> t
     | Comatching_at_noncodata : printable -> t
     | Comatching_at_degenerated_codata : printable -> t
     | No_such_constructor :
@@ -165,7 +183,6 @@ module Code = struct
         -> t
     | Unequal_indices : printable * printable * Unequal.t -> t
     | Unbound_variable : string * (string list * string list) list -> t
-    | Ill_scoped_connection : t
     | Undefined_constant : printable -> t
     | Undefined_metavariable : printable -> t
     | Nonsynthesizing : string -> t
@@ -204,12 +221,16 @@ module Code = struct
     | Nontransparent_window_modality :
         ('a, 'm, 'b) Modality.t * bool * [ `Nonrecursive | `Recursive | `Unknown ]
         -> t
+    (* A branch was omitted, and there is a pattern variable of empty type that would have refuted it, but its modal annotation is not one a match could use as a window. *)
+    | Nonrefutable_modal_variable : ('a, 'm, 'b) Modality.t -> t
     | Non_mode_synthesizing : string -> t
     | Invalid_mode_theory : string -> t
     | Nonparametric_mode_degeneracy : string * 'a Mode.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
+    (* Raised by Names.lookup when an anonymous self-variable of a record being displayed with field-variable syntax is used directly rather than through a field; caught by the unparser to fall back to self-variable syntax.  A Bug because it should always be caught. *)
+    | Self_used : t
     | Redefining_constant : string list -> t
     | Invalid_constant_name : string list * string option -> t
     | Too_many_commands : t
@@ -234,6 +255,8 @@ module Code = struct
     | Hole_solved : int -> t
     | Split_term : PPrint.document -> t
     | Notation_defined : string -> t
+    (* Evaluating a term form that exists only for display, such as a potential application, which readback can produce but typechecking never does. *)
+    | Evaluating_display_term : string -> t
     | Show : string * printable -> t
     | Comment_end_in_string : t
     | Checking_canonical_at_nonuniverse : string * printable -> t
@@ -299,8 +322,8 @@ module Code = struct
     | Accumulated : string * t Asai.Diagnostic.t Bwd.t -> t
     | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
     | Invalid_instant : string -> t
-    | Cyclic_term : t
-    | Oracle_failed : string * printable -> t
+    | Oracle_failed : oracle_error -> t
+    | Extern : { code : string; text : string; error : extern_error } -> t
     | Invalid_flags : t
     | Typeless_meta : ('mode, 'x, 'b, 's) Meta.t * [ `Let | `Bare ] -> t
 
@@ -354,13 +377,13 @@ module Code = struct
     | Checking_tuple_at_nonrecord _ -> Error
     | Choice_mismatch _ -> Error
     | Calc_error _ -> Error
+    | No_implicit_goal_arg _ -> Error
     | Comatching_at_noncodata _ -> Error
     | Comatching_at_degenerated_codata _ -> Error
     | No_such_constructor _ -> Error
     | Missing_instantiation_constructor _ -> Error
     | Unequal_indices _ -> Error
     | Unbound_variable _ -> Error
-    | Ill_scoped_connection -> Error
     | Undefined_constant _ -> Bug
     | Undefined_metavariable _ -> Bug
     | No_such_field _ -> Error
@@ -386,6 +409,7 @@ module Code = struct
     | Duplicate_constructor_in_data _ -> Error
     | Matching_on_nondatatype _ -> Error
     | Matching_wont_refine _ -> Hint
+    | Nonrefutable_modal_variable _ -> Hint
     | Dimension_mismatch _ -> Bug (* Sometimes Error? *)
     | Mode_mismatch (`Internal, _, _, _, _) -> Bug
     | Mode_mismatch (`User, _, _, _, _) -> Error
@@ -402,6 +426,8 @@ module Code = struct
     | Nonparametric_mode_degeneracy _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
+    | Evaluating_display_term _ -> Bug
+    | Self_used -> Bug
     | Redefining_constant _ -> Warning
     | Invalid_constant_name _ -> Error
     | Too_many_commands -> Error
@@ -481,8 +507,8 @@ module Code = struct
     | Invalid_instant _ -> Bug
     | Wrong_dimension_of_field _ -> Error
     | Invalid_field_suffix _ -> Error
-    | Cyclic_term -> Error
     | Oracle_failed _ -> Error
+    | Extern _ -> Error
     | Invalid_flags -> Error
     | Typeless_meta _ -> Bug
 
@@ -493,6 +519,8 @@ module Code = struct
     | No_such_level _ -> "E0001"
     | Accumulated (_msg, _errs) -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
+    | Self_used -> "E0004"
+    | Evaluating_display_term _ -> "E0005"
     | Typeless_meta _ -> "E0010"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
@@ -508,13 +536,11 @@ module Code = struct
     | No_relative_precedence _ -> "E0207"
     | Unrecognized_attribute -> "E0208"
     | Comment_end_in_string -> "E0250"
-    | Cyclic_term -> "E0280"
     | Encoding_error -> "E0299"
     (* Scope errors *)
     | Unbound_variable _ -> "E0300"
     | Undefined_constant _ -> "E0301"
     | Undefined_metavariable _ -> "E0302"
-    | Ill_scoped_connection -> "E0303"
     | Locked_variable -> "E0310"
     | Locked_constant _ -> "E0311"
     | Axiom_in_parametric_definition _ -> "E0312"
@@ -572,6 +598,7 @@ module Code = struct
     (* - Match variable *)
     | Unnamed_variable_in_match -> "E1100"
     | Matching_wont_refine _ -> "E1101"
+    | Nonrefutable_modal_variable _ -> "E1102"
     (* - Match type *)
     | Matching_on_nondatatype _ -> "E1200"
     | Matching_datatype_has_degeneracy _ -> "E1201"
@@ -587,7 +614,7 @@ module Code = struct
     | No_remaining_patterns -> "E1308"
     | Invalid_refutation -> "E1309"
     (* - Match motive *)
-    | Wrong_number_of_arguments_to_motive _ -> "E1400"
+    | Wrong_number_of_arguments_to_motive _ -> "E1310"
     (* Comatches *)
     | Comatching_at_noncodata _ -> "E1400"
     | Comatching_at_degenerated_codata _ -> "E1401"
@@ -608,6 +635,7 @@ module Code = struct
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
+    | No_implicit_goal_arg _ -> "E1602"
     (* Modal type theory *)
     | Mode_mismatch _ -> "E1700"
     | Modality_mismatch _ -> "E1701"
@@ -622,8 +650,8 @@ module Code = struct
     | Modal_field_filtered_away _ -> "E1713"
     | Extra_filtered_field_in_tuple _ -> "E1714"
     | Invalid_mode_theory _ -> "E1710"
-    | Intangible_modality _ -> "E1706"
-    | Nontransparent_window_modality _ -> "E1707"
+    | Intangible_modality _ -> "E1709"
+    | Nontransparent_window_modality _ -> "E1715"
     | Nonparametric_mode_degeneracy _ -> "E1708"
     (* Commands *)
     | Too_many_commands -> "E2000"
@@ -663,6 +691,8 @@ module Code = struct
     | Invalid_section_name _ -> "E2601"
     (* oracles *)
     | Oracle_failed _ -> "E3000"
+    (* errors of a client's own, each numbered by the client within this one code *)
+    | Extern { code; _ } -> "E3100-" ^ code
     (* Interactive proof *)
     | Open_holes _ -> "W3000"
     | No_such_hole _ -> "E3001"
@@ -685,7 +715,7 @@ module Code = struct
     | Display_set _ -> "I0101"
     (* Control of execution *)
     | Quit _ -> "I0200"
-    | Break -> "E0201"
+    | Break -> "E2004"
     (* Debugging *)
     | Show _ -> "I9999"
 
@@ -736,13 +766,13 @@ module Code = struct
             (string_of_dim0 (D.pos n))
       | Instantiating_zero_dimensional_type ty ->
           textf "@[<hv 0>can't apply/instantiate a zero-dimensional type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+            (print ty)
       | Unequal_synthesized_type { got; expected; which; why } ->
           let str, p1, p2 = Unequal.printables why in
           textf
             "@[<hv 0>term synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a%a@]"
-            pp_printed (print ~sort:`Type got) pp_printed (print ~sort:`Type expected) str
-            pp_printed (print p1) pp_printed (print p2)
+            pp_printed (print got) pp_printed (print expected) str pp_printed (print p1) pp_printed
+            (print p2)
             (pp_print_option
                ~none:(fun _ () -> ())
                (fun ppf which -> fprintf ppf "@ (hint: %s boundaries are explicit)" which))
@@ -751,8 +781,8 @@ module Code = struct
           let str, p1, p2 = Unequal.printables why in
           textf
             "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
-            (string_of_sface face) pp_printed (print ~sort:`Type got) pp_printed
-            (print ~sort:`Type expected) str pp_printed (print p1) pp_printed (print p2)
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
       | Not_enough_domains dim ->
           textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
       | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
@@ -760,10 +790,10 @@ module Code = struct
       | Expected_nullary_application -> text "expected nullary application"
       | Checking_tuple_at_degenerated_record r ->
           textf "can't check a tuple against a record %a with a nonidentity degeneracy applied"
-            pp_printed (print ~sort:`Type r)
+            pp_printed (print r)
       | Comatching_at_degenerated_codata r ->
           textf "can't comatch against a codatatype %a with a nonidentity degeneracy applied"
-            pp_printed (print ~sort:`Type r)
+            pp_printed (print r)
       | Missing_field_in_tuple (f, _) ->
           textf "record field '%s' missing in tuple" (Field.to_string f)
       | Missing_method_in_comatch (f, p) ->
@@ -785,28 +815,28 @@ module Code = struct
       | Unnamed_variable_in_match -> text "unnamed match variable"
       | Checking_lambda_at_nonfunction ty ->
           textf "@[<hv 0>checking abstraction against non-function type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+            (print ty)
       | Checking_tuple_at_nonrecord ty ->
-          textf "@[<hv 0>checking tuple against non-record type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+          textf "@[<hv 0>checking tuple against non-record type@;<1 2>%a@]" pp_printed (print ty)
       | Choice_mismatch ty ->
-          textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+          textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed (print ty)
       | Calc_error e -> textf "error in calc: %a" pp_printed (print e)
+      | No_implicit_goal_arg (fn, ty) ->
+          textf "@[<hv 0>can't take an implicit argument for@;<1 2>%a@ from type@;<1 2>%a@]"
+            pp_printed (print fn) pp_printed (print ty)
       | Comatching_at_noncodata ty ->
-          textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+          textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed (print ty)
       | No_such_constructor (d, c) -> (
           match d with
           | `Data d ->
-              textf "datatype %a has no constructor named %s" pp_printed (print ~sort:`Type d)
+              textf "datatype %a has no constructor named %s" pp_printed (print d)
                 (Constr.to_string c)
           | `Nondata d ->
-              textf "non-datatype %a has no constructor named %s" pp_printed (print ~sort:`Type d)
+              textf "non-datatype %a has no constructor named %s" pp_printed (print d)
                 (Constr.to_string c)
           | `Other ty ->
               textf "@[<hv 0>non-datatype@;<1 2>%a@ has no constructor named %s@]" pp_printed
-                (print ~sort:`Type ty) (Constr.to_string c))
+                (print ty) (Constr.to_string c))
       | Wrong_number_of_arguments_to_constructor (c, n) ->
           if n > 0 then
             textf "too many arguments to constructor %s (%d extra)" (Constr.to_string c) n
@@ -822,11 +852,9 @@ module Code = struct
             | `Int n -> string_of_int n in
           match d with
           | `Record (eta, d) ->
-              textf "%s type %a has no field named %s" (record_or_codata eta) pp_printed
-                (print ~sort:`Type d) f
+              textf "%s type %a has no field named %s" (record_or_codata eta) pp_printed (print d) f
           | `Nonrecord d ->
-              textf "non-record/codata type %a has no field named %s" pp_printed
-                (print ~sort:`Type d) f
+              textf "non-record/codata type %a has no field named %s" pp_printed (print d) f
           | `Other tm -> textf "term %a has no field named %s" pp_printed (print tm) f
           | `Type tm ->
               textf "type %a has no field named %s (maybe turn off -parametric?)" pp_printed
@@ -849,8 +877,8 @@ module Code = struct
           let err = if err = "" then "empty suffix" else "suffix " ^ err in
           textf
             "@[<hv 0>field %s of %s type@;<1 2>%a@ has intrinsic dimension %s and used at dimension %s, can't have %s@]"
-            fldname (record_or_codata eta) pp_printed (print ~sort:`Type d)
-            (string_of_dim0 intrinsic) (string_of_dim0 used_at) err
+            fldname (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic)
+            (string_of_dim0 used_at) err
       | Invalid_field_suffix (ty, f, p, evaldim) ->
           textf "invalid suffix %s for field %s of %s-dimensional type %a" (string_of_ins_ints p) f
             (string_of_dim0 evaldim) pp_printed (print ty)
@@ -904,7 +932,7 @@ module Code = struct
       | Applying_nonfunction_nontype (tm, ty) ->
           textf
             "@[<hv 0>attempt to apply/instantiate@;<1 2>%a@ of type@;<1 2>%a@ which is not a function-type or universe@]"
-            pp_printed (print tm) pp_printed (print ~sort:`Type ty)
+            pp_printed (print tm) pp_printed (print ty)
       | Unexpected_implicitness (i, what, str) ->
           textf "unexpected %s %s: %s"
             (match i with
@@ -937,7 +965,7 @@ module Code = struct
           textf "constructor %s appears twice in match" (Constr.to_string c)
       | Matching_on_nondatatype ty ->
           textf "@[<hv 0>can't match on variable belonging to non-datatype@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+            (print ty)
       | Matching_wont_refine (msg, Some d) ->
           textf "@[<hv 0>match will not refine the goal or context (%s):@;<1 2>%a@]" msg pp_printed
             (print d)
@@ -981,6 +1009,10 @@ module Code = struct
           textf
             "window modality %s must be pellucid since it is not yet known whether the datatype has recursive constructors, due to unsolved holes in its constructor types"
             (Modality.to_string m)
+      | Nonrefutable_modal_variable m ->
+          textf
+            "a pattern variable of empty type is annotated by modality %s, which a match cannot use as a window, so refuting it is not allowed either"
+            (Modality.to_string m)
       | Nontransparent_window_modality (m, false, `Nonrecursive) ->
           textf "window modality %s must be pellucid or transparent" (Modality.to_string m)
       | Nontransparent_window_modality (m, true, `Nonrecursive) ->
@@ -1019,6 +1051,7 @@ module Code = struct
             "field %s must be omitted at this dimension: its modality %s is nonparametric and filters this dimension away"
             field (Modality.to_string m)
       | Anomaly str -> textf "anomaly: %s" str
+      | Self_used -> text "uncaught use of self-variable in a field-variable record display"
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->
           textf "redefining constant: %a" pp_printed (print (PString (String.concat "." name)))
@@ -1074,11 +1107,12 @@ module Code = struct
                 (fun ppf names -> pp_print_list (fun ppf name -> pp_printed ppf name) ppf names)
                 (List.map (fun name -> print name) names))
       | Notation_defined name -> textf "notation %s defined" name
+      | Evaluating_display_term str -> textf "evaluating display-only %s" str
       | Show (str, x) -> textf "%s: %a" str pp_printed (print x)
       | Comment_end_in_string ->
           text "comment-end sequence `} in quoted string: cannot be commented out"
       | Checking_canonical_at_nonuniverse (tm, ty) ->
-          textf "checking %s at non-universe %a" tm pp_printed (print ~sort:`Type ty)
+          textf "checking %s at non-universe %a" tm pp_printed (print ty)
       | Bare_case_tree_construct str ->
           textf "%s encountered outside case tree, wrapping in implicit let-binding" str
       | Duplicate_method_in_codata fld ->
@@ -1137,8 +1171,7 @@ module Code = struct
       | Synthesizing_recursion c ->
           textf "for '%a' to be recursive, it must have a declared type" pp_printed (print c)
       | Invalid_synthesized_type (str, ty) ->
-          textf "type %a synthesized by %s is invalid for entire term" pp_printed
-            (print ~sort:`Type ty) str
+          textf "type %a synthesized by %s is invalid for entire term" pp_printed (print ty) str
       | Unrecognized_attribute -> textf "unrecognized attribute"
       | Invalid_degeneracy_action (str, nk, n) ->
           textf
@@ -1206,9 +1239,8 @@ module Code = struct
           | `File file -> textf "imported file '%s' cannot contain holes" file
           | `Other where -> textf "%s cannot contain holes" where)
       | Invalid_instant instant -> textf "invalid instant: %s" instant
-      | Ill_scoped_connection -> text "ill-scoped connection"
-      | Cyclic_term -> text "cycle in graphical term"
-      | Oracle_failed (str, tm) -> textf "oracle failed: %s: %a" str pp_printed (print tm)
+      | Oracle_failed _ -> text "oracle failed"
+      | Extern { text = t; _ } -> text t
       | Invalid_flags -> text "invalid combination of command-line flags"
       | Typeless_meta (m, why) ->
           textf "typeless meta in %s: %a"
@@ -1316,6 +1348,16 @@ let rec unaccumulate (c : Code.t) : Code.t =
   match c with
   | Accumulated (_, Snoc (Emp, c)) -> unaccumulate c.message
   | c -> c
+
+(* Whether a diagnostic is, or accumulates, an internal error. *)
+let rec is_bug (d : Code.t Asai.Diagnostic.t) =
+  match d.message with
+  | Accumulated (_, ds) -> Bwd.exists is_bug ds
+  | _ -> d.severity = Bug
+
+(* Run a callback, backtracking with the given handler if it fails.  Internal errors are re-raised instead, since they indicate a problem that shouldn't be hidden by succeeding along some other path. *)
+let backtrack ~(fatal : Code.t Asai.Diagnostic.t -> 'a) (f : unit -> 'a) : 'a =
+  try_with ~fatal:(fun d -> if is_bug d then fatal_diagnostic d else fatal d) f
 
 (* Re-raise one diagnostic, if given, otherwise another. *)
 let fatal_or d e =

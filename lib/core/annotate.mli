@@ -10,7 +10,8 @@ val tm : ('mode, 'a, 'b) Ctx.t -> ('mode, 'b, 's) term -> unit
 val ctx : ('mode, 'b, 's) status -> ('mode, 'a, 'b) Ctx.t -> 'a Raw.check located -> unit
 
 type ctx_handler = {
-  handle : 'mode 'a 'b 's. ('mode, 'b, 's) status -> ('mode, 'a, 'b) Ctx.t -> 'a Raw.check located -> unit;
+  handle :
+    'mode 'a 'b 's. ('mode, 'b, 's) status -> ('mode, 'a, 'b) Ctx.t -> 'a Raw.check located -> unit;
 }
 
 type tm_handler = printable located -> unit

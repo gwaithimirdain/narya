@@ -65,23 +65,29 @@ In addition, constants defined as functions do not reduce until they are applied
 .. code-block:: none
    
    def cplus (A:Type) (m n : (A → A) → (A → A)) : (A → A) → (A → A) ≔
-   f x ↦ m f (n f x)
+     f x ↦ m f (n f x)
 
-then ``cplus A (f x ↦ f x) (f x ↦ f x)`` (i.e. "1 + 1") doesn't reduce to ``(f x ↦ f (f x))`` because it is not fully applied, whereas ``cplus A (f x ↦ f x) (f x ↦ f x) f x`` does reduce to ``f (f x)``.  However, ``cplus A (f x ↦ f x) (f x ↦ f x)`` is still *convertible* with ``(f x ↦ f (f x))`` because equality-checking does η-conversion.  If you want to display the body of a constant defined as a function, you must manually η-expand it, which means it has to be ascribed as well:
+then ``cplus A (f x ↦ f x) (f x ↦ f x)`` (i.e. "1 + 1") doesn't reduce to ``(f x ↦ f (f x))`` because it is not fully applied, whereas ``cplus A (f x ↦ f x) (f x ↦ f x) f x`` does reduce to ``f (f x)``.
 
 .. code-block:: none
 
-   echo (A f x ↦ cplus A (f x ↦ f x) (f x ↦ f x) f x)
-      : (A:Type) → (A → A) → (A → A)
-  
-   A f x ↦ f (f x)
-      : (A : Type) → (A → A) → A → A
+   echo cplus A (f x ↦ f x) (f x ↦ f x)
 
-If there is significant demand for displaying function bodies, we may add an option to ask for η-expansion.
+   cplus A (f x ↦ f x) (f x ↦ f x)
+     : (A → A) → A → A
+
+However, ``cplus A (f x ↦ f x) (f x ↦ f x)`` is still *convertible* with ``(f x ↦ f (f x))`` because equality-checking does η-conversion.  To display the body of a constant defined as a function, use the interactive ``about`` command instead of ``echo``.
+
+.. code-block:: none
+
+   about cplus A (f x ↦ f x) (f x ↦ f x)
+  
+   f x ↦ f (f x)
+     : (A → A) → A → A
 
 More generally, the definition of a constant is not just a term, but something called a *case tree*, which can contain internal nodes of different sorts and ends in ordinary terms at its leaves.  Evaluation of such a constant, applied to arguments, does not reduce to anything unless the arguments are sufficient and sufficiently informative for the evaluation to reach a leaf.  In fact *every* defined constant in Narya is actually defined to equal a case tree, even if it consists only of a single leaf.
 
-So far, the only kinds of case tree node we have seen are abstractions and let-bindings.  The requirement for abstractions in a case tree to reduce is just that the function receives enough arguments to β-reduce all the abstractions, and let-bindings in a case tree reduce if their body does.  Thus, in particular, an abstraction directly inside a let-binding, such as that over ``y`` above, must also receive an argument before the definition reduces.  Other kinds of case tree nodes, with their own reduction rules, include :ref:`tuples`, :ref:`matches<matching>`, and :ref:`comatches<copattern matching>`.
+So far, the only kinds of case tree node we have seen are abstractions and let-bindings.  The requirement for abstractions in a case tree to reduce is just that the function receives enough arguments to β-reduce all the abstractions, and let-bindings in a case tree reduce if their body does.  Thus, in particular, an abstraction directly inside a let-binding, such as that over ``y`` above, must also receive an argument before the definition reduces.  Other kinds of case tree nodes, with their own reduction rules, include :ref:`tuples<Tuples>`, :ref:`matches<matching>`, and :ref:`comatches<copattern matching>`, as well as canonical types such as :ref:`record types<Record types and tuples>`, :ref:`datatypes<Inductive datatypes and matching>`, and :ref:`codatatypes<Codatatypes and comatching>`.
 
 Since abstractions and let-bindings can also occur at arbitrary positions in a term, there is some potential ambiguity in a definition containing these: are they part of the case tree, or part of a unique body term?  The rule to resolve this is that the case tree includes *as much as possible*.  Once another kind of term is encountered that cannot be a case tree node, then that term and all its sub-terms (including any abstractions or let-bindings) are part of the leaf.  Thus, for instance, in
 

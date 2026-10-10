@@ -65,8 +65,7 @@ let cube2 : type a b.
             ( D.deg,
               two,
               Snoc
-                ( Snoc (Emp, Leaf (Append_cons Append_nil, x20)),
-                  Leaf (Append_cons Append_nil, x21) ),
+                (Snoc (Emp, Leaf (Append_cons Append_nil, x20)), Leaf (Append_cons Append_nil, x21)),
               Leaf (Append_cons (Append_cons Append_nil), x22) ) ))
     (Endpoints.hott ())
 

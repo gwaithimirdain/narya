@@ -36,7 +36,9 @@ module Make (G : Decidable) (F : Fam2) = struct
     | Now, Match { bplus; now; _ } ->
         let Eq = W.bplus_uniq ab bplus in
         now
-    | Now, Miss { apart; _ } -> ( match G.apart_irrefl apart with _ -> . )
+    | Now, Miss { apart; _ } -> (
+        match G.apart_irrefl apart with
+        | _ -> .)
     | Later i, Match { later; _ } -> gfind i later (Append_cons ab)
     | Later i, Miss { later; _ } -> gfind i later (Append_cons ab)
 
@@ -54,7 +56,9 @@ module Make (G : Decidable) (F : Fam2) = struct
     | Now, Match m ->
         let Eq = W.bplus_uniq ab m.bplus in
         Match { m with now = v }
-    | Now, Miss { apart; _ } -> ( match G.apart_irrefl apart with _ -> . )
+    | Now, Miss { apart; _ } -> (
+        match G.apart_irrefl apart with
+        | _ -> .)
     | Later i, Match m -> Match { m with later = gset i v m.later (Append_cons ab) }
     | Later i, Miss m -> Miss { m with later = gset i v m.later (Append_cons ab) }
 
@@ -73,7 +77,9 @@ module Make (G : Decidable) (F : Fam2) = struct
     | Now, Match m ->
         let Eq = W.bplus_uniq ab m.bplus in
         Match { m with now = f m.now }
-    | Now, Miss { apart; _ } -> ( match G.apart_irrefl apart with _ -> . )
+    | Now, Miss { apart; _ } -> (
+        match G.apart_irrefl apart with
+        | _ -> .)
     | Later i, Match m -> Match { m with later = gupdate i f m.later (Append_cons ab) }
     | Later i, Miss m -> Miss { m with later = gupdate i f m.later (Append_cons ab) }
 
@@ -113,9 +119,7 @@ module Make (G : Decidable) (F : Fam2) = struct
 
     type (_, _, _, _) hgt =
       | [] : ('a, 'b, 'g0, nil) hgt
-      | ( :: ) :
-          ('a, 'b, 'g0, 'p) gt * ('a, 'b, 'g0, 'ps) hgt
-          -> ('a, 'b, 'g0, ('p, 'ps) cons) hgt
+      | ( :: ) : ('a, 'b, 'g0, 'p) gt * ('a, 'b, 'g0, 'ps) hgt -> ('a, 'b, 'g0, ('p, 'ps) cons) hgt
 
     let rec emp : type b g0 ps. ps Tlist.t -> (W.zero, b, g0, ps) hgt = function
       | Nil -> []
@@ -130,21 +134,27 @@ module Make (G : Decidable) (F : Fam2) = struct
       | Match { bplus; now = n; _ } :: ms ->
           let Eq = W.bplus_uniq ab bplus in
           n :: nows ab ms
-      | Miss { apart; _ } :: _ -> ( match G.apart_irrefl apart with _ -> . )
+      | Miss { apart; _ } :: _ -> (
+          match G.apart_irrefl apart with
+          | _ -> .)
 
     (* Extract the sub-tuples of a heterogeneous list of Match (resp. Miss) nodes. *)
     let rec later_match : type a b g0 ps.
         ((a, g0) snoc, b, g0, ps) hgt -> (a, (g0, b) cons, g0, ps) hgt = function
       | [] -> []
       | Match { later = l; _ } :: ms -> l :: later_match ms
-      | Miss { apart; _ } :: _ -> ( match G.apart_irrefl apart with _ -> . )
+      | Miss { apart; _ } :: _ -> (
+          match G.apart_irrefl apart with
+          | _ -> .)
 
     let rec later_miss : type a b g g0 ps.
         (g, g0) G.apart -> ((a, g) snoc, b, g0, ps) hgt -> (a, (g, b) cons, g0, ps) hgt =
      fun apart -> function
       | [] -> []
       | Miss { later = l; _ } :: ms -> l :: later_miss apart ms
-      | Match _ :: _ -> ( match G.apart_irrefl apart with _ -> . )
+      | Match _ :: _ -> (
+          match G.apart_irrefl apart with
+          | _ -> .)
 
     (* Reassemble a heterogeneous list of Match (resp. Miss) nodes. *)
     let rec map_match : type a b ab g0 ps.
@@ -212,9 +222,8 @@ module Make (G : Decidable) (F : Fam2) = struct
   }
 
   let mmap : type a g0 p ps q.
-      (a, g0, (p, ps) cons, q) mmapper ->
-      (a, nil, g0, (p, ps) cons) Heter.hgt ->
-      (a, nil, g0, q) gt =
+      (a, g0, (p, ps) cons, q) mmapper -> (a, nil, g0, (p, ps) cons) Heter.hgt -> (a, nil, g0, q) gt
+      =
    fun f xs ->
     let [ ys ] =
       pmap

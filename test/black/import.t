@@ -288,6 +288,115 @@ Notations are used from explicitly imported files, but not transitively.
     : A
   
 
+A notation that arrives twice is the same notation, not two ambiguous ones: importing the file
+that defines it a second time changes nothing.
+
+  $ cat >n5.ny <<EOF
+  > import "n1"
+  > import "n2"
+  > import "n2"
+  > echo a & a
+  > EOF
+
+  $ narya -source-only n5.ny
+  a & a
+    : A
+  
+
+Neither does meeting it along two different paths.
+
+  $ cat >n6.ny <<EOF
+  > export "n2"
+  > EOF
+
+  $ cat >n7.ny <<EOF
+  > import "n1"
+  > import "n2"
+  > import "n6"
+  > echo a & a
+  > EOF
+
+  $ narya -source-only n7.ny
+  a & a
+    : A
+  
+
+That holds when the notation arrives from compiled files too, although each of them has to compile
+it anew when it is loaded: the identity is linked like a constant's, so the copies are still one
+notation.  (The first run here is what writes the compiled files, so it is the second one that
+reads them.)
+
+  $ cat >m1.ny <<EOF
+  > axiom B:Type
+  > axiom g : B -> B -> B
+  > axiom b:B
+  > notation(0) x "@" y := g x y
+  > EOF
+
+  $ cat >m2.ny <<EOF
+  > export "m1"
+  > EOF
+
+  $ cat >m3.ny <<EOF
+  > export "m1"
+  > EOF
+
+  $ cat >m4.ny <<EOF
+  > import "m2"
+  > import "m3"
+  > echo b @ b
+  > EOF
+
+  $ narya m4.ny
+  b @ b
+    : B
+  
+
+  $ narya m4.ny
+  b @ b
+    : B
+  
+
+Linking a compiled file can reach further than the files it names: n6 exports n2, whose notation
+refers to a constant belonging to n1, so loading n6 compiled has to link a file that n6 imports
+only through n2.
+
+  $ narya n7.ny
+  a & a
+    : A
+  
+
+  $ narya n7.ny
+  a & a
+    : A
+  
+
+An import that is merely newer than the file importing it hasn't been "modified": what counts is
+whether it changed since it was loaded, which is asked of each file about itself.
+
+  $ cat >mone.ny <<EOF
+  > axiom M : Type
+  > EOF
+
+  $ cat >mtwo.ny <<EOF
+  > import "mone"
+  > axiom m0 : M
+  > EOF
+
+  $ touch mone.ny
+
+  $ cat >mthree.ny <<EOF
+  > import "mone"
+  > import "mtwo"
+  > import "mtwo"
+  > echo m0
+  > EOF
+
+  $ narya -source-only mthree.ny
+  m0
+    : M
+  
+
 Quitting in imports quits only that file
 
   $ cat >qone.ny <<EOF

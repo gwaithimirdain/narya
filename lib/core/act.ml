@@ -157,12 +157,6 @@ module Act = struct
             () in
         Variables (m, ml, vars)
 
-  (* Acting on a binder and on other sorts of closures will be unified by the function 'act_closure', but its return value involves an existential type, so it has to be a GADT. *)
-  type (_, _, _, _) act_closure =
-    | Act_closure :
-        ('mode, 'm, 'a) env * ('mn, 'm, 'n) insertion
-        -> ('mode, 'a, 'mn, 'n) act_closure
-
   type (_, _, _, _, _) act_pi =
     | Act_pi :
         ('k, 'n) deg
@@ -351,6 +345,13 @@ module Act = struct
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
 
+  and act_env_deg : type mode m n b mu1 mu2 cod.
+      (mode, n, b) env -> (m, n) deg -> (mode, mu1, mu2, cod) Modalcell.t -> (mode, m, b) env =
+   fun env s cell ->
+    let env = act_env env (opt_op_of_deg s) in
+    let env = prekey_env env cell in
+    env
+
   and act_canonical : type mode mu1 mu2 cod m n i.
       (mode, n, i) canonical ->
       (m, n) deg ->
@@ -372,37 +373,27 @@ module Act = struct
         let constrs = Abwd.map (fun con -> act_dataconstr con fa cell) constrs in
         Data { dim = dom_deg fa; tyfam; indices; constrs; discrete; recursive; hints }
     | Codata { eta; opacity; hints; env; fields } ->
-        let env = act_env env (opt_op_of_deg fa) in
-        let env = prekey_env env cell in
+        let env = act_env_deg env fa cell in
         Codata { eta; opacity; hints; env; fields }
 
-  and act_dataconstr : type mode mu1 mu2 cod m n i.
-      (mode, n, i) dataconstr ->
+  and act_dataconstr : type mode mu1 mu2 cod m n.
+      (mode, n) dataconstr ->
       (m, n) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
-      (mode, m, i) dataconstr =
-   fun (Dataconstr { env; args; indices }) s cell ->
-    (* We key on the environment without changing its mode by prekeying it. *)
-    let env = act_env env (opt_op_of_deg s) in
-    let env = prekey_env env cell in
-    Dataconstr { env; args; indices }
+      (mode, m) dataconstr =
+   fun (Dataconstr { env; ty; fnty }) s cell ->
+    let env = act_env_deg env s cell in
+    Dataconstr { env; ty; fnty = act_lazy_eval fnty s cell }
 
-  (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
-  and act_closure : type mode mn m n a kn.
-      (mode, m, a) env -> (mn, m, n) insertion -> (kn, mn) deg -> (mode, a, kn, n) act_closure =
-   fun env ins fa ->
-    let (Insfact_comp (fc, ins)) = insfact_comp ins fa in
-    Act_closure (act_env env (opt_op_of_deg fc), ins)
-
+  (* act_binder assumes that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_binder : type mode modality dom mn kn s mu1 mu2 cod.
       (mode, modality, dom, mn, s) binder ->
       (kn, mn) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
       (mode, modality, dom, kn, s) binder =
    fun (Bind { env; modality; filter; ins; body }) fa c ->
-    let (Act_closure (env, ins)) = act_closure env ins fa in
-    (* A modal key acts on a binder by prekeying its captured environment.  The variables bound by the binder itself, which will be added on top of the Prekey when it is applied, are unaffected. *)
-    let env = prekey_env env c in
+    let (Insfact_comp (fc, ins)) = insfact_comp ins fa in
+    let env = act_env_deg env fc c in
     Bind { env; modality; filter; ins; body }
 
   and act_normal : type mode mu1 mu2 cod a b.
@@ -544,15 +535,14 @@ module Act = struct
                      ^ Modalcell.to_string key
                      ^ " doesn't factor through domain of "
                      ^ Modalcell.to_string c))))
-    (* To act on a constant, we push as much of the degeneracy through the insertion as possible.  The actual degeneracy that gets pushed through doesn't matter, since it just raises the constant to an even higher dimension, and that dimension is stored in the insertion.  The key is actually completely ignored. *)
+    (* To act on a constant, we push as much of the degeneracy through the insertion as possible.  The actual degeneracy that gets pushed through doesn't matter, since it just raises the constant to an even higher dimension, and that dimension is stored in the insertion.  The key is actually completely ignored, since keys act by simply pushing through to variables, and constant have no variables in them. *)
     | Const { name; ins } ->
         let (Insfact_comp_ext (_, ins, _, _)) = insfact_comp_ext ins s in
         Const { name; ins }
-    (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment. *)
+    (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment, as does the key. *)
     | Meta { meta; env; ins } ->
         let (Insfact_comp_ext (deg, ins, _, _)) = insfact_comp_ext ins s in
-        let env = act_env env (opt_op_of_deg deg) in
-        let env = prekey_env env c in
+        let env = act_env_deg env deg c in
         Meta { meta; env; ins }
     | UU (mode, nk) ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in

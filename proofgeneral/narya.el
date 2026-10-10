@@ -21,7 +21,7 @@
   
 (defun narya-delete-all-holes ()
   "Delete all hole overlays and reset `narya-hole-overlays' to nil."
-  (mapc #'delete-overlay narya-hole-overlays)
+  (mapc #'narya-delete-hole-overlay narya-hole-overlays)
   (setq narya-hole-overlays nil))
 
 (add-hook 'proof-shell-kill-function-hooks #'narya-delete-all-holes)
@@ -71,6 +71,72 @@ Return the number of such overlays created."
       (setq count (+ count 1)))
     count))
 
+(defface narya-hole-delimiter-face
+  '((t (:inherit font-lock-warning-face)))
+  "Face used for the ¿, ʔ, and ! delimiters of a hole.
+Applied with an overlay rather than by font-lock, since font-lock only
+sets text properties, which are invisible underneath the overlay face of
+Proof General's processed region."
+  :group 'narya)
+
+(defvar narya-hole-delimiter-priority 100
+  "Priority of the overlays highlighting hole delimiters.
+It must be greater than that of Proof General's locked-region overlay,
+so that the delimiters remain visible inside the processed region.")
+
+(defun narya-make-hole-delimiter-overlay (beg end)
+  "Create an overlay highlighting a hole delimiter from BEG to END."
+  (let ((ovl (make-overlay beg end nil
+                           ;; Text typed next to a delimiter belongs to
+                           ;; the hole contents, not to the delimiter.
+                           t nil)))
+    (overlay-put ovl 'narya-hole-delimiter t)
+    (overlay-put ovl 'face 'narya-hole-delimiter-face)
+    (overlay-put ovl 'priority narya-hole-delimiter-priority)
+    ;; If the delimiter is deleted, so is its overlay.
+    (overlay-put ovl 'evaporate t)
+    ovl))
+
+(defun narya-mark-hole-delimiters (ovl)
+  "Create overlays highlighting the delimiters of the hole overlay OVL.
+These are its opening ¿, its closing ʔ, and any ! that subdivides it at
+top level (those subdividing a nested hole belong to that hole instead).
+Any previously created such overlays are deleted first, so this can also
+be used to update them after the contents of the hole have been edited."
+  (mapc #'delete-overlay (overlay-get ovl 'narya-hole-delimiters))
+  (overlay-put ovl 'narya-hole-delimiters nil)
+  (let ((start (overlay-start ovl))
+        (end (overlay-end ovl))
+        (delimiters nil))
+    (when (and start end (< start end))
+      (save-excursion
+        ;; The opening ¿.
+        (push (narya-make-hole-delimiter-overlay start (1+ start)) delimiters)
+        ;; The top-level !s.  Stopping short of the last character means
+        ;; that the closing ʔ is not found, so the loop terminates there.
+        (goto-char (1+ start))
+        (let (data)
+          (while (and (setq data (narya-next-hole-subdivision (1- end)))
+                      (nth 0 data))
+            (push (narya-make-hole-delimiter-overlay (nth 1 data) (nth 2 data))
+                  delimiters)))
+        ;; The closing ʔ.
+        (push (narya-make-hole-delimiter-overlay (1- end) end) delimiters)))
+    (overlay-put ovl 'narya-hole-delimiters delimiters)))
+
+(defun narya-update-hole-delimiters (start end _length)
+  "Update the delimiter overlays of any hole touched by an edit.
+For `after-change-functions' in Narya-mode buffers."
+  (dolist (ovl (overlays-in (max (point-min) (1- start))
+                            (min (point-max) (1+ end))))
+    (when (overlay-get ovl 'narya-hole)
+      (narya-mark-hole-delimiters ovl))))
+
+(defun narya-delete-hole-overlay (ovl)
+  "Delete the hole overlay OVL, along with its delimiter overlays."
+  (mapc #'delete-overlay (overlay-get ovl 'narya-hole-delimiters))
+  (delete-overlay ovl))
+
 (defun narya-create-hole-overlay (char-start char-end hole-id)
   "Create a single hole overlay.
 The start and end regions should include the already-inserted ¿ and ʔ."
@@ -81,6 +147,7 @@ The start and end regions should include the already-inserted ¿ and ʔ."
                              t nil)))
       (overlay-put ovl 'narya-hole hole-id)
       (overlay-put ovl 'face '(:extend t :inherit highlight))
+      (narya-mark-hole-delimiters ovl)
       (push ovl narya-hole-overlays)
       ovl)))
 
@@ -457,7 +524,7 @@ handling in Proof General."
 	   (lambda (ovl)
 	     (if (and (overlay-start ovl) (< (overlay-start ovl) pend))
 		 t
-	       (delete-overlay ovl)
+	       (narya-delete-hole-overlay ovl)
 	       nil))
 	   narya-hole-overlays))))
 
@@ -500,7 +567,7 @@ handling in Proof General."
 
  ;; Undo
  proof-non-undoables-regexp            "undo"
- proof-ignore-for-undo-count           "echo\\|synth\\|show\\|undo"
+ proof-ignore-for-undo-count           "echo\\|synth\\|about\\|show\\|undo"
  proof-undo-n-times-cmd                "undo %s\n\x0C" ;; has to end with a formfeed to terminate a PG-mode command
  proof-state-preserving-p              'narya-state-preserving-p
  ;; The difference between proof-count-undos-fn and proof-find-and-forget-fn seems to be that the former is called iff staying inside a single proof.  However, as far as I can see, for Narya the default value of the former also works for the latter.
@@ -599,7 +666,8 @@ handling in Proof General."
   (setq font-lock-multiline t)
   (add-to-list 'font-lock-extend-region-functions 'narya-extend-font-lock-region)
   (add-hook 'proof-activate-scripting-hook 'narya-chdir-to-current-file)
-  (add-hook 'after-change-functions 'narya-clear-error-highlights-on-edit nil t))
+  (add-hook 'after-change-functions 'narya-clear-error-highlights-on-edit nil t)
+  (add-hook 'after-change-functions 'narya-update-hole-delimiters nil t))
 
 (add-hook 'narya-mode-hook 'narya-mode-extra-config)
 
@@ -723,9 +791,13 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                                 (insert term))
                               (insert "\n")
                               (setq n (+ n 1))
+                              ;; Terms after the first are being
+                              ;; applied as arguments to the first, so
+                              ;; they may need parentheses.
                               (setq concatenated
                                     (if concatenated
-                                        (concat concatenated " " term)
+                                        (concat concatenated " "
+                                                (narya-parenthesize-term term))
                                       term))
                               (list term)))
                           terms))
@@ -813,7 +885,7 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                 (new-holes 0))
             (delete-region (point) (overlay-end hole-overlay))
             ;; Delete the overlay for the solved hole and update the hole list.
-            (delete-overlay hole-overlay)
+            (narya-delete-hole-overlay hole-overlay)
             (setq narya-hole-overlays (delq hole-overlay narya-hole-overlays))
             ;; Create new overlays from holes in the new term.
             (if narya-reformat-commands
@@ -884,6 +956,12 @@ If cursor is over a hole, the term is interpreted in the context of that hole."
   (interactive)
   (narya-echo-or-synth "synth" "Term to synthesize: "))
 
+(defun narya-about ()
+  "Display the definition of a term, if possible.
+If cursor is over a hole, the term is interpreted in the context of that hole."
+  (interactive)
+  (narya-echo-or-synth "about" "Term to explicate: "))
+
 (defun narya-insert-hole-numbers (start end)
   "Insert hole-number labels ⁇n in front of hole overlays from START to END."
   (save-excursion
@@ -931,7 +1009,7 @@ Defaults to the command containing point."
             (atomic-change-group
               (dolist (h (overlays-in start end))
                 (when (overlay-get h 'narya-hole)
-                  (delete-overlay h)
+                  (narya-delete-hole-overlay h)
                   (setq narya-hole-overlays (delq h narya-hole-overlays))))
               ;; Insert the reformatted version in place of the old version
               (goto-char start)
@@ -1013,6 +1091,7 @@ With a negative prefix argument,set display of type boundaries off."
 (defvar narya-minibuffer-commands
   '("echo"
     "synth"
+    "about"
     "show hole"
     "show holes"
     "display chars ≔ unicode"
@@ -1126,6 +1205,7 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-;" 'narya-echo)
 (keymap-set narya-mode-map "C-c :" 'narya-synth)
 (keymap-set narya-mode-map "C-c C-:" 'narya-synth)
+(keymap-set narya-mode-map "C-c C-a" 'narya-about)
 (keymap-set narya-mode-map "C-c C-v" 'narya-minibuffer-cmd)
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
 (keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
