@@ -779,22 +779,6 @@ let rec namevec_of_vec : type a b ab.
   | Zero, [] -> []
   | Suc ab, x :: xs -> x :: namevec_of_vec ab xs
 
-type (_, _) has_patternvars =
-  | Patternvars : ('a, 'b, 'ab) Patternvars.t -> ('a, 'b) has_patternvars
-
-(* Reassemble the pattern variables of a match branch from the names stored in its annotation. *)
-let rec patternvars_of_vec : type a b. (Variables.pattern_name, b) Vec.t -> (a, b) has_patternvars =
-  function
-  | [] -> Patternvars []
-  | `Cube x :: xs ->
-      let (Patternvars ys) = patternvars_of_vec xs in
-      Patternvars (Cube x :: ys)
-  | `Boundary ns :: xs ->
-      let (Wrap ns) = Vec.of_list ns in
-      let (Bplus ac) = bplus (Vec.length ns) in
-      let (Patternvars ys) = patternvars_of_vec xs in
-      Patternvars (Boundary (locate_opt None (Namevec.of_vec ac ns)) :: ys)
-
 (* We end with some useful lemmas. *)
 
 let rec dataconstr_of_pi : type a. a check located -> a dataconstr =
