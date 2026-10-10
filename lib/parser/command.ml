@@ -831,9 +831,9 @@ let parse_single (content : string) : Whitespace.t list * Command.t option =
 let show_hole = function
   | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
       let termctx, ty =
-        Reporter.try_with
+        Reporter.backtrack
           ~fatal:(fun _ ->
-            (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type. *)
+            (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)
             (termctx, ty))
           (fun () ->
             let ctx = Norm.eval_ctx termctx in
@@ -1293,7 +1293,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
                           let* (Wrap names) = NameBranches.get in
                           let arg_hints =
-                            Reporter.try_with ~fatal:(fun _ -> Emp) @@ fun () ->
+                            Reporter.backtrack ~fatal:(fun _ -> Emp) @@ fun () ->
                             Domvars.constr_arg_hints ctx env args in
                           let cargs, newnames = constr_args names dim (Bwd.to_list arg_hints) args in
                           let* () = NameBranches.put newnames in
