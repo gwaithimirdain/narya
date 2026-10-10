@@ -3781,9 +3781,7 @@ and synth : type mode a b s.
                   | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) -> (
                       let Eq = eq_of_ins_zero ins in
                       let modality = Modality.filter_modality filter in
-                      match
-                        (D.compare (CubeOf.dim doms) D.zero, Modality.compare_id modality)
-                      with
+                      match (D.compare (CubeOf.dim doms) D.zero, Modality.compare_id modality) with
                       | Eq, Eq -> (
                           (* The domain is the type we just supplied, so this can only fail if the
                              function's type isn't of the expected shape. *)
@@ -3795,9 +3793,8 @@ and synth : type mode a b s.
                                     BindCube.dim cods,
                                     filter,
                                     Modal
-                                      ( Modality.id mode,
-                                        plus_no_lock mode,
-                                        CubeOf.singleton sarg ) ),
+                                      (Modality.id mode, plus_no_lock mode, CubeOf.singleton sarg)
+                                  ),
                                 tyof_app cods tyargs filter (CubeOf.singleton earg) )
                           | Error why ->
                               fatal ?loc:arg.loc
