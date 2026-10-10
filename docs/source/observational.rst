@@ -316,9 +316,11 @@ As for abstractions, there is also the option to write ``↦`` and name all the 
    | zero. ↦ ()
    | suc. {p₀} {p₁} p₂ ↦ (_ ≔ encode p₀ p₁ p₂)]
 
-This is consistent with the fact that a higher-dimensional constructor can also be *applied* explicitly to all of its boundary arguments (see :ref:`Id of datatypes`), so that a "pattern" in a ``match`` still looks like the constructor that it matches against.  There must be exactly one boundary variable for each face of the pattern variable's cube, with the last of them, written without braces, being the top face; and as for abstractions, ``↦`` is used only when *none* of the pattern variables in the branch is left as a cube, while ``⤇`` is used whenever any of them is (so the two can be mixed in one pattern, as in ``| pair. {a₀} {a₁} a₂ b ⤇``).  A branch whose constructor takes no arguments at all, such as ``zero.`` above, binds no variables and can therefore use either symbol.
+This is consistent with the fact that a higher-dimensional constructor can also be *applied* explicitly to all of its boundary arguments (see :ref:`Id of datatypes`), so that a "pattern" in a ``match`` still looks like the constructor that it matches against.  There must be exactly one boundary variable for each face of the pattern variable's cube, with the last of them, written without braces, being the top face.
 
-Since all the branches for a single constructor extend the context in the same way, they must all name the same number of variables for each argument; thus, in a :ref:`deep match <Multiple matches and deep matches>` that matches twice against the same constructor, either all or none of those branches must give it explicit boundaries.
+As is the case with abstractions, the symbol ``↦`` is used only when *none* of the pattern variables in the branch is left as a cube, while ``⤇`` is used whenever any of them is (so the two can be mixed in one pattern, as in ``| pair. {a₀} {a₁} a₂ b ⤇``).  A branch whose constructor takes no arguments at all, such as ``zero.`` above, binds no variables and can therefore use either symbol.  Similarly, if a :ref:`multiple or deep match <Multiple matches and deep matches>` combines zero- and higher-dimensional matches with cube variables, the match symbol is ``⤇``, since at least *some* of the pattern variables are nontrivial cubes.
+
+Since all the branches for a single constructor extend the context in the same way, they must all name the same number of variables for each argument.  Thus, for each argument of the constructor, either all or none of the branches must give that argument explicit boundaries.
 
 The boundary arguments in braces need not be variables: like the top face, each of them can be any pattern, which is matched against as part of a deep match.  For example:
 
@@ -330,10 +332,6 @@ The boundary arguments in braces need not be variables: like the top face, each 
    | suc. {suc. k} {_} _ ↦ k]
 
 As with other deep matches, this is compiled into a sequence of nested matches, in which the boundary faces of each argument are matched against before its top face.
-
-Narya displays a higher-dimensional match with explicit boundary variables if it was written that way, and with cube variables otherwise.  (An exception is a definition that has been degenerated, such as when displaying ``refl`` of it: then its pattern variables are cubes of a larger dimension than the boundary variables that were named, so they are displayed as cube variables named after their top faces.)
-
-It is possible to do :ref:`Multiple matches and deep matches` that combine zero- and higher-dimensional matches.  In this case the match symbol is ``⤇``, which we can think of as indicating that at least *some* of the pattern variables are nontrivial cubes, unless all of them have been given explicit boundaries.
 
 
 Id of the universe
