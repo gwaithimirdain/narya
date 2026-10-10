@@ -60,7 +60,7 @@ module FlagData = struct
     (* Marshal all the command-line type theory flags to disk. *)
     marshal : Out_channel.t -> unit;
     (* Unmarshal all the command-line type theory flags from a disk file and check that they agree with the current ones, returning the unmarshaled ones if not. *)
-    unmarshal : In_channel.t -> (unit, string) Result.t;
+    unmarshal : Istream.t -> (unit, string) Result.t;
     (* Load files from source only (not compiled versions). *)
     source_only : bool;
     (* Don't write compiled versions of files to disk. *)
@@ -118,19 +118,48 @@ module Loaded = struct
     Effect.perform (Add_to_files (filename, { trie; globals; file; old_imports; explicit }))
 end
 
-(* Save all the definitions from a given loaded file to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace. *)
+(* Written after all the marshaled values in a compiled file, so that we can tell whether a compiled file is complete before we start loading it. *)
+let compiled_trailer = "\nend of narya compiled file\n"
+
+(* Create a new temporary file in the same directory as a given file, so that it can be renamed onto that file.  Unlike Filename.temp_file, we create it with the ordinary permissions (subject to the umask), since it will become the compiled file. *)
+let open_temp_file ofile =
+  let rng = Random.State.make_self_init () in
+  let rec go n =
+    let tmpfile = Printf.sprintf "%s.%06x.tmp" ofile (Random.State.bits rng land 0xFFFFFF) in
+    match
+      Out_channel.open_gen [ Open_wronly; Open_creat; Open_excl; Open_binary ] 0o666 tmpfile
+    with
+    | chan -> (tmpfile, chan)
+    (* If the name was taken, try another one. *)
+    | exception (Sys_error _ as e) ->
+        if n < 100 && Sys.file_exists tmpfile then go (n + 1) else raise e in
+  go 0
+
+(* Save all the definitions from a given loaded file to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace.  We write to a temporary file and then rename it onto the compiled file, so that another run never sees a partially written compiled file, and an interrupted run doesn't leave one behind. *)
 let marshal (file : File.t) (filename : FilePath.filename) (trie : Scope.trie) =
   if __COMPILE_VERSION__ > 0 && not (Flags.read ()).no_write_compiled then
     let ofile = FilePath.replace_extension filename "nyo" in
     try
-      Out_channel.with_open_bin ofile @@ fun chan ->
-      Marshal.to_channel chan __COMPILE_VERSION__ [];
-      (Flags.read ()).marshal chan;
-      Marshal.to_channel chan file [];
-      Marshal.to_channel chan (Loading.get ()).imports [];
-      Global.to_channel_origin chan (File file) [];
-      Parser.Scope.to_channel chan trie [];
-      Marshal.to_channel chan (Loading.get ()).actions []
+      let tmpfile, chan = open_temp_file ofile in
+      try
+        (try
+           Marshal.to_channel chan __COMPILE_VERSION__ [];
+           (Flags.read ()).marshal chan;
+           Marshal.to_channel chan file [];
+           Marshal.to_channel chan (Loading.get ()).imports [];
+           Global.to_channel_origin chan (File file) [];
+           Parser.Scope.to_channel chan trie [];
+           Marshal.to_channel chan (Loading.get ()).actions [];
+           Out_channel.output_string chan compiled_trailer;
+           (* Closing flushes the channel, which can also fail. *)
+           Out_channel.close chan
+         with e ->
+           Out_channel.close_noerr chan;
+           raise e);
+        Sys.rename tmpfile ofile
+      with e ->
+        (try Sys.remove tmpfile with Sys_error _ -> ());
+        raise e
       (* Just emit a warning if we can't write the compiled version *)
     with Sys_error _ -> emit (Cant_write_compiled_file ofile)
 
@@ -141,50 +170,58 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
   (* To load a compiled file, first of all both the compiled file and its source file must exist, and the compiled file must be not older than the source.  (If the source was reformatted at the time of compiling, they could be exactly the same age.) *)
   if FileUtil.test Is_file filename && FileUtil.test Is_file ofile && mtime ofile >= mtime filename
   then
-    (* Now we can start loading things. *)
-    In_channel.with_open_bin ofile @@ fun chan ->
-    (* We check it was compiled with the same version as us. *)
-    let old_version = (Marshal.from_channel chan : int) in
-    if __COMPILE_VERSION__ > 0 && old_version = __COMPILE_VERSION__ then (
-      (* We also check it was compiled with the same type theory flags as us. *)
-      match (Flags.read ()).unmarshal chan with
-      | Ok () ->
-          let old_file = (Marshal.from_channel chan : File.t) in
-          (* Now we make sure none of the files *it* imports (transitively) have been modified more recently than the compilation, and that they have all been compiled. *)
-          let old_imports = (Marshal.from_channel chan : (File.t * FilePath.filename) Bwd.t) in
-          if
-            Bwd.for_all
-              (fun (_, ifile) ->
-                let oifile = FilePath.replace_extension ifile "nyo" in
-                FileUtil.test Is_file oifile
-                && mtime oifile >= mtime ifile
-                && mtime ifile <= mtime ofile)
-              old_imports
-          then (
-            (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file. *)
-            Mbwd.miter
-              (fun [ (_, ifile) ] ->
-                let _ = load_file ifile false in
-                ())
-              [ old_imports ];
-            (* We create a hashtable mapping the old files to new ones. *)
-            let table = Hashtbl.create 20 in
-            Mbwd.miter (fun [ (i, ifile) ] -> Hashtbl.add table i (lookup ifile)) [ old_imports ];
-            Hashtbl.add table old_file file;
-            let find_in_table x =
-              Hashtbl.find_opt table x
-              <|> Anomaly "missing file identifier while unmarshaling compiled file" in
-            (* Now we load the definitions from the compiled file, replacing all the old files by the new ones. *)
-            let unit_entry = Global.from_istream_origin find_in_table (Channel chan) (File file) in
-            let trie = Parser.Scope.from_istream (Channel chan) find_in_table in
-            (* We check whether the compiled file had any actions, and issue a warning if so *)
-            if (Marshal.from_channel chan : bool) then emit (Actions_in_compiled_file ofile);
-            Some (trie, unit_entry, old_imports))
-          else None
-      | Error flags ->
-          emit (Incompatible_flags (filename, flags));
-          None)
-    else None
+    (* We read the whole compiled file into memory, and check that it is complete (it could have been truncated, e.g. by an older version of Narya that didn't write compiled files atomically), before unmarshaling anything from it.  Otherwise we could fail partway through after having already modified the global state.  If it isn't complete, we treat it like an outdated compiled file and load the source instead. *)
+    match
+      Option.bind
+        (try Some (In_channel.with_open_bin ofile In_channel.input_all) with Sys_error _ -> None)
+        (Istream.framed_string ~trailer:compiled_trailer)
+    with
+    | None -> None
+    | Some chan ->
+        (* We check it was compiled with the same version as us. *)
+        let old_version = (Istream.unmarshal chan : int) in
+        if __COMPILE_VERSION__ > 0 && old_version = __COMPILE_VERSION__ then (
+          (* We also check it was compiled with the same type theory flags as us. *)
+          match (Flags.read ()).unmarshal chan with
+          | Ok () ->
+              let old_file = (Istream.unmarshal chan : File.t) in
+              (* Now we make sure none of the files *it* imports (transitively) have been modified more recently than the compilation, and that they have all been compiled. *)
+              let old_imports = (Istream.unmarshal chan : (File.t * FilePath.filename) Bwd.t) in
+              if
+                Bwd.for_all
+                  (fun (_, ifile) ->
+                    let oifile = FilePath.replace_extension ifile "nyo" in
+                    FileUtil.test Is_file oifile
+                    && mtime oifile >= mtime ifile
+                    && mtime ifile <= mtime ofile)
+                  old_imports
+              then (
+                (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file. *)
+                Mbwd.miter
+                  (fun [ (_, ifile) ] ->
+                    let _ = load_file ifile false in
+                    ())
+                  [ old_imports ];
+                (* We create a hashtable mapping the old files to new ones. *)
+                let table = Hashtbl.create 20 in
+                Mbwd.miter
+                  (fun [ (i, ifile) ] -> Hashtbl.add table i (lookup ifile))
+                  [ old_imports ];
+                Hashtbl.add table old_file file;
+                let find_in_table x =
+                  Hashtbl.find_opt table x
+                  <|> Anomaly "missing file identifier while unmarshaling compiled file" in
+                (* Now we load the definitions from the compiled file, replacing all the old files by the new ones. *)
+                let unit_entry = Global.from_istream_origin find_in_table chan (File file) in
+                let trie = Parser.Scope.from_istream chan find_in_table in
+                (* We check whether the compiled file had any actions, and issue a warning if so *)
+                if (Istream.unmarshal chan : bool) then emit (Actions_in_compiled_file ofile);
+                Some (trie, unit_entry, old_imports))
+              else None
+          | Error flags ->
+              emit (Incompatible_flags (filename, flags));
+              None)
+        else None
   else None
 
 (* Load a file, possibly one specified on the command line, either from source or from a compiled version. *)

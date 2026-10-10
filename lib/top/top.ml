@@ -43,12 +43,12 @@ let marshal_flags chan =
 
 (* Unmarshal saved flags from a file and check that they agree with the current ones. *)
 let unmarshal_flags chan =
-  let ar = (Marshal.from_channel chan : int) in
-  let rc = (Marshal.from_channel chan : char) in
-  let rs = (Marshal.from_channel chan : string list) in
-  let int = (Marshal.from_channel chan : bool) in
-  let disc = (Marshal.from_channel chan : bool) in
-  let ho = (Marshal.from_channel chan : bool) in
+  let ar = (Istream.unmarshal chan : int) in
+  let rc = (Istream.unmarshal chan : char) in
+  let rs = (Istream.unmarshal chan : string list) in
+  let int = (Istream.unmarshal chan : bool) in
+  let disc = (Istream.unmarshal chan : bool) in
+  let ho = (Istream.unmarshal chan : bool) in
   if
     ar = !arity
     && rc = !refl_char

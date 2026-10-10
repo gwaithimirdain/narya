@@ -415,3 +415,78 @@ Nor if one of them is given on the command line
    ￫ info[I0001]
    ￮ axiom A assumed
   
+
+Incomplete compiled files are ignored and the source loaded instead, which writes a
+complete compiled file again
+
+  $ cat >full.ny <<EOF
+  > axiom B : Type
+  > axiom b : B
+  > EOF
+
+  $ cat >usefull.ny <<EOF
+  > import "full"
+  > axiom b' : B
+  > EOF
+
+  $ narya full.ny
+
+  $ cp full.nyo full.nyo.orig
+
+  $ : >full.nyo
+
+  $ narya -v usefull.ny
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/full.ny
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/full.ny (source)
+  
+   ￫ info[I0001]
+   ￮ axiom b' assumed
+  
+
+  $ tail -n 1 full.nyo
+  end of narya compiled file
+
+  $ head -c 20 full.nyo.orig >full.nyo
+
+  $ narya usefull.ny
+
+  $ tail -n 1 full.nyo
+  end of narya compiled file
+
+  $ head -c 700 full.nyo.orig >full.nyo
+
+  $ narya usefull.ny
+
+  $ tail -n 1 full.nyo
+  end of narya compiled file
+
+  $ size=$(wc -c <full.nyo.orig)
+
+  $ head -c $((size - 1)) full.nyo.orig >full.nyo
+
+  $ narya usefull.ny
+
+  $ tail -n 1 full.nyo
+  end of narya compiled file
+
+  $ narya -v usefull.ny
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/full.ny (compiled)
+  
+   ￫ info[I0001]
+   ￮ axiom b' assumed
+  
+
+No temporary files are left behind
+
+  $ ls | grep tmp
+  [1]
