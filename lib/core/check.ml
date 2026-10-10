@@ -1048,7 +1048,7 @@ let rec check : type mode a b s.
                         Bwd.exists (fun (data_constr, _) -> constr = data_constr) data_constrs)
                       constrs
                   then
-                    Reporter.try_with ~fatal:(fun d ->
+                    Reporter.backtrack ~fatal:(fun d ->
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> check ?discrete status ctx (locate_opt tm.loc alt) ty
                   else go errs alts
@@ -1062,12 +1062,12 @@ let rec check : type mode a b s.
                           codata_fields)
                       fields
                   then
-                    Reporter.try_with ~fatal:(fun d ->
+                    Reporter.backtrack ~fatal:(fun d ->
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> check ?discrete status ctx (locate_opt tm.loc alt) ty
                   else go errs alts
               | _, `Any ->
-                  Reporter.try_with ~fatal:(fun d ->
+                  Reporter.backtrack ~fatal:(fun d ->
                       if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                   @@ fun () -> check ?discrete status ctx (locate_opt tm.loc alt) ty
               | _ -> go errs alts) in
@@ -3842,7 +3842,7 @@ and synth : type mode a b s.
                         Bwd.exists (fun (data_constr, _) -> constr = data_constr) data_constrs)
                       constrs
                   then
-                    Reporter.try_with ~fatal:(fun d ->
+                    Reporter.backtrack ~fatal:(fun d ->
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> synth status ctx (locate_opt tm.loc alt)
                   else go errs alts
@@ -3856,12 +3856,12 @@ and synth : type mode a b s.
                           codata_fields)
                       fields
                   then
-                    Reporter.try_with ~fatal:(fun d ->
+                    Reporter.backtrack ~fatal:(fun d ->
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> synth status ctx (locate_opt tm.loc alt)
                   else go errs alts
               | _, `Any ->
-                  Reporter.try_with ~fatal:(fun d ->
+                  Reporter.backtrack ~fatal:(fun d ->
                       if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                   @@ fun () -> synth status ctx (locate_opt tm.loc alt)
               | None, `Data _ | None, `Codata _ -> fatal (Anomaly "SFirst mismatch")
@@ -3890,7 +3890,7 @@ and synth : type mode a b s.
               match yeqz with
               | Some yeqz ->
                   let nz : mode normal = { tm = ez; ty = Lazy.from_val ty } in
-                  Reporter.try_with
+                  Reporter.backtrack
                     (fun () ->
                       let yztube =
                         Hott.tube ny nz <|> Unimplemented "equational reasoning without -hott" in
@@ -3913,8 +3913,8 @@ and synth : type mode a b s.
                         Hott.tube nz ny <|> Unimplemented "equational reasoning without -hott" in
                       let idzy = inst idty zytube in
                       let czeqy =
-                        (* But if that also fails, we report only the error from the forwards direction. *)
-                        Reporter.try_with ~fatal:(fun _ -> fatal_diagnostic d) @@ fun () ->
+                        (* But if that also fails, we report only the error from the forwards direction (unless the reversed check hit an internal error). *)
+                        Reporter.backtrack ~fatal:(fun _ -> fatal_diagnostic d) @@ fun () ->
                         check (Kinetic `Nolet) ctx yeqz idzy in
                       let pqtube =
                         Hott.tube12 hh cx cx creflx cz cy czeqy

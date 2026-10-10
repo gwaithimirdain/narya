@@ -1320,6 +1320,16 @@ let rec unaccumulate (c : Code.t) : Code.t =
   | Accumulated (_, Snoc (Emp, c)) -> unaccumulate c.message
   | c -> c
 
+(* Whether a diagnostic is, or accumulates, an internal error. *)
+let rec is_bug (d : Code.t Asai.Diagnostic.t) =
+  match d.message with
+  | Accumulated (_, ds) -> Bwd.exists is_bug ds
+  | _ -> d.severity = Bug
+
+(* Run a callback, backtracking with the given handler if it fails.  Internal errors are re-raised instead, since they indicate a problem that shouldn't be hidden by succeeding along some other path. *)
+let backtrack ~(fatal : Code.t Asai.Diagnostic.t -> 'a) (f : unit -> 'a) : 'a =
+  try_with ~fatal:(fun d -> if is_bug d then fatal_diagnostic d else fatal d) f
+
 (* Re-raise one diagnostic, if given, otherwise another. *)
 let fatal_or d e =
   match d with
