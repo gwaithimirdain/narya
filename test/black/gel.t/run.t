@@ -172,8 +172,8 @@
          Type⁽ᵉ⁾ (Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
            (sym (Gel⁽ᵉ⁾ A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2 b2)
        unequal terms:
-         refl Gel A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
+         Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
        does not equal
-         sym (refl Gel A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2 b2
+         sym (Gel⁽ᵉ⁾ A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2 b2
   
   [1]

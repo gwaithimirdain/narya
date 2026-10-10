@@ -59,14 +59,14 @@ module Command = struct
         ty : wrapped_parse;
       }
     | Def of def list
-    (* "synth" is almost just like "echo", so we implement them as one command distinguished by an "eval" flag. *)
+    (* "synth", "echo", and "about" are almost the same command, so we implement them as one, distinguished by a "mode". *)
     | Echo of {
         wsecho : Whitespace.t list;
         number : int option;
         wsin : Whitespace.t list;
         wsnumber : Whitespace.t list;
         tm : wrapped_parse;
-        eval : bool;
+        mode : [ `Synth | `Echo | `About ];
       }
     | Notation : {
         fixity : ('left, 'tight, 'right) fixity;
@@ -259,11 +259,13 @@ module Parse = struct
     | _ -> fatal ?severity (Invalid_instant (Origin.to_string (Instant past)))
 
   let echo =
-    let* wsecho, eval =
+    let* wsecho, mode =
       (let* wsecho = token Echo in
-       return (wsecho, true))
-      </> let* wsecho = token Synth in
-          return (wsecho, false) in
+       return (wsecho, `Echo))
+      </> (let* wsecho = token Synth in
+           return (wsecho, `Synth))
+      </> let* wsecho = token About in
+          return (wsecho, `About) in
     let* number, wsin, wsnumber, tm =
       (let* wsin = token In in
        let* number, wsnumber = integer in
@@ -273,7 +275,7 @@ module Parse = struct
        return (Some number, wsin, wsnumber, tm))
       </> let* tm = C.term [] in
           return (None, [], [], tm) in
-    return (Command.Echo { wsecho; number; wsin; wsnumber; tm; eval })
+    return (Command.Echo { wsecho; number; wsin; wsnumber; tm; mode })
 
   let tightness : (Whitespace.t list * No.wrapped option * Whitespace.t list * Whitespace.t list) t
       =
@@ -766,7 +768,7 @@ module Parse = struct
     command ()
     </> let* tm = C.term [] in
         return
-          (Command.Echo { wsecho = []; number = None; wsin = []; wsnumber = []; tm; eval = true })
+          (Command.Echo { wsecho = []; number = None; wsin = []; wsnumber = []; tm; mode = `Echo })
 
   type open_source = Range.Data.t * [ `String of int * string | `File of In_channel.t ]
 
@@ -842,11 +844,15 @@ let show_hole = function
       in
       emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
+let string_of_mode = function
+  | `Echo -> "echo"
+  | `Synth -> "synth"
+  | `About -> "about"
+
 let to_string : Command.t -> string = function
   | Axiom _ -> "axiom"
   | Def _ -> "def"
-  | Echo { eval = true; _ } -> "echo"
-  | Echo { eval = false; _ } -> "synth"
+  | Echo { mode; _ } -> string_of_mode mode
   | Notation _ -> "notation"
   | Import _ -> "import"
   | Chdir _ -> "chdir"
@@ -885,14 +891,13 @@ let split_match_cases : type mode a b.
   let module S = Monad.State (Bool) in
   let module LS = Monad.ListT (S) in
   let open Monad.Ops (LS) in
-  let rec do_args : type a p ap.
-      (mode, a, p, ap) Term.Telescope.t ->
+  let do_args (names : string option list) :
       (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse located list =
-   fun args ->
-    match args with
-    | Emp -> []
-    | Ext (None, _, args) -> locate_opt None (Placeholder []) :: do_args args
-    | Ext (Some x, _, args) -> locate_opt None (Ident ([ x ], [])) :: do_args args in
+    List.map
+      (function
+        | None -> locate_opt None (Placeholder [])
+        | Some x -> locate_opt None (Ident ([ x ], [])))
+      names in
   let rec go = function
     | [] ->
         let* higher = LS.lift S.get in
@@ -910,7 +915,7 @@ let split_match_cases : type mode a b.
                   match D.compare_zero dim with
                   | Zero -> return ()
                   | Pos _ -> LS.lift (S.put true) in
-                let* c, Dataconstr { args; _ } = S.return (Bwd.to_list constrs) in
+                let* c, Dataconstr { ty; _ } = S.return (Bwd.to_list constrs) in
                 let left_ok = No.le_refl No.plus_omega in
                 let right_ok = No.le_refl No.plus_omega in
                 let first =
@@ -918,7 +923,7 @@ let split_match_cases : type mode a b.
                     (List.fold_left
                        (fun fn arg -> locate_opt None (App { fn; arg; left_ok; right_ok }))
                        (locate_opt None (Constr (Constr.to_string c, [])))
-                       (do_args args)) in
+                       (do_args (Term.pi_names ty))) in
                 let* rest = go tms in
                 if List.length rest = 2 then return (first :: rest)
                 else return (first :: tok (Op ",") :: rest)
@@ -974,7 +979,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                      | _ -> fatal (Nonsynthesizing "body of def without specified type"))) ))
           defs in
       Core.Command.execute (Def cdefs)
-  | Echo { tm = Wrap tm; eval; number; _ } -> (
+  | Echo { tm = Wrap tm; mode; number; _ } -> (
       let module Scope_and_ctx = struct
         type _ ctx_of_raw = Of_raw : ('mode, 'a, 'b) Ctx.t -> 'a ctx_of_raw
 
@@ -1006,14 +1011,40 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           let (Of_raw ctx) = ctx rtm in
           Readback.Displaying.run ~env:true @@ fun () ->
           let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
-          let btm =
-            if eval then
-              let etm = Norm.eval_term (Ctx.env ctx) ctm in
-              readback_at ctx etm ety
-            else ctm in
-          let bty = readback_at ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
-          let utm = unparse (Names.of_ctx ctx) btm No.Interval.entire No.Interval.entire in
-          let uty = unparse (Names.of_ctx ctx) bty No.Interval.entire No.Interval.entire in
+          let names = Names.of_ctx ctx in
+          (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
+          let utm =
+            match mode with
+            | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
+            | `Echo ->
+                let etm = Norm.eval_term (Ctx.env ctx) ctm in
+                unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                  No.Interval.entire
+            | `About -> (
+                let etm = Norm.eval_term (Ctx.env ctx) ctm in
+                match etm with
+                (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written rather than as it computes.  This is more informative when possible, since the readback of a potential value falls back to a neutral application spine wherever a match is stuck.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
+                | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
+                  when Option.is_some (is_id_ins ins)
+                       &&
+                       match D.compare_zero (cod_left_ins ins) with
+                       | Zero -> true
+                       | Pos _ -> false -> (
+                    match Global.find_const name with
+                    | Definition { tm = `Defined tree; _ } ->
+                        unparse Names.empty tree No.Interval.entire No.Interval.entire
+                    | Definition { tm = `Axiom; _ } ->
+                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                          No.Interval.entire)
+                (* Otherwise we read back the neutral's potential value, which displays a canonical type as its declaration and a comatch as itself.  If it has no potential value at all we show its normal form. *)
+                | _ -> (
+                    match readback_about ctx etm with
+                    | Some tm -> unparse names tm No.Interval.entire No.Interval.entire
+                    | None ->
+                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                          No.Interval.entire)) in
+          let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
+          let uty = unparse names bty No.Interval.entire No.Interval.entire in
           PPrint.(
             ToChannel.pretty 1.0 (Display.columns ()) stdout
               (hang 2
@@ -1025,7 +1056,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           print_newline ();
           print_newline ();
           (None, fun _ -> None)
-      | _ -> fatal (Nonsynthesizing ("argument of " ^ if eval then "echo" else "synth")))
+      | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
   | Notation { fixity; loc; pattern; head; args; _ } ->
       Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
@@ -1169,10 +1200,10 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                 let m = cod_left_ins ins in
                 let do_field : type a n et.
-                    (_ * a * n * et) Term.CodatafieldAbwd.entry ->
+                    (_ * a * D.zero * n * et) Term.CodatafieldAbwd.entry ->
                     (string * string list) list ->
                     (string * string list) list =
-                 fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->
+                 fun (Term.CodatafieldAbwd.Entry (fld, Codatafield (_, _, _, cdf))) acc ->
                   match cdf with
                   | Lower _ -> (Field.to_string fld, []) :: acc
                   | Higher _ ->
@@ -1221,9 +1252,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             Emp fields,
                           Left (RBracket, ([], None)) ) in
                     locate_opt None @@ outfix ~notn:Builtins.comatch ~inner)
-            | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { args; _ })); _ }, _, _)
+            | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { ty; _ })); _ }, _, _)
               ->
-                let nargs = Fwn.to_int (Term.Telescope.length args) in
+                let nargs = List.length (Term.pi_names ty) in
                 unparse_spine names (`Constr constr)
                   (Bwd.init nargs (fun _ -> { unparse = (fun li ri -> hole li ri) }))
                   No.Interval.entire No.Interval.entire
@@ -1250,16 +1281,16 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                   type t = Names.wrapped
                 end) in
             let open Monad.Ops (NameBranches) in
-            let rec constr_args : type a p ap n k.
+            let rec constr_args : type n k.
                 n Names.t ->
                 k D.t ->
                 Variables.hints list ->
                 ?acc:unparser Bwd.t ->
-                (_, a, p, ap) Term.Telescope.t ->
+                string option list ->
                 unparser Bwd.t * Names.wrapped =
              fun names dim hints ?(acc = Emp) -> function
-               | Emp -> (acc, Wrap names)
-               | Ext (x, _, args) ->
+               | [] -> (acc, Wrap names)
+               | x :: args ->
                    (* If the argument is anonymous, use any display hints from its type. *)
                    let hint, hints =
                      match hints with
@@ -1289,13 +1320,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             | Zero -> return ()
                             | Pos _ ->
                                 NameBranches.stateless (Branches.lift (HigherBranch.put true)) in
-                          let* c, Dataconstr { env; args; _ } =
+                          let* c, Dataconstr { env; ty; fnty = _ } =
                             NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
                           let* (Wrap names) = NameBranches.get in
                           let arg_hints =
                             Reporter.backtrack ~fatal:(fun _ -> Emp) @@ fun () ->
-                            Domvars.constr_arg_hints ctx env args in
-                          let cargs, newnames = constr_args names dim (Bwd.to_list arg_hints) args in
+                            Domvars.constr_arg_hints ctx env ty in
+                          let cargs, newnames =
+                            constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in
                           let* () = NameBranches.put newnames in
                           let first =
                             Term
@@ -1508,10 +1540,14 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
     | Def defs ->
         let doc, ws = pp_defs Def None defs empty in
         (indent, doc, ws)
-    | Echo { wsecho; number; wsin; wsnumber; tm = Wrap tm; eval } ->
+    | Echo { wsecho; number; wsin; wsnumber; tm = Wrap tm; mode } ->
         let tm, rest = split_ending_whitespace tm in
         ( indent,
-          Token.pp (if eval then Echo else Synth)
+          Token.pp
+            (match mode with
+            | `Echo -> Echo
+            | `Synth -> Synth
+            | `About -> About)
           ^^ pp_ws `Nobreak wsecho
           ^^ optional
                (fun n ->

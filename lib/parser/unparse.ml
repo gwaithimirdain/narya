@@ -31,8 +31,16 @@ let mktok (tok : Token.t) = Token (tok, ([], None))
 let wstok (tok : Token.t) = Either.Left (tok, ([], None))
 let sstok (tok : Token.t) (ss : string) = Either.Right ((tok, ([], None)), [ (unlocated ss, []) ])
 
+(* A canonical type read back from a value of positive evaluation dimension is displayed with that dimension superscripted on its introducing keyword, as "data⁽ᵉ⁾ [ … ]".  This is display-only syntax: the parser doesn't accept a superscript there, since the only way to write such a type is to degenerate an undegenerated one. *)
+let dimtok : type n. Token.t -> n D.t -> (token_ws, ss_token_ws) Either.t =
+ fun tok dim ->
+  match D.compare_zero dim with
+  | Zero -> wstok tok
+  | Pos _ -> sstok tok (string_of_dim dim)
+
 (* If the head of an application spine is a constant or constructor, and it has an associated notation, and there are enough of the supplied arguments to instantiate the notation, split off that many arguments and return the notation, those arguments permuted to match the order of the pattern variables in the notation, the symbols to intersperse with them, and the remaining arguments. *)
-let get_notation head args =
+let get_notation : type mode n s. [> `Term of (mode, n, s) term | `Constr of Constr.t ] -> _ -> _ =
+ fun head args ->
   let open Monad.Ops (Monad.Maybe) in
   let* { keys = _; notn; pat_vars; val_vars; inner_symbols } =
     match head with
@@ -226,8 +234,8 @@ let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   | Var _ | Const _ | Meta _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ | Key _ -> true
   | Constr _ | Lam _ | Struct _ -> false
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
-  | App (fn, _, _, _) -> synths fn
-  | Act (tm, _, _) -> synths tm
+  | App (_, fn, _, _, _) -> synths fn
+  | Act (_, tm, _, _) -> synths tm
   | Let (_, _, body) -> synths body
   (* These are just context-manipulating wrappers. *)
   | Unshift (_, _, tm) -> synths tm
@@ -254,14 +262,15 @@ type (_, _) spine_arg =
       * [ `Implicit | `Explicit ]
       -> ('a, 's) spine_arg
 
-let rec get_spine : type mode a.
-    (mode, a, kinetic) term ->
-    [ `App of (mode, a, kinetic) term * (a, kinetic) spine_arg Bwd.t
-    | `Field of (mode, a, kinetic) term * string * int list * (a, kinetic) spine_arg Bwd.t ] =
+let rec get_spine : type mode a s.
+    (mode, a, s) term ->
+    [ `App of (mode, a, s) term * (a, kinetic) spine_arg Bwd.t
+    | `Field of (mode, a, s) term * string * int list * (a, kinetic) spine_arg Bwd.t ] =
  fun tm ->
   match tm with
   | App
-      ( fn,
+      ( _,
+        fn,
         _,
         _,
         (* Modalities are not printed with applications *)
@@ -285,7 +294,8 @@ let rec get_spine : type mode a.
       match get_spine fn with
       | `App (head, args) -> `App (head, append_bwd args)
       | `Field (head, fld, ins, args) -> `Field (head, fld, ins, append_bwd args))
-  | Field (Modal (fm, plus_lock, head), fld, ins) -> (
+  (* A field projection's head has the same energy as the projection. *)
+  | Field (_, Modal (fm, plus_lock, head), fld, ins) -> (
       match Modality.compare_id fm with
       | Eq ->
           let Eq = plus_lock_id plus_lock in
@@ -293,7 +303,7 @@ let rec get_spine : type mode a.
       (* A nonidentity modal projection is not folded into the spine; it is unparsed as an opaque head, which routes back to the modal-field case of 'unparse'. *)
       | Neq -> `App (tm, Emp))
   (* We look through identity degeneracies and keys. *)
-  | Act (body, s, _) -> (
+  | Act (_, body, s, _) -> (
       match is_id_deg s with
       | Some _ -> get_spine body
       | None -> `App (tm, Emp))
@@ -303,6 +313,80 @@ let rec get_spine : type mode a.
       | Eq, Plus_with_locks (Zero, Zero _), Plus_lock (Zero _, Zero) -> get_spine body
       | _ -> `App (tm, Emp))
   | tm -> `App (tm, Emp)
+
+(* Build a field projection "x .fld" as a parse tree, for use as the "self" pattern in unparsing codatatypes and records.  It is built in the "entire" tightness interval and packed existentially into an observation at the call site. *)
+let unparse_field_app (x : string) (fld : string) (pbij : string list) :
+    (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located =
+  match
+    ( No.Interval.contains No.Interval.entire No.plus_omega,
+      No.Interval.contains No.Interval.entire No.plus_omega )
+  with
+  | Some left_ok, Some right_ok ->
+      let fn = unparse_var x in
+      let arg = unlocated (Field (fld, pbij, [])) in
+      unlocated (App { fn; arg; left_ok; right_ok })
+  | _ -> fatal (Anomaly "impossible interval in unparse_field_app")
+
+(* Build a modality's name as an application spine of identifiers, e.g. "♭" or a parametrized "Gel A".  An unnamed (identity) modality becomes a placeholder. *)
+let unparse_modality_name : type dom f mode.
+    (dom, f, mode) Modality.t ->
+    (No.plus_omega, No.nonstrict, No.plus_omega, No.nonstrict) parse located =
+ fun fm ->
+  match Modality.name fm with
+  | [] -> unlocated (Placeholder [])
+  | x :: xs ->
+      List.fold_left
+        (fun fn y ->
+          unlocated
+            (App
+               {
+                 fn;
+                 arg = unlocated (Ident ([ y ], []));
+                 left_ok = No.le_refl No.plus_omega;
+                 right_ok = No.le_refl No.plus_omega;
+               }))
+        (unlocated (Ident ([ x ], [])))
+        xs
+
+(* Wrap an already-unparsed term in the modal variable ascription "(inner :f| _)", which annotates a modal field projection or declaration with its locking modality f. *)
+let unparse_modal_ascription : type dom f mode lt ls rt rs.
+    (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located ->
+    (dom, f, mode) Modality.t ->
+    (lt, ls, rt, rs) parse located =
+ fun inner fm ->
+  unlocated
+    (outfix ~notn:Postprocess.ascvar
+       ~inner:
+         (Multiple
+            ( Left (LParen, ([], None)),
+              Emp
+              <: Term inner
+              <: mktok Colon
+              <: Term (unparse_modality_name fm)
+              <: mktok (Op "|")
+              <: Term (unlocated (Placeholder [])),
+              Left (RParen, ([], None)) )))
+
+(* Build the "self" pattern of a codatatype or record field declaration: "x .fld" for an ordinary field, or "(x :f| _) .fld" for a field modal over an adjunction whose left adjoint is f, matching the surface syntax that declares it.  The pbij suffix is as in unparse_field_app. *)
+let unparse_field_decl : type a f g b.
+    string ->
+    (a, f, g, b) Modalcell.adjunction ->
+    string ->
+    string list ->
+    (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located =
+ fun x adj fld pbij ->
+  match Modalcell.compare_adjunction_id adj with
+  | Eq -> unparse_field_app x fld pbij
+  | Neq -> (
+      match
+        ( No.Interval.contains No.Interval.entire No.plus_omega,
+          No.Interval.contains No.Interval.entire No.plus_omega )
+      with
+      | Some left_ok, Some right_ok ->
+          let fn = unparse_modal_ascription (unparse_var x) (Modalcell.adj_left adj) in
+          let arg = unlocated (Field (fld, pbij, [])) in
+          unlocated (App { fn; arg; left_ok; right_ok })
+      | _ -> fatal (Anomaly "impossible interval in unparse_field_decl"))
 
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type mode n lt ls rt rs s.
@@ -325,7 +409,8 @@ let rec unparse : type mode n lt ls rt rs s.
   | MetaEnv (v, _) ->
       unlocated
         (Ident ([ (if Display.metas () == `Numbered then Meta.name v ^ "{…}" else "?") ], []))
-  | Field (Modal (fm, plus_lock, itm), fld, ins) -> (
+  (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
+  | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
       | Eq ->
           let Eq = plus_lock_id plus_lock in
@@ -334,7 +419,7 @@ let rec unparse : type mode n lt ls rt rs s.
           (* A modal projection prints as "(inner :f| _) .fld", with the inner term unparsed in the context locked by the left adjoint. *)
           unparse_modal_field vars fm plus_lock itm (Field.to_string fld) (show_ins ins) li ri)
   | UU (mode, n) -> unparse_universe vars mode n !universes li ri
-  | Inst (ty, tyargs) -> unparse_inst vars ty vars tyargs li ri
+  | Inst (_, ty, tyargs) -> unparse_inst vars ty vars tyargs li ri
   | Pi { cods; _ } ->
       (* The relevant dimension of a pi-type for notation purposes is its outer (unfiltered) dimension, that of the codomains. *)
       let arr, notn =
@@ -354,7 +439,7 @@ let rec unparse : type mode n lt ls rt rs s.
   (* A nontrivial key is treated by get_spine as an opaque head, which routes back to here; we handle it directly rather than through get_spine (which would loop). *)
   | Key { tm = body; cell; plus_tgt = Plus_with_locks (comp, _); plus_src } ->
       unparse_key vars body cell comp plus_src li ri
-  | Act (tm, s, sort) ->
+  | Act (_, tm, s, sort) ->
       unparse_act ~sort vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
   | Let (x, Modal (modality, plus, tm), body) -> (
       let tm = unparse (Names.add_lock vars plus) tm No.Interval.entire No.Interval.entire in
@@ -466,16 +551,19 @@ let rec unparse : type mode n lt ls rt rs s.
               args in
           unparse_spine vars (`Constr c) args li ri)
   | Realize tm -> unparse vars tm li ri
-  | Canonical _ -> fatal (Unimplemented "unparsing canonical types")
-  | Struct { eta = Noeta; _ } -> fatal (Unimplemented "unparsing comatches")
-  | Match _ -> fatal (Unimplemented "unparsing matches")
-  | Unshift _ -> fatal (Unimplemented "unparsing unshifts")
-  | Unact _ -> fatal (Unimplemented "unparsing unacts")
+  | Canonical c -> unparse_canonical vars c li ri
+  | Struct { eta = Noeta; dim; fields; energy = _ } -> unparse_comatch vars dim fields li ri
+  | Match { window = _; plus_lock; tm; dim; motive; branches } ->
+      unparse_match vars plus_lock tm dim motive branches li ri
+  (* An Unshift lifts its body from the ambient context 'b into the context 'b degenerated by 'n dimensions; that degenerated names-context is exactly what Names.degenerate produces (the same operation used for higher codata fields and comatches). *)
+  | Unshift (n, plusmap, tm) -> unparse (Names.degenerate n plusmap vars) tm li ri
+  (* An Unact only changes the dimension/action, not which variables are in scope, so for display we can simply unparse its body. *)
+  | Unact (_, tm) -> unparse vars tm li ri
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
   | Weaken tm -> unparse (Names.remove vars Now) tm li ri
 
 (* The master unparsing function can easily be delayed. *)
-and make_unparser : type mode n. n Names.t -> (mode, n, kinetic) term -> unparser =
+and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
  fun vars tm -> { unparse = (fun li ri -> unparse vars tm li ri) }
 
 (* A version that wraps implicit arguments in braces. *)
@@ -495,12 +583,347 @@ and make_unparser_implicit : type n. n Names.t -> (n, kinetic) spine_arg -> unpa
             braceize tm);
       }
 
-(* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing. *)
-and unparse_spine : type mode n lt ls rt rs.
+(* Unparse a canonical type (a datatype or codatatype/record). *)
+and unparse_canonical : type mode n lt ls rt rs.
     n Names.t ->
-    [ `Term of (mode, n, kinetic) term
+    (mode, n) Term.canonical ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars c li ri ->
+  match c with
+  | Data { indices = _; evaldim; constrs; discrete = _; recursive = _; tyfam = _; hints = _ } ->
+      unparse_data vars evaldim constrs li ri
+  | Codata { eta; evaldim; plusdim; fields; _ } ->
+      (* The self-variable has the sum of the evaluation and intrinsic dimensions; the instances of a higher field are indexed by the evaluation dimension alone. *)
+      unparse_codata vars eta evaldim (D.plus_out evaldim plusdim) fields li ri
+
+(* Unparse a codatatype (Noeta, "codata [ x .fld : ty | ... ]") or record type (Eta).  A codatatype, or a higher-dimensional record type (whose field types may reference the self-variable directly, e.g. Gel), uses a single self-variable and the "self record" surface syntax with explicit field projections, which handles dependence of later field types on earlier ones.  A zero-dimensional record type uses the field-variable surface syntax "sig ( a : ty, ... )", exposing the (anonymous) self-variable's fields as named variables, so that field-projections of the self read back as field variables. *)
+and unparse_codata : type mode m n a et lt ls rt rs.
+    a Names.t ->
+    (potential, et) eta ->
+    m D.t ->
+    n D.t ->
+    (mode * a * m * n * et) Term.CodatafieldAbwd.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars eta evaldim selfdim fields _li _ri ->
+  (* How the self-variable is exposed in a names-context: as a cube variable (self-variable syntax) or as its named fields (record syntax).  It is applied *after* the field's right-adjoint lock, since that is the order in which a field's type is checked. *)
+  let module Self = struct
+    type t = { ext : 'b 'k. 'b Names.t -> ('b, ('k, n) dim_entry) snoc Names.t }
+  end in
+  (* One displayed instance of a field: the field's adjunction, which the pattern displays as a locking annotation on the self-variable; the field's name; the field-application suffix of the instance (e.g. ".e" or ".1" for an instance of a higher field, empty for a lower one); and the instance's type, unparsed in a names-context built the way that type was checked -- the ambient context locked by the right adjoint (trivial for an ordinary non-modal field), extended by the self-variable however the caller exposes it, and then degenerated by the instance's remaining dimensions. *)
+  let module Instance = struct
+    type t = {
+      self_var : string option;
+      adj : mode Modalcell.any_adjunction;
+      name : string;
+      suffix : string list;
+      ty : Self.t -> (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located;
+    }
+  end in
+  (* A lower field has exactly one instance.  A higher field has one for each partial bijection between the codatatype's evaluation dimension and the field's intrinsic dimension; for a codatatype as declared, whose evaluation dimension is zero, that is just the declaration form "x .fld.e…e", degenerated by the whole intrinsic dimension. *)
+  let instances : Instance.t Bwd.t =
+    Bwd.fold_left
+      (fun acc
+           (Term.CodatafieldAbwd.Entry
+              (type i)
+              ((fld, cf) : i Field.t * (i, mode * a * m * n * et) Term.Codatafield.t)) ->
+        match cf with
+        | Codatafield (self_var, adj, plus_lock, Lower tm) ->
+            acc
+            <: {
+                 self_var;
+                 Instance.adj = Any_adjunction adj;
+                 name = Field.to_string fld;
+                 suffix = [];
+                 ty =
+                   (fun self ->
+                     unparse
+                       (self.Self.ext (Names.add_lock vars plus_lock))
+                       tm No.Interval.entire No.Interval.entire);
+               }
+        | Codatafield (self_var, adj, plus_lock, Higher (_, tys)) ->
+            Seq.fold_left
+              (fun acc (Pbij_between pbij) ->
+                let (Term.FieldtypeFam.Fieldtype (plusmap, cty)) =
+                  Term.FieldtypePbijmap.find pbij tys in
+                acc
+                <: {
+                     self_var;
+                     Instance.adj = Any_adjunction adj;
+                     name = Field.to_string fld;
+                     suffix = strings_of_pbij pbij;
+                     ty =
+                       (fun self ->
+                         let snames = self.Self.ext (Names.add_lock vars plus_lock) in
+                         (* We reconstruct the names of the degenerated variables with Names.degenerate, from the plus-map stored with the instance. *)
+                         let dnames = Names.degenerate (remaining pbij) plusmap snames in
+                         unparse dnames cty No.Interval.entire No.Interval.entire);
+                   })
+              acc
+              (all_pbij_between evaldim (Field.dim fld)))
+      Emp fields in
+  (* A modal field can only be displayed with the self-variable syntax, since the field-variable syntax has nowhere to put the locking annotation. *)
+  let has_modal_field =
+    Bwd.fold_left
+      (fun acc { Instance.adj = Any_adjunction adj; _ } ->
+        acc
+        ||
+        match Modalcell.compare_adjunction_id adj with
+        | Eq -> false
+        | Neq -> true)
+      false instances in
+  (* Self-variable ("self record") rendering, with explicit field projections: used for codatatypes, and as a fallback for records whose field types reference the self-variable directly. *)
+  let self_var_render () =
+    let keyword, notn, ldelim, rdelim =
+      match eta with
+      | Noeta -> (Token.Codata, codata, mktok LBracket, wstok RBracket)
+      | Eta -> (Token.Sig, record, mktok LParen, wstok RParen) in
+    let inner, _ =
+      Bwd.fold_left
+        (fun (acc, tok) { self_var; Instance.adj = Any_adjunction adj; name; suffix; ty } ->
+          let self_hints = Option.fold self_var ~some:(fun x -> `Named x) ~none:(`Anon no_hints) in
+          let x, _ = Names.add_cube selfdim vars self_hints in
+          let self = { Self.ext = (fun v -> snd (Names.add_cube selfdim v self_hints)) } in
+          let pat = unparse_field_decl x adj name suffix in
+          ( acc <@ tok <: Term pat <: mktok Colon <: Term (ty self),
+            match tok with
+            | [] -> [ mktok (Op ",") ]
+            | _ :: _ -> tok ))
+        ( Snoc (Emp, ldelim),
+          match eta with
+          | Noeta -> [ mktok (Op "|") ]
+          | Eta -> [] )
+        instances in
+    unlocated (outfix ~notn ~inner:(Multiple (dimtok keyword evaldim, inner, rdelim))) in
+  match (eta, has_modal_field) with
+  | Noeta, _ | Eta, true -> self_var_render ()
+  | Eta, false -> (
+      (* Try the field-variable syntax "sig (a : ..., b : a → ..., ...)", exposing the anonymous self-variable's fields as named variables.  We fall back to the self-variable syntax if a field name clashes with a name already in scope (add_fields returns None), or if a field type references the self-variable other than via a field projection ("Names.lookup" reports the Self_used bug, which we catch). *)
+      Reporter.try_with ~fatal:(fun d ->
+          match d.message with
+          | Self_used -> self_var_render ()
+          | _ -> fatal_diagnostic d)
+      @@ fun () ->
+      let field_names =
+        Bwd.fold_left (fun acc { Instance.name; _ } -> acc @ [ name ]) [] instances in
+      match Names.add_fields selfdim vars field_names with
+      | None -> self_var_render ()
+      | Some (_, var_names) ->
+          (* This path is taken only when no field is modal, so every lock is trivial and re-adding the fields after one gives the same names. *)
+          let self =
+            {
+              Self.ext =
+                (fun v ->
+                  fst (Names.add_fields selfdim v field_names <|> Anomaly "field name clash"));
+            } in
+          let inner, _, _ =
+            Bwd.fold_left
+              (fun (acc, first, var_names) { Instance.ty; _ } ->
+                let var_name, var_names =
+                  match var_names with
+                  | v :: vs -> (v, vs)
+                  | [] -> ("", []) in
+                let pat = unlocated (Ident ([ var_name ], [])) in
+                ( (if first then acc else acc <: mktok (Op ","))
+                  <: Term pat
+                  <: mktok Colon
+                  <: Term (ty self),
+                  false,
+                  var_names ))
+              (Snoc (Emp, mktok LParen), true, var_names)
+              instances in
+          unlocated
+            (outfix ~notn:record ~inner:(Multiple (dimtok Sig evaldim, inner, wstok RParen))))
+
+(* Assemble the display of a constructor "constr. (x:A) ...", optionally ascribed by an output type "constr. (x:A) ... : OUT". *)
+and unparse_constr_display : type lt ls rt rs.
+    Constr.t ->
+    unparser Bwd.t ->
+    unparser option ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun c argunps output li ri ->
+  let head = { unparse = (fun _ _ -> unlocated (Constr (Constr.to_string c, []))) } in
+  match output with
+  | None -> unparse_spine Names.empty (`Unparser head) argunps li ri
+  | Some output -> (
+      let first = unparse_spine Names.empty (`Unparser head) argunps li (interval_left asc) in
+      let last = output.unparse (interval_right asc) ri in
+      match (No.Interval.contains li No.minus_omega, No.Interval.contains ri No.minus_omega) with
+      | Some left_ok, Some right_ok ->
+          unlocated (infix ~notn:asc ~first ~inner:(Single (wstok Colon)) ~last ~left_ok ~right_ok)
+      | _ -> fatal (Anomaly "impossible interval unparsing datatype constructor"))
+
+(* Unparse a datatype "data [ | constr. (x : A) : ... | ... ]" from a term-level datatype. *)
+and unparse_data : type mode a m lt ls rt rs.
+    a Names.t ->
+    m D.t ->
+    (Constr.t, (mode, a, kinetic) term) Abwd.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars evaldim constrs _li _ri ->
+  let inner =
+    Bwd.fold_left
+      (fun acc (c, ty) ->
+        let cterm = unparse_dataconstr vars c ty No.Interval.entire No.Interval.entire in
+        acc <: mktok (Op "|") <: Term cterm)
+      (Snoc (Emp, mktok LBracket))
+      constrs in
+  unlocated (outfix ~notn:data ~inner:(Multiple (dimtok Data evaldim, inner, wstok RBracket)))
+
+(* Display a constructor from its stored function-type: its arguments as pi-domains, "constr. (x : A) (y : B) : D …", with the output type after the colon.  A constructor that declares no output type stores the self-variable as its codomain, and displays without an ascription, as "constr. (x : A)": that output can only be the datatype applied to its parameters, so it carries no information.  Each domain displays exactly as the domain of a dependent pi-type does. *)
+and unparse_dataconstr : type mode a lt ls rt rs.
+    a Names.t ->
+    Constr.t ->
+    (mode, a, kinetic) term ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars c ty li ri ->
+  let rec go : type b.
+      b Names.t -> unparser Bwd.t -> (mode, b, kinetic) term -> (lt, ls, rt, rs) parse located =
+   fun vars accum tm ->
+    match tm with
+    | Pi { x; filter; doms = Modal (modality, plus, doms); cods } -> (
+        match D.compare_zero (CodCube.dim cods) with
+        | Pos _ -> output vars accum tm
+        | Zero ->
+            let Eq = Modality.filter_uniq filter (Modality.filter_zero modality) in
+            let (Cod (cfilter, cod)) = CodCube.find_top cods in
+            let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
+            let Variables (_, _, xs), newvars =
+              Names.add vars (singleton_variables D.zero (top_variable x)) in
+            go newvars
+              (Snoc
+                 ( accum,
+                   {
+                     unparse =
+                       (fun _ _ ->
+                         unparse_pi_dom (NICubeOf.find_top xs) (Modality.name modality)
+                           (unparse (Names.add_lock vars plus) (CubeOf.find_top doms)
+                              No.Interval.entire No.Interval.entire));
+                   } ))
+              cod)
+    | _ -> output vars accum tm
+  and output : type b.
+      b Names.t -> unparser Bwd.t -> (mode, b, kinetic) term -> (lt, ls, rt, rs) parse located =
+   fun vars accum tm ->
+    unparse_constr_display c accum (Some { unparse = (fun li ri -> unparse vars tm li ri) }) li ri
+  in
+  go vars Emp ty
+
+(* Unparse a match "match tm [ | constr. x ... |-> body | ... ]", or "match tm return x ... |-> M [ ... ]" if it stores a dependent motive.  *)
+and unparse_match : type mode window dom n aw m lt ls rt rs.
+    n Names.t ->
+    (n, mode, window, dom, aw) plus_lock ->
+    (dom, aw, kinetic) term ->
+    m D.t ->
+    (mode, n, kinetic) term option ->
+    (mode, n, m) Term.branch Constr.Map.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars plus_lock tm dim motive branches _li _ri ->
+  let mapsto =
+    match D.compare_zero dim with
+    | Zero -> Token.Mapsto
+    | Pos _ -> Token.DblMapsto in
+  (* The discriminee lives in the context locked by the window modality. *)
+  let disc = unparse (Names.add_lock vars plus_lock) tm No.Interval.entire No.Interval.entire in
+  let window = plus_lock_modality plus_lock in
+  let disc =
+    match Modality.compare_id window with
+    | Eq -> disc
+    | Neq -> unparse_modal_ascription disc window in
+  (* An explicit motive is displayed in a "return" clause, which is the explicit match notation; it is an abstraction over the datatype's indices, the boundary of the discriminee, and the discriminee itself, so it unparses in the ambient context.  A match without one is displayed as an implicit match. *)
+  let notn, start =
+    match motive with
+    | Some motive ->
+        let umotive = unparse vars motive No.Interval.entire No.Interval.entire in
+        (explicit_mtch, Snoc (Emp, Term disc) <: mktok Return <: Term umotive <: mktok LBracket)
+    | None -> (implicit_mtch, Snoc (Emp, Term disc) <: mktok LBracket) in
+  let inner =
+    Constr.Map.fold
+      (fun c br acc ->
+        match br with
+        | Term.Branch { annotate; comp; perm; tm = body } ->
+            (* Extend the name context by the branch's pattern variables (named via the stored "annotate" witness), then permute it to the body's context. *)
+            let abvars, xs = Names.add_match_vars vars annotate comp in
+            let bodyvars = Names.permute perm abvars in
+            let args =
+              Bwd.of_list (List.map (fun x -> { unparse = (fun _ _ -> unparse_var x) }) xs) in
+            let pat = unparse_spine vars (`Constr c) args No.Interval.entire No.Interval.entire in
+            let ubody = unparse bodyvars body No.Interval.entire No.Interval.entire in
+            acc <: mktok (Op "|") <: Term pat <: mktok mapsto <: Term ubody)
+      branches start in
+  unlocated (outfix ~notn ~inner:(Multiple (wstok Match, inner, wstok RBracket)))
+
+(* Unparse a comatch "[ .fld |-> body | ... ]".  An empty comatch prints with the empty (co)match notation. *)
+and unparse_comatch : type mode n a s et lt ls rt rs.
+    a Names.t ->
+    n D.t ->
+    (mode * (n * a * s * et)) Term.StructfieldAbwd.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars dim fields _li _ri ->
+  (* Render the instances of a higher field: one per partial bijection between the comatch's dimension and the field's intrinsic dimension, exactly as the codatatype declaration lists them.  Each body was read back in a context degenerated by the partial bijection's remaining dimensions, recorded by the plus-map stored alongside it, so we degenerate the names to match before unparsing it (cf. the codata-declaration display). *)
+  let higher_fields : type i g gmode ag.
+      observation Bwd.t ->
+      i Field.t ->
+      (a, mode, g, gmode, ag) plus_lock ->
+      (n, i, gmode * ag) Term.PlusPbijmap.t ->
+      observation Bwd.t =
+   fun acc fld plus_lock pbijmap ->
+    (* Each field body lives behind the lock by the right adjoint (trivial for a non-modal field), so we expose that lock in the names-context before degenerating and unparsing. *)
+    let lockedvars = Names.add_lock vars plus_lock in
+    Seq.fold_left
+      (fun acc (Pbij_between (pbij : (n, i, _) pbij)) ->
+        match Term.PlusPbijmap.find pbij pbijmap with
+        | None -> acc
+        | Some (Term.PlusFam.PlusFam (plusmap, body)) ->
+            let dnames = Names.degenerate (remaining pbij) plusmap lockedvars in
+            let pat = unlocated (Field (Field.to_string fld, strings_of_pbij pbij, [])) in
+            let ubody = unparse dnames body No.Interval.entire No.Interval.entire in
+            acc <: mktok (Op "|") <: Term pat <: mktok Mapsto <: Term ubody)
+      acc
+      (all_pbij_between dim (Field.dim fld)) in
+  match fields with
+  | Emp ->
+      unlocated
+        (outfix ~notn:empty_co_match ~inner:(Multiple (wstok LBracket, Emp, wstok RBracket)))
+  | _ ->
+      let inner =
+        Bwd.fold_left
+          (fun acc
+               (Term.StructfieldAbwd.Entry
+                  (type i)
+                  ((fld, sf) : i Field.t * (i, mode * (n * a * s * et)) Term.Structfield.t)) ->
+            match sf with
+            | Term.Structfield.Lower (_, plus_lock, tm, _) ->
+                let pat = unlocated (Field (Field.to_string fld, [], [])) in
+                let ubody =
+                  unparse (Names.add_lock vars plus_lock) tm No.Interval.entire No.Interval.entire
+                in
+                acc <: mktok (Op "|") <: Term pat <: mktok Mapsto <: Term ubody
+            | Term.Structfield.Higher (_, plus_lock, pbijmap) ->
+                higher_fields acc fld plus_lock pbijmap
+            | Term.Structfield.LazyHigher (_, plus_lock, pbijmap) ->
+                higher_fields acc fld plus_lock (Lazy.force pbijmap))
+          Emp fields in
+      unlocated (outfix ~notn:comatch ~inner:(Multiple (wstok LBracket, inner, wstok RBracket)))
+
+(* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing. *)
+and unparse_spine : type mode n lt ls rt rs s.
+    n Names.t ->
+    [ `Term of (mode, n, s) term
     | `Constr of Constr.t
-    | `Field of (mode, n, kinetic) term * string * int list
+    | `Field of (mode, n, s) term * string * int list
     | `Degen of string
     | `Unparser of unparser ] ->
     unparser Bwd.t ->
@@ -553,11 +976,11 @@ and unparse_spine : type mode n lt ls rt rs.
               parenthesize (unlocated (App { fn; arg; left_ok; right_ok }))))
 
 (* Print a modal field projection "(inner :f| _) .fld", where the term being projected lives in the context locked by the left adjoint f. *)
-and unparse_modal_field : type mode dom f n am lt ls rt rs.
+and unparse_modal_field : type mode dom f n am lt ls rt rs s.
     n Names.t ->
     (dom, f, mode) Modality.t ->
     (n, mode, f, dom, am) plus_lock ->
-    (dom, am, kinetic) term ->
+    (dom, am, s) term ->
     string ->
     int list ->
     (lt, ls) No.iinterval ->
@@ -566,37 +989,8 @@ and unparse_modal_field : type mode dom f n am lt ls rt rs.
  fun vars fm plus_lock itm fld ins li ri ->
   let lvars = Names.add_lock vars plus_lock in
   let inner = unparse lvars itm No.Interval.entire No.Interval.entire in
-  (* Build the modality name as an application spine of identifiers. *)
-  let modality =
-    match Modality.name fm with
-    | [] -> unlocated (Placeholder [])
-    | x :: xs ->
-        List.fold_left
-          (fun fn y ->
-            unlocated
-              (App
-                 {
-                   fn;
-                   arg = unlocated (Ident ([ y ], []));
-                   left_ok = No.le_refl No.plus_omega;
-                   right_ok = No.le_refl No.plus_omega;
-                 }))
-          (unlocated (Ident ([ x ], [])))
-          xs in
   (* Thunks, so that each use below is polymorphic in the surrounding tightness interval. *)
-  let asc () =
-    unlocated
-      (outfix ~notn:Postprocess.ascvar
-         ~inner:
-           (Multiple
-              ( Left (LParen, ([], None)),
-                Emp
-                <: Term inner
-                <: mktok Colon
-                <: Term modality
-                <: mktok (Op "|")
-                <: Term (unlocated (Placeholder [])),
-                Left (RParen, ([], None)) ))) in
+  let asc () = unparse_modal_ascription inner fm in
   let arg () = unlocated (Field (fld, List.map string_of_int ins, [])) in
   match (No.Interval.contains li No.plus_omega, No.Interval.contains ri No.plus_omega) with
   | Some left_ok, Some right_ok -> unlocated (App { fn = asc (); arg = arg (); left_ok; right_ok })
@@ -605,9 +999,9 @@ and unparse_modal_field : type mode dom f n am lt ls rt rs.
       let right_ok = No.le_refl No.plus_omega in
       parenthesize (unlocated (App { fn = asc (); arg = arg (); left_ok; right_ok }))
 
-and unparse_field : type mode n lt ls rt rs.
+and unparse_field : type mode n lt ls rt rs s.
     n Names.t ->
-    (mode, n, kinetic) term ->
+    (mode, n, s) term ->
     string ->
     int list ->
     (lt, ls) No.iinterval ->
@@ -629,8 +1023,8 @@ and unparse_field : type mode n lt ls rt rs.
           let right_ok = No.le_refl No.plus_omega in
           parenthesize (unlocated (App { fn; arg; left_ok; right_ok })))
 
-and unparse_field_var : type mode n lt ls rt rs.
-    n Names.t -> (mode, n, kinetic) term -> string -> (lt, ls, rt, rs) parse located option =
+and unparse_field_var : type mode n lt ls rt rs s.
+    n Names.t -> (mode, n, s) term -> string -> (lt, ls, rt, rs) parse located option =
  fun vars tm fld ->
   match tm with
   | Var x -> (
@@ -640,7 +1034,7 @@ and unparse_field_var : type mode n lt ls rt rs.
       (* If the field is still leftover after the lookup, we unparse it as a field. *)
       | None -> None)
   (* TODO: Nonidentity degeneracies and keys of field variables should still be field variables, but with the degeneracies and keys on the outside.  Currently we just fail if there is a nonidentity degeneracy or key, probably leading to printing the unnamed self variable. *)
-  | Act (tm, deg, _) -> (
+  | Act (_, tm, deg, _) -> (
       match is_id_deg deg with
       | Some _ -> unparse_field_var vars tm fld
       | None -> None)
@@ -850,10 +1244,10 @@ and unparse_act : type n lt ls rt rs a b.
 
 (* We unparse instantiations like application spines, since that is how they are represented in user syntax.
    TODO: How can we allow special notations for some instantiations, like x=y for Id A x y? *)
-and unparse_inst : type mode n n' lt ls rt rs m k mk.
+and unparse_inst : type mode n n' lt ls rt rs m k mk s.
     (* We allow the type and its instantiation arguments to be in different contexts, for use in unparse_higher_pi. *)
     n Names.t ->
-    (mode, n, kinetic) term ->
+    (mode, n, s) term ->
     n' Names.t ->
     (m, k, mk, (mode, n', kinetic) term) TubeOf.t ->
     (lt, ls) No.iinterval ->
@@ -874,9 +1268,9 @@ and unparse_inst : type mode n n' lt ls rt rs m k mk.
       let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (argvars, x)) } [ tyargs ] in
       unparse_named_inst vars ty tyargs li ri
 
-and unparse_named_inst : type mode n lt ls rt rs m k mk.
+and unparse_named_inst : type mode n lt ls rt rs m k mk s.
     n Names.t ->
-    (mode, n, kinetic) term ->
+    (mode, n, s) term ->
     (m, k, mk, mode Names.named_term) TubeOf.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -1137,8 +1531,9 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
                   { build = (fun fa -> Var (Index (Now, fa, sfilter', iplusm))) } in
               Named
                 ( lamvars,
-                  App (Weaken nonlam, dom_tface s, sfilter, Modal (modality, plusm, lamargs)) ))
-    in
+                  App
+                    (Kinetic, Weaken nonlam, dom_tface s, sfilter, Modal (modality, plusm, lamargs))
+                )) in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
   (* We only need the top codomain. *)
   match cod_top filter cods with
@@ -1149,7 +1544,8 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
       | Neq -> fatal (Dimension_mismatch ("unparse_higher_pi recursion", CodCube.dim newcods, n)))
   (* It might also be a *partially* instantiated *higher* dimensional pi-type, in which case we combine the instantiation arguments to make it fully instantiated.  We don't continue accumulating domains as in the previous case, though, because in this case the codomain has different dimension, and hence needs its own arrow. *)
   | Inst
-      ( Pi { x = newxs; filter = newfilter; doms = Modal (_, newplus, newdoms); cods = newcods },
+      ( _,
+        Pi { x = newxs; filter = newfilter; doms = Modal (_, newplus, newdoms); cods = newcods },
         newtyargs ) -> (
       match
         ( D.compare (TubeOf.out newtyargs) (CodCube.dim newcods),
@@ -1211,7 +1607,7 @@ let rec unparse_ctx : type dom modality mode a b.
       let names, result = unparse_ctx names lock vars ctx in
       match entry with
       | Invis { bindings; hints; _ } ->
-          (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device, such as a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
+          (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device: the self-variable of a datatype's constructors, or a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
           let _, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           (names, result)
       | Vis { dim; plusdim; vars; plus_lock; bindings; hasfields; fields; fplus; filter = _ } ->
@@ -1288,7 +1684,7 @@ let () =
   let open PPrint in
   let open Print in
   Reporter.printer :=
-    fun ~sort pr ->
+    fun pr ->
       Reporter.try_with ~fatal:(fun d ->
           Reporter.Code.PrintingError.read () d.message;
           string "_UNPRINTABLE")
@@ -1309,7 +1705,7 @@ let () =
       | PVal (ctx, tm) ->
           pp_complete_term
             (Wrap
-               (unparse (Names.of_ctx ctx) (readback_val ~sort ctx tm) No.Interval.entire
+               (unparse (Names.of_ctx ctx) (readback_val ctx tm) No.Interval.entire
                   No.Interval.entire))
             `None
       | PNormal (ctx, tm) ->
@@ -1341,7 +1737,6 @@ let () =
       | Dump.Head h -> Dump.head h
       | Dump.Binder b -> Dump.binder b
       | Dump.Term tm -> Dump.term tm
-      | Dump.Tel tm -> Dump.tel tm
       | Dump.Env e -> Dump.env e
       | Dump.DeepEnv (e, n) -> Dump.denv n e
       | Dump.Check e -> Dump.check e

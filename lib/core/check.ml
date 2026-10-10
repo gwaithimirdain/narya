@@ -251,46 +251,44 @@ let unless_error (v : 'a) (err : 'b Bwd.t) : ('a, Code.t) Result.t =
   | Emp -> Ok v
   | Snoc _ -> Error (Accumulated ("dependence", Emp))
 
-(* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  *)
-type (_, _, _, _) checkable_branch =
+(* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  The constructor's argument types and output are stored together as its function-type "ty" (as in a Value.dataconstr); the argument variables are introduced, and the type indices of this branch read off, by ext_pi at typechecking time.  *)
+type (_, _, _) checkable_branch =
   | Checkable_branch : {
       xs : ('a, 'c, 'ac) Namevec.t;
       (* If the body is None, that means the user omitted this branch.  (That might be ok, if it can be refuted by a pattern variable belonging to an empty type.) *)
       body : 'ac check located option;
       env : ('mode, 'm, 'b) env;
-      argtys : ('mode, 'b, 'c, 'bc) Telescope.t;
-      index_terms : (('mode, 'bc, kinetic) term, 'ij) Vec.t;
+      ty : ('mode, 'b, kinetic) term;
     }
-      -> ('mode, 'a, 'm, 'ij) checkable_branch
+      -> ('mode, 'a, 'm) checkable_branch
 
 (* A "synthable branch" is similar, but records the fact that the user gave a synthesizing term.  *)
-type (_, _, _, _) synthable_branch =
+type (_, _, _) synthable_branch =
   | Synthable_branch : {
       xs : ('a, 'c, 'ac) Namevec.t;
       body : 'ac synth located;
       env : ('mode, 'm, 'b) env;
-      argtys : ('mode, 'b, 'c, 'bc) Telescope.t;
-      index_terms : (('mode, 'bc, kinetic) term, 'ij) Vec.t;
+      ty : ('mode, 'b, kinetic) term;
     }
-      -> ('mode, 'a, 'm, 'ij) synthable_branch
+      -> ('mode, 'a, 'm) synthable_branch
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype.  Curiously, the only mode parameter that appears here is the *source* of the window modality, i.e. the mode at which the datatype and discriminee live. *)
-let merge_branches : type hmode dom a m ij.
+let merge_branches : type hmode dom a m.
     hmode head ->
     (Constr.t, a branch) Abwd.t ->
-    (Constr.t, (dom, m, ij) Value.dataconstr) Abwd.t ->
-    (Constr.t * (dom, a, m, ij) checkable_branch) list =
+    (Constr.t, (dom, m) Value.dataconstr) Abwd.t ->
+    (Constr.t * (dom, a, m) checkable_branch) list =
  fun head user_branches data_constrs ->
   let user_branches, leftovers =
     Bwd.fold_left
       (fun ((userbrs, databrs) :
-             (Constr.t, (dom, a, m, ij) checkable_branch) Abwd.t
-             * (Constr.t, (dom, m, ij) Value.dataconstr) Abwd.t)
+             (Constr.t, (dom, a, m) checkable_branch) Abwd.t
+             * (Constr.t, (dom, m) Value.dataconstr) Abwd.t)
            (constr, Branch ({ value = xs; loc }, cube, body)) ->
         (* We check at the preprocessing stage that there are no duplicate constructors in the match. *)
         if Abwd.mem constr userbrs then fatal ?loc (Duplicate_constructor_in_match constr);
         let databrs, databr = Abwd.extract constr databrs in
-        let (Value.Dataconstr { env; args = argtys; indices = index_terms }) =
+        let (Value.Dataconstr { env; ty; fnty = _ }) =
           match databr with
           | Some db -> db
           | None -> fatal ?loc (No_such_constructor_in_match (phead head, constr)) in
@@ -302,24 +300,25 @@ let merge_branches : type hmode dom a m ij.
         (* Cube abstractions ⤇ can be used with 0-dimensional discriminees if they're generated as part of a multiple/deep match clause that also includes some higher discriminess.  We check for errors in that when the outer match finishes. *)
         | `Cube _, Zero -> ()
         | `Cube bs, Pos _ -> List.iter (fun b -> b.value := true) bs);
-        (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor.  The positive result of this check is then recorded in the common existential types bound by Checkable_branch. *)
-        match Fwn.compare (Namevec.length xs) (Telescope.length argtys) with
+        (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor, which is the constructor's arity (the pi-depth of its stored function-type). *)
+        let (Wrap arity) = pi_arity ty in
+        match Fwn.compare (Namevec.length xs) arity with
         | Neq ->
             fatal ?loc
               (Wrong_number_of_arguments_to_pattern
-                 (constr, Fwn.to_int (Namevec.length xs) - Fwn.to_int (Telescope.length argtys)))
+                 (constr, Fwn.to_int (Namevec.length xs) - Fwn.to_int arity))
         | Eq ->
-            let br = Checkable_branch { xs; body = Some body; env; argtys; index_terms } in
+            let br = Checkable_branch { xs; body = Some body; env; ty } in
             (Snoc (userbrs, (constr, br)), databrs))
       (Bwd.Emp, data_constrs) user_branches in
   (* If there are any constructors in the datatype left over that the user didn't supply branches for, we add them to the list at the end.  They will be tested for refutability. *)
   Bwd.prepend user_branches
     (Bwd_extra.to_list_map
-       (fun (c, Value.Dataconstr { env; args = argtys; indices = index_terms }) ->
-         let b = Telescope.length argtys in
-         let (Bplus plus_args) = Raw.Indexed.bplus b in
+       (fun (c, Value.Dataconstr { env; ty; fnty = _ }) ->
+         let (Wrap arity) = pi_arity ty in
+         let (Bplus plus_args) = Raw.Indexed.bplus arity in
          let xs = Namevec.none plus_args in
-         (c, Checkable_branch { xs; body = None; env; argtys; index_terms }))
+         (c, Checkable_branch { xs; body = None; env; ty }))
        leftovers)
 
 exception Case_tree_construct_in_let
@@ -357,11 +356,11 @@ type (_, _, _, _, _) match_motive =
   | Motive : {
       (* GIVEN *)
       get :
-        'm 'ij.
+        'm.
         (* the dimension of the match, *)
         'm D.t ->
         (* the list of branches remaining to be typechecked, and *)
-        (Constr.t * ('dom, 'a, 'm, 'ij) checkable_branch) list ->
+        (Constr.t * ('dom, 'a, 'm) checkable_branch) list ->
         (* the datatype family, applied to its parameters but not its indices, *)
         ('dom, kinetic) lazy_eval ->
         (* RETURN *)
@@ -372,20 +371,18 @@ type (_, _, _, _, _) match_motive =
         (* a map of branches that were typechecked in the process of looking for the motive *)
         * ('mode, 'b, 'm) Term.branch Constr.Map.t
         (* and a list of branches that haven't yet been typechecked. *)
-        * (Constr.t * ('dom, 'a, 'm, 'ij) checkable_branch) list;
+        * (Constr.t * ('dom, 'a, 'm) checkable_branch) list;
       (* GIVEN *)
       use :
-        'm 'bc 'ij.
+        'm 'ij.
         (* a match motive, which can only have been computed by "get" above *)
         'motive ->
         (* the constructor labeling a particular branch *)
         Constr.t ->
         (* the dimension of the match *)
         'm D.t ->
-        (* a vector of values for the type indices in this branch *)
-        (('dom, 'bc, kinetic) term, 'ij) Vec.t ->
-        (* the environment in which the datatype was evaluated, extended by new pattern variables for the arguments of the constructor in this branch. *)
-        ('dom, 'm, 'bc) env ->
+        (* a vector of the type indices in this branch, as read off from the output type of the constructor's function-type after introducing the pattern variables *)
+        (('m, 'dom normal) CubeOf.t, 'ij) Vec.t ->
         (* The new pattern variables as values, along with their boundaries. *)
         ('m, 'dom, kinetic) modal_value_cube list ->
         (* RETURN the actual motive type against which to typecheck this branch. *)
@@ -401,6 +398,12 @@ type (_, _, _, _, _) match_motive =
         'motive ->
         (* RETURN the type of the match term, i.e. the motive evaluated (if it is dependent) at these indices, boundary, and the discriminee itself.  (The discriminee doesn't have to be passed as an argument to this callback explicitly because it is available when the callback is defined as a closure.)  *)
         ('mode, kinetic) value;
+      (* GIVEN *)
+      motive_term :
+        (* a match motive *)
+        'motive ->
+        (* RETURN the checked term of an explicit motive supplied by the user, if any.  This is stored in the Match so that it can be displayed with its "return" clause; other matches store None. *)
+        ('mode, 'b, kinetic) term option;
     }
       -> ('dom, 'window, 'mode, 'a, 'b) match_motive
 
@@ -495,7 +498,11 @@ let rec check : type mode a b s.
                 (* A pure permutation is never locking.  *)
                 let cx = check (Kinetic `Nolet) ctx x ty_fainv in
                 realize status
-                  (Term.Act (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other))))
+                  (Term.Act
+                     ( Kinetic,
+                       cx,
+                       fa,
+                       (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx) )))
         | Some _, None -> fatal (Nonsynthesizing "pure symmetry of placeholder")
         | None, _ -> (
             (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
@@ -542,7 +549,11 @@ let rec check : type mode a b s.
                         | Ok () ->
                             realize status
                               (Term.Act
-                                 (cx, fa, (sort_of_ty ctx (view_type ty "checking act"), `Other)))
+                                 ( Kinetic,
+                                   cx,
+                                   fa,
+                                   (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx)
+                                 ))
                         | Error why ->
                             fatal
                               (Unequal_synthesized_type
@@ -720,123 +731,7 @@ let rec check : type mode a b s.
             let mn = is_id_ins ins <|> Checking_tuple_at_degenerated_record (phead name) in
             check_struct status Eta ctx ty (cod_left_ins ins) mn codata_args tyargs tms
         | _ -> fatal (Checking_tuple_at_nonrecord (PVal (ctx, ty))))
-    | Constr ({ value = constr; loc = constr_loc }, args), _ -> (
-        (* TODO: Move this into a helper function, it's too long to go in here. *)
-        match view_type ~severity ty "typechecking constr" with
-        | Canonical
-            (type hmode mn m n)
-            (( name,
-               Data
-                 {
-                   dim;
-                   indices = Filled ty_indices;
-                   constrs;
-                   discrete = _;
-                   recursive = _;
-                   tyfam = _;
-                   hints = _;
-                 },
-               ins,
-               tyargs ) :
-              hmode head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
-            let Eq = eq_of_ins_zero ins in
-            (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
-            match Abwd.find_opt constr constrs with
-            | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
-            | Some (Dataconstr { env; args = constr_arg_tys; indices = constr_indices }) ->
-                (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors.  What we naturally have is a *tube of lists*, but what check_at_tel wants is a *vector of tubes*, one per telescope entry; we do the conversion with a multiple-output traversal, as in readback and equality. *)
-                let lgth = Telescope.length constr_arg_tys in
-                let (Conses (cs, bs)) = Tlist.Tlist.conses lgth in
-                let tyarg_args =
-                  TubeOf.Heter.vec_of_hgt cs
-                  @@ TubeOf.pmap
-                       {
-                         map =
-                           (fun (type k)
-                             (fa : (k, D.zero, mn, mn) tface)
-                             ([ tm ] : (k, (mode normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft)
-                           ->
-                             match view_term tm.tm with
-                             | Constr (tmname, n, tmargs) ->
-                                 if tmname = constr then
-                                   match D.compare n (dom_tface fa) with
-                                   | Eq ->
-                                       let ys =
-                                         Vec.of_list_length_map
-                                           (fun (Value.Modal (xfilt, a)) : (_, _) modal_value ->
-                                             Modal
-                                               (Modality.filter_modality xfilt, CubeOf.find_top a))
-                                           lgth tmargs
-                                         <|> Anomaly "inst arg wrong num args in checking constr"
-                                       in
-                                       CubeOf.Heter.hft_of_vec cs ys
-                                   | Neq ->
-                                       fatal
-                                         (Dimension_mismatch ("checking constr", n, dom_tface fa))
-                                 else
-                                   fatal
-                                     (Missing_instantiation_constructor (constr, `Constr tmname))
-                             | _ ->
-                                 fatal
-                                   (Missing_instantiation_constructor
-                                      (constr, `Nonconstr (PNormal (ctx, tm)))));
-                       }
-                       [ tyargs ] bs in
-                (* Now, for each argument of the constructor, we:
-                   1. Evaluate the argument *type* of the constructor (which are assembled in the telescope constr_arg_tys) at the parameters (which are in the environment already) and the previous evaluated argument *values* (which get added to the environment as we go throurgh check_at_tel);
-                   2. Instantiate the result at the corresponding arguments of the lower-dimensional versions of the constructor, from tyarg_args;
-                   3. Check the coressponding argument *value*, supplied by the user, against this type;
-                   4. Evaluate this argument value and add it to the environment, to substitute into the subsequent types, and also later to the indices. *)
-                let env, newargs = check_at_tel constr ctx env args constr_arg_tys tyarg_args in
-                (* Now we substitute all those evaluated arguments into the indices, to get the actual (higher-dimensional) indices of our constructor application. *)
-                let constr_indices =
-                  Vec.mmap
-                    (fun [ ix ] ->
-                      CubeOf.build dim
-                        { build = (fun fa -> eval_term (act_env env (opt_op_of_sface fa)) ix) })
-                    [ constr_indices ] in
-                (* The last thing to do is check that these indices are equal to those of the type we are checking against.  (So a constructor application "checks against the parameters but synthesizes the indices" in some sense.)  I *think* it should suffice to check the top-dimensional ones, the lower-dimensional ones being automatic.  For now, we check all of them, raising an anomaly in case I was wrong about that.  *)
-                Vec.miter
-                  (fun [ t1s; t2s ] ->
-                    CubeOf.miter
-                      {
-                        it =
-                          (fun fa [ t1; t2 ] ->
-                            match equal_at ctx t1 t2.tm (Lazy.force t2.ty) with
-                            | Ok () -> ()
-                            | Error err -> (
-                                match is_id_sface fa with
-                                | Some _ ->
-                                    fatal
-                                      (Unequal_indices
-                                         ( PNormal (ctx, { tm = t1; ty = t2.ty }),
-                                           PNormal (ctx, t2),
-                                           err ))
-                                | None ->
-                                    fatal (Anomaly "mismatching lower-dimensional constructors")));
-                      }
-                      [ t1s; t2s ])
-                  [ constr_indices; ty_indices ];
-                realize status (Term.Constr (constr, dim, newargs)))
-        (* A constructor can also check at a function-type by eta-expansion. *)
-        | Canonical (_, Pi { x; _ }, _, _) ->
-            let name = locate_opt None (option_of_binder_name (top_variable x)) in
-            let cube, fa =
-              match D.compare_zero (dim_variables x) with
-              | Zero -> (locate_opt None `Normal, None)
-              | Pos _ ->
-                  (locate_opt None (`Cube (ref None)), Some (Any_sface (id_sface (dim_variables x))))
-            in
-            let args =
-              List.fold_right
-                (fun arg acc -> locate_opt arg.loc (Weaken (arg.value, Eq)) :: acc)
-                args
-                [ locate_opt None (Synth (Var (Top, fa))) ] in
-            let body = locate_opt tm.loc (Constr ({ value = constr; loc = constr_loc }, args)) in
-            check ?discrete status ctx
-              (locate_opt tm.loc (Lam { name; cube; implicit = `Explicit; dom = None; body }))
-              ty
-        | _ -> fatal (No_such_constructor (`Other (PVal (ctx, ty)), constr)))
+    | Constr (constr, args), _ -> check_constr ?discrete status ctx tm.loc constr args ty
     | Numeral n, _ ->
         if n.num < Z.zero then fatal (Anomaly "negative numeral");
         if n.den <= Z.zero then fatal (Anomaly "negative denominator");
@@ -1009,7 +904,8 @@ let rec check : type mode a b s.
                 let new_sfn =
                   locate_opt fn.loc
                     (Term.App
-                       ( sfn,
+                       ( Kinetic,
+                         sfn,
                          D.zero,
                          Modality.filter_id mode D.zero,
                          Modal (idm, plus_no_lock mode, CubeOf.singleton carg) )) in
@@ -1093,6 +989,89 @@ let rec check : type mode a b s.
   let result = go () in
   Annotate.tm ctx result;
   result
+
+(* Check an application of a constructor, against a datatype having that constructor or (by eta-expansion) against a function-type. *)
+and check_constr : type mode a b s.
+    ?discrete:unit Constant.Map.t ->
+    (mode, b, s) status ->
+    (mode, a, b) Ctx.t ->
+    (* The location of the entire constructor application, used for eta-expansion. *)
+    Asai.Range.t option ->
+    Constr.t located ->
+    a check located list ->
+    (mode, kinetic) value ->
+    (mode, b, s) term =
+ fun ?discrete status ctx loc { value = constr; loc = constr_loc } args ty ->
+  match view_type ~severity:Asai.Diagnostic.Error ty "typechecking constr" with
+  | Canonical
+      (type hmode mn m n)
+      ((name, Data { dim; indices = Filled ty_indices; constrs; _ }, ins, tyargs) :
+        hmode head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
+      let Eq = eq_of_ins_zero ins in
+      (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
+      match Abwd.find_opt constr constrs with
+      | None -> fatal ?loc:constr_loc (No_such_constructor (`Data (phead name), constr))
+      | Some (Dataconstr { env; ty = constr_ty; fnty }) ->
+          (* We recover the constructor's arity from the pi-depth of its stored function-type, to drive the conversion of the instantiation arguments below. *)
+          let (Wrap lgth) = pi_arity constr_ty in
+          (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors.  What we naturally have is a *tube of lists*, but what check_at_pi wants is a *vector of tubes*, one per constructor argument; we do the conversion with a multiple-output traversal, as in readback and equality. *)
+          let tyarg_args =
+            find_tyarg_args ~check_dim:"checking constr" constr lgth tyargs
+              ~wrong_arity:(fun () -> Anomaly "inst arg wrong num args in checking constr")
+              ~wrong_constr:(fun tmname ->
+                Missing_instantiation_constructor (constr, `Constr tmname))
+              ~not_constr:(fun tm ->
+                Missing_instantiation_constructor (constr, `Nonconstr (PNormal (ctx, tm)))) in
+          (* Now we walk the evaluation of the constructor's function-type, checking each user-supplied argument against the current domain (instantiated at the corresponding arguments of the lower-dimensional constructors, from tyarg_args) and applying the codomain to the checked argument to continue.  The final codomain is then the constructor's output type (the datatype applied to the parameters and indices) evaluated at all the checked arguments. *)
+          let out, newargs =
+            check_at_pi constr ctx (dim_env env) (force_eval_term fnty) args tyarg_args in
+          (* The last thing to do is check that the indices of the output type are equal to those of the type we are checking against.  (So a constructor application "checks against the parameters but synthesizes the indices" in some sense.)  We extract them directly from the evaluated output, which is the datatype fully applied to its indices; this evaluation is skipped for non-indexed datatypes, where there is nothing to compare.  I *think* it should suffice to check the top-dimensional ones, the lower-dimensional ones being automatic.  For now, we check all of them, raising an anomaly in case I was wrong about that.  *)
+          (match ty_indices with
+          | [] -> ()
+          | _ :: _ ->
+              let constr_indices =
+                indices_of_out "checking constr" out (dim_env env) (Vec.length ty_indices) in
+              Vec.miter
+                (fun [ t1s; t2s ] ->
+                  CubeOf.miter
+                    {
+                      it =
+                        (fun fa [ t1; t2 ] ->
+                          match equal_at ctx t1.tm t2.tm (Lazy.force t2.ty) with
+                          | Ok () -> ()
+                          | Error err -> (
+                              match is_id_sface fa with
+                              | Some _ ->
+                                  fatal
+                                    (Unequal_indices
+                                       ( PNormal (ctx, { tm = t1.tm; ty = t2.ty }),
+                                         PNormal (ctx, t2),
+                                         err ))
+                              | None -> fatal (Anomaly "mismatching lower-dimensional constructors")
+                              ));
+                    }
+                    [ t1s; t2s ])
+                [ constr_indices; ty_indices ]);
+          realize status (Term.Constr (constr, dim, newargs)))
+  (* A constructor can also check at a function-type by eta-expansion. *)
+  | Canonical (_, Pi { x; _ }, _, _) ->
+      let name = locate_opt None (option_of_binder_name (top_variable x)) in
+      let cube, fa =
+        match D.compare_zero (dim_variables x) with
+        | Zero -> (locate_opt None `Normal, None)
+        | Pos _ ->
+            (locate_opt None (`Cube (ref None)), Some (Any_sface (id_sface (dim_variables x))))
+      in
+      let args =
+        List.fold_right
+          (fun arg acc -> locate_opt arg.loc (Weaken (arg.value, Eq)) :: acc)
+          args
+          [ locate_opt None (Synth (Var (Top, fa))) ] in
+      let body = locate_opt loc (Constr ({ value = constr; loc = constr_loc }, args)) in
+      check ?discrete status ctx
+        (locate_opt loc (Lam { name; cube; implicit = `Explicit; dom = None; body }))
+        ty
+  | _ -> fatal (No_such_constructor (`Other (PVal (ctx, ty)), constr))
 
 (* Deal with a synthesizing term in checking position. *)
 and check_of_synth : type mode a b s.
@@ -1327,7 +1306,7 @@ and make_letrec_metas : type mode x a b ab.
  fun ctx tel ->
   match tel with
   | Emp -> Nil
-  | Term.Ext (x, Modal (modality, plus, vty), tel) -> (
+  | Ext (x, Modal (modality, plus, vty), tel) -> (
       match (Modality.compare_id modality, plus) with
       | Eq, Plus_lock (Zero _, Zero) ->
           (* Create the metavariable. *)
@@ -1532,28 +1511,21 @@ and check_match_branches : type dom window mode a b bm.
       let user_branches = merge_branches name brs data_constrs in
       (* We use the callback to get the motive and other data.  This might typecheck some of the branches, if it is a synthesizing match. *)
       let motive, errs, branches, check_branches = callbacks.get dim user_branches tyfam in
+      (* The checked motive term, if the user wrote one, to be stored in the match for display. *)
+      let motive_tm = Option.bind motive callbacks.motive_term in
       (* Now we iterate through the remaining constructors, typechecking the corresponding branches and inserting them in the match tree. *)
       let branches, errs =
         List.fold_left
           (fun (branches, errs)
-               ( constr,
-                 (Checkable_branch { xs; body; env; argtys; index_terms } :
-                   (dom, a, m, ij) checkable_branch) ) ->
-            (* Create new De-Bruijn-level variables for the pattern variables to which the constructor is applied, and add corresponding De-Bruijn-index variables to the context.  The types of those variables are specified in the telescope argtys, and have to be evaluated at the closure environment 'env' and the previous new variables (this is what ext_tel does).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
-            let (Ext_tel
-                   {
-                     ctx = newctx;
-                     env = newenv;
-                     values = newvars;
-                     normals = newnfs;
-                     annotate;
-                     comp;
-                   }) =
-              ext_tel ctx window env xs argtys in
+               (constr, (Checkable_branch { xs; body; env; ty } : (dom, a, m) checkable_branch)) ->
+            (* Create new De-Bruijn-level variables for the pattern variables to which the constructor is applied, and add corresponding De-Bruijn-index variables to the context.  The types of those variables are the domains of the constructor's function-type, evaluated at the closure environment 'env' and the previous new variables (this is what ext_pi does, walking that pi-type).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes.  We also read this branch's type indices off the residual output type. *)
+            let (Ext_pi { ctx = newctx; values = newvars; normals = newnfs; annotate; comp; out }) =
+              ext_pi ctx window env xs (eval_term env ty) in
+            let index_vals = indices_of_out "match branch" out dim (Vec.length indices) in
             let perm = id_perm in
             let status =
-              make_match_status status window plus_lock tm dim branches annotate comp None perm
-                constr in
+              make_match_status status window plus_lock tm dim motive_tm branches annotate comp None
+                perm constr in
             (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
             Reporter.try_with ~fatal:(fun e ->
                 match e.message with
@@ -1566,7 +1538,7 @@ and check_match_branches : type dom window mode a b bm.
                 Annotate.ctx status newctx body;
                 (branches, errs)
             | Some body, Some motive ->
-                let cmotive = callbacks.use motive constr dim index_terms newenv newvars in
+                let cmotive = callbacks.use motive constr dim index_vals newvars in
                 let cbody = check status newctx body cmotive in
                 ( branches
                   |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm = cbody }),
@@ -1589,7 +1561,7 @@ and check_match_branches : type dom window mode a b bm.
             (fun b ->
               if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
-          ( Match { tm; window; plus_lock; dim; branches },
+          ( Match { tm; window; plus_lock; dim; motive = motive_tm; branches },
             Option.map (callbacks.return indices inst_args) motive ))
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
@@ -1616,8 +1588,9 @@ and check_nondep_match : type dom window mode a b bm.
       (Motive
          {
            get = (fun _ user_branches _ -> (Some motive, Emp, Constr.Map.empty, user_branches));
-           use = (fun x _ _ _ _ _ -> x);
+           use = (fun x _ _ _ _ -> x);
            return = (fun _ _ x -> x);
+           motive_term = (fun _ -> None);
          }) in
   result
 
@@ -1638,23 +1611,23 @@ and synth_nondep_match : type mode a b.
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
       let (tm, varty), loc = (synth (Kinetic `Nolet) lctx tm, tm.loc) in
       (* Now we define the callback that will try to synthesize a motive from one of the branches. *)
-      let get : type m ij.
+      let get : type m.
           m D.t ->
-          (Constr.t * (dom, a, m, ij) checkable_branch) list ->
+          (Constr.t * (dom, a, m) checkable_branch) list ->
           (dom, kinetic) lazy_eval ->
           (mode, kinetic) value option
           * Code.t Asai.Diagnostic.t Bwd.t
           * (mode, b, m) Term.branch Constr.Map.t
-          * (Constr.t * (dom, a, m, ij) checkable_branch) list =
+          * (Constr.t * (dom, a, m) checkable_branch) list =
        fun dim user_branches _ ->
         (* We split the branches into the synthesizing and non-synthesizing ones. *)
         let synth_branches, check_branches =
           List.partition_map
-            (fun (c, (Checkable_branch { xs; body; env; argtys; index_terms } as cb)) ->
+            (fun (c, (Checkable_branch { xs; body; env; ty } as cb)) ->
               match body with
               | Some { value = Synth sbody; loc } ->
                   let body = locate_opt loc sbody in
-                  Left (c, Synthable_branch { xs; body; env; argtys; index_terms })
+                  Left (c, Synthable_branch { xs; body; env; ty })
               | _ -> Right (c, cb))
             user_branches in
         (* We iterate through the synthesizing branches looking for the first one that succeeds at synthesizing, accumulating errors from the ones that fail. *)
@@ -1666,16 +1639,15 @@ and synth_nondep_match : type mode a b.
                   Snoc (Emp, diagnostic (Nonsynthesizing "match without synthesizing branches"))
                 else errs in
               (None, errs, Constr.Map.empty, [])
-          | ( constr,
-              (Synthable_branch { xs; body; env; argtys; index_terms = _ } :
-                (dom, a, m, ij) synthable_branch) )
-            :: brs ->
+          | (constr, (Synthable_branch { xs; body; env; ty } : (dom, a, m) synthable_branch)) :: brs
+            ->
               (* This is the same preprocessing that's done for checking branches in check_match_branches. *)
-              let (Ext_tel { ctx = newctx; annotate; comp; _ }) = ext_tel ctx window env xs argtys in
+              let (Ext_pi { ctx = newctx; annotate; comp; _ }) =
+                ext_pi ctx window env xs (eval_term env ty) in
               let perm = id_perm in
               let status =
-                make_match_status status window plus_lock tm dim Constr.Map.empty annotate comp None
-                  perm constr in
+                make_match_status status window plus_lock tm dim None Constr.Map.empty annotate comp
+                  None perm constr in
               Annotate.ctx status newctx (locate_opt body.loc (Synth body.value));
               (* Trap errors and accumulate them, going on to look for other synthesizing branches. *)
               Reporter.try_with ~fatal:(fun e -> find_synthing_branch (Snoc (errs, e)) brs)
@@ -1699,15 +1671,21 @@ and synth_nondep_match : type mode a b.
         (* We put the remaining synthesizing branches back on the front of the checking ones, and return them. *)
         let check_branches =
           List.fold_right
-            (fun (c, Synthable_branch { xs; body; env; argtys; index_terms }) cbs ->
+            (fun (c, Synthable_branch { xs; body; env; ty }) cbs ->
               let body = Some { value = Synth body.value; loc = body.loc } in
-              (c, Checkable_branch { xs; body; env; argtys; index_terms }) :: cbs)
+              (c, Checkable_branch { xs; body; env; ty }) :: cbs)
             synth_branches check_branches in
         (motive, errs, branches, check_branches) in
       (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch. *)
       let result, motive =
         check_match_branches status ctx tm varty window plus_lock brs i highers loc
-          (Motive { get; use = (fun x _ _ _ _ _ -> x); return = (fun _ _ x -> x) }) in
+          (Motive
+             {
+               get;
+               use = (fun x _ _ _ _ -> x);
+               return = (fun _ _ x -> x);
+               motive_term = (fun _ -> None);
+             }) in
       match motive with
       | None -> fatal (Anomaly "synth_nondep_match: no synthesized type of match but no errors")
       | Some motive -> (result, motive))
@@ -1742,14 +1720,11 @@ and synth_dep_match : type mode a b.
                        (motive_of_family ctx window tyfam.tm (Lazy.force tyfam.ty)) in
                    let cmotive = check (Kinetic `Nolet) ctx motive emotivety in
                    let emotive = eval_term (Ctx.env ctx) cmotive in
-                   (* Note that the motive object here is a *type family* value, not a single type.  Therefore, the "use" and "return" callbacks have to apply that function to appropriate arguments.  *)
-                   (Some emotive, Emp, Constr.Map.empty, user_branches));
+                   (* Note that the motive object here is a *type family* value, not a single type.  Therefore, the "use" and "return" callbacks have to apply that function to appropriate arguments.  We keep the checked term alongside it, to be stored in the Match for display. *)
+                   (Some (cmotive, emotive), Emp, Constr.Map.empty, user_branches));
                use =
-                 (fun emotive constr dim index_terms newenv newvars ->
-                   (* To get the type at which to typecheck the body of a branch, we have to apply the general dependent motive to the indices of this constructor, its boundaries, and itself.  First we compute the indices. *)
-                   let index_vals =
-                     Vec.mmap (fun [ ixtm ] -> eval_with_boundary newenv ixtm) [ index_terms ] in
-                   (* Now we compute the constructor and its boundaries.  TODO: Rather than building a cube and then immediately traversing it, it would be more efficient to call a function that just traverses all faces of some dimension. *)
+                 (fun (_, emotive) constr dim index_vals newvars ->
+                   (* To get the type at which to typecheck the body of a branch, we apply the general dependent motive to the indices of this constructor (read off from its output type by the caller), its boundaries, and itself.  We compute the constructor and its boundaries.  TODO: Rather than building a cube and then immediately traversing it, it would be more efficient to call a function that just traverses all faces of some dimension. *)
                    let constr_vals =
                      CubeOf.build dim
                        {
@@ -1765,15 +1740,16 @@ and synth_dep_match : type mode a b.
                                    newvars ));
                        } in
                    (* Finally, we apply the motive to all of these arguments. *)
-                   let result = Vec.fold_left (apply_singletons window) emotive index_vals in
+                   let result = Vec.fold_left (apply_singleton_nfs window) emotive index_vals in
                    apply_singletons window result constr_vals);
                return =
-                 (fun indices inst_args emotive ->
+                 (fun indices inst_args (_, emotive) ->
                    (* We compute the output type of the match by applying the dependent motive to the discriminee's indices, boundary, and itself. *)
                    let result = Vec.fold_left (apply_singleton_nfs window) emotive indices in
                    let result = apply_singleton_tube_nfs window result inst_args in
                    apply_term result (Modality.filter_zero window)
                      (CubeOf.singleton (eval_term (Ctx.env lctx) tm)));
+               motive_term = (fun (cmotive, _) -> Some cmotive);
              }) in
       match result_ty with
       | None -> fatal (Anomaly "synth_dep_match: no type of match but no errors")
@@ -1895,27 +1871,15 @@ and check_var_match : type dom modality mode a b bm.
       let branches, errs =
         List.fold_left
           (fun (branches, errs)
-               ( constr,
-                 (Checkable_branch { xs; body; env; argtys; index_terms } :
-                   (dom, a, m, ij) checkable_branch) ) ->
-            (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are specified in the telescope argtys, and have to be evaluated at the closure environment 'env' and the previous new variables (this is what ext_tel does).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
-            let (Ext_tel
-                   {
-                     ctx = newctx;
-                     env = newenv;
-                     values = newvars;
-                     normals = newnfs;
-                     annotate;
-                     comp;
-                   }) =
-              ext_tel ctx window env xs argtys in
-            (* Evaluate the "index_terms" at the new pattern variables, obtaining what the indices should be for the new term that replaces the match variable in the match body. *)
+               (constr, (Checkable_branch { xs; body; env; ty } : (dom, a, m) checkable_branch)) ->
+            (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are the domains of the constructor's function-type, evaluated at the closure environment 'env' and the previous new variables (this is what ext_pi does, walking that pi-type).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
+            let (Ext_pi { ctx = newctx; values = newvars; normals = newnfs; annotate; comp; out }) =
+              ext_pi ctx window env xs (eval_term env ty) in
+            (* Read the indices of the new term that replaces the match variable in the match body off the residual output type, as the values of the type indices at the new pattern variables. *)
             let index_vals =
-              Vec.mmap
-                (fun [ ixtm ] ->
-                  CubeOf.build dim
-                    { build = (fun fa -> eval_term (act_env newenv (opt_op_of_sface fa)) ixtm) })
-                [ index_terms ] in
+              Vec.map
+                (fun c -> CubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ c ])
+                (indices_of_out "match branch" out dim (Vec.length var_indices)) in
             (* Assemble a term consisting of the constructor applied to the new variables, along with its boundary, and their types.  To compute their types, we have to extract the datatype applied to its parameters only, pass to boundaries if necessary, and then re-apply it to the new indices. *)
             let constr_tys = TubeOf.plus_cube tyfam_args (CubeOf.singleton tyfam) in
             let argtbl = Hashtbl.create 10 in
@@ -1962,7 +1926,7 @@ and check_var_match : type dom modality mode a b bm.
                 let Eq = eq_of_ins_zero ins in
                 match
                   ( D.compare constrdim dim,
-                    Fwn.compare (Vec.length index_terms) (Vec.length indices) )
+                    Fwn.compare (Vec.length var_indices) (Vec.length indices) )
                 with
                 | Neq, _ -> fatal (Anomaly "created datatype has wrong dimension")
                 | _, Neq -> fatal (Anomaly "created datatype has wrong number of indices")
@@ -1999,7 +1963,7 @@ and check_var_match : type dom modality mode a b bm.
                         let newty = eval_term (Ctx.env newctx) (readback_val oldctx motive) in
                         (* Now we have to modify the "status" data by readback-eval on the arguments and adding a hypothesized current branch to the match.  *)
                         let status =
-                          make_match_status status window plus (Term.Var index) dim branches
+                          make_match_status status window plus (Term.Var index) dim None branches
                             annotate comp
                             (Some (oldctx, newctx))
                             checked_perm constr in
@@ -2044,6 +2008,7 @@ and check_var_match : type dom modality mode a b bm.
                                                        plus_lock = plus_no_lock (Ctx.mode newctx);
                                                        tm = stm;
                                                        dim;
+                                                       motive = None;
                                                        branches = Constr.Map.empty;
                                                      })))
                                     (Option.fold
@@ -2069,7 +2034,8 @@ and check_var_match : type dom modality mode a b bm.
             (fun b ->
               if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
-          Match { window; plus_lock = plus; tm = Term.Var index; dim; branches })
+          (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store. *)
+          Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = None; branches })
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -2080,6 +2046,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     (a, mode, window, dom, am) plus_lock ->
     (dom, am, kinetic) term ->
     n D.t ->
+    (mode, a, kinetic) term option ->
     (mode, a, n) Term.branch Constr.Map.t ->
     (n, mode, annotations, mode, mode, b, mode) VarAnnotate.fwd_t ->
     (mode, b, mode, a, unit, ab) Tctx.bcomp ->
@@ -2087,7 +2054,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     (c, ab) permute ->
     Constr.t ->
     (mode, c, potential) status =
- fun status window plus_lock newtm dim branches annotate comp eval_readback perm constr ->
+ fun status window plus_lock newtm dim motive branches annotate comp eval_readback perm constr ->
   let (Potential
          (type hm d any)
          ((head, args, hyp) :
@@ -2147,7 +2114,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     | None -> (head, args) in
   let hyp tm =
     let branches = branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm }) in
-    hyp (Term.Match { window; plus_lock; tm = newtm; dim; branches }) in
+    hyp (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches }) in
   Potential (head, apps, hyp)
 
 (* Try matching against all the supplied terms with zero branches, producing an empty match if any succeeds and raising an error if none succeed.  Each term carries its own optional window modality. *)
@@ -2265,6 +2232,7 @@ and check_empty_match_lam : type mode a b.
                            Modality.filter_idempotent filter,
                            plus_with_locks_of_plus_lock plus_lock ));
                   dim;
+                  motive = None;
                   branches = Constr.Map.empty;
                 } )
       | None, `Notfirst ->
@@ -2345,6 +2313,7 @@ and empty_witness_cube : type mode dom modality k n a c.
                plus_lock;
                tm = readback_val lctx nf.tm;
                dim;
+               motive = None;
                branches = Constr.Map.empty;
              })
 
@@ -2357,7 +2326,7 @@ and check_data : type mode a b i.
     (mode, a, b) Ctx.t ->
     (mode, kinetic) value ->
     i Fwn.t ->
-    (Constr.t, (mode, b, i) Term.dataconstr) Abwd.t ->
+    (Constr.t, (mode, b, kinetic) term) Abwd.t ->
     (Constr.t * a Raw.dataconstr located) list ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (mode, b, potential) term =
@@ -2374,6 +2343,8 @@ and check_data : type mode a b i.
             (Data
                {
                  indices = num_indices;
+                 (* Typechecking a datatype declaration produces one of evaluation dimension zero. *)
+                 evaldim = D.zero;
                  constrs = checked_constrs;
                  discrete;
                  recursive;
@@ -2390,6 +2361,7 @@ and check_data : type mode a b i.
               (Data
                  {
                    indices = num_indices;
+                   evaldim = D.zero;
                    constrs = checked_constrs;
                    discrete = `No;
                    recursive = `Recursive;
@@ -2401,11 +2373,9 @@ and check_data : type mode a b i.
       match (Abwd.find_opt c checked_constrs, output) with
       | Some _, _ -> fatal (Duplicate_constructor_in_data c)
       | None, Some output ->
-          let disc, crec, (checked_constrs : (Constr.t, (mode, b, i) Term.dataconstr) Abwd.t), errs
-              =
+          let disc, crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t), errs =
             Reporter.try_with ~fatal:(fun e -> (true, `Recursive, checked_constrs, Snoc (errs, e)))
             @@ fun () ->
-            (* The argument telescope is checked in an occurrence-analysis scope, to detect whether this constructor is recursive.  The output type is NOT included in the scope: its head is by definition the current datatype, and occurrences there are not recursion. *)
             let (Checked_tel (args, newctx), disc), crec =
               Positivity.scope @@ fun () -> check_tel ?discrete ctx args in
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
@@ -2420,12 +2390,13 @@ and check_data : type mode a b i.
                         fatal ?loc:output.loc
                           (Unimplemented "indexed inductive types nested inside higher comatches")
                     | Zero -> (
+                        (* We re-extract the indices only to validate that the output is the current datatype applied to the correct parameters and the right number of indices; the index values themselves are recovered on demand from the stored output. *)
                         let (Wrap indices) = get_indices newctx c current_apps out_apps output.loc in
                         match Fwn.compare (Vec.length indices) num_indices with
                         | Eq ->
                             ( disc,
                               crec,
-                              checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices }),
+                              checked_constrs |> Abwd.add c (Telescope.pis args coutput),
                               errs )
                         | _ ->
                             (* This can happen if the number of indices expected, which is computed from the type the datatype is being checked against, differs from the number of arguments the current constant actually takes.  For instance, if a 'match' with an explicit motive is used to define an indexed family, the motive could specify fewer indices than the constant has. *)
@@ -2439,21 +2410,20 @@ and check_data : type mode a b i.
             ~recursive:(Positivity.merge recursive crec) ~hints ~tyfam status ctx ty num_indices
             checked_constrs raw_constrs errs
       | None, None -> (
+          (* If the output wasn't supplied, there can't be any indices. *)
           match num_indices with
           | Zero ->
-              let ( disc,
-                    crec,
-                    (checked_constrs : (Constr.t, (mode, b, i) Term.dataconstr) Abwd.t),
-                    errs ) =
+              let disc, crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t), errs =
                 Reporter.try_with ~fatal:(fun e ->
                     (true, `Recursive, checked_constrs, Snoc (errs, e)))
                 @@ fun () ->
-                let (Checked_tel (args, _), disc), crec =
+                let (Checked_tel (args, newctx), disc), crec =
                   Positivity.scope @@ fun () -> check_tel ?discrete ctx args in
-                ( disc,
-                  crec,
-                  checked_constrs |> Abwd.add c (Term.Dataconstr { args; indices = [] }),
-                  errs ) in
+                (* In this case, the output of the constructor is the datatype itself. *)
+                let output =
+                  readback_neu ~canonical:`Canonical newctx (head_of_potential head) current_apps
+                in
+                (disc, crec, checked_constrs |> Abwd.add c (Telescope.pis args output), errs) in
               check_data
                 ~discrete:(if disc then discrete else None)
                 ~recursive:(Positivity.merge recursive crec) ~hints ~tyfam status ctx ty Fwn.zero
@@ -2551,7 +2521,7 @@ and with_codata_so_far : type mode a b n c et.
     hints ->
     n D.t ->
     (D.zero, n, n, mode normal) TubeOf.t ->
-    (mode * b * n * et) Term.CodatafieldAbwd.t ->
+    (mode * b * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, et) Fibrancy.Codata.t ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     ((mode, n) self_vars -> (mode, b, potential) term -> c) ->
@@ -2595,7 +2565,19 @@ and with_codata_so_far : type mode a b n c et.
         Self_vars { self = (fun _ -> CubeOf.build dim { build = (fun _ -> err) }) } in
   let codataterm =
     Term.Canonical
-      (Codata { eta; opacity; hints; dim; fields = checked_fields; fibrancy; is_glue = None }) in
+      (Codata
+         {
+           eta;
+           opacity;
+           hints;
+           (* Typechecking a codatatype declaration produces one of evaluation dimension zero: its self variable has just the intrinsic dimension, and each higher field has just its declared type. *)
+           evaldim = D.zero;
+           dim;
+           plusdim = D.zero_plus dim;
+           fields = checked_fields;
+           fibrancy = Some fibrancy;
+           is_glue = None;
+         }) in
   run_with_definition h (hyp codataterm) errs @@ fun () -> cont domvars codataterm
 
 and check_codata : type mode a b n et.
@@ -2605,7 +2587,7 @@ and check_codata : type mode a b n et.
     (potential, et) eta ->
     hints ->
     (D.zero, n, n, mode normal) TubeOf.t ->
-    (mode * b * n * et) Term.CodatafieldAbwd.t ->
+    (mode * b * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, et) Fibrancy.Codata.t ->
     (Field.wrapped * a Raw.codatafield) list ->
     Code.t Asai.Diagnostic.t Bwd.t ->
@@ -2683,7 +2665,8 @@ and check_codata : type mode a b n et.
                   Ctx.cube_vis lctx (Modality.filter_idempotent left_filter) x (self adj) in
                 (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
                 let cty = check (Kinetic `Nolet) newctx rty (universe (Modality.src right) D.zero) in
-                let entry = CodatafieldAbwd.Entry (fld, Codatafield.Lower (adj, plus_lock, cty)) in
+                let entry =
+                  CodatafieldAbwd.Entry (fld, Codatafield (x, adj, plus_lock, Lower cty)) in
                 ( Snoc (checked_fields, entry),
                   Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
                   errs ) in
@@ -2704,16 +2687,20 @@ and check_codata : type mode a b n et.
             with
             | None, _ | _, None -> fatal (Unimplemented "nonparametric modal higher fields")
             | Some Eq, Some Eq ->
-                (* Exactly as for a lower field, we lock the context by the right adjoint and extend it by the self variable, annotated by the left adjoint (whose type "self" transports there along the adjunction unit).  We save the readback of that context, since checking this field at a nontrivial partial bijection requires eval-readbacking environments over it. *)
+                (* Exactly as for a lower field, we lock the context by the right adjoint and extend it by the self variable, annotated by the left adjoint (whose type "self" transports there along the adjunction unit).  We save the readback of the *locked* context, since checking this field at a nontrivial partial bijection requires eval-readbacking the field type's closure environment, which lives over it: the self variable is supplied to the field type after that degeneration rather than carried through it. *)
                 let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
                 let newctx = Ctx.cube_vis lctx (Modality.filter_zero left) x (self adj) in
-                let fldtermctx = readback_ctx newctx in
+                let fldtermctx = readback_ctx lctx in
                 (* Only then do we degenerate the whole thing by the field's intrinsic dimension, which makes the self variable into an i-dimensional cube along with the rest of the context. *)
                 let (Degctx (plusmap, degctx, _)) = degctx newctx i in
                 let cty = check (Kinetic `Nolet) degctx rty (universe (Modality.src right) D.zero) in
+                (* Since the codatatype has evaluation dimension zero, that declared type is the field's only instance. *)
                 let entry =
                   CodatafieldAbwd.Entry
-                    (fld, Codatafield.Higher (adj, plus_lock, fldtermctx, plusmap, cty)) in
+                    ( fld,
+                      Codatafield
+                        (x, adj, plus_lock, Higher (fldtermctx, singleton_fieldtype i plusmap cty))
+                    ) in
                 (Snoc (checked_fields, entry), errs) in
           check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
       | Pos _, Zero, Eta -> fatal (Unimplemented "higher fields in record types")
@@ -2730,7 +2717,7 @@ and check_record : type mode a f1 f2 f af d acd b n.
     (D.zero Field.t * string, f2) Bwv.t ->
     (f1, f2, f) N.plus ->
     (a, f, af) N.plus ->
-    (mode * b * n * has_eta) Term.CodatafieldAbwd.t ->
+    (mode * b * D.zero * n * has_eta) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, has_eta) Fibrancy.Codata.t ->
     (af, d, acd) Raw.tel ->
     Code.t Asai.Diagnostic.t Bwd.t ->
@@ -2744,7 +2731,18 @@ and check_record : type mode a f1 f2 f af d acd b n.
       | Emp ->
           let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
           Term.Canonical
-            (Codata { eta = Eta; opacity; hints; dim; fields; fibrancy; is_glue = None }))
+            (Codata
+               {
+                 eta = Eta;
+                 opacity;
+                 hints;
+                 evaldim = D.zero;
+                 dim;
+                 plusdim = D.zero_plus dim;
+                 fields;
+                 fibrancy = Some fibrancy;
+                 is_glue = None;
+               }))
   | Ext (None, _, _, _) -> fatal (Anomaly "unnamed field in check_record")
   | Ext (Some name, modality, rty, raw_fields) ->
       with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy errs
@@ -2766,9 +2764,11 @@ and check_record : type mode a f1 f2 f af d acd b n.
                 let entry =
                   CodatafieldAbwd.Entry
                     ( fld,
-                      Codatafield.Lower
-                        (Modalcell.id_adjunction (Ctx.mode ctx), plus_no_lock (Ctx.mode ctx), cty)
-                    ) in
+                      Codatafield
+                        ( None,
+                          Modalcell.id_adjunction (Ctx.mode ctx),
+                          plus_no_lock (Ctx.mode ctx),
+                          Lower cty ) ) in
                 ( Snoc (checked_fields, entry),
                   Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
                   Bwv.Snoc (ctx_fields, (fld, name)),
@@ -2832,7 +2832,7 @@ and check_fields : type mode a b c s m n mn et.
     (m, n, mn) D.plus ->
     (mode, m, n, c, et) codata_args ->
     (* The fields from the codatatype, to be checked against *)
-    (mode * c * n * et) Term.CodatafieldAbwd.entry list ->
+    (mode * c * D.zero * n * et) Term.CodatafieldAbwd.entry list ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     (* The fields supplied by the user *)
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
@@ -2880,11 +2880,11 @@ and check_field : type mode a b c s m n mn i et.
     m D.t ->
     (m, n, mn) D.plus ->
     (mode, m, n, c, et) codata_args ->
-    (mode * c * n * et) Term.CodatafieldAbwd.entry list ->
+    (mode * c * D.zero * n * et) Term.CodatafieldAbwd.entry list ->
     (D.zero, mn, mn, mode normal) TubeOf.t ->
     (* The field being checked, by name and by data from the codatatype *)
     i Field.t ->
-    (i, mode * c * n * et) Term.Codatafield.t ->
+    (i, mode * c * D.zero * n * et) Term.Codatafield.t ->
     (* The up-until-now term being checked *)
     ((mode, kinetic) value, Code.t) Result.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
@@ -2896,16 +2896,11 @@ and check_field : type mode a b c s m n mn i et.
     * (mode * (m * b * s * et)) Term.StructfieldAbwd.t =
  fun status eta ctx ty m mn ({ env; _ } as codata_args) fields tyargs fld cdf prev_etm tms ctms etms
      errs ->
-  match (cdf, status, eta) with
-  | ( Lower
-        (type f g gmode ag)
-        ((adj, fld_plus_lock, fldty) :
-          (mode, f, g, gmode) Modalcell.adjunction
-          * (c, mode, g, gmode, ag) plus_lock
-          * (gmode, (ag, (f, n) dim_entry) snoc, kinetic) term),
-      _,
-      _ ) -> (
-      let (Adjunction { left; right; _ }) = adj in
+  match cdf with
+  | Codatafield
+      (type f g gmode ag)
+      ((_, (Adjunction { left; right; _ } as adj), fld_plus_lock, fldty) :
+        _ * (mode, f, g, gmode) Modalcell.adjunction * (c, mode, g, gmode, ag) plus_lock * _) -> (
       (* A modal field whose (left adjoint) modality is nonparametric disappears at a dimension it filters nontrivially: it must be omitted from the tuple/comatch (an explicit occurrence is an error) and we skip it.  Otherwise its filter at the result dimension m is trivial and we check it normally. *)
       let (Has_filter left_filter) = Modality.filter left m in
       match Modality.filter_is_trivial m left_filter with
@@ -2924,40 +2919,33 @@ and check_field : type mode a b c s m n mn i et.
             | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
             | None -> (tms, errs) in
           check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs
-      | Some Eq ->
-          let ins = ins_zero m in
-          (* The component of a modal field is checked in the context locked by the right adjoint of the field's adjunction (which is trivial for ordinary fields). *)
-          let (Locked
-                 (type bl)
-                 ((ctx_plus_lock, lctx) : (b, mode, g, gmode, bl) plus_lock * (gmode, a, bl) Ctx.t))
-              =
-            Ctx.lock ctx right in
-          let mkstatus lbl : (mode, b, s) status -> (gmode, bl, s) status = function
-            | Kinetic l -> Kinetic l
-            | Potential (c, args, hyp) ->
-                let args = Value.Field (args, left_filter, fld, D.plus_zero m, ins) in
-                let hyp tm =
-                  let ctms =
-                    Snoc
-                      ( ctms,
-                        Term.StructfieldAbwd.Entry
-                          (fld, Term.Structfield.Lower (adj, ctx_plus_lock, tm, lbl)) ) in
-                  hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }) in
-                Potential (c, args, hyp) in
-          let key = Some (Field.to_string fld, []) in
-          let tm, tms, lbl =
-            match
-              Abwd.find_opt_and_update key key (fun (cube, x) -> (cube, locate_opt x.loc None)) tms
-            with
-            | Some ((cube, { value = Some tm; loc }), tms) ->
-                (match (cube.value, D.compare_zero m) with
-                | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
-                | _ -> ());
-                ({ value = tm; loc }, tms, `Labeled)
-            | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
-            | None -> (
+      | Some Eq -> (
+          match (fldty, status, eta) with
+          | Lower fldty, _, _ ->
+              let ins = ins_zero m in
+              (* The component of a modal field is checked in the context locked by the right adjoint of the field's adjunction (which is trivial for ordinary fields). *)
+              let (Locked
+                     (type bl)
+                     ((ctx_plus_lock, lctx) :
+                       (b, mode, g, gmode, bl) plus_lock * (gmode, a, bl) Ctx.t)) =
+                Ctx.lock ctx right in
+              let mkstatus lbl : (mode, b, s) status -> (gmode, bl, s) status = function
+                | Kinetic l -> Kinetic l
+                | Potential (c, args, hyp) ->
+                    let args = Value.Field (args, left_filter, fld, D.plus_zero m, ins) in
+                    let hyp tm =
+                      let ctms =
+                        Snoc
+                          ( ctms,
+                            Term.StructfieldAbwd.Entry
+                              (fld, Term.Structfield.Lower (adj, ctx_plus_lock, tm, lbl)) ) in
+                      hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status })
+                    in
+                    Potential (c, args, hyp) in
+              let key = Some (Field.to_string fld, []) in
+              let tm, tms, lbl =
                 match
-                  Abwd.find_opt_and_update None key
+                  Abwd.find_opt_and_update key key
                     (fun (cube, x) -> (cube, locate_opt x.loc None))
                     tms
                 with
@@ -2966,51 +2954,61 @@ and check_field : type mode a b c s m n mn i et.
                     | `Cube, Zero ->
                         fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
                     | _ -> ());
-                    ({ value = tm; loc }, tms, `Unlabeled)
+                    ({ value = tm; loc }, tms, `Labeled)
                 | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
-                | None -> fatal (missing_field_in_struct eta fld)) in
-          let etms, ctms, errs =
-            (* We trap any errors produced by 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
-            Reporter.try_with ~fatal:(fun e -> (etms, ctms, Snoc (errs, e))) @@ fun () ->
-            (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
-            let ety =
-              tyof_lower_codatafield prev_etm fld adj fld_plus_lock fldty env tyargs m mn
-                ~key:`Nokey in
-            let ctm = check (mkstatus lbl status) lctx tm ety in
-            let etms =
-              Snoc
-                ( etms,
-                  Value.StructfieldAbwd.Entry
-                    (fld, Value.Structfield.Lower (adj, lazy_eval (Ctx.env lctx) ctm, lbl)) ) in
-            let ctms =
-              Snoc
-                ( ctms,
-                  Term.StructfieldAbwd.Entry
-                    (fld, Term.Structfield.Lower (adj, ctx_plus_lock, ctm, lbl)) ) in
-            (etms, ctms, errs) in
-          check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs)
-  | ( Higher
-        (type f g gmode d ag iagx)
-        ((adj, fld_plus_lock, fldtermctx, ic0, fldty) :
-          (mode, f, g, gmode) Modalcell.adjunction
-          * (c, mode, g, gmode, ag) plus_lock
-          * (gmode, d, (ag, (f, D.zero) dim_entry) snoc) termctx
-          * (i, (ag, (f, D.zero) dim_entry) snoc, iagx, gmode) plusmap
-          * (gmode, iagx, kinetic) term),
-      Potential _,
-      Noeta ) ->
-      let Eq = D.plus_uniq mn (D.plus_zero m) in
-      let i = Field.dim fld in
-      (* Like a lower modal field, the components of a modal higher field are checked behind a lock by the right adjoint.  We create the lock of the checked context b once, outside the recursion over pbijs, so that all the accumulated components share the same locked context type. *)
-      let (Adjunction { right; _ }) = adj in
-      let (Has_plus_lock (type bg) (ctx_plus_lock : (b, mode, g, gmode, bg) plus_lock)) =
-        plus_lock right in
-      check_higher_field status ctx ty m i codata_args fields tyargs tms ctms etms errs fld adj
-        ctx_plus_lock
-        (PlusPbijmap.build m i { build = (fun _ -> None) })
-        (InsmapOf.build m i { build = (fun _ -> None) })
-        (all_pbij_between m i) prev_etm fld_plus_lock fldtermctx ic0 fldty
-  | Higher _, Kinetic _, _ -> .
+                | None -> (
+                    match
+                      Abwd.find_opt_and_update None key
+                        (fun (cube, x) -> (cube, locate_opt x.loc None))
+                        tms
+                    with
+                    | Some ((cube, { value = Some tm; loc }), tms) ->
+                        (match (cube.value, D.compare_zero m) with
+                        | `Cube, Zero ->
+                            fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+                        | _ -> ());
+                        ({ value = tm; loc }, tms, `Unlabeled)
+                    | Some ((_, { value = None; _ }), _) ->
+                        fatal (Anomaly "accessing same field twice")
+                    | None -> fatal (missing_field_in_struct eta fld)) in
+              let etms, ctms, errs =
+                (* We trap any errors produced by 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
+                Reporter.try_with ~fatal:(fun e -> (etms, ctms, Snoc (errs, e))) @@ fun () ->
+                (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
+                let ety =
+                  tyof_lower_codatafield (self_values adj prev_etm tyargs) tyargs fld adj
+                    fld_plus_lock fldty env m mn ~key:`Nokey in
+                let ctm = check (mkstatus lbl status) lctx tm ety in
+                let etms =
+                  Snoc
+                    ( etms,
+                      Value.StructfieldAbwd.Entry
+                        (fld, Value.Structfield.Lower (adj, lazy_eval (Ctx.env lctx) ctm, lbl)) )
+                in
+                let ctms =
+                  Snoc
+                    ( ctms,
+                      Term.StructfieldAbwd.Entry
+                        (fld, Term.Structfield.Lower (adj, ctx_plus_lock, ctm, lbl)) ) in
+                (etms, ctms, errs) in
+              check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs
+          | Higher (fldtermctx, fldtys), Potential _, Noeta ->
+              let (Fieldtype
+                     (type iagx)
+                     ((ic0, fldty) : (i, _, iagx, gmode) plusmap * (gmode, iagx, _) term)) =
+                declared_fieldtype fldtys in
+              let Eq = D.plus_uniq mn (D.plus_zero m) in
+              let i = Field.dim fld in
+              (* Like a lower modal field, the components of a modal higher field are checked behind a lock by the right adjoint.  We create the lock of the checked context b once, outside the recursion over pbijs, so that all the accumulated components share the same locked context type. *)
+              let (Adjunction { right; _ }) = adj in
+              let (Has_plus_lock (type bg) (ctx_plus_lock : (b, mode, g, gmode, bg) plus_lock)) =
+                plus_lock right in
+              check_higher_field status ctx ty m i codata_args fields tyargs tms ctms etms errs fld
+                adj ctx_plus_lock
+                (PlusPbijmap.build m i { build = (fun _ -> None) })
+                (InsmapOf.build m i { build = (fun _ -> None) })
+                (all_pbij_between m i) prev_etm fld_plus_lock fldtermctx ic0 fldty
+          | Higher _, Kinetic _, _ -> .))
 
 and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
     (mode, b, potential) status ->
@@ -3021,7 +3019,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
     m D.t ->
     i D.t ->
     (mode, m, D.zero, c, no_eta) codata_args ->
-    (mode * c * D.zero * no_eta) Term.CodatafieldAbwd.entry list ->
+    (mode * c * D.zero * D.zero * no_eta) Term.CodatafieldAbwd.entry list ->
     (D.zero, m, m, mode normal) TubeOf.t ->
     (* As before, user terms, checked terms, value terms, and errors *)
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
@@ -3041,9 +3039,9 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
     (m, i) pbij_between Seq.t ->
     (* Term-up-until-now *)
     ((mode, kinetic) value, Code.t) Result.t ->
-    (* The unevaluated type of the current field being checked: the codatatype's context locked by the right adjoint, extended by the self variable annotated by the left adjoint (whose termctx is stored with the field), and degenerated by the field's intrinsic dimension. *)
+    (* The unevaluated type of the current field being checked: the codatatype's context locked by the right adjoint (whose termctx is stored with the field, since the field type's closure environment lives over it), extended by the self variable annotated by the left adjoint, and degenerated by the field's intrinsic dimension. *)
     (c, mode, g, gmode, ag) plus_lock ->
-    (gmode, d, (ag, (f, D.zero) dim_entry) snoc) termctx ->
+    (gmode, d, ag) termctx ->
     (i, (ag, (f, D.zero) dim_entry) snoc, iagx, gmode) plusmap ->
     (gmode, iagx, kinetic) term ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
@@ -3216,12 +3214,35 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
         with_loc tm.loc @@ fun () ->
         (* We trap any errors produced by 'tyof_field' or 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
         Reporter.try_with ~fatal:(fun e -> (evals, cvals, Snoc (errs, e))) @@ fun () ->
-        let shuf : (mode, r, h, i, c) Norm.shuffleable =
-          higher_codatafield_shuffleable ctx (length_env env) degenv r fldshuf in
+        let shuf : (mode, r, h, i) Norm.shuffleable =
+          Nontrivial
+            {
+              shuffle = fldshuf;
+              deg_env =
+                (fun adj tctx r_k e ->
+                  let (Locked (plus, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
+                  eval_env (key_id_env degenv plus) r_k (readback_env lctx e tctx));
+            } in
+        (* The shuffleable degenerates the codatatype's parameters; the self value and its boundary we degenerate here, since the field type is applied to them only after that degeneration.  The boundary is used to instantiate the field type, by projecting this field from it, so it stays in the ambient context; but the self value is substituted for the self *variable*, which lies behind the locks by the right and then the left adjoint, so we transport it there along the adjunction unit first and degenerate it in that doubly locked context.  (For an ordinary field the unit is an identity cell and both locks are trivial.) *)
+        let dtyargs =
+          TubeOf.mmap { map = (fun _ [ nf ] -> degenerate_normal ctx degenv r nf) } [ tyargs ] in
+        let (Plus r_m) = D.plus m in
+        let values =
+          match prev_etm with
+          | Ok tm ->
+              let (Adjunction { unit; _ }) = adj in
+              let (Locked (rplus, ulctx)) = Ctx.lock ctx right in
+              let (Locked (lplus, uflctx)) = Ctx.lock ulctx left in
+              let fdegenv = key_id_env (key_id_env degenv rplus) lplus in
+              let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
+              `Ok
+                (degenerate_value_cube uflctx fdegenv r_m
+                   (CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ]))
+          | Error e -> `Error e in
         (* Evaluate the type for this instance of the field (behind the lock by the right adjoint, hence with no counit keying), and check the user's term against it in the locked degenerated context. *)
         let ety =
-          tyof_higher_codatafield prev_etm fld adj env tyargs fldins ~shuf fld_plus_lock fldtermctx
-            ic0 fldty ~key:`Nokey in
+          tyof_higher_codatafield values dtyargs r_m fld adj env fldins ~shuf fld_plus_lock
+            fldtermctx ic0 fldty ~key:`Nokey in
         let ctm = check newstatus lctx tm ety in
         (* Add the typechecked term to the list *)
         let cvals = PlusPbijmap.set pbij (Some (PlusFam (plusmap_bg, ctm))) cvals in
@@ -3285,14 +3306,15 @@ and synth : type mode a b s.
               (* The self-variable and its field projection live at the variable's own mode (its annotating modality's source); the ambient Key later transports to the context mode. *)
               let dmode = Modality.src modality in
               ( Term.Field
-                  ( modal_id dmode
+                  ( Kinetic,
+                    modal_id dmode
                       (Var
                          (Index (insert, id_sface n, filter, plus_with_locks_of_plus_lock plus_src))),
                     field,
                     ins ),
                 Lazy.from_val
-                  (tyof_field (Modality.id dmode) (Ok value.tm) (Lazy.force value.ty) field
-                     ~shuf:Trivial ins) ) in
+                  (tyof_field (Modality.id dmode) (Ok value.tm) (Lazy.force value.ty) field ins) )
+        in
         (* Any keys supplied explicitly by the user have been stripped off already, but we can insert an identity key or a unique key as well. *)
         match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
         | Eq, _ ->
@@ -3335,7 +3357,7 @@ and synth : type mode a b s.
           let stm, sty = synth (Kinetic `Nolet) lctx tm in
           let etm = eval_term (Ctx.env lctx) stm in
           let WithIns (fld, ins), newty = tyof_field_withname fm lctx (Ok etm) sty fld in
-          (realize status (Field (Modal (fm, plus_lock, stm), fld, ins)), newty) in
+          (realize status (Field (Kinetic, Modal (fm, plus_lock, stm), fld, ins)), newty) in
         match lock with
         | None -> synth_field (Modality.id (Ctx.mode ctx))
         | Some lockname -> (
@@ -3652,7 +3674,7 @@ and synth : type mode a b s.
                           Ctx.variables_vis ctx
                             (Modality.filter_idempotent sfilter)
                             codxs (CubeOf.subcube fb binds) in
-                        let body = readback_at codctx tm (Lazy.force ty) in
+                        let body = readback_at Kinetic codctx tm (Lazy.force ty) in
                         [ cod; Term.Lam (codxs, dom_sface s, sfilter, body) ] in
                       TubeOf.pmap { map } [ tyargs ] (Cons (Cons Nil)) in
                     (* We build the cube of codomains by reading back the lower-dimensional ones in a context extended by the appropriate partial cube of variables, and adding the top-dimensional one. *)
@@ -3674,7 +3696,8 @@ and synth : type mode a b s.
                       CodCube.build n { build } in
                     ( realize status
                         (Inst
-                           ( Pi
+                           ( Kinetic,
+                             Pi
                                {
                                  x = xsv;
                                  filter = nfilter;
@@ -3702,9 +3725,10 @@ and synth : type mode a b s.
           with_loc x.loc @@ fun () -> act_ty ex ety fa cell ~err:(low_dim_arg_err str.value) in
         ( realize status
             (Term.Act
-               ( Term.Key { tm = sx; cell; plus_tgt = plus_with_no_locks mode; plus_src },
+               ( Kinetic,
+                 Term.Key { tm = sx; cell; plus_tgt = plus_with_no_locks mode; plus_src },
                  fa,
-                 (sort_of_ty ctx (view_type sty "synth act"), `Other) )),
+                 (sort_of_ty ctx (view_type sty "synth act"), canonical_head sx) )),
           sty )
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ ->
@@ -3810,7 +3834,8 @@ and synth : type mode a b s.
                 let new_sfn =
                   locate_opt fn.loc
                     (Term.App
-                       ( sfn,
+                       ( Kinetic,
+                         sfn,
                          BindCube.dim cods,
                          filter,
                          Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty) ))
@@ -3833,7 +3858,8 @@ and synth : type mode a b s.
                           | Ok () ->
                               let earg = eval_term (Ctx.env ctx) sarg in
                               ( Term.App
-                                  ( new_sfn.value,
+                                  ( Kinetic,
+                                    new_sfn.value,
                                     BindCube.dim cods,
                                     filter,
                                     Modal
@@ -3915,11 +3941,12 @@ and synth : type mode a b s.
         let env = Ctx.env ctx in
         let ex = eval_term env cx in
         let nx : mode normal = { tm = ex; ty = Lazy.from_val ty } in
-        let creflx = Term.Act (cx, deg_zero Hott.dim, (`Other, `Other)) in
+        let creflx = Term.Act (Kinetic, cx, deg_zero Hott.dim, (`Other, `Other)) in
         let idty = act_value ty (deg_zero Hott.dim) (Modalcell.id2 mode) in
         let ididcty =
           Term.Act
-            ( Term.Act (cty, deg_zero Hott.dim, (`Other, `Other)),
+            ( Kinetic,
+              Term.Act (Kinetic, cty, deg_zero Hott.dim, (`Other, `Other)),
               deg_zero Hott.dim,
               (`Other, `Other) ) in
         let (Plus hh) = D.plus Hott.dim in
@@ -3943,7 +3970,8 @@ and synth : type mode a b s.
                       nz,
                       app
                         (Field
-                           ( modal_id mode (Inst (ididcty, pqtube)),
+                           ( Kinetic,
+                             modal_id mode (Inst (Kinetic, ididcty, pqtube)),
                              Field.intern "trr" Hott.dim,
                              id_ins D.zero (D.zero_plus Hott.dim) ))
                         idm (plus_no_lock mode) xeqy ) in
@@ -3959,7 +3987,8 @@ and synth : type mode a b s.
                       nz,
                       app
                         (Field
-                           ( modal_id mode (Inst (ididcty, pqtube)),
+                           ( Kinetic,
+                             modal_id mode (Inst (Kinetic, ididcty, pqtube)),
                              Field.intern "trl" Hott.dim,
                              id_ins D.zero (D.zero_plus Hott.dim) ))
                         idm (plus_no_lock mode) xeqy ) in
@@ -4104,7 +4133,7 @@ and synth_arg_cube : type dom modality mode a b n c.
                                  expected = PVal (lctx, ty);
                                  why;
                                }));
-                  let ctm = readback_at lctx etm (Lazy.force ety) in
+                  let ctm = readback_at Kinetic lctx etm (Lazy.force ety) in
                   (ctm, etm)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
               | _ ->
@@ -4165,7 +4194,7 @@ and synth_app : type dom modality mode a b k n.
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these evaluated arguments and instantiate it at the appropriate values of tyargs. *)
   let output = tyof_app cods tyargs filter eargs in
-  ( { value = Term.App (sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
+  ( { value = Term.App (Kinetic, sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
     output,
     newfn,
     rest )
@@ -4225,7 +4254,7 @@ and synth_inst : type mode a b n.
       (* The synthesized type *of* the instantiation is itself a full instantiation of a universe, at the instantiations of the type arguments at the evaluated term arguments.  This is computed by tyof_inst. *)
       let cargs = TubeOf.of_cube_bwv m k msuc l cargs in
       let nargs = TubeOf.of_cube_bwv m k msuc l nargs in
-      ( { value = Term.Inst (sfn.value, cargs); loc = newloc },
+      ( { value = Term.Inst (Kinetic, sfn.value, cargs); loc = newloc },
         tyof_inst (Ctx.mode ctx) tyargs nargs,
         newfn,
         rest )
@@ -4260,7 +4289,8 @@ and synth_or_check_apps : type mode a b.
           synth_apps ctx
             (locate_opt fn.loc
                (Term.Act
-                  ( Term.Key { tm = cfn; cell; plus_tgt = plus_with_no_locks mode; plus_src },
+                  ( Kinetic,
+                    Term.Key { tm = cfn; cell; plus_tgt = plus_with_no_locks mode; plus_src },
                     s,
                     (`Function, `Other) )))
             (act_ty efn sty s cell) fn args
@@ -4312,15 +4342,14 @@ and synth_lam : type mode a b c d n.
           let xs = singleton_variables D.zero (View.hinted name.value edom) in
           (* Pull off either one explicit argument or a cube of mostly-implicit ones, of the correct dimension. *)
           let state = ref args in
-          let (_ : (n, unit) CubeOf.t) =
-            CubeOf.build n
-              {
-                build =
-                  (fun _ ->
-                    match !state with
-                    | [] -> fatal Not_enough_arguments_to_function
-                    | _ :: xs -> state := xs);
-              } in
+          CubeOf.iter_faces n
+            {
+              it =
+                (fun _ ->
+                  match !state with
+                  | [] -> fatal Not_enough_arguments_to_function
+                  | _ :: xs -> state := xs);
+            };
           (* Then we proceed recursively to check the body of the abstraction. *)
           let cbody, scod = synth_lam n newctx body argctx !state ty in
           let scod =
@@ -4362,94 +4391,41 @@ and synth_lam : type mode a b c d n.
   | _ ->
       fatal ?loc:fn.loc (Nonsynthesizing "head of higher-dimensional or implicit application spine")
 
-(* Check a list of terms against the types specified in a telescope, evaluating the latter in a supplied environment and in the context of the previously checked terms, and instantiating them at values given in a tube.  See description in context of the call to it above during typechecking of a constructor. *)
-and check_at_tel : type mode n a b c bc e.
+(* Check a list of terms against the domain types specified in an iterated pi-type, evaluating the latter in a supplied environment and in the context of the previously checked terms, and instantiating them at values given in a vector of tubes.  Returns the resulting output value of the iterated pi-type, and a list of the checked term cubes with their boundaries.  This is used to check constructor applications; see its description in context of the call to it above during typechecking of a constructor.
+
+   It may seem that this could be unified with synth_apps, since we in both cases we have the type of an iterated function and we're checking a list of arguments against its domain types to synthesize an output type.  This would be true if all functions and constructors were zero-dimensional; but in the higher-dimensional case the boundary arguments to a constructor are taken from the type it's being checked against rather than from supplied arguments or their synthesized types, and this process is different enough that forcing them into the same function isn't worth it. *)
+and check_at_pi : type mode n a c e.
     Constr.t ->
     (mode, a, e) Ctx.t ->
-    (mode, n, b) env ->
+    n D.t ->
+    (* The constructor's function-type, applied to the arguments checked so far. *)
+    (mode, kinetic) value ->
     (* This list of terms to check must have the same length *)
     a check located list ->
-    (* as this telescope (namely, the Fwn 'c') *)
-    (mode, b, c, bc) Telescope.t ->
-    (* and as this vector of tubes. *)
+    (* as this vector of tubes. *)
     ((D.zero, n, n, (mode, kinetic) modal_value) TubeOf.t, c) Vec.t ->
-    (mode, n, bc) env * (n, mode, e, kinetic) any_modal_term_cube list =
- fun c ctx env tms tys tyargs ->
-  match (tms, tys, tyargs) with
-  | [], Emp, [] -> (env, [])
-  | ( tm :: tms,
-      Ext
-        (type modality)
-        (( _,
-           Modal
-             (type dom am)
-             ((modality, bplus, ty) : _ * (_, mode, modality, dom, am) plus_lock * _),
-           tys ) :
-          _ * (mode, modality, b, kinetic) modal_term * _),
-      tyargs :: tyargs_rest ) ->
-      (* The argument to check is k-dimensional, where k is the modal filtering of the dimension n of the entire constructor. *)
-      let n = dim_env env in
-      let (Has_filter filter) = Modality.filter modality n in
-      let k = Modality.filtered n filter in
-      let filter_face = Modality.sface_of_filter n filter in
-      (* We lock the context and environment, and act on the environment by the filter face before evaluating the type. *)
+    (mode, kinetic) value * (n, mode, e, kinetic) any_modal_term_cube list =
+ fun c ctx n fnty tms tyargs ->
+  match (tms, tyargs) with
+  | [], [] -> (fnty, [])
+  | tm :: tms, tyargs :: tyargs_rest ->
+      (* The constructor's function-type value must be a pi-type.  Its domain cube contains the argument type of the constructor already evaluated at the parameters and the previously checked argument values (at all the faces of the modally filtered dimension k of the ambient dimension n); we instantiate its top at the corresponding arguments of the lower-dimensional versions of the constructor, check the user-supplied argument value against it in the modally locked context, and continue with the codomain applied to the checked argument cube. *)
+      let (Viewed_pi { x = _; filter; doms; cods }) = view_pi "check_at_pi" n fnty in
+      let modality = Modality.filter_modality filter in
       let (Locked (eplus, lctx)) = Ctx.lock ctx modality in
-      let lenv = key_id_env env bplus in
-      let alenv = act_env lenv (opt_op_of_opt_sface filter_face) in
-      let ety = eval_term alenv ty in
-      (* Now we build the boundary tube for this type. *)
-      let tyargtbl = Hashtbl.create 10 in
-      let tyarg =
-        TubeOf.build D.zero (D.zero_plus k)
-          {
-            build =
-              (fun fa ->
-                (* The value associated to some face of k in the cube of arguments is derived from the corresponding argument of the n-dimensional constructor associated to the corresponding face of n lifted along the filter, as in equality-testing and readback. *)
-                let (Pface_filter (_, fb)) = Modality.pface_filter n fa filter in
-                let (Modal (argmod, argtm)) = TubeOf.find tyargs fb in
-                match Modality.compare argmod modality with
-                | Neq -> fatal (Modality_mismatch (`Internal, "check_at_tel", argmod, modality))
-                | Eq ->
-                    let fa = sface_of_tface fa in
-                    let fb = sface_of_tface fb in
-                    let argty : (dom, kinetic) value =
-                      inst
-                        (eval_term
-                           (act_env lenv
-                              (opt_op_of_opt_sface (comp_opt_sface filter_face (opt_of_sface fa))))
-                           ty)
-                        (TubeOf.build D.zero
-                           (D.zero_plus (dom_sface fb))
-                           {
-                             build =
-                               (fun fc ->
-                                 Hashtbl.find tyargtbl
-                                   (SFace_of (comp_sface fb (sface_of_tface fc))));
-                           }) in
-                    let argnorm : dom normal = { tm = argtm; ty = Lazy.from_val argty } in
-                    Hashtbl.add tyargtbl (SFace_of fb) argnorm;
-                    argnorm);
-          } in
-      let ity = inst ety tyarg in
+      let tyarg = modal_boundary_tube "check_at_pi" n filter doms tyargs in
+      let ity = inst (CubeOf.find_top doms) tyarg in
       let ctm = check (Kinetic `Nolet) lctx tm ity in
       let ctms = TubeOf.mmap { map = (fun _ [ t ] -> readback_nf lctx t) } [ tyarg ] in
       let etm = eval_term (Ctx.env lctx) ctm in
-      let newenv, newargs =
-        check_at_tel c ctx
-          (Ext
-             {
-               env;
-               plus = D.plus_zero (TubeOf.inst tyarg);
-               filter;
-               filtered = Modality.filter_zero modality;
-               values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton etm));
-             })
-          tms tys tyargs_rest in
-      (newenv, Modal (filter, eplus, TubeOf.plus_cube ctms (CubeOf.singleton ctm)) :: newargs)
+      let argcube = TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton etm) in
+      let (BindFam b) = BindCube.find_top cods in
+      let out, newargs = check_at_pi c ctx n (apply_binder_term b filter argcube) tms tyargs_rest in
+      (out, Modal (filter, eplus, TubeOf.plus_cube ctms (CubeOf.singleton ctm)) :: newargs)
   | _ ->
       fatal
         (Wrong_number_of_arguments_to_constructor
-           (c, List.length tms - Fwn.to_int (Telescope.length tys)))
+           (c, List.length tms - Fwn.to_int (Vec.length tyargs)))
 
 (* Given a context and a raw telescope, we can check it to produce a checked telescope, a new context extended by that telescope, and a function for extending other contexts by that telescope.  The returned boolean indicates whether this could be the telescope of arguments of a constructor of a *discrete* datatype.  This requires knowing the collection of currently-being-defined mutual constants, since discrete types can appear recursively in the arguments of their constructors. *)
 and check_tel : type mode a b c ac.

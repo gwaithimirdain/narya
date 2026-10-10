@@ -285,3 +285,10 @@ is recursive:
    ￫ info[I0000]
    ￮ constant lgood defined
   
+
+The "about" command displays window modalities
+
+  $ narya -composable-functors compose.ny -e "about lax"
+  X u ↦ match u [ par. y ↦ match (y :▱| _) [ circ. x ↦ parcirc. x ] ]
+    : (X :▱○| AType) (u : ▱ (○ X)) → ▱○ X
+  

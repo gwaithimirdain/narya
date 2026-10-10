@@ -48,21 +48,32 @@ module rec Term : sig
 
   module PlusPbijmap : module type of Pbijmap (PlusFam)
 
-  module Codatafield : sig
+  module FieldtypeFam : sig
     type (_, _) t =
+      | Fieldtype :
+          ('r, 'b, 'rb, 'mode) plusmap * ('mode, 'rb, kinetic) Term.term
+          -> ('r, 'mode * 'b) t
+  end
+
+  module FieldtypePbijmap : module type of Pbijmap (FieldtypeFam)
+
+  module Codatafield : sig
+    type (_, _, _, _, _, _, _, _, _) data =
       | Lower :
-          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
-          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
-          * ('gmode, ('ag, ('f, 'n) dim_entry) snoc, kinetic) Term.term
-          -> (D.zero, 'mode * 'a * 'n * 'et) t
+          ('gmode, ('ag, ('f, 'n) dim_entry) snoc, kinetic) Term.term
+          -> (D.zero, 'mode, 'f, 'gmode, 'a, 'ag, 'm, 'n, 'et) data
       | Higher :
-          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          ('gmode, 'd, 'ag) Term.termctx
+          * ('m, 'i, 'gmode * ('ag, ('f, 'm) dim_entry) snoc) FieldtypePbijmap.t
+          -> ('i, 'mode, 'f, 'gmode, 'a, 'ag, 'm, 'm, no_eta) data
+
+    type (_, _) t =
+      | Codatafield :
+          string option
+          * ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
           * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
-          (* The context in which the field's type is checked, as a termctx, needed to eval-readback environments when degenerating them to check the field at a nontrivial partial bijection. *)
-          * ('gmode, 'd, ('ag, ('f, D.zero) dim_entry) snoc) Term.termctx
-          * ('i, ('ag, ('f, D.zero) dim_entry) snoc, 'iagx, 'gmode) plusmap
-          * ('gmode, 'iagx, kinetic) Term.term
-          -> ('i, 'mode * 'a * D.zero * no_eta) t
+          * ('i, 'mode, 'f, 'gmode, 'a, 'ag, 'm, 'n, 'et) data
+          -> ('i, 'mode * 'a * 'm * 'n * 'et) t
   end
 
   module CodatafieldAbwd : module type of Field.Abwd (Codatafield)
@@ -116,27 +127,29 @@ module rec Term : sig
     | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
     | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
     | Field :
-        ('mode, 'f, 'a, kinetic) modal_term * 'i Field.t * ('n, 't, 'i) insertion
-        -> ('mode, 'a, kinetic) term
+        's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion
+        -> ('mode, 'a, 's) term
     | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
     | Inst :
-        ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
-        -> ('mode, 'a, kinetic) term
+        's energy * ('mode, 'a, 's) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
+        -> ('mode, 'a, 's) term
     | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
     | App :
-        ('mode, 'a, kinetic) term
+        's energy
+        * ('mode, 'a, 's) term
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
         -> ('mode, 'a, kinetic) term
     | Act :
-        ('mode, 'a, kinetic) term
+        's energy
+        * ('mode, 'a, 's) term
         * ('m, 'n) deg
         * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     | Key : {
         tm : ('mode, 'am, kinetic) term;
         cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
@@ -161,6 +174,7 @@ module rec Term : sig
         plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
         tm : ('dom, 'aw, kinetic) term;
         dim : 'n D.t;
+        motive : ('mode, 'a, kinetic) term option;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
       }
         -> ('mode, 'a, potential) term
@@ -199,26 +213,30 @@ module rec Term : sig
   and (_, _) canonical =
     | Data : {
         indices : 'i Fwn.t;
-        constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
+        evaldim : 'm D.t;
+        constrs : (Constr.t, ('mode, 'a, kinetic) term) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         recursive : Positivity.recursion;
         hints : hints;
         tyfam : ('mode, 'a, kinetic) term;
       }
         -> ('mode, 'a) canonical
-    | Codata : ('mode, 'n, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
+    | Codata : ('mode, 'm, 'n, 'mn, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
 
-  and ('mode, 'n, 'a, 'nh, 'ha, 'et) codata_args = {
+  and ('mode, 'm, 'n, 'mn, 'a, 'nh, 'ha, 'et) codata_args = {
     eta : (potential, 'et) eta;
     opacity : opacity;
     hints : hints;
+    evaldim : 'm D.t;
     dim : 'n D.t;
-    fields : ('mode * 'a * 'n * 'et) CodatafieldAbwd.t;
-    fibrancy : ('mode, 'n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
+    plusdim : ('m, 'n, 'mn) D.plus;
+    fields : ('mode * 'a * 'm * 'mn * 'et) CodatafieldAbwd.t;
+    fibrancy : ('mode, 'm, 'n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy option;
     is_glue : ('mode, 'n, 'a, 'et) is_glue option;
   }
 
-  and ('mode, 'g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
+  and ('mode, 'm, 'g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
+    evaldim : ('m, D.zero) Eq.t;
     glue : 'g D.t;
     dim : 'n D.t;
     length : ('mode, 'b) Tctx.t;
@@ -235,21 +253,6 @@ module rec Term : sig
     liftl :
       ('mode * ('nh * ('hb, ('mode id, D.zero) dim_entry) snoc * potential * 'et)) StructfieldAbwd.t;
   }
-
-  and (_, _, _) dataconstr =
-    | Dataconstr : {
-        args : ('mode, 'p, 'a, 'pa) tel;
-        indices : (('mode, 'pa, kinetic) term, 'i) Vec.t;
-      }
-        -> ('mode, 'p, 'i) dataconstr
-
-  and ('mode, 'a, 'b, 'ab) tel =
-    | Emp : ('mode, 'a, Fwn.zero, 'a) tel
-    | Ext :
-        string option
-        * ('mode, 'modality, 'a, kinetic) modal_term
-        * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 'b, 'ab) tel
-        -> ('mode, 'a, 'b Fwn.suc, 'ab) tel
 
   and (_, _, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'a, 'n, 'mode emp) env
@@ -333,6 +336,7 @@ end = struct
 
   module CodCube = Cube (CodFam)
 
+  (* A Pbijmap is a total map, storing exactly one element for every partial bijection.  Here we wrap the result types in an option so that it becomes a partial map.  We do this mainly to handle incremental checking: when only some of the instances have been successfully typechecked, we insert only those into the pbijmap while checking later ones. *)
   module PlusFam = struct
     type (_, _) some =
       | PlusFam :
@@ -344,24 +348,42 @@ end = struct
 
   module PlusPbijmap = Pbijmap (PlusFam)
 
+  (* One instance of the type of a higher codata field: a term in the context degenerated by the instance's remaining dimensions, together with the plus-map witnessing that degeneration.  (Compare PlusFam, which is the same thing for the *components* of a comatch, which are potential rather than kinetic and may be missing.) *)
+  module FieldtypeFam = struct
+    type (_, _) t =
+      | Fieldtype :
+          ('r, 'b, 'rb, 'mode) plusmap * ('mode, 'rb, kinetic) Term.term
+          -> ('r, 'mode * 'b) t
+  end
+
+  module FieldtypePbijmap = Pbijmap (FieldtypeFam)
+
   module Codatafield = struct
     (* A codata field is parametrized by an adjunction in the mode 2-category.  Its type is a term in the context locked by the right adjoint and then extended by the self variable annotated by the left adjoint, hence lives at the right adjoint's source mode.  (By the adjunction, this is equivalent to extending by an identity-annotated self variable and then locking by the right adjoint: a key from the self variable's annotation to the locks to its right is 1 ⇒ g·ν in the latter presentation and f ⇒ ν in the former, and these are interderivable using the unit and counit.  We use this presentation since it is the one from Multimodal Adjoint Type Theory.)  Ordinary non-modal fields are the special case of the identity adjunction, where the lock is trivial and the annotation is the identity.
 
-       A higher field of intrinsic dimension i is the same, except that its context is also degenerated by i first (which is what the plusmap does), so that its self variable is an i-dimensional cube.  Since the self variable is added after the degeneration, its dimension is exactly i, rather than i added to the zero dimension it has when the codatatype is declared. *)
-    type (_, _) t =
+       The family is indexed by two dimensions of the codatatype: its evaluation dimension 'm, and the dimension 'n of the self variable, which is the evaluation dimension plus the intrinsic (Gel) dimension.  A codatatype produced by typechecking has evaluation dimension zero, so that its self variable has just the intrinsic dimension; the general case arises from the readback of a codatatype *value*, which is displayed by "about" (see codata_args).
+
+       A higher field of intrinsic dimension i has one type per instance, i.e. per partial bijection between the codatatype's evaluation dimension and i, so its types are stored in a pbijmap.  The instance at a partial bijection with 'r remaining dimensions has its type in the locked and self-extended context degenerated by those 'r dimensions (which is what the plus-map in FieldtypeFam records), since that is where such an instance is checked.  In particular, when the evaluation dimension is zero there is exactly one instance, with all i dimensions remaining: the declaration form "x .fld.e… : A", whose type is checked in the context degenerated by the whole of i, so that its self variable is an i-dimensional cube.  Since the self variable is added before the degeneration, its dimension there is exactly i.
+
+       A codatatype with a higher field must have intrinsic dimension zero (Gel-like codatatypes can't have higher fields), which is why the two dimensions coincide in Higher: the self variable and the instances are indexed by the same dimension.  This is necessary to ensure statically when evaluating a typechecked field, where we know that the evaluation dimension is zero, that the Gel-dimension is also zero.  In the lower-dimensional case, we don't ensure here that n is m plus anything because we don't need it. *)
+
+    type (_, _, _, _, _, _, _, _, _) data =
       | Lower :
-          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
-          * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
-          * ('gmode, ('ag, ('f, 'n) dim_entry) snoc, kinetic) Term.term
-          -> (D.zero, 'mode * 'a * 'n * 'et) t
+          ('gmode, ('ag, ('f, 'n) dim_entry) snoc, kinetic) Term.term
+          -> (D.zero, 'mode, 'f, 'gmode, 'a, 'ag, 'm, 'n, 'et) data
       | Higher :
-          ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
+          (* The context that the field's type closure is evaluated over, as a termctx, needed to eval-readback that environment when degenerating it to check the field at a nontrivial partial bijection.  Note this is the *locked* context, without the self variable: the self variable is supplied to the field type after the degeneration, not carried through it inside the environment. *)
+          ('gmode, 'd, 'ag) Term.termctx
+          * ('m, 'i, 'gmode * ('ag, ('f, 'm) dim_entry) snoc) FieldtypePbijmap.t
+          -> ('i, 'mode, 'f, 'gmode, 'a, 'ag, 'm, 'm, no_eta) data
+
+    type (_, _) t =
+      | Codatafield :
+          string option
+          * ('mode, 'f, 'g, 'gmode) Modalcell.adjunction
           * ('a, 'mode, 'g, 'gmode, 'ag) plus_lock
-          (* The context in which the field's type is checked, as a termctx, needed to eval-readback environments when degenerating them to check the field at a nontrivial partial bijection. *)
-          * ('gmode, 'd, ('ag, ('f, D.zero) dim_entry) snoc) Term.termctx
-          * ('i, ('ag, ('f, D.zero) dim_entry) snoc, 'iagx, 'gmode) plusmap
-          * ('gmode, 'iagx, kinetic) Term.term
-          -> ('i, 'mode * 'a * D.zero * no_eta) t
+          * ('i, 'mode, 'f, 'gmode, 'a, 'ag, 'm, 'n, 'et) data
+          -> ('i, 'mode * 'a * 'm * 'n * 'et) t
   end
 
   module CodatafieldAbwd = Field.Abwd (Codatafield)
@@ -423,27 +445,31 @@ end = struct
     | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
     (* A field projection.  For a modal field, the term being projected lives behind a lock by the left adjoint of the field's adjunction; for ordinary fields that modality is the identity. *)
     | Field :
-        ('mode, 'f, 'a, kinetic) modal_term * 'i Field.t * ('n, 't, 'i) insertion
-        -> ('mode, 'a, kinetic) term
+        's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion
+        -> ('mode, 'a, 's) term
     | UU : 'mode Mode.t * 'n D.t -> ('mode, 'a, kinetic) term
+    (* Normally an instantiation can only be kinetic, but we permit potential ones to be the values of display-only readback of instantiated canonicals. *)
     | Inst :
-        ('mode, 'a, kinetic) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
-        -> ('mode, 'a, kinetic) term
+        's energy * ('mode, 'a, 's) term * ('m, 'n, 'mn, ('mode, 'a, kinetic) term) TubeOf.t
+        -> ('mode, 'a, 's) term
     | Pi : ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args -> ('mode, 'a, kinetic) term
+    (* Normally an application can only be kinetic, but we permit potential ones to be the values of display-only readback of indexed datatypes applied to their indices. *)
     | App :
-        ('mode, 'a, kinetic) term
+        's energy
+        * ('mode, 'a, 's) term
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     | Constr :
         Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
         -> ('mode, 'a, kinetic) term
     | Act :
-        ('mode, 'a, kinetic) term
+        's energy
+        * ('mode, 'a, 's) term
         * ('m, 'n) deg
         * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     (* A keyed term strips off part of the context that contains locks adding up to the codomain of the key cell, then replaces them by the domain of that cell for the body term. *)
     | Key : {
         tm : ('mode, 'am, kinetic) term;
@@ -473,6 +499,8 @@ end = struct
         plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
         tm : ('dom, 'aw, kinetic) term;
         dim : 'n D.t;
+        (* An explicit motive supplied by the user, if any: a type family over the datatype's indices and the datatype itself.  It is stored only so that the match can be displayed with its "return" clause; evaluation never needs it, since the branch it selects carries its own body.  Matches without an explicit motive store None. *)
+        motive : ('mode, 'a, kinetic) term option;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
       }
         -> ('mode, 'a, potential) term
@@ -502,6 +530,7 @@ end = struct
   }
 
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them.  Finally, each of the variables might be annotated by a different modality, so we include a list of such modalities and make it into a tctx extension that all have the same dimension. *)
+  (* The pattern-variable display names are carried inside the "annotate" witness (one per variable, in VarAnnote/VarAnnotator), so unparse.ml can recover them when displaying a match branch ("about pred"). *)
   and (_, _, _) branch =
     | Branch : {
         (* The annotations must be those given to the constructor arguments, postcomposed by the window modality *)
@@ -517,7 +546,10 @@ end = struct
     (* A datatype stores its family of constructors, whether it is discrete, whether it has recursive constructors, and also its number of indices.  (The former two are not determined in the latter if there happen to be zero constructors). *)
     | Data : {
         indices : 'i Fwn.t;
-        constrs : (Constr.t, ('mode, 'a, 'i) dataconstr) Abwd.t;
+        (* The dimension the datatype was evaluated at, exactly as for the [evaldim] of a codatatype: zero for one produced by typechecking, and positive only for the display-only readback of a degenerated datatype value, whose constructors then store higher-dimensional pi-types.  Evaluation ignores it, taking the dimension from its environment instead; it is stored so that the unparser can display the dimension on the "data" keyword. *)
+        evaldim : 'm D.t;
+        (* Each constructor is stored as its full function-type: the iterated (modal, zero-dimensional) pi-type over its argument telescope whose codomain is the datatype family applied to the parameters and indices.  It is walked on demand, evaluating and introducing the arguments (e.g. by ext_pi in match typechecking) to reach the codomain, off which the index values are read; its arity and argument names alone are available more cheaply via Telescope.pi_arity and Telescope.pi_names.  For a non-indexed datatype, where the user need not write an output type, the codomain is synthesized as the datatype applied to its parameters.  The readback of a higher-dimensionally degenerated datatype stores a higher-dimensional pi-type here; that is used only for display and is not re-evaluable. *)
+        constrs : (Constr.t, ('mode, 'a, kinetic) term) Abwd.t;
         discrete : [ `Yes | `Maybe | `No ];
         recursive : Positivity.recursion;
         (* Variable-name hints, for displaying anonymous variables of this type. *)
@@ -526,25 +558,29 @@ end = struct
         tyfam : ('mode, 'a, kinetic) term;
       }
         -> ('mode, 'a) canonical
-    | Codata : ('mode, 'n, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
+    | Codata : ('mode, 'm, 'n, 'mn, 'a, 'nh, 'ha, 'et) codata_args -> ('mode, 'a) canonical
 
-  and ('mode, 'n, 'a, 'nh, 'ha, 'et) codata_args = {
+  and ('mode, 'm, 'n, 'mn, 'a, 'nh, 'ha, 'et) codata_args = {
     (* An eta flag and its opacity *)
     eta : (potential, 'et) eta;
     opacity : opacity;
     (* Variable-name hints, for displaying anonymous variables of this type. *)
     hints : hints;
-    (* An intrinsic dimension (like Gel) *)
+    (* An evaluation dimension, an intrinsic dimension (like Gel), and their sum, which is the dimension of the self variable.  Typechecking only ever produces codatatypes of evaluation dimension zero, whose self variable therefore has just the intrinsic dimension; a positive evaluation dimension arises only from the readback of a codatatype *value* that has been substituted to a higher dimension, which is display-only (see below). *)
+    evaldim : 'm D.t;
     dim : 'n D.t;
-    (* A family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access. *)
-    fields : ('mode * 'a * 'n * 'et) CodatafieldAbwd.t;
-    (* We partially compute the fibrancy fields at typechecking time, although we don't finish the computation until we need it.  Since the fibrancy fields include those of all the higher identity types, if we did all the computation eagerly it would be infinite, and if we made it Lazy in the naive way then it wouldn't be marshalable.  *)
-    fibrancy : ('mode, 'n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy;
+    plusdim : ('m, 'n, 'mn) D.plus;
+    (* A family of fields, each with a type that depends on one additional variable belonging to the codatatype itself (usually by way of its previous fields).  We retain the order of the fields by storing them in an Abwd rather than a Map so as to enable positional access as well as named access.  A higher field carries one type per instance, indexed by the evaluation dimension; see Codatafield. *)
+    fields : ('mode * 'a * 'm * 'mn * 'et) CodatafieldAbwd.t;
+    (* We partially compute the fibrancy fields at typechecking time, although we don't finish the computation until we need it.  Since the fibrancy fields include those of all the higher identity types, if we did all the computation eagerly it would be infinite, and if we made it Lazy in the naive way then it wouldn't be marshalable.  This is an option because the readback of a codatatype value (for display only) carries no fibrancy. *)
+    fibrancy : ('mode, 'm, 'n, 'n, 'nh, 'a, 'ha, 'et) codata_fibrancy option;
     (* Fibrancy of glue-types is computed separately and stored, so we remember whether this is a glue-type. *)
     is_glue : ('mode, 'n, 'a, 'et) is_glue option;
   }
 
-  and ('mode, 'g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
+  and ('mode, 'm, 'g, 'n, 'nh, 'b, 'hb, 'et) codata_fibrancy = {
+    (* We have fibrancy only when the evaluation dimension is zero. *)
+    evaldim : ('m, D.zero) Eq.t;
     (* The original intrinsic gel/glue dimension *)
     glue : 'g D.t;
     (* The overall dimension.  Note that when it appears as a field of codata_args, above, these two dimensions are the same.  However, as we apply the corecursive 'id' field in computing fibrancy of higher versions of a codatatype, the overall dimension n increases but the glue dimension g does not. *)
@@ -566,23 +602,6 @@ end = struct
     liftl :
       ('mode * ('nh * ('hb, ('mode id, D.zero) dim_entry) snoc * potential * 'et)) StructfieldAbwd.t;
   }
-
-  (* A datatype constructor has a telescope of arguments and a list of index values depending on those arguments. *)
-  and (_, _, _) dataconstr =
-    | Dataconstr : {
-        args : ('mode, 'p, 'a, 'pa) tel;
-        indices : (('mode, 'pa, kinetic) term, 'i) Vec.t;
-      }
-        -> ('mode, 'p, 'i) dataconstr
-
-  (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
-  and ('mode, 'a, 'b, 'ab) tel =
-    | Emp : ('mode, 'a, Fwn.zero, 'a) tel
-    | Ext :
-        string option
-        * ('mode, 'modality, 'a, kinetic) modal_term
-        * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 'b, 'ab) tel
-        -> ('mode, 'a, 'b Fwn.suc, 'ab) tel
 
   (* A version of an environment that involves terms rather than values.  Used mainly when reading back metavariables.  The first argument is the mode, the second is the checked-length of the context *in* which the environment is defined (its domain, as a context morphism), the third is its dimension, and the fourth is the checked-length of the context of types of the values in the environment (its codomain, as a context morphism).  *)
   and (_, _, _, _) env =
@@ -666,6 +685,27 @@ end
 
 include Term
 
+(* The type of a higher codata field of a codatatype of evaluation dimension zero, which is what typechecking produces: there is exactly one instance, namely the declaration form "x .fld.e… : A", whose type lives in the context degenerated by the whole intrinsic dimension of the field.  (A codatatype of positive evaluation dimension, which arises only from readback for display, has one instance per partial bijection instead.) *)
+let declared_fieldtype : type i gmode b.
+    (D.zero, i, gmode * b) FieldtypePbijmap.t -> (i, gmode * b) FieldtypeFam.t =
+ fun tys ->
+  FieldtypePbijmap.find (Pbij (ins_zero D.zero, shuffle_zero (FieldtypePbijmap.intrinsic tys))) tys
+
+(* Conversely, assemble that unique instance into a pbijmap, when checking a higher field declaration. *)
+let singleton_fieldtype : type i gmode b rb.
+    i D.t ->
+    (i, b, rb, gmode) plusmap ->
+    (gmode, rb, kinetic) term ->
+    (D.zero, i, gmode * b) FieldtypePbijmap.t =
+ fun i plusmap ty ->
+  FieldtypePbijmap.build D.zero i
+    {
+      build =
+        (fun (type r) (pbij : (D.zero, i, r) pbij) : (r, gmode * b) FieldtypeFam.t ->
+          let Eq = eq_of_zero_pbij pbij in
+          Fieldtype (plusmap, ty));
+    }
+
 (* Find the name of the (n+1)st abstracted variable, where n is the length of a supplied argument list.  Doesn't "look through" branches or cobranches or into leaves. *)
 let rec nth_var : type mode a b s. (mode, a, s) term -> b Bwd.t -> any_variables option =
  fun tr args ->
@@ -692,11 +732,13 @@ let pi : type mode modality a.
     }
 
 let app fn modality al arg =
-  App (fn, D.zero, Modality.filter_zero modality, Modal (modality, al, CubeOf.singleton arg))
+  App
+    (Kinetic, fn, D.zero, Modality.filter_zero modality, Modal (modality, al, CubeOf.singleton arg))
 
 let appid fn mode arg =
   App
-    ( fn,
+    ( Kinetic,
+      fn,
       D.zero,
       Modality.filter_id mode D.zero,
       Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg) )
@@ -711,14 +753,17 @@ let modal_id : type mode a s.
     mode Mode.t -> (mode, a, s) term -> (mode, mode Modality.id, a, s) modal_term =
  fun mode tm -> Modal (Modality.id mode, plus_no_lock mode, tm)
 
-let field mode tm f ins = Field (modal_id mode tm, f, ins)
+let field mode tm f ins = Field (Kinetic, modal_id mode tm, f, ins)
 
+(* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
 module Telescope = struct
-  type ('mode, 'a, 'b, 'ab) t = ('mode, 'a, 'b, 'ab) Term.tel
-
-  let rec length : type mode a b ab. (mode, a, b, ab) t -> b Fwn.t = function
-    | Emp -> Zero
-    | Ext (_, _, tel) -> Suc (length tel)
+  type ('mode, 'a, 'b, 'ab) t =
+    | Emp : ('mode, 'a, Fwn.zero, 'a) t
+    | Ext :
+        string option
+        * ('mode, 'modality, 'a, kinetic) modal_term
+        * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 'b, 'ab) t
+        -> ('mode, 'a, 'b Fwn.suc, 'ab) t
 
   let rec pis : type mode a b ab.
       (mode, a, b, ab) t -> (mode, ab, kinetic) term -> (mode, a, kinetic) term =
@@ -727,19 +772,32 @@ module Telescope = struct
     | Emp -> cod
     | Ext (x, dom, doms) ->
         pi (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
-
-  let rec lams : type mode a b ab.
-      (mode, a, b, ab) t -> (mode, ab, kinetic) term -> (mode, a, kinetic) term =
-   fun doms body ->
-    match doms with
-    | Emp -> body
-    | Ext (x, Modal (modality, _, _), doms) ->
-        Lam
-          ( singleton_variables D.zero (binder_name_of_option x),
-            D.zero,
-            Modality.filter_zero modality,
-            lams doms body )
 end
+
+(* Count the number of zero-dimensional pi-types on the front of a term, i.e. the length of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to determine a datatype constructor's arity from its stored function-type.  We peel only zero-dimensional pis: a dimension-killing modality can have a zero-dimensional domain cube on a positive-dimensional pi, which must not be counted, and the codomain of a higher pi is not a constructor argument. *)
+let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = function
+  | Pi { x = _; filter; doms = Modal (modality, _, _); cods } -> (
+      match D.compare_zero (CodCube.dim cods) with
+      | Pos _ -> Wrap Zero
+      | Zero ->
+          let Eq = Modality.filter_uniq filter (Modality.filter_zero modality) in
+          let (Cod (cfilter, cod)) = CodCube.find_top cods in
+          let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
+          let (Wrap n) = pi_arity cod in
+          Wrap (Suc n))
+  | _ -> Wrap Zero
+
+(* Collect the binder names of the zero-dimensional pi-types on the front of a term, in order, as a plain list — the names of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to name the pattern variables when displaying a "split". *)
+let rec pi_names : type mode a. (mode, a, kinetic) term -> string option list = function
+  | Pi { x; filter; doms = Modal (modality, _, _); cods } -> (
+      match D.compare_zero (CodCube.dim cods) with
+      | Pos _ -> []
+      | Zero ->
+          let Eq = Modality.filter_uniq filter (Modality.filter_zero modality) in
+          let (Cod (cfilter, cod)) = CodCube.find_top cods in
+          let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
+          option_of_binder_name (top_variable x) :: pi_names cod)
+  | _ -> []
 
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Emp (_, n) -> n
