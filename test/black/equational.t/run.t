@@ -54,6 +54,15 @@
    ￮ constant xz'def defined
   
    ￫ info[I0000]
+   ￮ constant xz'' defined
+  
+   ￫ info[I0000]
+   ￮ constant xz''def defined
+  
+   ￫ info[I0000]
+   ￮ constant xz''' defined
+  
+   ￫ info[I0000]
    ￮ constant ℕ defined
   
    ￫ info[I0000]
@@ -68,3 +77,81 @@
    ￫ info[I0000]
    ￮ constant ℕ.plus_assoc defined
   
+
+A step marked with ← is checked only in the reversed orientation.
+
+  $ narya equational.ny -e "def xy' : Id A x y ≔ calc x = y by ← p ∎"
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def xy' : Id A x y ≔ calc x = y by ← p ∎
+     ^ term synthesized type
+         Id A x y
+       but is being checked against type
+         Id A y x
+       unequal head constants:
+         x
+       does not equal
+         y
+  
+  [1]
+
+The marker applies to a proof term, including applications and nested calc
+blocks. Arrow identifiers and user notation still work inside terms.
+
+  $ narya -source-only -no-write-compiled -no-reformat markers.ny
+
+Both spellings select the reversed type, with no fallback to the forward type.
+
+  $ narya -source-only -no-write-compiled -no-reformat equational.ny -e "def xy_ascii : Id A x y ≔ calc x = y by <- p ∎"
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def xy_ascii : Id A x y ≔ calc x = y by <- p ∎
+     ^ term synthesized type
+         Id A x y
+       but is being checked against type
+         Id A y x
+       unequal head constants:
+         x
+       does not equal
+         y
+  
+  [1]
+
+The formatter preserves comments and writes a space after the marker.
+Both output modes must parse and remain unchanged after a second pass.
+
+  $ cat format.ny > formatted.ny
+  $ narya -source-only -no-write-compiled formatted.ny
+  $ cat formatted.ny
+  import "equational"
+  
+  def unicode : Id A y z ≔ calc
+    y
+    = z
+        by {` before `} ← {` after `} s ∎
+  
+  def ascii : Id A y z ≔ calc
+    y
+    = z
+        by ← s ∎
+  $ cp formatted.ny unicode.ny
+  $ narya -source-only -no-write-compiled formatted.ny
+  $ diff unicode.ny formatted.ny
+  $ narya -source-only -no-write-compiled -ascii formatted.ny
+  $ cat formatted.ny
+  import "equational"
+  
+  def unicode : Id A y z := calc
+    y
+    = z
+        by {` before `} <- {` after `} s ∎
+  
+  def ascii : Id A y z := calc
+    y
+    = z
+        by <- s ∎
+  $ cp formatted.ny ascii.ny
+  $ narya -source-only -no-write-compiled -ascii formatted.ny
+  $ diff ascii.ny formatted.ny
+  $ narya -source-only -no-write-compiled formatted.ny
+  $ diff unicode.ny formatted.ny

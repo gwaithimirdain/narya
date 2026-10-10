@@ -117,7 +117,10 @@ module rec Make : functor (I : Indices) -> sig
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
         * 'a synth option
         -> 'a synth
-    | Calc : 'a synth located * ('a check located * 'a check located option) list -> 'a synth
+    | Calc :
+        'a synth located
+        * ('a check located * ('a check located * [ `Plain | `Reversed ]) option) list
+        -> 'a synth
 
   and _ check =
     | Synth : 'a synth -> 'a check
@@ -314,8 +317,11 @@ functor
           ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
           * 'a synth option
           -> 'a synth
-      (* Chain of equational reasoning *)
-      | Calc : 'a synth located * ('a check located * 'a check located option) list -> 'a synth
+      (* Chain of equational reasoning.  Each step has a term and an optional proof.  A proof marked `Reversed proves the equality in the opposite orientation. *)
+      | Calc :
+          'a synth located
+          * ('a check located * ('a check located * [ `Plain | `Reversed ]) option) list
+          -> 'a synth
 
     (* Checkable raw terms *)
     and _ check =
@@ -555,7 +561,10 @@ module Resolve (R : Resolver) = struct
       | Calc (first, rest) ->
           Calc
             ( synth ctx first,
-              List.map (fun (y, xeqy) -> (check ctx y, Option.map (check ctx) xeqy)) rest ) in
+              List.map
+                (fun (y, xeqy) ->
+                  (check ctx y, Option.map (fun (e, dir) -> (check ctx e, dir)) xeqy))
+                rest ) in
     R.visit ctx (locate_opt tm.loc (R.T2.Synth newtm));
     locate_opt tm.loc newtm
 

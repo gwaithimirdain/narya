@@ -2806,15 +2806,26 @@ type (_, _, _) identity += Calc : (closed, No.plus_omega, closed) identity
 
 let calc : (closed, No.plus_omega, closed) notation = (Calc, Outfix)
 
-let rec calcs by_ok =
-  terms
-    (Bwd.prepend
-       (if by_ok then Snoc (Emp, (Token.Ident [ "by" ], Lazy (lazy (calcs false)))) else Emp)
-       [ (Op "=", Lazy (lazy (calcs true))); (Ident [ "∎" ], Done_closed calc) ])
+(* The proof of a step can start with ← (or <-) to indicate that it proves the reversed equality. *)
+let rec calc_steps by_ok =
+  Bwd.prepend
+    (if by_ok then Snoc (Emp, (Token.Ident [ "by" ], Lazy (lazy (calc_proof ())))) else Emp)
+    [ (Op "=", Lazy (lazy (calcs true))); (Ident [ "∎" ], Done_closed calc) ]
+
+and calcs by_ok = terms (calc_steps by_ok)
+
+and calc_proof () =
+  Inner
+    {
+      empty_branch with
+      ops =
+        oflist [ (Ident [ "←" ], Lazy (lazy (calcs false))); (Op "<-", Lazy (lazy (calcs false))) ];
+      term = Some (oflist (calc_steps false));
+    }
 
 let rec process_calcs : type n.
     n synth located ->
-    (n check located * n check located option) Bwd.t ->
+    (n check located * (n check located * [ `Plain | `Reversed ]) option) Bwd.t ->
     (string option, n) Bwv.t ->
     observation list ->
     Asai.Range.t option ->
@@ -2824,9 +2835,12 @@ let rec process_calcs : type n.
   | Token (Op "=", _) :: Term y :: obs -> (
       let y = process ctx y in
       match obs with
+      | Token (Ident [ "by" ], _) :: Token ((Ident [ "←" ] | Op "<-"), _) :: Term e :: obs ->
+          let e = process ctx e in
+          process_calcs x (Snoc (rest, (y, Some (e, `Reversed)))) ctx obs loc
       | Token (Ident [ "by" ], _) :: Term e :: obs ->
           let e = process ctx e in
-          process_calcs x (Snoc (rest, (y, Some e))) ctx obs loc
+          process_calcs x (Snoc (rest, (y, Some (e, `Plain)))) ctx obs loc
       | _ -> process_calcs x (Snoc (rest, (y, None))) ctx obs loc)
   | [ Token (Ident [ "∎" ], _) ] -> locate (Synth (Calc (x, Bwd.to_list rest))) loc
   | _ -> invalid "calc"
@@ -2839,6 +2853,22 @@ let rec pp_calcs : Whitespace.t list -> observation list -> document * Whitespac
       let peq = pp_ws `Hard ws ^^ hang 2 (group (Token.pp (Op "=") ^^ pp_ws `Nobreak wseq ^^ py)) in
       let pby, w, obs =
         match obs with
+        | Token (Ident [ "by" ], (wby, _))
+          :: Token ((Ident [ "←" ] | Op "<-"), (wrev, _))
+          :: Term e
+          :: obs ->
+            let pe, we = pp_term e in
+            ( nest 4
+                (pp_ws `Hard wy
+                ^^ hang 2
+                     (group
+                        (Token.pp (Ident [ "by" ])
+                        ^^ pp_ws `Nobreak wby
+                        ^^ utf8string (Display.alt_char "←" "<-")
+                        ^^ pp_ws `Nobreak wrev
+                        ^^ pe))),
+              we,
+              obs )
         | Token (Ident [ "by" ], (wby, _)) :: Term e :: obs ->
             let pe, we = pp_term e in
             ( nest 4
