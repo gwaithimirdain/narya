@@ -111,14 +111,14 @@ let ext_pattern_var : type dom modality mode a ac e k.
  fun ctx filter x pix newnfs ->
   match x with
   (* A single variable becomes a cube variable, whose boundary is accessed with face suffixes.  If it is anonymous, we fall back on the name of the constructor's argument. *)
-  | Cube_arg x ->
+  | Cube x ->
       let x =
         match x with
         | Some x -> Some x
         | None -> pix in
       Ext_pattern_var (Ctx.cube_vis ctx filter x newnfs, `Cube x)
   (* Explicit boundary variables must be exactly one for each face of the cube, the last of them being the top face. *)
-  | Boundary_arg ns ->
+  | Boundary ns ->
       let k = CubeOf.dim newnfs in
       let (Vars (af, names)) =
         vars_of_names (fun j -> Wrong_boundary_of_pattern_variable j) ns.loc k ns.value in
@@ -134,9 +134,9 @@ let rec ext_pi : type dom window mode a b c ac e n.
     (dom, kinetic) value ->
     (dom, window, mode, n, ac, e) ext_pi =
  fun ctx window env xs ft ->
-  match Raw.Patternvars.view xs with
+  match xs with
   (* The residual output type: the datatype applied to its parameters and this branch's indices.  It is uninstantiated (a "vertex" of the higher-dimensional type), which is exactly what indices_of_out expects. *)
-  | Nil ->
+  | [] ->
       Ext_pi
         {
           ctx;
@@ -146,7 +146,7 @@ let rec ext_pi : type dom window mode a b c ac e n.
           comp = Zero;
           out = ft;
         }
-  | Cons (x, xs) -> (
+  | x :: xs -> (
       let m = dim_env env in
       (* The constructor's function-type is an uninstantiated m-dimensional pi-type; we view it as in check_at_pi (view_type would demand full instantiation). *)
       let (Viewed_pi { x = pix; filter = pifilter; doms; cods }) = view_pi "ext_pi" m ft in

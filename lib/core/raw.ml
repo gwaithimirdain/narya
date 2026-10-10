@@ -60,6 +60,8 @@ module rec Make : functor (I : Indices) -> sig
 
   val bplus : 'b Fwn.t -> ('a, 'b) has_bplus
 
+  type ('a, 'ab) has_bplus_to = Bplus_to : ('a, 'b, 'ab) bplus -> ('a, 'ab) has_bplus_to
+
   module Namevec : sig
     type (_, _, _) t =
       | [] : ('a, Fwn.zero, 'a) t
@@ -73,22 +75,14 @@ module rec Make : functor (I : Indices) -> sig
   end
 
   module Patternvars : sig
+    type (_, _) arg =
+      | Cube : I.name -> ('a, 'a I.suc) arg
+      | Boundary : ('a, 'c, 'ac) Namevec.t located -> ('a, 'ac) arg
+
     type (_, _, _) t =
       | [] : ('a, Fwn.zero, 'a) t
-      | Cube : I.name * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
-      | Boundary : ('a, 'c, 'ac) Namevec.t located * ('ac, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
+      | ( :: ) : ('a, 'a1) arg * ('a1, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
 
-    type ('a, 'ab) has_bplus_to = Bplus_to : ('a, 'b, 'ab) bplus -> ('a, 'ab) has_bplus_to
-
-    type (_, _) arg =
-      | Cube_arg : I.name -> ('a, 'a I.suc) arg
-      | Boundary_arg : ('a, 'c, 'ac) Namevec.t located -> ('a, 'ac) arg
-
-    type (_, _, _) view =
-      | Nil : ('a, Fwn.zero, 'a) view
-      | Cons : ('a, 'a1) arg * ('a1, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) view
-
-    val view : ('a, 'b, 'ab) t -> ('a, 'b, 'ab) view
     val length : ('a, 'b, 'ab) t -> 'b Fwn.t
     val bplus : ('a, 'b, 'ab) t -> ('a, 'ab) has_bplus_to
     val none : ('a, 'b, 'ab) bplus -> ('a, 'b, 'ab) t
@@ -248,6 +242,18 @@ functor
           let (Bplus ab) = bplus b in
           Bplus (Suc ab)
 
+    type ('a, 'ab) has_bplus_to = Bplus_to : ('a, 'b, 'ab) bplus -> ('a, 'ab) has_bplus_to
+
+    (* Prepend the variables counted by a bplus to another bplus, forgetting the total count. *)
+    let rec prepend_bplus : type a c ac ab.
+        (a, c, ac) bplus -> (ac, ab) has_bplus_to -> (a, ab) has_bplus_to =
+     fun ac rest ->
+      match ac with
+      | Zero -> rest
+      | Suc ac ->
+          let (Bplus_to b) = prepend_bplus ac rest in
+          Bplus_to (Suc b)
+
     (* Here's a special kind of Vector of names that raises the parametrizing indices as we go, and also stores the bplus of the starting index with the length.  This simplifies things in a few places where otherwise we would have to store a bplus along with a vector of names to get the correct extended context length for bodies of terms under multiple binders. *)
     module Namevec = struct
       type (_, _, _) t =
@@ -285,49 +291,26 @@ functor
 
     (* The pattern variables of one branch of a match: one entry for each argument of the constructor, which is either a single variable (which for a higher-dimensional match is a cube variable, with its boundary accessed by face suffixes) or an explicit list of variables naming all the faces of its boundary, the last of which is the top face.  The middle index counts the *arguments*, hence is the arity of the constructor, while the last index is the raw context extended by all the variables actually bound. *)
     module Patternvars = struct
-      type (_, _, _) t =
-        | [] : ('a, Fwn.zero, 'a) t
-        | Cube : I.name * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
-        | Boundary : ('a, 'c, 'ac) Namevec.t located * ('ac, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
-
-      type ('a, 'ab) has_bplus_to = Bplus_to : ('a, 'b, 'ab) bplus -> ('a, 'ab) has_bplus_to
-
       (* The pattern variables of a single argument, forgetting how many arguments remain. *)
       type (_, _) arg =
-        | Cube_arg : I.name -> ('a, 'a I.suc) arg
-        | Boundary_arg : ('a, 'c, 'ac) Namevec.t located -> ('a, 'ac) arg
+        | Cube : I.name -> ('a, 'a I.suc) arg
+        | Boundary : ('a, 'c, 'ac) Namevec.t located -> ('a, 'ac) arg
 
-      type (_, _, _) view =
-        | Nil : ('a, Fwn.zero, 'a) view
-        | Cons : ('a, 'a1) arg * ('a1, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) view
-
-      let view : type a b ab. (a, b, ab) t -> (a, b, ab) view = function
-        | [] -> Nil
-        | Cube (x, xs) -> Cons (Cube_arg x, xs)
-        | Boundary (ns, xs) -> Cons (Boundary_arg ns, xs)
+      type (_, _, _) t =
+        | [] : ('a, Fwn.zero, 'a) t
+        | ( :: ) : ('a, 'a1) arg * ('a1, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
 
       let rec length : type a b ab. (a, b, ab) t -> b Fwn.t = function
         | [] -> Zero
-        | Cube (_, xs) -> Suc (length xs)
-        | Boundary (_, xs) -> Suc (length xs)
-
-      (* Prepend the variables counted by a bplus to another bplus, forgetting the total count. *)
-      let rec prepend_bplus : type a c ac ab.
-          (a, c, ac) bplus -> (ac, ab) has_bplus_to -> (a, ab) has_bplus_to =
-       fun ac rest ->
-        match ac with
-        | Zero -> rest
-        | Suc ac ->
-            let (Bplus_to b) = prepend_bplus ac rest in
-            Bplus_to (Suc b)
+        | _ :: xs -> Suc (length xs)
 
       (* The total number of variables bound, which is more than the number of arguments if any of them have explicit boundaries. *)
       let rec bplus : type a b ab. (a, b, ab) t -> (a, ab) has_bplus_to = function
         | [] -> Bplus_to Zero
-        | Cube (_, xs) ->
+        | Cube _ :: xs ->
             let (Bplus_to ab) = bplus xs in
             Bplus_to (Suc ab)
-        | Boundary (ns, xs) -> prepend_bplus (Namevec.bplus ns.value) (bplus xs)
+        | Boundary ns :: xs -> prepend_bplus (Namevec.bplus ns.value) (bplus xs)
 
       let rec none : type a b ab. (a, b, ab) bplus -> (a, b, ab) t =
        fun ab ->
@@ -335,15 +318,13 @@ functor
         | Zero ->
             let Eq = bplus_zero ab in
             []
-        | Suc _ ->
-            let ab = bplus_suc ab in
-            Cube (I.none, none ab)
+        | Suc _ -> Cube I.none :: none (bplus_suc ab)
 
       (* Whether every argument has its boundary given explicitly, so that no cube variables are bound.  (Vacuously true for a constructor with no arguments.) *)
       let rec all_boundary : type a b ab. (a, b, ab) t -> bool = function
         | [] -> true
-        | Cube _ -> false
-        | Boundary (_, xs) -> all_boundary xs
+        | Cube _ :: _ -> false
+        | Boundary _ :: xs -> all_boundary xs
     end
 
     (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
@@ -744,15 +725,15 @@ module Resolve (R : Resolver) = struct
    fun ctx xs ->
     match xs with
     | [] -> Resolve_pv ([], ctx)
-    | Cube (x, xs) ->
+    | Cube x :: xs ->
         let x2 = R.rename ctx x in
         let (Resolve_pv (xs2, ctx2)) = patternvars (R.snoc ctx x) xs in
-        Resolve_pv (Cube (x2, xs2), ctx2)
-    | Boundary (ns, xs) ->
+        Resolve_pv (Cube x2 :: xs2, ctx2)
+    | Boundary ns :: xs ->
         let (Bplus ac) = R.T2.bplus (R.T1.Namevec.length ns.value) in
         let ns2 = renames ctx ns.value ac in
         let (Resolve_pv (xs2, ctx2)) = patternvars (append ctx ns.value ac) xs in
-        Resolve_pv (Boundary (locate_opt ns.loc ns2, xs2), ctx2)
+        Resolve_pv (Boundary (locate_opt ns.loc ns2) :: xs2, ctx2)
 
   and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 R.T1.dataconstr -> a2 R.T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->
@@ -807,12 +788,12 @@ let rec patternvars_of_vec : type a b. (Variables.pattern_name, b) Vec.t -> (a, 
   | [] -> Patternvars []
   | `Cube x :: xs ->
       let (Patternvars ys) = patternvars_of_vec xs in
-      Patternvars (Cube (x, ys))
+      Patternvars (Cube x :: ys)
   | `Boundary ns :: xs ->
       let (Wrap ns) = Vec.of_list ns in
       let (Bplus ac) = bplus (Vec.length ns) in
       let (Patternvars ys) = patternvars_of_vec xs in
-      Patternvars (Boundary (locate_opt None (Namevec.of_vec ac ns), ys))
+      Patternvars (Boundary (locate_opt None (Namevec.of_vec ac ns)) :: ys)
 
 (* We end with some useful lemmas. *)
 

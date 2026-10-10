@@ -1495,9 +1495,9 @@ end = struct
       a t ->
       am t * (int, m) Vec.t =
    fun xs args scope ->
-    match Raw.Indexed.Patternvars.view xs with
-    | Nil -> (scope, [])
-    | Cons
+    match xs with
+    | [] -> (scope, [])
+    | ( :: )
         (type a1)
         ((x, xs) : (a, a1) Raw.Indexed.Patternvars.arg * (a1, _, am) Raw.Indexed.Patternvars.t) ->
         let bdry, args =
@@ -1506,11 +1506,11 @@ end = struct
           | Some (arg :: args) -> (Some arg.boundary, Some args) in
         let scope : a1 t =
           match x with
-          | Cube_arg _ -> (
+          | Cube _ -> (
               match bdry with
               | None | Some [] -> ext scope None
               | Some (x :: _) -> fatal ?loc:x.loc Inconsistent_patterns)
-          | Boundary_arg ns -> ext_boundary ns.value bdry scope in
+          | Boundary ns -> ext_boundary ns.value bdry scope in
         let i = last_num scope in
         let scope, levels = exts_pattern xs args scope in
         (scope, i :: levels)
@@ -1622,13 +1622,13 @@ let rec patternvars_of_args : type a m. (Matchpattern.arg, m) Vec.t -> (a, m) ha
   | [] -> Patternvars []
   | { boundary = []; pat } :: args ->
       let (Patternvars xs) = patternvars_of_args args in
-      Patternvars (Cube (name_of_pattern pat, xs))
+      Patternvars (Cube (name_of_pattern pat) :: xs)
   | { boundary = x :: _ as boundary; pat } :: args ->
       let bdry = List.map (fun (y : string option located) -> y.value) boundary in
       let (Wrap ns) = Vec.of_list (bdry @ [ name_of_pattern pat ]) in
       let (Bplus ac) = Raw.Indexed.bplus (Vec.length ns) in
       let (Patternvars xs) = patternvars_of_args args in
-      Patternvars (Boundary (locate_opt x.loc (Indexed.Namevec.of_vec ac ns), xs))
+      Patternvars (Boundary (locate_opt x.loc (Indexed.Namevec.of_vec ac ns)) :: xs)
 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.

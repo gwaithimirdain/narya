@@ -418,11 +418,11 @@ module F = struct
       | x :: xs -> "{" ^ strvar x ^ "} " ^ strnames xs in
     let rec strvars : type a b ab. (a, b, ab) Patternvars.t -> string = function
       | [] -> ""
-      | Cube (x, []) -> strvar x
-      | Cube (x, xs) -> strvar x ^ " " ^ strvars xs
+      | [ Cube x ] -> strvar x
+      | Cube x :: xs -> strvar x ^ " " ^ strvars xs
       (* The last of the boundary names is the top face, which is displayed without braces. *)
-      | Boundary (ns, []) -> strnames ns.value
-      | Boundary (ns, xs) -> strnames ns.value ^ " " ^ strvars xs in
+      | [ Boundary ns ] -> strnames ns.value
+      | Boundary ns :: xs -> strnames ns.value ^ " " ^ strvars xs in
     let mapsto =
       match cube with
       | `Normal _ -> "↦"
