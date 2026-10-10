@@ -1,2 +1,2 @@
 (cram
-  (deps %{bin:narya}))
+ (deps %{bin:narya}))

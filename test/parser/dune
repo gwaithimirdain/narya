@@ -1,6 +1,11 @@
 (tests
-  (names lexer parse_arith ambiguity prefixes permute_args)
-	(libraries parser testutil))
+ (names lexer parse_arith ambiguity prefixes permute_args)
+ (libraries parser testutil))
+
 (cram
-  (deps %{bin:narya}))
-(env (_ (flags (:standard -w -26 -w -27))))
+ (deps %{bin:narya}))
+
+(env
+ (_
+  (flags
+   (:standard -w -26 -w -27))))

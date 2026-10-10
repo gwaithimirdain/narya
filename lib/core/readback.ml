@@ -805,9 +805,9 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
               af )
       | Invis { filter; bindings; _ } ->
           let modality = Modality.filter_modality filter in
-          (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+          (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
           let hints =
-            Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+            Reporter.backtrack ~fatal:(fun _ -> no_hints) @@ fun () ->
             View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
           Ext

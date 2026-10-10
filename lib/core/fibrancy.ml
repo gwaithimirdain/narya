@@ -345,8 +345,11 @@ module Codata = struct
                                              Hott.dim,
                                              idf,
                                              Modal (idm, plus_no_lock mode, xcube) ),
+                                         (* x and y are elements of the dim-dimensional codatatype, so their fields are projected at dimension dim (which is nonzero when id is iterated). *)
                                          TubeOf.mmap
-                                           { map = (fun _ [ x ] -> field mode x fld) }
+                                           {
+                                             map = (fun _ [ x ] -> field mode x fld (ins_zero dim));
+                                           }
                                            [ xtube ] )) ) ) in
                         (Snoc (fields, field), add_field mode fib field))
                 | Higher _ ->

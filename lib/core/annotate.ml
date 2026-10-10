@@ -19,7 +19,8 @@ let ctx status ctx tm = Effect.perform (Ctx (status, ctx, tm))
 open Effect.Deep
 
 type ctx_handler = {
-  handle : 'mode 'a 'b 's. ('mode, 'b, 's) status -> ('mode, 'a, 'b) Ctx.t -> 'a Raw.check located -> unit;
+  handle :
+    'mode 'a 'b 's. ('mode, 'b, 's) status -> ('mode, 'a, 'b) Ctx.t -> 'a Raw.check located -> unit;
 }
 
 type tm_handler = printable located -> unit

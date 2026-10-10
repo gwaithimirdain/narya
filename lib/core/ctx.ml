@@ -145,9 +145,9 @@ let variables_entry : type dom modality mode f n. (dom, modality, mode, f, n) en
   function
   | Vis { dim; plusdim; vars; _ } -> Variables (dim, plusdim, vars)
   | Invis { bindings; _ } ->
-      (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+      (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
       let hints =
-        Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+        Reporter.backtrack ~fatal:(fun _ -> no_hints) @@ fun () ->
         View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
       singleton_variables (CubeOf.dim bindings) (`Anon hints)
 
@@ -575,9 +575,9 @@ module Ordered = struct
       when all_free bindings ->
         lam ctx (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, tree))
     | Snoc (ctx, Invis { bindings; filter; _ }, _) when all_free bindings ->
-        (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+        (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
         let hints =
-          Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
+          Reporter.backtrack ~fatal:(fun _ -> no_hints) @@ fun () ->
           View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
         lam ctx
           (Lam

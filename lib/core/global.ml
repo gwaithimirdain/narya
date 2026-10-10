@@ -106,7 +106,7 @@ let return_hole : type mode a b s.
 let find_hole i =
   let open Monad.Ops (Monad.Maybe) in
   match
-    let* (Entry (meta, def)) = Metatable.find_hole_opt i metas in
+    let* (Hole (meta, def)) = Metatable.find_hole_opt i metas in
     let hole = Holetable.find_opt meta holes in
     return_hole meta def hole
   with

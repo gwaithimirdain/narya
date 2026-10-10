@@ -43,12 +43,14 @@ module Table : sig
   type ('mode, 'a, 'b, 's) key = ('mode, 'a, 'b, 's) t
 
   module Make (F : Fam5) : sig
-    type _ entry = Entry : ('mode, 'a, 'b, 's) t * ('x, 'mode, 'a, 'b, 's) F.t -> 'x entry
     type 'x t
 
     val make : unit -> 'x t
     val find_opt : ('mode, 'a, 'b, 's) key -> 'x t -> ('x, 'mode, 'a, 'b, 's) F.t option
-    val find_hole_opt : int -> 'x t -> 'x entry option
+
+    type _ hole = Hole : ('mode, 'a, 'b, 's) key * ('x, 'mode, 'a, 'b, 's) F.t -> 'x hole
+
+    val find_hole_opt : int -> 'x t -> 'x hole option
     val add : ('mode, 'a, 'b, 's) key -> ('x, 'mode, 'a, 'b, 's) F.t -> 'x t -> unit
 
     type ('x, 'acc) folder = {

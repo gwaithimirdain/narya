@@ -54,8 +54,7 @@ module Transformationcell
     (DomMode : Mode.Generated with module G := DomGen)
     (CodMode : Mode.Generated with module G := CodGen)
     (Circle : Modality.Generated with module G := CircGen(DomMode)(CodMode))
-    (Box : Modality.Generated with module G := BoxGen(DomMode)(CodMode)) : Modalcell.Theory =
-struct
+    (Box : Modality.Generated with module G := BoxGen(DomMode)(CodMode)) : Modalcell.Theory = struct
   let circ = Modality.of_gen Circle.modality
   let box = Modality.of_gen Box.modality
 

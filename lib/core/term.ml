@@ -753,7 +753,7 @@ let modal_id : type mode a s.
     mode Mode.t -> (mode, a, s) term -> (mode, mode Modality.id, a, s) modal_term =
  fun mode tm -> Modal (Modality.id mode, plus_no_lock mode, tm)
 
-let field mode tm f = Field (Kinetic, modal_id mode tm, f, ins_zero D.zero)
+let field mode tm f ins = Field (Kinetic, modal_id mode tm, f, ins)
 
 (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
 module Telescope = struct

@@ -1,4 +1,4 @@
 (library
-  (name dim)
-  (public_name narya.dim)
-  (libraries util))
+ (name dim)
+ (public_name narya.dim)
+ (libraries util))

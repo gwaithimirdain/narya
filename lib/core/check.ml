@@ -865,10 +865,8 @@ let rec check : type mode a b s.
     | Realize ktm, Kinetic l -> check (Kinetic l) ctx (locate_opt tm.loc ktm) ty
     (* Nothing is embedded *)
     | Embed _, _ -> .
-    (* If we're using the checking type as an implicit first argument: *)
-    | ImplicitApp (fn, args), _ -> (
-        (* We read it back, so we can put it as the first argument in the generated term. *)
-        let cty = readback_val ctx ty in
+    (* If we're using the checking type, or an argument of it, as an implicit first argument: *)
+    | ImplicitApp (fn, src, args), _ -> (
         (* Now we act like synth on an application. *)
         let sfn, sty = synth (Kinetic `Nolet) ctx fn in
         match view_type sty "ImplicitApp" with
@@ -878,45 +876,58 @@ let rec check : type mode a b s.
             (* Only 0-dimensional and non-modal applications are allowed. *)
             match (D.compare (CubeOf.dim doms) D.zero, Modality.compare_id modality) with
             | Eq, Eq -> (
-                (* The first argument must be a type. *)
-                match view_type (CubeOf.find_top doms) "ImplicitApp argument" with
-                | Canonical (_, UU _, _, _) -> (
-                    (* We build the implicit application term and its type. *)
-                    let mode = Ctx.mode ctx in
-                    let idm = Modality.id mode in
-                    let new_sfn =
-                      locate_opt fn.loc
-                        (Term.App
-                           ( Kinetic,
-                             sfn,
-                             D.zero,
-                             Modality.filter_id mode D.zero,
-                             Modal (idm, plus_no_lock mode, CubeOf.singleton cty) )) in
-                    let new_sty = tyof_app cods tyargs filter (CubeOf.singleton ty) in
-                    (* And then proceed applying to the rest of the arguments, if any. *)
-                    let stm, sty =
-                      match args with
-                      | _ :: _ ->
-                          let args =
-                            List.map
-                              (fun (l, x) ->
-                                (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
-                              args in
-                          synth_apps ctx new_sfn new_sty
-                            { value = Synth fn.value; loc = fn.loc }
-                            args
-                      | _ -> (new_sfn.value, new_sty) in
-                    (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
-                    match equal_val ctx sty ty with
-                    | Ok () -> realize status stm
-                    | Error why ->
-                        fatal
-                          (Unequal_synthesized_type
-                             { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why })
-                    )
-                | _ ->
-                    fatal ?loc:fn.loc
-                      (Anomaly "first argument of an ImplicitMap is not of type Type"))
+                let dom = CubeOf.find_top doms in
+                (* The implicit argument, as a value, and read back so we can put it as the first argument in the generated term. *)
+                let arg, carg =
+                  match src with
+                  | `Goal -> (
+                      (* The first argument must be a type. *)
+                      match view_type dom "ImplicitApp argument" with
+                      | Canonical (_, UU _, _, _) -> (ty, readback_val ctx ty)
+                      | _ ->
+                          fatal ?loc:fn.loc
+                            (Anomaly "first argument of an ImplicitApp is not of type Type"))
+                  | `Goal_arg i -> (
+                      (* The argument we find must also have the type of the function's first argument; if it doesn't, the goal isn't of the shape this function proves, which is the same mistake as its not having such an argument at all, so we report it the same way. *)
+                      match implicit_goal_arg ctx ty i with
+                      | Some nf when Result.is_ok (equal_val ctx (Lazy.force nf.ty) dom) ->
+                          (nf.tm, readback_nf ctx nf)
+                      | _ ->
+                          let pfn =
+                            match fn.value with
+                            | Const c -> PConstant c
+                            | _ -> PTerm (ctx, sfn) in
+                          fatal ?loc:fn.loc (No_implicit_goal_arg (pfn, PVal (ctx, ty)))) in
+                (* We build the implicit application term and its type. *)
+                let mode = Ctx.mode ctx in
+                let idm = Modality.id mode in
+                let new_sfn =
+                  locate_opt fn.loc
+                    (Term.App
+                       ( Kinetic,
+                         sfn,
+                         D.zero,
+                         Modality.filter_id mode D.zero,
+                         Modal (idm, plus_no_lock mode, CubeOf.singleton carg) )) in
+                let new_sty = tyof_app cods tyargs filter (CubeOf.singleton arg) in
+                (* And then proceed applying to the rest of the arguments, if any. *)
+                let stm, sty =
+                  match args with
+                  | _ :: _ ->
+                      let args =
+                        List.map
+                          (fun (l, x) ->
+                            (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
+                          args in
+                      synth_apps ctx new_sfn new_sty { value = Synth fn.value; loc = fn.loc } args
+                  | _ -> (new_sfn.value, new_sty) in
+                (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
+                match equal_val ctx sty ty with
+                | Ok () -> realize status stm
+                | Error why ->
+                    fatal
+                      (Unequal_synthesized_type
+                         { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
             | Neq, _ ->
                 fatal ?loc:fn.loc (Dimension_mismatch ("ImplicitApp", CubeOf.dim doms, D.zero))
             | _, Neq -> fatal ?loc:fn.loc (Anomaly "modal implicit applications not allowed"))
@@ -933,7 +944,7 @@ let rec check : type mode a b s.
                         Bwd.exists (fun (data_constr, _) -> constr = data_constr) data_constrs)
                       constrs
                   then
-                    Reporter.try_with ~fatal:(fun d ->
+                    Reporter.backtrack ~fatal:(fun d ->
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> check ?discrete status ctx (locate_opt tm.loc alt) ty
                   else go errs alts
@@ -947,12 +958,12 @@ let rec check : type mode a b s.
                           codata_fields)
                       fields
                   then
-                    Reporter.try_with ~fatal:(fun d ->
+                    Reporter.backtrack ~fatal:(fun d ->
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> check ?discrete status ctx (locate_opt tm.loc alt) ty
                   else go errs alts
               | _, `Any ->
-                  Reporter.try_with ~fatal:(fun d ->
+                  Reporter.backtrack ~fatal:(fun d ->
                       if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                   @@ fun () -> check ?discrete status ctx (locate_opt tm.loc alt) ty
               | _ -> go errs alts) in
@@ -2419,6 +2430,46 @@ and check_data : type mode a b i.
                 checked_constrs raw_constrs errs
           | Suc _ -> fatal (Missing_constructor_type c)))
 
+(* The argument at position i of the constant that a type is an application of, for an ImplicitApp.  It must be an ordinary 0-dimensional non-modal argument at the ambient mode; if there is no such argument, the caller reports the goal as not having the shape it was looking for. *)
+and implicit_goal_arg : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> int -> mode normal option =
+ fun _ctx ty i ->
+  (* A spine entry that can't be an implicit argument aborts the search: the mode equation the recursion returns isn't available at such an entry, so we can't just return "not found" from inside it. *)
+  let exception No_arg in
+  (* As in get_indices, the mode equation between the start of the remaining spine and the ambient mode only becomes available once we reach its end, so we return it from the recursion. *)
+  let rec go : type m1. (m1, mode) Fwd_app.fwd -> int -> (m1, mode) Eq.t * m1 normal option =
+   fun apps j ->
+    match apps with
+    | Nil -> (Eq, None)
+    | Cons
+        ( Fwd_app.Arg
+            (type dom modality n k m mk)
+            ((filter, arg, ins) :
+              (dom, modality, m1, n, m) Modality.filter_dim
+              * (n, dom normal) CubeOf.t
+              * (mk, m, k) insertion),
+          rest ) -> (
+        let Eq, found = go rest (j - 1) in
+        if j <> 0 then (Eq, found)
+        else
+          let modality = Modality.filter_modality filter in
+          match
+            (is_id_ins ins, Modality.compare_id modality, D.compare (CubeOf.dim arg) D.zero)
+          with
+          | Some _, Eq, Eq -> (Eq, Some (CubeOf.find_top arg))
+          | _ -> raise No_arg)
+    | Cons (Field _, _) -> raise No_arg in
+  match ty with
+  | Neu { head = Const _; args; value = _; ty = _ } -> (
+      match args with
+      | Inst _ -> None
+      | Emp | Arg _ | Field _ -> (
+          try
+            match go (Fwd_app.of_apps args) i with
+            | Eq, nf -> nf
+          with No_arg -> None))
+  | _ -> None
+
 (* Get the indices from the codomain of a constructor's type. *)
 and get_indices : type mode hmode1 hmode2 a b any1 any2.
     (mode, a, b) Ctx.t ->
@@ -3765,7 +3816,7 @@ and synth : type mode a b s.
     | ImplicitSApp (fn, apploc, arg), _ -> (
         (* We synthesize both function and argument *)
         let sfn, sfnty = synth (Kinetic `Nolet) ctx fn in
-        let _, sargty = synth (Kinetic `Nolet) ctx arg in
+        let sarg, sargty = synth (Kinetic `Nolet) ctx arg in
         (* We read back the synthesized type, so we can put it as the first argument in the generated term. *)
         let cargty = readback_val ctx sargty in
         match view_type sfnty "ImplicitSApp" with
@@ -3790,15 +3841,48 @@ and synth : type mode a b s.
                          Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty) ))
                 in
                 let new_sty = tyof_app cods tyargs filter (CubeOf.singleton sargty) in
-                (* And then apply to the argument. *)
-                let stm, sty =
-                  synth_apps ctx new_sfn new_sty
-                    { value = Synth fn.value; loc = fn.loc }
-                    [
-                      ( apploc,
-                        locate_opt arg.loc (Some (Synth arg.value)),
-                        locate_opt None `Explicit );
-                    ] in
+                (* And then apply to the argument.  We apply the term we already synthesized for it,
+                   rather than elaborating it all over again: the argument can itself be an
+                   ImplicitSApp, and elaborating each one twice would make a nest of them take
+                   exponential time. *)
+                let ((stm, sty) : (mode, b, kinetic) term * (mode, kinetic) value) =
+                  match view_type new_sty "ImplicitSApp" with
+                  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) -> (
+                      let Eq = eq_of_ins_zero ins in
+                      let modality = Modality.filter_modality filter in
+                      match (D.compare (CubeOf.dim doms) D.zero, Modality.compare_id modality) with
+                      | Eq, Eq -> (
+                          (* The domain is the type we just supplied, so this can only fail if the
+                             function's type isn't of the expected shape. *)
+                          match equal_val ctx sargty (CubeOf.find_top doms) with
+                          | Ok () ->
+                              let earg = eval_term (Ctx.env ctx) sarg in
+                              ( Term.App
+                                  ( Kinetic,
+                                    new_sfn.value,
+                                    BindCube.dim cods,
+                                    filter,
+                                    Modal
+                                      (Modality.id mode, plus_no_lock mode, CubeOf.singleton sarg)
+                                  ),
+                                tyof_app cods tyargs filter (CubeOf.singleton earg) )
+                          | Error why ->
+                              fatal ?loc:arg.loc
+                                (Unequal_synthesized_type
+                                   {
+                                     got = PVal (ctx, sargty);
+                                     expected = PVal (ctx, CubeOf.find_top doms);
+                                     which = None;
+                                     why;
+                                   }))
+                      | _ ->
+                          fatal ?loc:fn.loc
+                            (Anomaly "second argument of an ImplicitSApp is not ordinary"))
+                  | _ ->
+                      fatal ?loc:fn.loc
+                        (Applying_nonfunction_nontype
+                           (PTerm (ctx, new_sfn.value), PVal (ctx, new_sty))) in
+                ignore apploc;
                 (realize status stm, sty)
             | _, _, Neq -> fatal ?loc:fn.loc (Unimplemented "nonidentity modality in ImplicitSApp")
             | Eq, _, _ ->
@@ -3825,7 +3909,7 @@ and synth : type mode a b s.
                         Bwd.exists (fun (data_constr, _) -> constr = data_constr) data_constrs)
                       constrs
                   then
-                    Reporter.try_with ~fatal:(fun d ->
+                    Reporter.backtrack ~fatal:(fun d ->
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> synth status ctx (locate_opt tm.loc alt)
                   else go errs alts
@@ -3839,12 +3923,12 @@ and synth : type mode a b s.
                           codata_fields)
                       fields
                   then
-                    Reporter.try_with ~fatal:(fun d ->
+                    Reporter.backtrack ~fatal:(fun d ->
                         if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                     @@ fun () -> synth status ctx (locate_opt tm.loc alt)
                   else go errs alts
               | _, `Any ->
-                  Reporter.try_with ~fatal:(fun d ->
+                  Reporter.backtrack ~fatal:(fun d ->
                       if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
                   @@ fun () -> synth status ctx (locate_opt tm.loc alt)
               | None, `Data _ | None, `Codata _ -> fatal (Anomaly "SFirst mismatch")
@@ -3872,47 +3956,52 @@ and synth : type mode a b s.
               let cz = check (Kinetic `Nolet) ctx z ty in
               let ez = eval_term env cz in
               match yeqz with
-              | Some yeqz ->
+              | Some (yeqz, dir) -> (
                   let nz : mode normal = { tm = ez; ty = Lazy.from_val ty } in
-                  Reporter.try_with
-                    (fun () ->
-                      let yztube =
-                        Hott.tube ny nz <|> Unimplemented "equational reasoning without -hott" in
-                      let idyz = inst idty yztube in
-                      let cyeqz = check (Kinetic `Nolet) ctx yeqz idyz in
-                      let pqtube =
-                        Hott.tube12 hh cx cx creflx cy cz cyeqz
-                        <|> Unimplemented "equational reasoning without -hott" in
-                      ( cz,
-                        nz,
-                        app
-                          (Field
-                             ( Kinetic,
-                               modal_id mode (Inst (Kinetic, ididcty, pqtube)),
-                               Field.intern "trr" Hott.dim,
-                               id_ins D.zero (D.zero_plus Hott.dim) ))
-                          idm (plus_no_lock mode) xeqy ))
-                      (* If that didn't work, we try reversing the equality and checking that instead. *)
-                    ~fatal:(fun d ->
-                      let zytube =
-                        Hott.tube nz ny <|> Unimplemented "equational reasoning without -hott" in
-                      let idzy = inst idty zytube in
-                      let czeqy =
-                        (* But if that also fails, we report only the error from the forwards direction. *)
-                        Reporter.try_with ~fatal:(fun _ -> fatal_diagnostic d) @@ fun () ->
-                        check (Kinetic `Nolet) ctx yeqz idzy in
-                      let pqtube =
-                        Hott.tube12 hh cx cx creflx cz cy czeqy
-                        <|> Unimplemented "equational reasoning without -hott" in
-                      ( cz,
-                        nz,
-                        app
-                          (Field
-                             ( Kinetic,
-                               modal_id mode (Inst (Kinetic, ididcty, pqtube)),
-                               Field.intern "trl" Hott.dim,
-                               id_ins D.zero (D.zero_plus Hott.dim) ))
-                          idm (plus_no_lock mode) xeqy ))
+                  let forward () =
+                    let yztube =
+                      Hott.tube ny nz <|> Unimplemented "equational reasoning without -hott" in
+                    let idyz = inst idty yztube in
+                    let cyeqz = check (Kinetic `Nolet) ctx yeqz idyz in
+                    let pqtube =
+                      Hott.tube12 hh cx cx creflx cy cz cyeqz
+                      <|> Unimplemented "equational reasoning without -hott" in
+                    ( cz,
+                      nz,
+                      app
+                        (Field
+                           ( Kinetic,
+                             modal_id mode (Inst (Kinetic, ididcty, pqtube)),
+                             Field.intern "trr" Hott.dim,
+                             id_ins D.zero (D.zero_plus Hott.dim) ))
+                        idm (plus_no_lock mode) xeqy ) in
+                  let reversed () =
+                    let zytube =
+                      Hott.tube nz ny <|> Unimplemented "equational reasoning without -hott" in
+                    let idzy = inst idty zytube in
+                    let czeqy = check (Kinetic `Nolet) ctx yeqz idzy in
+                    let pqtube =
+                      Hott.tube12 hh cx cx creflx cz cy czeqy
+                      <|> Unimplemented "equational reasoning without -hott" in
+                    ( cz,
+                      nz,
+                      app
+                        (Field
+                           ( Kinetic,
+                             modal_id mode (Inst (Kinetic, ididcty, pqtube)),
+                             Field.intern "trl" Hott.dim,
+                             id_ins D.zero (D.zero_plus Hott.dim) ))
+                        idm (plus_no_lock mode) xeqy ) in
+                  match dir with
+                  (* A step marked as reversed is checked only in the reversed orientation. *)
+                  | `Reversed -> reversed ()
+                  | `Plain ->
+                      Reporter.backtrack
+                        forward
+                        (* If that didn't work, we try reversing the equality and checking that instead. *)
+                        ~fatal:(fun d ->
+                          (* But if that also fails, we report only the error from the forwards direction (unless the reversed check hit an internal error). *)
+                          Reporter.backtrack reversed ~fatal:(fun _ -> fatal_diagnostic d)))
               | None -> (
                   with_loc z.loc @@ fun () ->
                   match equal_at ctx ny.tm ez ty with
@@ -4392,7 +4481,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Refute (_, _) -> None
       | Hole _ -> None
       | Realize _ -> None
-      | ImplicitApp (_, _) -> None
+      | ImplicitApp (_, _, _) -> None
       | Embed _ -> .
       | First _ -> None
       | Oracle _ -> None

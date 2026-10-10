@@ -294,10 +294,10 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
           (Bwv.to_bwd fields) in
       { ctx = Snoc (ctx, Variables (dim, plusdim, vars), fields); used = !used }
   | Snoc (ctx, Invis { bindings; _ }, _) ->
-      (* Invisible variables are anonymous, but we can still give them hints from their types.  Since this is only for display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints. *)
+      (* Invisible variables are anonymous, but we can still give them hints from their types.  Since this is only for display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
       let hints =
-        Reporter.try_with ~fatal:(fun _ -> no_hints) @@ fun () ->
-        View.hints_of_ty (Lazy.force ((Ctx.Binding.value (CubeOf.find_top bindings)).ty)) in
+        Reporter.backtrack ~fatal:(fun _ -> no_hints) @@ fun () ->
+        View.hints_of_ty (Lazy.force (Ctx.Binding.value (CubeOf.find_top bindings)).ty) in
       snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) (`Anon hints))
   | Lock (ctx, _) ->
       let { ctx; used } = of_ordered_ctx ctx in
