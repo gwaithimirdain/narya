@@ -714,7 +714,7 @@ let modal_id : type mode a s.
     mode Mode.t -> (mode, a, s) term -> (mode, mode Modality.id, a, s) modal_term =
  fun mode tm -> Modal (Modality.id mode, plus_no_lock mode, tm)
 
-let field mode tm f = Field (modal_id mode tm, f, ins_zero D.zero)
+let field mode tm f ins = Field (modal_id mode tm, f, ins)
 
 module Telescope = struct
   type ('mode, 'a, 'b, 'ab) t = ('mode, 'a, 'b, 'ab) Term.tel
