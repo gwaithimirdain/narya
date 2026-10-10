@@ -898,20 +898,6 @@ and field_term : type src f mode n k nk.
   v
 
 (* Given a term and its record type, compute the type of a field projection, and the substitution dimension it was evaluated at.  There are two versions of this function, one for when we already know the insertion associated to the field, and one for when we are synthesizing it from the user's integer sequence.  First we define the shared part of both, where we have already found the codatafield from the codata type.  We allow the term to be an error, in case typechecking failed earlier but we are continuing on; this can nevertheless succeed (or fail in more interesting ways) if the type doesn't actually depend on that value. *)
-
-(* Assemble the self value that a codatafield's type is applied to, from the term being projected and the boundary of its type.  The self variable lies behind the locks by the right and then the left adjoint, whereas an ambient value being projected from lives in the ambient context; so, exactly as for the *type* of the self variable when the codatatype is checked, we transport it and its boundary along the adjunction unit 1 ⇒ gf.  This is what makes the new presentation agree with the old one: in the old one the value was looked up *through* the key by g, so it was acted on by a composite 1 ⇒ gν, whereas now it is looked up above that key and acted on only by f ⇒ ν; precomposing with the unit restores the former.  For an ordinary field the unit is an identity cell and this is a no-op.  (A caller that already has the self *variable* of a self-extended context, such as readback_codata, has no ambient term to transport, and calls tyof_lower_codatafield or tyof_higher_codatafield directly with that variable instead.) *)
-and self_values : type amode f g gmode mn.
-    (amode, f, g, gmode) Modalcell.adjunction ->
-    ((amode, kinetic) value, Code.t) Result.t ->
-    (D.zero, mn, mn, amode normal) TubeOf.t ->
-    [ `Ok of (mn, (amode, kinetic) value) CubeOf.t | `Error of Code.t ] =
- fun (Adjunction { unit; _ }) tm tyargs ->
-  match tm with
-  | Ok tm ->
-      let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
-      `Ok (CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ])
-  | Error e -> `Error e
-
 and tyof_codatafield : type src f mode m n mn a s i et.
     (src, f, mode) Modality.t ->
     ((src, kinetic) value, Code.t) Result.t ->
@@ -945,9 +931,20 @@ and tyof_codatafield : type src f mode m n mn a s i et.
           tyof_higher_codatafield (self_values adj tm tyargs) tyargs (D.zero_plus m) fldname adj env
             fldins ~shuf:Trivial plus_lock fldtermctx ic0 fldty ~key:`Counit)
 
-(* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.
+(* Assemble the self value that a codatafield's type is applied to, from the term being projected and the boundary of its type.  The self variable lies behind the locks by the right and then the left adjoint, whereas an ambient value being projected from lives in the ambient context; so, exactly as for the *type* of the self variable when the codatatype is checked, we transport it and its boundary along the adjunction unit 1 ⇒ gf.  For an ordinary field the unit is an identity cell and this is a no-op.  (A caller that already has the self *variable* of a self-extended context, such as readback_codata, has no ambient term to transport, and calls tyof_lower_codatafield or tyof_higher_codatafield directly with that variable instead.) *)
+and self_values : type amode f g gmode mn.
+    (amode, f, g, gmode) Modalcell.adjunction ->
+    ((amode, kinetic) value, Code.t) Result.t ->
+    (D.zero, mn, mn, amode normal) TubeOf.t ->
+    [ `Ok of (mn, (amode, kinetic) value) CubeOf.t | `Error of Code.t ] =
+ fun (Adjunction { unit; _ }) tm tyargs ->
+  match tm with
+  | Ok tm ->
+      let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
+      `Ok (CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ])
+  | Error e -> `Error e
 
-   The ~key flag distinguishes two uses.  `Counit computes the type of a *projection* x .fld, which is keyed by the adjunction counit to put it in the ambient context (rule 3 of modal fields).  `Nokey computes the type at which the *component* of a tuple/comatch is checked or read back, which lives behind the lock by the right adjoint and is not keyed (rule 2).  For ordinary fields the two agree, since the counit is the identity. *)
+(* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.  The ~key flag distinguishes two uses.  `Counit computes the type of a *projection* x .fld, which is keyed by the adjunction counit to put it in the ambient context (rule 3 of modal fields).  `Nokey computes the type at which the *component* of a tuple/comatch is checked or read back, which lives behind the lock by the right adjoint and is not keyed (rule 2).  For ordinary fields the two agree, since the counit is the identity. *)
 and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
     (* As for a higher field, the self value and its boundary, in the context behind the locks where the field's type lives: an ambient value being projected from is transported there along the adjunction unit (self_values does that), while a caller displaying a codatatype supplies the self variable of its self-extended context, which is already there.  It can be an error, if typechecking of the term whose field this is failed earlier; the type may still not depend on it. *)
     [ `Ok of (mn, (amode, kinetic) value) CubeOf.t | `Error of Code.t ] ->
