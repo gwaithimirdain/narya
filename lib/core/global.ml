@@ -194,6 +194,8 @@ let add_meta m ~termctx ~ty ~tm ~energy =
   let tm = (tm :> [ `Defined of ('mode, 'b, 's) term | `Axiom | `Undefined ]) in
   metatable_add m (Ok { tm; termctx; ty; energy; recursion = `Nonrecursive })
 
+let add_meta_error m e = metatable_add m (Error e)
+
 (* Set the definition of a Global metavariable, required to already exist but not be defined.  The optional ?recursion argument records whether the definition contains occurrences of constants that were being defined when the metavariable was created (used when solving holes). *)
 let set_meta m ?termctx ?recursion tm =
   match Metatable.find_opt m metas with
