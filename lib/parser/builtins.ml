@@ -1862,12 +1862,15 @@ let pp_match triv = function
         (* The motive is parsed as an abstraction sub-notation *)
         | Token (Return, (wsreturn, _)) :: Term motive :: Token (LBracket, (wslbrack, _)) :: obs ->
             let pmotive, wmotive = pp_term motive in
-            ( pp_ws `Break wdisc
-              ^^ Token.pp Return
-              ^^ pp_ws `Nobreak wsreturn
-              ^^ pmotive
-              ^^ pp_ws `Nobreak wmotive
-              ^^ Token.pp LBracket,
+            (* The "return" clause stays on the line of the "match" if it fits there, and otherwise moves to the next line, indented further than the branches. *)
+            ( group
+                (nest 4
+                   (pp_ws `Break wdisc
+                   ^^ Token.pp Return
+                   ^^ pp_ws `Nobreak wsreturn
+                   ^^ pmotive
+                   ^^ pp_ws `Nobreak wmotive
+                   ^^ Token.pp LBracket)),
               wslbrack,
               obs )
         | Token (LBracket, (wslbrack, _)) :: obs ->

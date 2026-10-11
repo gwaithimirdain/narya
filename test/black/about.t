@@ -617,3 +617,10 @@ A record type has no higher fields, so its instantiation is displayed with a sel
     b : Id A (r0 .b) (r1 .b) )
     : Type
   
+
+An explicit match keeps its "return" clause on the line of the "match" when it fits there.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom ax : Bool' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def k : T ax ≔ match ax return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'about k'
+  match ax return x ↦ T x [ false. ↦ true. | true. ↦ 0 ]
+    : T ax
+  
