@@ -978,11 +978,10 @@ module Code = struct
               (Constr.to_string c) (abs n)
       | Wrong_boundary_of_pattern_variable n ->
           if n > 0 then
-            textf "too many variables in boundary of higher-dimensional pattern variable (%d extra)"
-              n
+            textf "too many boundary arguments for higher-dimensional pattern variable (%d extra)" n
           else
             textf
-              "not enough variables in boundary of higher-dimensional pattern variable (need %d more)"
+              "not enough boundary arguments for higher-dimensional pattern variable (need %d more)"
               (abs n)
       | Wrong_number_of_arguments_to_motive n ->
           textf "wrong number of arguments for match motive: should be %d" n

@@ -524,7 +524,7 @@ They must be exactly one for each face of the pattern variable's cube.
    ￫ error[E1310]
    ￭ command-line exec string
    3 |   m2 ↦ m0 ]
-     ^ not enough variables in boundary of higher-dimensional pattern variable (need 1 more)
+     ^ not enough boundary arguments for higher-dimensional pattern variable (need 1 more)
   
   [1]
 
@@ -536,7 +536,7 @@ They must be exactly one for each face of the pattern variable's cube.
    ￫ error[E1310]
    ￭ command-line exec string
    4 |   {m2}
-     ^ too many variables in boundary of higher-dimensional pattern variable (1 extra)
+     ^ too many boundary arguments for higher-dimensional pattern variable (1 extra)
   
   [1]
 
@@ -548,7 +548,7 @@ In particular, a zero-dimensional match has no boundary variables to name.
    ￫ error[E1310]
    ￭ command-line exec string
    2 |   {m0}
-     ^ too many variables in boundary of higher-dimensional pattern variable (1 extra)
+     ^ too many boundary arguments for higher-dimensional pattern variable (1 extra)
   
   [1]
 
