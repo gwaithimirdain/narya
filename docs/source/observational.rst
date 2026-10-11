@@ -186,7 +186,13 @@ Then ``Id (Sum A B) u v`` reduces to ``Sum⁽ᵉ⁾ (Id A) (Id B) u v``, whose d
 
 As before, if we ignore the ``⁽ᵉ⁾``'s, this tells us how ``Id (Sum A B) u v`` behaves.  First notice that it is *applied* to ``u`` and ``v`` at the end.  Actually this is an "instantiation" (see :ref:`Id of the universe`) but for now we can think of it as like application.  Thus, the datatype definition itself behaves like an *indexed* datatype, with ``u`` and ``v`` the indices.  Indeed, we can see that their occurrences ``(left. a₀) (left. a₁)`` and ``(right. b₀) (right. b₁)`` in the outputs of the constructors are not fully general, but are determined by the inputs.  (The arguments ``Id A`` and ``Id B`` are also not fully general, but they are the same as those given to ``Sum⁽ᵉ⁾``, and when we give the general type of ``Sum⁽ᵉ⁾`` below it will be clear that these arguments are actually parameters.)  But aside from this indexing, ``Id (Sum A B) u v`` is, intuitively, *a* sum type: the sum of all the identity types of ``A`` and those of ``B``.
 
-The input endpoints such as ``a₀ a₁`` are written with curly braces to indicate that they are implicit, as with the endpoint arguments of ``ap f``.  However, in this case it is *not* possible to give these arguments explicitly when applying the constructors ``left.`` and ``right.``.  But there is unlikely to be any need to, since constructors *and* their arguments always check rather than needing to synthesize.
+The input endpoints such as ``a₀ a₁`` are written with curly braces to indicate that they are implicit, as with the endpoint arguments of ``ap f``.  As in that case, it is possible to supply them explicitly when applying a constructor:
+
+.. code-block:: none
+
+   def s₂ : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {n₀} {n₁} n₂
+
+However, unlike for ``ap``, it is never *necessary* to give these arguments explicitly, since a constructor only checks rather than synthesizing, and thus these boundary arguments can always be extracted from the type it checks against.  If supplied explicitly, they must match the ones in the checking type exactly, so the only purpose of this would be for readability and "checked documentation".  For each top-dimensional argument, either all of its implicit boundary arguments must be supplied or none of them.
 
 It is possible, however, to omit some of the arguments of a higher constructor and check it at a higher function-type.  For instance, for any fixed types ``A`` and ``B``, the constructor ``left.`` checks at type ``{a₀ a₁ : A} (a₂ : Id A a₀ a₁) →⁽ᵉ⁾ Sum⁽ᵉ⁾ (Id A) (Id B) (left. a₀) (left. a₁)`` (see :ref:`Id of function types`, below).
 
@@ -302,9 +308,30 @@ Cubes of variables also appear automatically when matching against a higher-dime
 
 Here in the definition of ``encode``, the pattern variable ``p`` of the ``suc.`` branch is automatically made into a 1-dimensional cube of variables since we are matching against an element of ``Id ℕ``, so in the body we can refer to ``p.0``, ``p.1``, and ``p.2``.  And because of this, we are required to use ``⤇`` rather than ``↦`` to introduce the bodies of branches in that ``match``.
 
-Unlike for abstractions, for higher-dimensional matches there is no option to write ``↦`` and name all the variables explicitly (e.g. ``| suc. {p0} {p1} p2 ↦``).  We deem this would be too confusing, because higher-dimensional constructors can never be *applied* explicitly to all their boundaries, and a "pattern" in a ``match`` should look as much as possible like the constructor that it matches against.
+As for abstractions, there is also the option to write ``↦`` and name all the boundary variables explicitly, in braces:
 
-It is possible to do :ref:`Multiple matches and deep matches` that combine zero- and higher-dimensional matches.  In this case the match symbol is ``⤇``, which we can think of as indicating that at least *some* of the pattern variables are nontrivial cubes.
+.. code-block:: none
+
+   def encode (m n : ℕ) : Id ℕ m n → code m n ≔ [
+   | zero. ↦ ()
+   | suc. {p₀} {p₁} p₂ ↦ (_ ≔ encode p₀ p₁ p₂)]
+
+This is consistent with the fact that a higher-dimensional constructor can also be *applied* explicitly to all of its boundary arguments (see :ref:`Id of datatypes`), so that a "pattern" in a ``match`` still looks like the constructor that it matches against.  There must be exactly one boundary variable for each face of the pattern variable's cube, with the last of them, written without braces, being the top face.
+
+As is the case with abstractions, the symbol ``↦`` is used only when *none* of the pattern variables in the branch is left as a cube, while ``⤇`` is used whenever any of them is (so the two can be mixed in one pattern, as in ``| pair. {a₀} {a₁} a₂ b ⤇``).  A branch whose constructor takes no arguments at all, such as ``zero.`` above, binds no variables and can therefore use either symbol.  Similarly, if a :ref:`multiple or deep match <Multiple matches and deep matches>` combines zero- and higher-dimensional matches with cube variables, the match symbol is ``⤇``, since at least *some* of the pattern variables are nontrivial cubes.
+
+Since all the branches for a single constructor extend the context in the same way, they must all name the same number of variables for each argument.  Thus, for each argument of the constructor, either all or none of the branches must give that argument explicit boundaries.
+
+The boundary arguments in braces need not be variables: like the top face, each of them can be any pattern, which is matched against as part of a deep match.  For example:
+
+.. code-block:: none
+
+   def f (y₀ y₁ : ℕ) (y₂ : Id ℕ y₀ y₁) : ℕ ≔ match y₂ [
+   | zero. ↦ 0
+   | suc. {zero.} {_} _ ↦ 1
+   | suc. {suc. k} {_} _ ↦ k]
+
+As with other deep matches, this is compiled into a sequence of nested matches, in which the boundary faces of each argument are matched against before its top face.
 
 
 Id of the universe
@@ -519,16 +546,15 @@ However, the alternative of :ref:`Cubes of variables` is also available and ofte
 Implicit boundaries
 -------------------
 
-We have noted above that many parts of the boundary of a cube are treated as implicit arguments.  Normally, Narya also hides these arguments when printing such terms and types.  However, you can tell it to print these arguments explicitly with the commands
+We have noted above that many parts of the boundary of a cube are treated as implicit arguments.  Normally, Narya also hides these arguments when printing such terms and types.  However, you can tell it to print these arguments explicitly with the command
 
 .. code-block:: none
 
-   display function boundaries ≔ on
-   display type boundaries ≔ on
+   display implicits ≔ on
 
-(and switch back with ``≔ off``).  These commands are not available in source files, since they should not be part of the "time stream" of undoables.  They can be given in interactive mode, or with the ProofGeneral commands ``C-c C-d C-f`` and ``C-c C-d C-t``, or you can use the corresponding command-line flags such as ``-show-function-boundaries``.  When these options are ``on``, Narya prints *all* the lower-dimensional arguments explicitly, with curly braces around them.  There are (currently) no half measures here, for functions or for types.
+(and switch back with ``≔ off``).  This command is not available in source files, since it should not be part of the "time stream" of undoables.  It can be given in interactive mode, or with the ProofGeneral command ``C-c C-d C-i``, or you can use the corresponding command-line flag ``-show-implicits``.  When this option is ``on``, Narya prints *all* the lower-dimensional arguments explicitly, with curly braces around them, for both functions and types.  There are (currently) no half measures here.
 
-In addition, even when printing implicit boundaries is off, Narya attempts to be smart and print those boundaries when it thinks that they would be necessary in order to re-parse the printed term because the corresponding explicit argument isn't synthesizing.  In this case it can do half measures, the way you can when writing type boundaries: the implicit arguments in each "block" are printed only if the primary argument of that block is nonsynthesizing.
+In addition, even when printing implicits is off, Narya attempts to be smart and print those boundaries when it thinks that they would be necessary in order to re-parse the printed term because the corresponding explicit argument isn't synthesizing.  In this case it can do half measures, the way you can when writing type boundaries: the implicit arguments in each "block" are printed only if the primary argument of that block is nonsynthesizing.
 
 
 Symmetries and degeneracies

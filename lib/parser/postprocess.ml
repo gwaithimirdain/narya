@@ -227,13 +227,20 @@ and process_apps_head : type n lt ls rt rs.
   | `Constr c ->
       let c = { value = c; loc = tm.loc } in
       let loc = ref None in
-      let args =
+      (* A constructor argument in braces is an implicit boundary argument of a higher-dimensional constructor, supplied redundantly as documentation; see Raw.Constr. *)
+      let cargs =
         List.map
           (fun (Wrap x, l) ->
             loc := l;
-            process ctx x)
+            match x.value with
+            | Notn ((Braces, _), n) -> (
+                match notation_args n with
+                | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
+                    (process ctx arg, locate_opt x.loc `Implicit)
+                | _ -> fatal (Anomaly "invalid notation arguments for braces"))
+            | _ -> (process ctx x, locate_opt x.loc `Explicit))
           args in
-      { value = Raw.Constr (c, args); loc = !loc }
+      { value = Raw.Constr (c, cargs); loc = !loc }
   | `Fn fn -> process_apply ctx fn args
 
 and process_head : type n lt ls rt rs.
@@ -351,7 +358,7 @@ and process_vars : type n.
 let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
  fun pat ->
   let rec go : type n lt1 ls1 rt1 rs1.
-      (lt1, ls1, rt1, rs1) parse located -> (Matchpattern.t, n) Vec.t located -> Matchpattern.t =
+      (lt1, ls1, rt1, rs1) parse located -> (Matchpattern.arg, n) Vec.t located -> Matchpattern.t =
    fun pat pats ->
     match pat.value with
     | Ident ([ x ], _) when Lexer.valid_var x -> (
@@ -364,10 +371,28 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
         | [] -> Var (locate_opt pat.loc None)
         | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern placeholder"))
     | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
-    | App { fn; arg; _ } ->
-        go fn
-          (locate_opt pats.loc
-             (go arg (locate_opt arg.loc Vec.[]) :: pats.value : (Matchpattern.t, n Fwn.suc) Vec.t))
+    | App { fn; arg; _ } -> (
+        (* Since we accumulate the arguments from right to left, a boundary pattern is prepended to the boundary of the argument we've already seen. *)
+        match arg.value with
+        (* An argument of a constructor pattern that's enclosed in braces is an explicit pattern for a face of the boundary of the following higher-dimensional pattern variable. *)
+        | Notn ((Braces, _), n) -> (
+            match args n with
+            | [ Token (LBrace, _); Term bdry; Token (RBrace, _) ] -> (
+                match pats.value with
+                | [] ->
+                    fatal ?loc:arg.loc
+                      (Parse_error "boundary pattern must be followed by the pattern it belongs to")
+                | { boundary; pat } :: rest ->
+                    let boundary = go bdry (locate_opt bdry.loc Vec.[]) :: boundary in
+                    go fn
+                      (locate_opt pats.loc
+                         ({ boundary; pat } :: rest : (Matchpattern.arg, n) Vec.t)))
+            | _ -> fatal (Anomaly "invalid notation arguments for braces"))
+        | _ ->
+            go fn
+              (locate_opt pats.loc
+                 (Matchpattern.explicit (go arg (locate_opt arg.loc Vec.[])) :: pats.value
+                   : (Matchpattern.arg, n Fwn.suc) Vec.t)))
     | Notn (notn, n) -> pattern notn (args n) pat.loc
     | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern") in
   go pat (locate_opt pat.loc Vec.[])

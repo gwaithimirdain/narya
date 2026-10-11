@@ -2,74 +2,22 @@ open Util
 open Dim
 open Modal
 include Energy
+include Indices
 
 type 'a located = 'a Asai.Range.located
 
 let locate_opt = Asai.Range.locate_opt
 let locate_map f ({ value; loc } : 'a located) = locate_opt loc (f value)
 
+(* Raw (unchecked) terms, using intrinsically well-scoped De Bruijn indices, and separated into synthesizing terms and checking terms.  These match the user-facing syntax rather than the internal syntax.  In particular, applications, abstractions, and pi-types are all unary, there is only one universe, and the only operator actions are refl (including Id) and sym. *)
+
 (* Where an ImplicitApp gets its implicit first argument: the type being checked against itself, or the argument at the given (0-based) position of the constant that type is an application of, such as P in "forall ℕ P".  This is a stopgap until we have unification. *)
 type implicit_source = [ `Goal | `Goal_arg of int ]
 
-(* Raw (unchecked) terms, using intrinsically well-scoped De Bruijn indices, and separated into synthesizing terms and checking terms.  These match the user-facing syntax rather than the internal syntax.  In particular, applications, abstractions, and pi-types are all unary, there is only one universe, and the only operator actions are refl (including Id) and sym. *)
-
-(* We actually formulate a more general notion of raw term that is parametrized over a notion of "index".  Narya proper only uses ordinary type-level natural numbers as indices, but other frontends may need a notion of raw term that uses explicit names or something else.  Note that all raw terms clearly separate *variables* from *constants*, and the "resolution" process detailed below that transitions between them preserves this distinction.  Therefore, even raw terms that use "explicit names" should not be regarded as an "intermediate parsing step" before turning the names into indices, because a scope of local variables is already required to separate the variables from the constant names (since local variables can shadow global constants).  Instead it is better to think of them as more like the "values" in NbE which can be silently weakened to arbitrary contexts. *)
-
-module type Indices = sig
-  (* A 'name' is what labels a variable at the point of *binding*.  In named terms this carries semantic information; in indexed terms it is just annotation, with the semantic information carried by the change in the parametrizing type. *)
-  type name
-
-  (* There must be unnamed variables. *)
-  val none : name
-
-  (* These are how the parametrizing type changes with each bound variable. *)
-  type 'a suc
-
-  (* An 'index' is what labels a variable at the point of *use*. *)
-  type 'a index
-
-  (* A 'scope' represents the local variables available, usually as a list or vector of names.  This is only used as something to store with a Hole. *)
-  type 'a scope
-
-  (* We also allow embedding an arbitrary object. *)
-  type 'a embed
-end
-
-(* This is the standard instantiation that uses type-level nats as De Bruijn indices. *)
-module DeBruijnIndices = struct
-  type name = string option
-
-  let none : name = None
-
-  type 'a index = 'a N.index
-  type 'a suc = 'a N.suc
-  type 'a scope = (name, 'a) Bwv.t
-  type 'a embed = |
-end
-
 module rec Make : functor (I : Indices) -> sig
-  type ('a, 'b, 'ab) bplus =
-    | Zero : ('a, Fwn.zero, 'a) bplus
-    | Suc : ('a I.suc, 'b, 'ab) bplus -> ('a, 'b Fwn.suc, 'ab) bplus
-
-  val bplus_zero : ('a, Fwn.zero, 'ab) bplus -> ('a, 'ab) Eq.t
-  val bplus_suc : ('a, 'b Fwn.suc, 'ab) bplus -> ('a I.suc, 'b, 'ab) bplus
-  val bplus_right : ('a, 'b, 'ab) bplus -> 'b Fwn.t
-
-  type ('a, 'b) has_bplus = Bplus : ('a, 'b, 'ab) bplus -> ('a, 'b) has_bplus
-
-  val bplus : 'b Fwn.t -> ('a, 'b) has_bplus
-
-  module Namevec : sig
-    type (_, _, _) t =
-      | [] : ('a, Fwn.zero, 'a) t
-      | ( :: ) : I.name * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
-
-    val length : ('a, 'b, 'ab) t -> 'b Fwn.t
-    val bplus : ('a, 'b, 'ab) t -> ('a, 'b, 'ab) bplus
-    val none : ('a, 'b, 'ab) bplus -> ('a, 'b, 'ab) t
-    val of_vec : ('a, 'b, 'ab) bplus -> (I.name, 'b) Vec.t -> ('a, 'b, 'ab) t
-  end
+  module Namevec : module type of Namevec (I)
+  module Patternvars : module type of Patternvars (I)
+  include module type of Namevec.P
 
   type 'a index = 'a I.index * any_sface option
 
@@ -136,7 +84,9 @@ module rec Make : functor (I : Indices) -> sig
         ('s, 'et) eta
         * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
         -> 'a check
-    | Constr : Constr.t located * 'a check located list -> 'a check
+    | Constr :
+        Constr.t located * ('a check located * [ `Implicit | `Explicit ] located) list
+        -> 'a check
     | Numeral : Q.t -> 'a check
     | Empty_co_match : 'a check
     | Data : (Constr.t, 'a dataconstr located) Abwd.t * Variables.hints -> 'a check
@@ -169,7 +119,7 @@ module rec Make : functor (I : Indices) -> sig
 
   and _ branch =
     | Branch :
-        ('a, 'b, 'ab) Namevec.t located
+        ('a, 'b, 'ab) Patternvars.t located
         * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
         * 'ab check located
         -> 'a branch
@@ -184,7 +134,9 @@ module rec Make : functor (I : Indices) -> sig
         * 'a I.suc check located
         -> 'a codatafield
 
-  and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
+  and 'a refutables = {
+    refutables : 'b 'ab. ('a, 'b, 'ab) Namevec.P.bplus -> 'ab synth located list;
+  }
 
   and (_, _, _) tel =
     | Emp : ('a, Fwn.zero, 'a) tel
@@ -199,59 +151,9 @@ functor
   (I : Indices)
   ->
   struct
-    (* A version of Fwn.bplus operating on I-indices, using I.suc instead of N.suc. *)
-    type ('a, 'b, 'ab) bplus =
-      | Zero : ('a, Fwn.zero, 'a) bplus
-      | Suc : ('a I.suc, 'b, 'ab) bplus -> ('a, 'b Fwn.suc, 'ab) bplus
-
-    let bplus_zero : type a ab. (a, Fwn.zero, ab) bplus -> (a, ab) Eq.t = function
-      | Zero -> Eq
-
-    let bplus_suc : type a b ab. (a, b Fwn.suc, ab) bplus -> (a I.suc, b, ab) bplus = function
-      | Suc ab -> ab
-
-    let rec bplus_right : type a b ab. (a, b, ab) bplus -> b Fwn.t = function
-      | Zero -> Zero
-      | Suc ab -> Suc (bplus_right ab)
-
-    type ('a, 'b) has_bplus = Bplus : ('a, 'b, 'ab) bplus -> ('a, 'b) has_bplus
-
-    let rec bplus : type a b. b Fwn.t -> (a, b) has_bplus = function
-      | Zero -> Bplus Zero
-      | Suc b ->
-          let (Bplus ab) = bplus b in
-          Bplus (Suc ab)
-
-    (* Here's a special kind of Vector of names that raises the parametrizing indices as we go, and also stores the bplus of the starting index with the length.  This simplifies things in a few places where otherwise we would have to store a bplus along with a vector of names to get the correct extended context length for bodies of terms under multiple binders. *)
-    module Namevec = struct
-      type (_, _, _) t =
-        | [] : ('a, Fwn.zero, 'a) t
-        | ( :: ) : I.name * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
-
-      let rec length : type a b ab. (a, b, ab) t -> b Fwn.t = function
-        | [] -> Zero
-        | _ :: xs -> Suc (length xs)
-
-      let rec bplus : type a b ab. (a, b, ab) t -> (a, b, ab) bplus = function
-        | [] -> Zero
-        | _ :: xs -> Suc (bplus xs)
-
-      let rec none : type a b ab. (a, b, ab) bplus -> (a, b, ab) t =
-       fun ab ->
-        match bplus_right ab with
-        | Zero ->
-            let Eq = bplus_zero ab in
-            []
-        | Suc _ ->
-            let ab = bplus_suc ab in
-            I.none :: none ab
-
-      let rec of_vec : type a b ab. (a, b, ab) bplus -> (I.name, b) Vec.t -> (a, b, ab) t =
-       fun ab xs ->
-        match (ab, xs) with
-        | Zero, [] -> []
-        | Suc ab, x :: xs -> x :: of_vec ab xs
-    end
+    module Namevec = Namevec (I)
+    module Patternvars = Patternvars (I)
+    include Namevec.P
 
     (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
     type 'a index = 'a I.index * any_sface option
@@ -341,7 +243,10 @@ functor
           ('s, 'et) eta
           * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
           -> 'a check
-      | Constr : Constr.t located * 'a check located list -> 'a check
+      (* The arguments of a constructor application.  In the higher-dimensional case the user may optionally supply the redundant boundary arguments of each argument's cube, as implicit arguments preceding the explicit top-dimensional one; they are then checked against the boundary extracted from the type being checked against. *)
+      | Constr :
+          Constr.t located * ('a check located * [ `Implicit | `Explicit ] located) list
+          -> 'a check
       | Numeral : Q.t -> 'a check
       (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
       | Empty_co_match : 'a check
@@ -384,10 +289,10 @@ functor
       (* Lift a term to a longer context *)
       | Weaken : 'a check * ('a I.suc, 'b) Eq.t -> 'b check
 
-    (* The location of the namevec is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
+    (* The location of the pattern variables is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
     and _ branch =
       | Branch :
-          ('a, 'b, 'ab) Namevec.t located
+          ('a, 'b, 'ab) Patternvars.t located
           (* The ref argument to `Cube records whether any of the matches in this ⤇ group are *actually* higher-dimensional, so we can raise an error if they're not. *)
           * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
           * 'ab check located
@@ -473,6 +378,12 @@ module Resolve (R : Resolver) = struct
        module I1 = R.I1
      because module aliases are not preserved by functors: F(I1) will not be equal to F(R.I1). *)
 
+  (* The result of renaming the pattern variables of a match branch: the renamed variables, in the target index type, along with the scope extended by them. *)
+  type (_, _, _) resolve_pv =
+    | Resolve_pv :
+        ('a2, 'b, 'ab2) R.T2.Patternvars.t * ('ab1, 'ab2) R.scope
+        -> ('a2, 'b, 'ab1) resolve_pv
+
   let rec append : type a1 a2 b ab1 ab2.
       (a1, a2) R.scope ->
       (a1, b, ab1) R.T1.Namevec.t ->
@@ -485,7 +396,7 @@ module Resolve (R : Resolver) = struct
         ctx
     | x :: xs ->
         let ab2 = R.T2.bplus_suc ab2 in
-        append (R.snoc ctx x) xs ab2
+        append (R.snoc ctx x.value) xs ab2
 
   let rec renames : type a1 a2 b ab1 ab2.
       (a1, a2) R.scope ->
@@ -497,9 +408,9 @@ module Resolve (R : Resolver) = struct
     | [] ->
         let Eq = R.T2.bplus_zero ab in
         []
-    | x :: xs ->
+    | { value = x; loc } :: xs ->
         let ab = R.T2.bplus_suc ab in
-        R.rename ctx x :: renames (R.snoc ctx x) xs ab
+        locate_opt loc (R.rename ctx x) :: renames (R.snoc ctx x) xs ab
 
   let rec synth : type a1 a2. (a1, a2) R.scope -> a1 R.T1.synth located -> a2 R.T2.synth located =
    fun ctx tm ->
@@ -584,7 +495,7 @@ module Resolve (R : Resolver) = struct
             }
       | Struct (eta, fields) ->
           Struct (eta, Abwd.map (fun (cube, tm) -> (cube, check ctx tm)) fields)
-      | Constr (c, args) -> Constr (c, List.map (check ctx) args)
+      | Constr (c, args) -> Constr (c, List.map (fun (tm, i) -> (check ctx tm, i)) args)
       | Numeral x -> Numeral x
       | Empty_co_match -> Empty_co_match
       | Data (constrs, hints) -> Data (Abwd.map (locate_map (dataconstr ctx)) constrs, hints)
@@ -633,10 +544,24 @@ module Resolve (R : Resolver) = struct
 
   and branch : type a1 a2. (a1, a2) R.scope -> a1 R.T1.branch -> a2 R.T2.branch =
    fun ctx (Branch (xs, cube, body)) ->
-    let (Bplus ab) = R.T2.bplus (R.T1.Namevec.length xs.value) in
-    let xs2 = renames ctx xs.value ab in
-    let ctx2 = append ctx xs.value ab in
+    let (Resolve_pv (xs2, ctx2)) = patternvars ctx xs.value in
     Branch (locate_opt xs.loc xs2, cube, check ctx2 body)
+
+  (* Renaming the pattern variables of a match branch, unlike a Namevec, doesn't have a bplus supplied by the caller, since the extended context depends on how many of the arguments have explicit boundaries.  So we compute the renamed pattern variables and the extended scope together, with the extended index existential. *)
+  and patternvars : type a1 a2 b ab1.
+      (a1, a2) R.scope -> (a1, b, ab1) R.T1.Patternvars.t -> (a2, b, ab1) resolve_pv =
+   fun ctx xs ->
+    match xs with
+    | [] -> Resolve_pv ([], ctx)
+    | Cube x :: xs ->
+        let x2 = R.rename ctx x in
+        let (Resolve_pv (xs2, ctx2)) = patternvars (R.snoc ctx x) xs in
+        Resolve_pv (Cube x2 :: xs2, ctx2)
+    | Boundary ns :: xs ->
+        let (Bplus ac) = R.T2.bplus (R.T1.Namevec.length ns) in
+        let ns2 = renames ctx ns ac in
+        let (Resolve_pv (xs2, ctx2)) = patternvars (append ctx ns ac) xs in
+        Resolve_pv (Boundary ns2 :: xs2, ctx2)
 
   and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 R.T1.dataconstr -> a2 R.T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->
@@ -680,7 +605,7 @@ let rec namevec_of_vec : type a b ab.
  fun ab xs ->
   match (ab, xs) with
   | Zero, [] -> []
-  | Suc ab, x :: xs -> x :: namevec_of_vec ab xs
+  | Suc ab, x :: xs -> locate_opt None x :: namevec_of_vec ab xs
 
 (* We end with some useful lemmas. *)
 

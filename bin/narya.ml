@@ -51,18 +51,8 @@ let speclist =
       "Don't automatically reformat files supplied on the command line" );
     ("-unicode", Arg.Set unicode, "Display and reformat code using Unicode for built-ins (default)");
     ("-ascii", Arg.Clear unicode, "Display and reformat code using ASCII for built-ins");
-    ( "-hide-function-boundaries",
-      Arg.Clear show_function_boundaries,
-      "Hide implicit boundaries of higher-dimensional applications (default)" );
-    ( "-show-function-boundaries",
-      Arg.Set show_function_boundaries,
-      "Display implicit boundaries of higher-dimensional applications" );
-    ( "-hide-type-boundaries",
-      Arg.Clear show_type_boundaries,
-      "Hide implicit boundaries of instantiations of higher-dimensional types (default)" );
-    ( "-show-type-boundaries",
-      Arg.Set show_type_boundaries,
-      "Display implicit boundaries of instantiations of higher-dimensional types" );
+    ("-hide-implicits", Arg.Clear show_implicits, "Hide implicit arguments (default)");
+    ("-show-implicits", Arg.Set show_implicits, "Display implicit arguments");
     ( "-hide-unique-keys",
       Arg.Clear show_unique_keys,
       "Hide keys that are the unique one between their endpoints (default)" );

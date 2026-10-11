@@ -7,6 +7,7 @@ open Tctx
 open Term
 open Value
 open Norm
+open Indices
 
 (* To typecheck a lambda, do an eta-expanding equality check, check pi-types for equality, or read back a pi-type or a term at a pi-type, we must create one new variable for each argument in the boundary.  Sometimes we need these variables as values and other times as normals.  The function dom_vars creates these variables and returns them in two cubes.  It, and the function ext_pi below that follows from it, are in a separate file because it depends on Inst and Ctx and is used in Equal, Readback, and Check, and doesn't seem to be placed naturally in any of those files. *)
 
@@ -43,6 +44,46 @@ let dom_vars : type dom modality mode m a b.
       [ doms ] (Cons (Cons Nil)) in
   (args, nfs)
 
+(* Assemble a Namevec of user-supplied names into a cube of names of a specified dimension, one for each face, along with the (N.plus) witness for the corresponding extension of the raw context.  The caller supplies the error to report if the number of names doesn't match the number of faces, as the positive or negative discrepancy, and an optional location to report in case there is no more precise location available. *)
+
+type (_, _, _) vars_of_names =
+  | Vars :
+      ('a, 'b, 'abc) N.plus * (N.zero, 'n, binder_name, 'b) NICubeOf.t
+      -> ('a, 'abc, 'n) vars_of_names
+
+let vars_of_names : type a c abc n.
+    (int -> Code.t) ->
+    Asai.Range.t option ->
+    n D.t ->
+    (a, c, abc) Raw.Namevec.t ->
+    (a, abc, n) vars_of_names =
+ fun err oneloc dim xs ->
+  let module S = struct
+    type 'b t =
+      | Ok : (a, 'b, 'ab) N.plus * ('ab, 'c, abc) Raw.Namevec.t * Asai.Range.t option -> 'b t
+      | Missing of int * Asai.Range.t option
+  end in
+  let module Build = NICubeOf.Traverse (S) in
+  match
+    Build.build_left dim
+      {
+        build =
+          (fun _ -> function
+            | Ok (ab, x :: xs, _) ->
+                Fwrap (NFamOf (binder_name_of_option x.value), Ok (Suc ab, xs, x.loc))
+            | Ok (_, [], last) -> Fwrap (NFamOf (`Anon no_hints), Missing (-1, last))
+            | Missing (j, last) -> Fwrap (NFamOf (`Anon no_hints), Missing (j - 1, last)));
+      }
+      (Ok (Zero, xs, oneloc))
+  with
+  | Wrap (names, Ok (ab, [], _)) -> Vars (ab, names)
+  | Wrap (_, Ok (_, (_ :: _ as xs), last)) ->
+      let loc = if Option.is_some last then last else oneloc in
+      fatal ?loc (err (Fwn.to_int (Raw.Namevec.length xs)))
+  | Wrap (_, Missing (j, last)) ->
+      let loc = if Option.is_some last then last else oneloc in
+      fatal ?loc (err j)
+
 (* Extend a context by a finite number of cubes of new visible variables at some dimension, with boundaries, whose types are specified by the evaluation of some telescope in some (possibly higher-dimensional) environment (and hence may depend on the earlier ones).  Also return the new variables in a list of Cubes, and the new environment extended by the *top-dimensional variables only*. *)
 
 type (_, _) modal_binding_cube =
@@ -62,11 +103,12 @@ type ('dom, 'window, 'mode, 'n, 'ac, 'e) ext_pi =
     }
       -> ('dom, 'window, 'mode, 'n, 'ac, 'e) ext_pi
 
+(* The extension of the context by the pattern variables of one argument: either a single cube variable, or one variable for each face of its boundary.  We also return the names, to be recorded in the branch's annotation so that it can be displayed as the user wrote it. *)
 let rec ext_pi : type dom window mode a b c ac e n.
     (mode, a, e) Ctx.t ->
     (dom, window, mode) Modality.t ->
     (dom, n, b) env ->
-    (a, c, ac) Raw.Namevec.t ->
+    (a, c, ac) Raw.Patternvars.t ->
     (dom, kinetic) value ->
     (dom, window, mode, n, ac, e) ext_pi =
  fun ctx window env xs ft ->
@@ -82,7 +124,7 @@ let rec ext_pi : type dom window mode a b c ac e n.
           comp = Zero;
           out = ft;
         }
-  | x :: xs -> (
+  | ( :: ) (type a1) ((x, xs) : (a, a1) Raw.Patternvars.arg * _) -> (
       let m = dim_env env in
       (* The constructor's function-type is an uninstantiated m-dimensional pi-type; we view it as in check_at_pi (view_type would demand full instantiation). *)
       let (Viewed_pi { x = pix; filter = pifilter; doms; cods }) = view_pi "ext_pi" m ft in
@@ -100,17 +142,26 @@ let rec ext_pi : type dom window mode a b c ac e n.
           | Neq -> fatal (Anomaly "ext_pi domain dimension mismatch")
           | Eq ->
               let newvars, newnfs = dom_vars ctx modality doms in
-              let x =
-                match x with
-                | Some x -> Some x
-                | None -> option_of_binder_name (top_variable pix) in
               let filter_k_k = Modality.filter_idempotent filter_k_m in
+              (* If a single cube variable is anonymous, we fall back on the name of the constructor's argument. *)
+              let x : (a, a1) Raw.Patternvars.arg =
+                match x with
+                | Cube None -> IndexedPatternvars.Cube (option_of_binder_name (top_variable pix))
+                | _ -> x in
+              let newctx : (mode, a1, (e, (_, _) dim_entry) Tbwd.snoc) Ctx.t =
+                match x with
+                (* A single variable becomes a cube variable, whose boundary is accessed with face suffixes. *)
+                | Cube x -> Ctx.cube_vis ctx filter_k_k x newnfs
+                (* Explicit boundary variables must be exactly one for each face of the cube, the last of them being the top face. *)
+                | Boundary ns ->
+                    let k = CubeOf.dim newnfs in
+                    let (Vars (af, names)) =
+                      vars_of_names (fun j -> Wrong_boundary_of_pattern_variable j) None k ns in
+                    Ctx.vis ctx filter_k_k D.zero (D.zero_plus k) names newnfs af in
               let (BindFam b) = BindCube.find_top cods in
               let output = apply_binder_term b pifilter newvars in
               let (Ext_pi { ctx; values = vars; normals = nfs; annotate; comp; out }) =
-                ext_pi
-                  (Ctx.cube_vis ctx filter_k_k x newnfs)
-                  window
+                ext_pi newctx window
                   (Ext
                      {
                        env;

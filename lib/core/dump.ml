@@ -330,7 +330,10 @@ module F = struct
     | Constr (c, args) ->
         fprintf ppf "Constr(%s,(%a))" (Constr.to_string c.value)
           (fun ppf ->
-            List.iter (fun (x : a check Asai.Range.located) -> fprintf ppf "%a, " check x.value))
+            List.iter (fun ((x : a check Asai.Range.located), (i : _ Asai.Range.located)) ->
+                match i.value with
+                | `Implicit -> fprintf ppf "{%a}, " check x.value
+                | `Explicit -> fprintf ppf "%a, " check x.value))
           args
     | Numeral x -> fprintf ppf "Numeral(%s)" (Q.to_string x)
     | Empty_co_match -> fprintf ppf "Emptycomatch(?)"
@@ -406,12 +409,20 @@ module F = struct
 
   and branch : type a. formatter -> Constr.t * a branch -> unit =
    fun ppf (c, Branch (vars, cube, body)) ->
-    let rec strvars : type a b ab. (a, b, ab) Namevec.t -> string = function
+    let strvar : string option -> string = function
+      | Some x -> x
+      | None -> "_" in
+    let rec strnames : type a b ab. (a, b, ab) Namevec.t -> string = function
       | [] -> ""
-      | [ Some x ] -> x
-      | [ None ] -> "_"
-      | Some x :: xs -> x ^ " " ^ strvars xs
-      | None :: xs -> "_ " ^ strvars xs in
+      | [ x ] -> strvar x.value
+      | x :: xs -> "{" ^ strvar x.value ^ "} " ^ strnames xs in
+    let rec strvars : type a b ab. (a, b, ab) Patternvars.t -> string = function
+      | [] -> ""
+      | [ Cube x ] -> strvar x
+      | Cube x :: xs -> strvar x ^ " " ^ strvars xs
+      (* The last of the boundary names is the top face, which is displayed without braces. *)
+      | [ Boundary ns ] -> strnames ns
+      | Boundary ns :: xs -> strnames ns ^ " " ^ strvars xs in
     let mapsto =
       match cube with
       | `Normal _ -> "↦"
