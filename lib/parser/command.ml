@@ -127,6 +127,14 @@ module Command = struct
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Unique_keys of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | (* The whitespace is that of the sort ("type", "function", or "other"), of "degeneracy", of "names", and of the number. *)
+            `Degeneracy_names of
+            [ `Type | `Function | `Other ]
+            * Whitespace.t list
+            * Whitespace.t list
+            * Whitespace.t list
+            * int
+            * Whitespace.t list
           | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
             `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
@@ -645,6 +653,27 @@ module Parse = struct
     | Some xs -> fatal ~loc:(Range.convert loc) (Invalid_variable xs)
     | None -> fatal ~loc:(Range.convert loc) (Invalid_variable [ "_" ])
 
+  (* Both "boundaries" and "degeneracy names" can follow "display type" or "display function". *)
+  let boundaries_or_degeneracy =
+    step "" (fun state _ (tok, ws) ->
+        match tok with
+        | Ident [ "boundaries" ] -> Some ((`Boundaries, ws), state)
+        | Ident [ "degeneracy" ] -> Some ((`Degeneracy, ws), state)
+        | _ -> None)
+
+  (* Parse the rest of a "display <sort> degeneracy names ≔ <number>" command, after the "degeneracy" token. *)
+  let degeneracy_names wsdisplay sort wswhat wsdeg =
+    let* wsnames = token (Ident [ "names" ]) in
+    let* wscoloneq = token Coloneq in
+    let* number, wsnumber = integer in
+    return
+      (Display
+         {
+           wsdisplay;
+           wscoloneq;
+           what = `Degeneracy_names (sort, wswhat, wsdeg, wsnames, number, wsnumber);
+         })
+
   let display =
     let* wsdisplay = token Display in
     let* what, wswhat =
@@ -653,6 +682,7 @@ module Parse = struct
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
           | Ident [ "function" ] -> Some ((`Function, ws), state)
           | Ident [ "type" ] -> Some ((`Type, ws), state)
+          | Ident [ "other" ] -> Some ((`Other, ws), state)
           | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
@@ -663,24 +693,34 @@ module Parse = struct
             let open Monad.Ops (Monad.Maybe) in
             let* chars = chars_of_token tok in
             return (Display { wsdisplay; wscoloneq; what = `Chars (wswhat, chars, ws) }, state))
-    | `Function ->
-        let* wsb = token (Ident [ "boundaries" ]) in
-        let* wscoloneq = token Coloneq in
-        step "" (fun state _ (tok, ws) ->
-            let open Monad.Ops (Monad.Maybe) in
-            let* show = show_of_token tok in
-            return
-              ( Display { wsdisplay; wscoloneq; what = `Function_boundaries (wswhat, wsb, show, ws) },
-                state ))
-    | `Type ->
-        let* wsb = token (Ident [ "boundaries" ]) in
-        let* wscoloneq = token Coloneq in
-        step "" (fun state _ (tok, ws) ->
-            let open Monad.Ops (Monad.Maybe) in
-            let* show = show_of_token tok in
-            return
-              ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
-                state ))
+    | `Function -> (
+        let* kind, wsb = boundaries_or_degeneracy in
+        match kind with
+        | `Boundaries ->
+            let* wscoloneq = token Coloneq in
+            step "" (fun state _ (tok, ws) ->
+                let open Monad.Ops (Monad.Maybe) in
+                let* show = show_of_token tok in
+                return
+                  ( Display
+                      { wsdisplay; wscoloneq; what = `Function_boundaries (wswhat, wsb, show, ws) },
+                    state ))
+        | `Degeneracy -> degeneracy_names wsdisplay `Function wswhat wsb)
+    | `Type -> (
+        let* kind, wsb = boundaries_or_degeneracy in
+        match kind with
+        | `Boundaries ->
+            let* wscoloneq = token Coloneq in
+            step "" (fun state _ (tok, ws) ->
+                let open Monad.Ops (Monad.Maybe) in
+                let* show = show_of_token tok in
+                return
+                  ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
+                    state ))
+        | `Degeneracy -> degeneracy_names wsdisplay `Type wswhat wsb)
+    | `Other ->
+        let* wsb = token (Ident [ "degeneracy" ]) in
+        degeneracy_names wsdisplay `Other wswhat wsb
     | `Unique ->
         let* wsb = token (Ident [ "keys" ]) in
         let* wscoloneq = token Coloneq in
@@ -1382,6 +1422,18 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Unique_keys (_, _, uk, _) ->
           let uk = Display.modify_unique_keys uk in
           emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))
+      | `Degeneracy_names (sort, _, _, _, number, _) ->
+          Display.modify (fun s ->
+              match sort with
+              | `Type -> { s with type_degeneracy_names = number }
+              | `Function -> { s with function_degeneracy_names = number }
+              | `Other -> { s with other_degeneracy_names = number });
+          let sort =
+            match sort with
+            | `Type -> "type"
+            | `Function -> "function"
+            | `Other -> "other" in
+          emit (Display_set (sort ^ " degeneracy names", string_of_int number))
       | `Variables (_, xs) ->
           let variables = List.map (fun (_, x, _) -> x) xs in
           Display.modify (fun s -> { s with variables });

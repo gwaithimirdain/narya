@@ -25,6 +25,10 @@ module Config = struct
     function_boundaries : show;
     type_boundaries : show;
     unique_keys : show;
+    (* Degeneracies that are iterated reflexivities are displayed with iterated names, like "refl (refl x)" or "Id (Id X)", when the number of iterations is at most one of these values, and with a superscript otherwise.  Which of the three applies depends on the sort of the term the degeneracy acts on: a type family, a function, or anything else. *)
+    type_degeneracy_names : int;
+    function_degeneracy_names : int;
+    other_degeneracy_names : int;
     variables : string list;
   }
 end
@@ -39,6 +43,9 @@ let default : Config.t =
     function_boundaries = `Hide;
     type_boundaries = `Hide;
     unique_keys = `Hide;
+    type_degeneracy_names = 1;
+    function_degeneracy_names = 1;
+    other_degeneracy_names = 1;
     variables = [ "𝑥"; "𝑦"; "𝑧"; "𝑤"; "𝑢"; "𝑣" ];
   }
 
@@ -59,6 +66,12 @@ let type_boundaries () = (State.get ()).type_boundaries
 let unique_keys () = (State.get ()).unique_keys
 let holes () = (State.get ()).holes
 let variables () = (State.get ()).variables
+
+(* The maximum number of iterated degeneracy names to display, for a term of a given sort. *)
+let degeneracy_names : [ `Type | `Function | `Other ] -> int = function
+  | `Type -> (State.get ()).type_degeneracy_names
+  | `Function -> (State.get ()).function_degeneracy_names
+  | `Other -> (State.get ()).other_degeneracy_names
 
 let alt_char uni asc =
   match (State.get ()).chars with

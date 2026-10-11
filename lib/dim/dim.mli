@@ -965,8 +965,12 @@ val except_comp :
 (* *)
 val deg_of_name : string -> any_deg option
 
+(* Returns the name a degeneracy should be displayed with, if any, and the number of times it should be applied ("max" is the greatest number of iterations the user wants displayed with names rather than a superscript). *)
 val name_of_deg :
-  sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] -> ('a, 'b) deg -> string option
+  sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
+  max:int ->
+  ('a, 'b) deg ->
+  (string * int) option
 
 (* *)
 val locking : ('a, 'b) deg -> bool
