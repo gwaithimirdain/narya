@@ -396,7 +396,7 @@ module Resolve (R : Resolver) = struct
         ctx
     | x :: xs ->
         let ab2 = R.T2.bplus_suc ab2 in
-        append (R.snoc ctx x) xs ab2
+        append (R.snoc ctx x.value) xs ab2
 
   let rec renames : type a1 a2 b ab1 ab2.
       (a1, a2) R.scope ->
@@ -408,9 +408,9 @@ module Resolve (R : Resolver) = struct
     | [] ->
         let Eq = R.T2.bplus_zero ab in
         []
-    | x :: xs ->
+    | { value = x; loc } :: xs ->
         let ab = R.T2.bplus_suc ab in
-        R.rename ctx x :: renames (R.snoc ctx x) xs ab
+        locate_opt loc (R.rename ctx x) :: renames (R.snoc ctx x) xs ab
 
   let rec synth : type a1 a2. (a1, a2) R.scope -> a1 R.T1.synth located -> a2 R.T2.synth located =
    fun ctx tm ->
@@ -558,10 +558,10 @@ module Resolve (R : Resolver) = struct
         let (Resolve_pv (xs2, ctx2)) = patternvars (R.snoc ctx x) xs in
         Resolve_pv (Cube x2 :: xs2, ctx2)
     | Boundary ns :: xs ->
-        let (Bplus ac) = R.T2.bplus (R.T1.Namevec.length ns.value) in
-        let ns2 = renames ctx ns.value ac in
-        let (Resolve_pv (xs2, ctx2)) = patternvars (append ctx ns.value ac) xs in
-        Resolve_pv (Boundary (locate_opt ns.loc ns2) :: xs2, ctx2)
+        let (Bplus ac) = R.T2.bplus (R.T1.Namevec.length ns) in
+        let ns2 = renames ctx ns ac in
+        let (Resolve_pv (xs2, ctx2)) = patternvars (append ctx ns ac) xs in
+        Resolve_pv (Boundary ns2 :: xs2, ctx2)
 
   and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 R.T1.dataconstr -> a2 R.T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->
@@ -605,7 +605,7 @@ let rec namevec_of_vec : type a b ab.
  fun ab xs ->
   match (ab, xs) with
   | Zero, [] -> []
-  | Suc ab, x :: xs -> x :: namevec_of_vec ab xs
+  | Suc ab, x :: xs -> locate_opt None x :: namevec_of_vec ab xs
 
 (* We end with some useful lemmas. *)
 

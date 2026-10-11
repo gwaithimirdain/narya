@@ -79,7 +79,7 @@ module Namevec (I : Indices) = struct
 
   type (_, _, _) t =
     | [] : ('a, Fwn.zero, 'a) t
-    | ( :: ) : I.name * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
+    | ( :: ) : I.name located * ('a I.suc, 'b, 'ab) t -> ('a, 'b Fwn.suc, 'ab) t
 
   let rec length : type a b ab. (a, b, ab) t -> b Fwn.t = function
     | [] -> Zero
@@ -97,9 +97,9 @@ module Namevec (I : Indices) = struct
         []
     | Suc _ ->
         let ab = bplus_suc ab in
-        I.none :: none ab
+        locate_opt None I.none :: none ab
 
-  let rec of_vec : type a b ab. (a, b, ab) bplus -> (I.name, b) Vec.t -> (a, b, ab) t =
+  let rec of_vec : type a b ab. (a, b, ab) bplus -> (I.name located, b) Vec.t -> (a, b, ab) t =
    fun ab xs ->
     match (ab, xs) with
     | Zero, [] -> []
@@ -107,10 +107,10 @@ module Namevec (I : Indices) = struct
 
   let rec to_list : type a b ab. (a, b, ab) t -> I.name list = function
     | [] -> []
-    | x :: xs -> x :: to_list xs
+    | x :: xs -> x.value :: to_list xs
 end
 
-(* The pattern variables of one branch of a match: one entry for each argument of the constructor, which is either a single variable (which for a higher-dimensional match is a cube variable, with its boundary accessed by face suffixes) or an explicit list of variables naming all the faces of its boundary, the last of which is the top face.  The middle index counts the *arguments*, hence is the arity of the constructor, while the last index is the raw context extended by all the variables actually bound. *)
+(* The pattern variables of one branch of a match: one entry for each argument of the constructor, which is either a single variable (which for a higher-dimensional match is a cube variable, with its boundary accessed by face suffixes) or an explicit list of variables naming all the faces of its boundary, the last of which is the top face, along with the locations of the patterns that they come from (for error reporting).  The middle index counts the *arguments*, hence is the arity of the constructor, while the last index is the raw context extended by all the variables actually bound. *)
 module Patternvars (I : Indices) = struct
   module Namevec = Namevec (I)
   open Namevec.P
@@ -118,7 +118,7 @@ module Patternvars (I : Indices) = struct
   (* The pattern variables of a single argument, forgetting how many arguments remain. *)
   type (_, _) arg =
     | Cube : I.name -> ('a, 'a I.suc) arg
-    | Boundary : ('a, 'c, 'ac) Namevec.t located -> ('a, 'ac) arg
+    | Boundary : ('a, 'c, 'ac) Namevec.t -> ('a, 'ac) arg
 
   type (_, _, _) t =
     | [] : ('a, Fwn.zero, 'a) t
@@ -134,7 +134,7 @@ module Patternvars (I : Indices) = struct
     | Cube _ :: xs ->
         let (Bplus_to ab) = bplus xs in
         Bplus_to (Suc ab)
-    | Boundary ns :: xs -> prepend_bplus (Namevec.bplus ns.value) (bplus xs)
+    | Boundary ns :: xs -> prepend_bplus (Namevec.bplus ns) (bplus xs)
 
   let rec none : type a b ab. (a, b, ab) bplus -> (a, b, ab) t =
    fun ab ->

@@ -518,28 +518,36 @@ The pattern variables of a higher-dimensional match can be given explicit bounda
 
 They must be exactly one for each face of the pattern variable's cube.
 
-  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} m2 ↦ m0 ]'
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc.
+  >   {m0}
+  >   m2 ↦ m0 ]'
    ￫ error[E1310]
    ￭ command-line exec string
-   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} m2 ↦ m0 ]
+   3 |   m2 ↦ m0 ]
      ^ not enough variables in boundary of higher-dimensional pattern variable (need 1 more)
   
   [1]
 
-  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} {m2} m3 ↦ m0 ]'
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc.
+  >   {m0}
+  >   {m1}
+  >   {m2}
+  >   m3 ↦ m0 ]'
    ￫ error[E1310]
    ￭ command-line exec string
-   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} {m2} m3 ↦ m0 ]
+   4 |   {m2}
      ^ too many variables in boundary of higher-dimensional pattern variable (1 extra)
   
   [1]
 
 In particular, a zero-dimensional match has no boundary variables to name.
 
-  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (n : ℕ) : ℕ ≔ match n [ zero. ↦ 0 | suc. {m0} m ↦ m0 ]'
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (n : ℕ) : ℕ ≔ match n [ zero. ↦ 0 | suc.
+  >   {m0}
+  >   m ↦ m0 ]'
    ￫ error[E1310]
    ￭ command-line exec string
-   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (n : ℕ) : ℕ ≔ match n [ zero. ↦ 0 | suc. {m0} m ↦ m0 ]
+   2 |   {m0}
      ^ too many variables in boundary of higher-dimensional pattern variable (1 extra)
   
   [1]

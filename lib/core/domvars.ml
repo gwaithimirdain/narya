@@ -44,7 +44,7 @@ let dom_vars : type dom modality mode m a b.
       [ doms ] (Cons (Cons Nil)) in
   (args, nfs)
 
-(* Assemble a Namevec of user-supplied names into a cube of names of a specified dimension, one for each face, along with the (N.plus) witness for the corresponding extension of the raw context.  The caller supplies the error to report if the number of names doesn't match the number of faces, as the positive or negative discrepancy. *)
+(* Assemble a Namevec of user-supplied names into a cube of names of a specified dimension, one for each face, along with the (N.plus) witness for the corresponding extension of the raw context.  The caller supplies the error to report if the number of names doesn't match the number of faces, as the positive or negative discrepancy, and an optional location to report in case there is no more precise location available. *)
 
 type (_, _, _) vars_of_names =
   | Vars :
@@ -57,9 +57,11 @@ let vars_of_names : type a c abc n.
     n D.t ->
     (a, c, abc) Raw.Namevec.t ->
     (a, abc, n) vars_of_names =
- fun err loc dim xs ->
+ fun err oneloc dim xs ->
   let module S = struct
-    type 'b t = Ok : (a, 'b, 'ab) N.plus * ('ab, 'c, abc) Raw.Namevec.t -> 'b t | Missing of int
+    type 'b t =
+      | Ok : (a, 'b, 'ab) N.plus * ('ab, 'c, abc) Raw.Namevec.t * Asai.Range.t option -> 'b t
+      | Missing of int * Asai.Range.t option
   end in
   let module Build = NICubeOf.Traverse (S) in
   match
@@ -67,15 +69,20 @@ let vars_of_names : type a c abc n.
       {
         build =
           (fun _ -> function
-            | Ok (ab, x :: xs) -> Fwrap (NFamOf (binder_name_of_option x), Ok (Suc ab, xs))
-            | Ok _ -> Fwrap (NFamOf (`Anon no_hints), Missing (-1))
-            | Missing j -> Fwrap (NFamOf (`Anon no_hints), Missing (j - 1)));
+            | Ok (ab, x :: xs, _) ->
+                Fwrap (NFamOf (binder_name_of_option x.value), Ok (Suc ab, xs, x.loc))
+            | Ok (_, [], last) -> Fwrap (NFamOf (`Anon no_hints), Missing (-1, last))
+            | Missing (j, last) -> Fwrap (NFamOf (`Anon no_hints), Missing (j - 1, last)));
       }
-      (Ok (Zero, xs))
+      (Ok (Zero, xs, oneloc))
   with
-  | Wrap (names, Ok (ab, [])) -> Vars (ab, names)
-  | Wrap (_, Ok (_, xs)) -> fatal ?loc (err (Fwn.to_int (Raw.Namevec.length xs)))
-  | Wrap (_, Missing j) -> fatal ?loc (err j)
+  | Wrap (names, Ok (ab, [], _)) -> Vars (ab, names)
+  | Wrap (_, Ok (_, (_ :: _ as xs), last)) ->
+      let loc = if Option.is_some last then last else oneloc in
+      fatal ?loc (err (Fwn.to_int (Raw.Namevec.length xs)))
+  | Wrap (_, Missing (j, last)) ->
+      let loc = if Option.is_some last then last else oneloc in
+      fatal ?loc (err j)
 
 (* Extend a context by a finite number of cubes of new visible variables at some dimension, with boundaries, whose types are specified by the evaluation of some telescope in some (possibly higher-dimensional) environment (and hence may depend on the earlier ones).  Also return the new variables in a list of Cubes, and the new environment extended by the *top-dimensional variables only*. *)
 
@@ -149,9 +156,7 @@ let rec ext_pi : type dom window mode a b c ac e n.
                 | Boundary ns ->
                     let k = CubeOf.dim newnfs in
                     let (Vars (af, names)) =
-                      vars_of_names
-                        (fun j -> Wrong_boundary_of_pattern_variable j)
-                        ns.loc k ns.value in
+                      vars_of_names (fun j -> Wrong_boundary_of_pattern_variable j) None k ns in
                     Ctx.vis ctx filter_k_k D.zero (D.zero_plus k) names newnfs af in
               let (BindFam b) = BindCube.find_top cods in
               let output = apply_binder_term b pifilter newvars in

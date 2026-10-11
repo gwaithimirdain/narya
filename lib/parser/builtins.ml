@@ -1580,12 +1580,15 @@ let rec patternvars_of_args : type a m. (Matchpattern.arg, m) Vec.t -> (a, m) ha
   | { boundary = []; pat } :: args ->
       let (Patternvars xs) = patternvars_of_args args in
       Patternvars (Cube (name_of_pattern pat) :: xs)
-  | { boundary = x :: _ as boundary; pat } :: args ->
-      let (Wrap ns) = Vec.of_list_map name_of_pattern (boundary @ [ pat ]) in
-      let (Bplus ac) = Raw.Indexed.bplus (Vec.length ns) in
+  | { boundary = _ :: _ as boundary; pat } :: args ->
+      let (Wrap pats) = Vec.of_list (boundary @ [ pat ]) in
+      let (Bplus ac) = Raw.Indexed.bplus (Vec.length pats) in
       let (Patternvars xs) = patternvars_of_args args in
-      (* TODOAI: This location should almost certainly not be just that of the first boundary.  Where does that location plumb to? *)
-      Patternvars (Boundary (locate_opt (pattern_loc x) (Indexed.Namevec.of_vec ac ns)) :: xs)
+      Patternvars
+        (Boundary
+           (Indexed.Namevec.of_vec ac
+              (Vec.map (fun p -> locate_opt (pattern_loc p) (name_of_pattern p)) pats))
+        :: xs)
 
 (* The patterns to be matched against the variables bound by the arguments of a constructor pattern, in each of 'k branches for that constructor: one for each variable, i.e. a single pattern for a cube variable, and one for each face of an explicit boundary.  Thus they all have the same length, namely the number of variables bound, which is recorded by the bplus.  The shape of the variables is given by a Patternvars (computed from the first branch), and a branch whose boundaries don't match that shape is an error, since all the branches for a single constructor must extend the scope by the same number of variables. *)
 type (_, _, _) flat_patterns =
@@ -1649,7 +1652,7 @@ let rec flatten_args : type a m am k.
             [ (boundary, pat); tail ])
           [ argss ] (Cons (Cons Nil)) in
       let (Flat (ab, rest)) = flatten_args xs tails in
-      flatten_boundary ns.value heads ab rest
+      flatten_boundary ns heads ab rest
 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.
@@ -2619,7 +2622,7 @@ let process_record ctx obs loc =
   | Token (LParen, _) :: obs ->
       let ctx = Bwv.snoc ctx None in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
-      Range.locate (Raw.Record ({ value = [ None ]; loc }, tel, opacity, hints)) loc
+      Range.locate (Raw.Record ({ value = [ locate_opt None None ]; loc }, tel, opacity, hints)) loc
   | _ -> invalid "record"
 
 let rec pp_record_fields prews accum obs =

@@ -203,7 +203,7 @@ let add_cube : type m n b. n D.t -> b t -> binder_name -> string * (b, (m, n) di
 let add_boundary : type m n b a c ac.
     n D.t ->
     b t ->
-    (a, c, ac) Indices.IndexedNamevec.t Asai.Range.located ->
+    (a, c, ac) Indices.IndexedNamevec.t ->
     (n, string) gvariables * (b, (m, n) dim_entry) snoc t =
  fun n { ctx; used } names ->
   let module Build = NICubeOf.Traverse (struct
@@ -217,7 +217,7 @@ let add_boundary : type m n b a c ac.
             | [] -> Fwrap (NFamOf (`Anon no_hints), [])
             | x :: names -> Fwrap (NFamOf (Variables.binder_name_of_option x), names));
       }
-      (Indices.IndexedNamevec.to_list names.value) in
+      (Indices.IndexedNamevec.to_list names) in
   let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
   let vars = Variables (D.zero, D.zero_plus n, vars) in
   (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used })
