@@ -4417,10 +4417,15 @@ and check_at_pi : type mode n a c e.
       let ity = inst (CubeOf.find_top doms) tyarg in
       let ctm = check (Kinetic `Nolet) lctx tm ity in
       let ctms = TubeOf.mmap { map = (fun _ [ t ] -> readback_nf lctx t) } [ tyarg ] in
-      let etm = eval_term (Ctx.env lctx) ctm in
-      let argcube = TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton etm) in
+      (* We evaluate the checked argument lazily, since often it isn't needed (e.g. if the codomain is non-dependent), and evaluating it eagerly makes checking deeply nested constructor applications such as large numerals quadratic. *)
+      let etm = lazy_eval (Ctx.env lctx) ctm in
+      let argcube =
+        TubeOf.plus_cube
+          (TubeOf.mmap { map = (fun _ [ t ] -> ready (Val t.tm)) } [ tyarg ])
+          (CubeOf.singleton etm) in
       let (BindFam b) = BindCube.find_top cods in
-      let out, newargs = check_at_pi c ctx n (apply_binder_term b filter argcube) tms tyargs_rest in
+      let (Val cod) = apply_binder_lazy b filter argcube in
+      let out, newargs = check_at_pi c ctx n cod tms tyargs_rest in
       (out, Modal (filter, eplus, TubeOf.plus_cube ctms (CubeOf.singleton ctm)) :: newargs)
   | _ ->
       fatal

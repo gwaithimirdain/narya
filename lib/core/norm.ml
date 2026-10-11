@@ -1342,6 +1342,17 @@ and apply_binder : type dom modality mode kl mn s.
     (dom, modality, mode, kl, mn) Modality.filter_dim ->
     (kl, (dom, kinetic) value) CubeOf.t ->
     (mode, s) evaluation =
+ fun b filter argstbl ->
+  let mode = Modality.src (Modality.filter_modality filter) in
+  apply_binder_lazy b filter
+    (CubeOf.mmap { map = (fun _ [ v ] -> defer mode (fun () -> Val v)) } [ argstbl ])
+
+(* Like apply_binder, but with arguments that may not yet have been evaluated, so that if the body doesn't use them they never are. *)
+and apply_binder_lazy : type dom modality mode kl mn s.
+    (mode, modality, dom, mn, s) Value.binder ->
+    (dom, modality, mode, kl, mn) Modality.filter_dim ->
+    (kl, (dom, kinetic) lazy_eval) CubeOf.t ->
+    (mode, s) evaluation =
  fun (Value.Bind { env; modality; filter = filter_l_n; ins; body }) filter_kl_mn argstbl ->
   let m = dim_env env in
   let n = cod_right_ins ins in
@@ -1371,9 +1382,7 @@ and apply_binder : type dom modality mode kl mn s.
                      build =
                        (fun frfs ->
                          let (Face (fa, fb)) = perm_sface filtered_perm_inv frfs in
-                         act_lazy_eval
-                           (defer (Modality.src modality) (fun () -> Val (CubeOf.find argstbl fa)))
-                           (deg_of_perm fb)
+                         act_lazy_eval (CubeOf.find argstbl fa) (deg_of_perm fb)
                            (Modalcell.id2 (Modality.src modality)));
                    });
           })
