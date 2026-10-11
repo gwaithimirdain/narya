@@ -98,6 +98,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         function_boundaries = (if !show_function_boundaries then `Show else `Hide);
         type_boundaries = (if !show_type_boundaries then `Show else `Hide);
         unique_keys = (if !show_unique_keys then `Show else `Hide);
+        degeneracy_names = Display.default.degeneracy_names;
         holes = `Without_number;
         variables =
           (match !variables with
