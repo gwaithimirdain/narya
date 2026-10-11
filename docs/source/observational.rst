@@ -483,11 +483,13 @@ which is defined as
      fst : A⁽ᵉᵉ⁾ (u₀₂ .fst) (u₁₂ .fst) (u₂₀ .fst) (u₂₁ .fst),
      snd : B⁽ᵉᵉ⁾ (u₀₂ .snd) (u₁₂ .snd) (u₂₀ .snd) (u₂₁ .snd) )
 
-Notationally, since repeated ``Id`` gets cumbersome, in higher dimensions Narya prints all identity types with the superscript syntax; thus the above would actually be printed
+Notationally, since repeated ``Id`` gets cumbersome, by default in higher dimensions Narya prints all identity types with the superscript syntax; thus the above would actually be printed
 
 .. code-block:: none
 
    Prod⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ B⁽ᵉᵉ⁾ u₀₂ u₁₂ u₂₀ u₂₁
+
+If you prefer the iterated names, you can raise the dimension up to which they are used with the command ``display type degeneracy names ≔ N`` (see :ref:`Symmetries and degeneracies`).
 
 Similarly, ``Id (Id ((x : A) → B x)) f₀₂ f₁₂ f₂₀ f₂₁`` reduces to a function-type
 
@@ -499,7 +501,7 @@ Similarly, ``Id (Id ((x : A) → B x)) f₀₂ f₁₂ f₂₀ f₂₁`` reduces
 
 Note that in this case, all the arguments are implicit except the last, highest-dimensional, one ``a₂₂``.  This remains true in higher dimensions.  As usual,  it is possible to give the implicit arguments explicitly by surrounding them with curly braces, as in ``refl f {a₀} {a₁} a₂``, but if you do this you must give *all* of them explicitly; there are no half measures.  As before, the main reason you might need to do this is if the top-dimensional argument is a term that doesn't synthesize; but it can also be helpful sometimes for clarity.
 
-Of course, one inhabitant of such a higher-dimensional function type is ``refl (refl f)``, or equivalently ``ap (ap f)``, which Narya actually displays as ``f⁽ᵉᵉ⁾``.  Thus we have
+Of course, one inhabitant of such a higher-dimensional function type is ``refl (refl f)``, or equivalently ``ap (ap f)``, which by default Narya displays as ``f⁽ᵉᵉ⁾`` (but see :ref:`Symmetries and degeneracies`).  Thus we have
 
 .. code-block:: none
 
@@ -541,6 +543,18 @@ Combining versions of ``refl`` and ``sym`` yields arbitrary higher-dimensional "
 As with ``refl`` and ``sym``, this notation synthesizes if ``M`` does, and can always check.  If the degeneracy is not a pure symmetry (that is, it contains one or more ``e`` s), you can write ``_`` for the term in a checking context, since it is determined by the output type, e.g. ``_⁽ᵉᵉ⁾ : A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)`` will infer ``a`` for the placehold.  Finally, if ``M`` is a 0-dimensional abstraction and the degeneracy is immediately applied to arguments such as ``(x y ↦ P)⁽ᵉᵉ⁾ a₂₂ b₂₂``, it is treated as a "higher-dimensional redex" and subject to the rules laid out for :ref:`Checking redexes`: each argument must either synthesize or have the corresponding domain given explicitly in the abstraction, and either the body of the abstraction must synthesize or the whole application must be in a checking context.
 
 Degeneracies can be extended by identities on the left and remain the same operation.  For instance, the two degeneracies taking a 1-dimensional object to a 2-dimensional one are denoted ``1e`` and ``e1``, and of these ``1e`` can be written as simply ``e`` and coincides with ordinary ``refl`` applied to an object that happens to be 1-dimensional.  Similarly, the basic symmetry ``sym`` of a 3-dimensional object actually acts on the last two dimensions, so it coincides with the superscripted operation ``132``.
+
+By default, Narya prints an iterated reflexivity with a name only when it is 1-dimensional, printing ``refl x`` as ``refl x`` but ``refl (refl x)`` as ``x⁽ᵉᵉ⁾``.  You can change the dimension at which it switches over to the superscript notation with the commands
+
+.. code-block:: none
+
+   display type degeneracy names ≔ N
+   display function degeneracy names ≔ N
+   display other degeneracy names ≔ N
+
+An iterated reflexivity of dimension at most ``N`` is then printed with that many iterated names, such as ``Id (Id A)`` or ``ap (ap f)`` or ``refl (refl x)``, while one of dimension greater than ``N`` is printed with a superscript.  Since the name used depends on the sort of the object being degenerated, there are three separate options: one for types and type families (printed with ``Id``), one for other functions (printed with ``ap``), and one for everything else (printed with ``refl``).  The default value of all three options is 1, and the value 0 means to always use the superscript notation.  Like the options in :ref:`Implicit boundaries`, these commands are not available in source files, but can be given in interactive mode, with the command-line flag ``-e``, or with the ProofGeneral command ``C-c C-d C-d``.
+
+These options apply only to iterated reflexivities.  Symmetries and other degeneracies that permute dimensions are always printed with ``sym`` or a superscript, and higher-dimensional versions of canonical types, like ``Prod⁽ᵉᵉ⁾`` above, are always printed with a superscript.
 
 A mnemonic for the names of permutation operators is that the permutation numbers indicate the motion of arguments.  For instance, if we have a 3-dimensional cube
 

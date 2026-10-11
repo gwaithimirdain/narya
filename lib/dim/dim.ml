@@ -80,16 +80,25 @@ let deg_of_name : string -> any_deg option =
   else if str = "sym" then Some (Any_deg sym)
   else None
 
+(* A degeneracy with zero codomain is an iterated reflexivity: it degenerates a zero-dimensional term to some dimension k, which the user can write as k iterated applications of a reflexivity name, like "refl (refl x)" or "Id (Id X)".  (As in strings_of_deg, we assume that all the generators of the domain are reflexivity ones.)  We display it that way only when k is at most the caller-supplied maximum, which the user configures separately for each sort of term with the "display ... degeneracy names" commands; otherwise we fall back on the superscript notation.  Thus name_of_deg returns the number of times its name should be applied, along with that name. *)
 let name_of_deg : type a b.
-    sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] -> (a, b) deg -> string option =
- fun ~sort s ->
-  match (deg_equal s refl, deg_equal s sym) with
-  | Some (), _ -> (
-      match (Endpoints.refl_names (), sort) with
-      | [], _ -> None
-      | _ :: name :: _, (`Type, `Other) -> Some name
-      | _ :: _ :: name :: _, (`Function, _) -> Some name
-      | _, (`Type, `Canonical) -> None
-      | name :: _, _ -> Some name)
-  | None, Some () -> Some "sym"
-  | None, None -> None
+    sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->
+    max:int ->
+    (a, b) deg ->
+    (string * int) option =
+ fun ~sort ~max s ->
+  match D.compare_zero (cod_deg s) with
+  | Zero -> (
+      let k = D.length (dom_deg s) in
+      if k < 1 || k > max then None
+      else
+        match (Endpoints.refl_names (), sort) with
+        | [], _ -> None
+        | _ :: name :: _, (`Type, `Other) -> Some (name, k)
+        | _ :: _ :: name :: _, (`Function, _) -> Some (name, k)
+        | _, (`Type, `Canonical) -> None
+        | name :: _, _ -> Some (name, k))
+  | Pos _ -> (
+      match deg_equal s sym with
+      | Some () -> Some ("sym", 1)
+      | None -> None)

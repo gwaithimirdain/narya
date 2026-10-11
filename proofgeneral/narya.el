@@ -1079,6 +1079,19 @@ With a negative prefix argument, set display of unique keys off."
          "display unique keys := off")
      "display unique keys := toggle")))
 
+(defun narya-display-degeneracy-names (sort num)
+  "Set the dimension up to which degeneracies are displayed with names.
+SORT is \"type\", \"function\", or \"other\", saying which sort of term
+the setting applies to, and NUM is the largest dimension of an iterated
+reflexivity that is displayed with iterated names, such as
+\"refl (refl x)\", rather than with a superscript."
+  (interactive
+   (list (completing-read "Sort (type, function, other): "
+                          '("type" "function" "other") nil t)
+         (read-number "Maximum dimension: " 1)))
+  (proof-shell-invisible-command
+   (format "display %s degeneracy names := %d" sort num)))
+
 (defun narya-display-variables (vars)
   "Set, unset, or toggle display of type boundaries.
 With no prefix argument, toggle display of type boundaries.
@@ -1212,6 +1225,7 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-type-boundaries)
 (keymap-set narya-mode-map "C-c C-d C-k" 'narya-display-unique-keys)
 (keymap-set narya-mode-map "C-c C-d C-v" 'narya-display-variables)
+(keymap-set narya-mode-map "C-c C-d C-d" 'narya-display-degeneracy-names)
 (keymap-set narya-mode-map "C-M-q" 'narya-reformat-command)
 
 (provide 'narya)
