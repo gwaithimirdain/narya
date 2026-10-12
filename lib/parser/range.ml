@@ -28,6 +28,11 @@ let convert (pos1, pos2) =
     else fatal (Anomaly "zero-width range during parse failure before EOF")
   else make (convert_pos src.source pos1, convert_pos src.source pos2)
 
+(* Convert a range that is not the location of a failure, such as the range of a parsed command.  Such a range can be 0-width anywhere: the Bof pseudo-command, for instance, consumes no characters. *)
+let convert_extent (pos1, pos2) =
+  let src = S.read () in
+  make (convert_pos src.source pos1, convert_pos src.source pos2)
+
 let merge loc1 loc2 =
   match (view loc1, view loc2) with
   | `Range (p1, _), `Range (_, p2) -> make (p1, p2)
