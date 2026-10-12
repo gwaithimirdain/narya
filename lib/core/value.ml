@@ -638,7 +638,7 @@ let prekey_vcomp : type mode m n cod pm pn pcod.
            (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) pre))
   | None -> fatal (Anomaly "prekey_vcomp: prekeys don't compose")
 
-(* Given an environment whose codomain context is extended by a partial context containing some locks (and dimensions), strip off the Locks corresponding to those locks, and return the remainder of the environment along with a "prekey action" composed from all the Prekeys encountered along the way.  Since Locks carry no cells, any key action is represented by a Prekey; these act on a looked-up value at the environment's mode with a vertical target that may differ from the composite of the stripped locks, so they are accumulated separately and applied to the value at the end.  The prekeys accumulated inside a Lock act at its inner mode, so to carry them outward we prewhisker them by the lock's generator.  When no (nonidentity) prekeys are encountered, the returned cell is id2, and hence dropped by the smart constructor prekey_env.  Thus the input environment is semantically equal to the residual one, locked by the extension and then prekeyed by the returned cell. *)
+(* Given an environment whose codomain context is extended by a partial context containing some locks (and dimensions), strip off the Locks in the environment corresponding to those locks, and return the remainder of the environment along with a "prekey action" composed from all the Prekeys encountered along the way.  Since Locks carry no cells, any key action is represented by a Prekey; these act on a looked-up value at the environment's mode with a vertical target that may differ from the composite of the stripped locks, so they are accumulated separately and applied to the value at the end.  The prekeys accumulated inside a Lock act at its inner mode, so to carry them outward we prewhisker them by the lock's generator.  When no (nonidentity) prekeys are encountered, the returned cell is id2, and hence dropped by the smart constructor prekey_env.  Thus the input environment is semantically equal to the residual one, locked by the extension and then prekeyed by the returned cell. *)
 type (_, _, _, _) restrict_keys =
   | Restrict_keys :
       ('cod, 'k, 'b) env * ('mode, 'pmu, 'pnu, 'pcod) Modalcell.t
@@ -648,8 +648,8 @@ let rec restrict_keys : type mode mu cod k b bc.
     (mode, k, bc) env -> (b, cod, mu, mode, bc) plus_with_locks -> (mode, cod, k, b) restrict_keys =
  fun env (Plus_with_locks (bc, llc)) ->
   match (bc, llc, env) with
-  (* If the extension is exhausted but the top of the environment is a Lock, that lock corresponds to a lock in the base context itself (such as an ambient modal annotation), not to the extension, so we stop and leave it in the environment. *)
-  | Zero, Zero _, (Lock _ as env) -> Restrict_keys (env, Modalcell.id2 (mode_env env))
+  (* If we're out of locks to strip off, we bottom out the recursion, returning an identity prekey cell. *)
+  | Zero, Zero _, _ -> Restrict_keys (env, Modalcell.id2 (mode_env env))
   (* If we encounter a Lock, it must match the outermost lock in the extension, which we consume. *)
   | Suc (bc, Lock g0), Suc (llc, Locks_lock g', Suc (Zero, _)), Lock (env, g) ->
       let Eq = Modality.Gen.src_uniq g0 g' in
@@ -657,22 +657,20 @@ let rec restrict_keys : type mode mu cod k b bc.
       let Eq = Modality.Gen.src_uniq g g' in
       let Eq = Modality.Gen.tgt_uniq g g' in
       let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
-      if Modalcell.is_id pre then Restrict_keys (env, Modalcell.id2 (Modality.Gen.src g))
-      else
-        let (Prekey_action pre) = prekey_prewhisker pre (Modality.of_gen g) in
-        Restrict_keys (env, pre)
-  (* A prekey doesn't correspond to any locks in the codomain context, so we accumulate it into the prekey-action cell, which shares the environment's (unchanging) mode, composing it after any inner prekeys with the general key-cell composition.  Note that the extension could be exhausted here: we continue accumulating prekeys until we run out of ones that we *could* include. *)
-  | bc, llc, Prekey (env, key) ->
-      let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
-      if Modalcell.is_id pre then Restrict_keys (env, key)
-      else
-        let (Prekey_action pre) = prekey_vcomp key pre in
-        Restrict_keys (env, pre)
+      let (Prekey_action pre) = prekey_prewhisker pre (Modality.of_gen g) in
+      Restrict_keys (env, pre)
   (* If we encounter a dimension entry, we skip it. *)
   | Suc (bc, Dim _), Suc (llc, Locks_dim _, Zero), _ ->
       restrict_keys (remove_top env) (Plus_with_locks (bc, llc))
+  (* A Proj is not possible due to the typing of contexts. *)
+  | Suc (_, Proj _), Suc (_, _, _), _ -> .
+  (* If we have more locks to strip off, but we find a prekey on the environment, that doesn't correspond to any locks in the codomain context, so we accumulate it into the prekey-action cell, which shares the environment's (unchanging) mode, composing it after any inner prekeys with the general key-cell composition.  Note that the extension could be exhausted here: we continue accumulating prekeys until we run out of ones that we *could* include. *)
+  | (Suc _ as bc), llc, Prekey (env, key) ->
+      let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
+      let (Prekey_action pre) = prekey_vcomp key pre in
+      Restrict_keys (env, pre)
   (* If we encounter some other operation that could still have further locks inside it, we look through it. *)
-  | _, _, Permute (p, env) -> (
+  | Suc _, _, Permute (p, env) -> (
       match unpermute_plus_locks p bc llc with
       | Some (Unpermute (p, ad, lld)) ->
           let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (ad, lld)) in
@@ -680,29 +678,23 @@ let rec restrict_keys : type mode mu cod k b bc.
       | None ->
           (* This isn't ruled out: the permutation could mix the two parts of the decomposition.  We trust the caller to maintain the invariant. *)
           fatal (Anomaly "restrict_keys: unpermute failure"))
-  | nb_nc, ll_nc, Shift (env, mn, nbc) ->
+  | (Suc _ as nb_nc), ll_nc, Shift (env, mn, nbc) ->
       let n = D.plus_right mn in
       let (Dom_uncomp (nb, nc, b_c)) = Plusmap.dom_uncomp n nb_nc nbc in
       let (Eq _) = Plusmap.tgt nc in
       let ll_c = Plusmap.unlocks nc ll_nc in
       let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (b_c, ll_c)) in
       Restrict_keys (Shift (env, mn, nb), pre)
-  | b_c, ll_c, Unshift (env, mn, nbc) ->
+  | (Suc _ as b_c), ll_c, Unshift (env, mn, nbc) ->
       let n = D.plus_right mn in
       let (Uncomp (nb, nc, nb_nc)) = Plusmap.uncomp n b_c nbc in
       let (Eq _) = Plusmap.tgt nc in
       let ll_nc = Plusmap.locks n nc ll_c in
       let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (nb_nc, ll_nc)) in
       Restrict_keys (Unshift (env, mn, nb), pre)
-  | _, _, Act (env, op) ->
+  | Suc _, _, Act (env, op) ->
       let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
       Restrict_keys (Act (env, op), pre)
-  (* If we reach the end of the environment, or a value entry, we bottom out the recursion, returning an identity prekey cell. *)
-  | Zero, Zero _, Emp _ -> Restrict_keys (env, Modalcell.id2 (mode_env env))
-  | Zero, Zero _, Ext _ -> Restrict_keys (env, Modalcell.id2 (mode_env env))
-  (* Nothing else is possible, since if the tctx has a nonzero lock on it, the environment can't be empty or end with a value entry. *)
-  | Suc (_, Lock _), Suc (_, Locks_lock _, Suc (_, _)), _ -> .
-  | Suc (_, Proj _), Suc (_, _, _), _ -> .
 
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
