@@ -931,6 +931,13 @@ let split_match_cases : type mode a b.
         | _ -> fatal (Nonsynthesizing "splitting term")) in
   fst (go tms false)
 
+(* The output of 'echo', 'synth' and 'about' is not a diagnostic, so it isn't reported through the Reporter.  By default it is printed to stdout, followed by a blank line; a caller that uses stdout for something else, such as a language server, can replace this function to receive the output instead. *)
+let echo_output : (PPrint.document -> unit) ref =
+  ref (fun doc ->
+      PPrint.ToChannel.pretty 1.0 (Display.columns ()) stdout doc;
+      print_newline ();
+      print_newline ())
+
 (* Most execution of commands we can do here, but there are a couple things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), and loading another file.  So this function takes a couple of callbacks as arguments. *)
 let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (cmd : Command.t) :
     int option * (int * int * int) list =
@@ -1045,16 +1052,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                           No.Interval.entire)) in
           let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let uty = unparse names bty No.Interval.entire No.Interval.entire in
-          PPrint.(
-            ToChannel.pretty 1.0 (Display.columns ()) stdout
-              (hang 2
-                 (pp_complete_term (Wrap utm) `None
-                 ^^ hardline
-                 ^^ Token.pp Colon
-                 ^^ blank 1
-                 ^^ pp_complete_term (Wrap uty) `None)));
-          print_newline ();
-          print_newline ();
+          !echo_output
+            PPrint.(
+              hang 2
+                (pp_complete_term (Wrap utm) `None
+                ^^ hardline
+                ^^ Token.pp Colon
+                ^^ blank 1
+                ^^ pp_complete_term (Wrap uty) `None));
           (None, fun _ -> None)
       | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
   | Notation { fixity; loc; pattern; head; args; _ } ->
