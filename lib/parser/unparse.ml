@@ -108,6 +108,12 @@ let observations_of_symbols :
                (Emp, args) inner),
           wstok last )
 
+(* Whether a left-closed notation with the given symbols fits in a given left tightness interval.  Usually it fits in any interval; but if its initial token also begins a left-open notation, such as "- x" and "x - y", then when it follows a term the parser resolves the ambiguity in favor of the left-open notation (see Notation.merge_tree).  So in that case, like an application, it fits only in intervals containing +ω, and in particular it must be parenthesized as an application argument: "f (- x)" rather than "f - x". *)
+let left_closed_fits (li : ('lt, 'ls) No.iinterval) inner_symbols =
+  let (`Single tok | `Multiple (tok, _, _)) = inner_symbols in
+  Option.is_none (Scope.Situation.left_opens tok)
+  || Option.is_some (No.Interval.contains li No.plus_omega)
+
 (* Unparse a notation together with all its arguments. *)
 let unparse_notation : type left tight right lt ls rt rs.
     (left, tight, right) notation ->
@@ -118,7 +124,7 @@ let unparse_notation : type left tight right lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun notn args inner_symbols li ri ->
   let t = tightness notn in
-  (* Based on the fixity of the notation, we have to extract the first and/or last argument to treat differently.  In each case except for outfix, we also have to test whether the notation fits in the given tightness interval, and if not, parenthesize it. *)
+  (* Based on the fixity of the notation, we have to extract the first and/or last argument to treat differently.  In each case we also have to test whether the notation fits in the given tightness intervals, and if not, parenthesize it. *)
   match (left notn, right notn) with
   | Open _, Open _ -> (
       match List_extra.split_last args with
@@ -140,8 +146,8 @@ let unparse_notation : type left tight right lt ls rt rs.
       match List_extra.split_last args with
       | Some (inner, last) -> (
           let inner = observations_of_symbols inner inner_symbols in
-          match No.Interval.contains ri t with
-          | Some right_ok ->
+          match (left_closed_fits li inner_symbols, No.Interval.contains ri t) with
+          | true, Some right_ok ->
               let last = last.unparse (interval_right notn) ri in
               unlocated (prefix ~notn ~inner ~last ~right_ok)
           | _ ->
@@ -164,7 +170,8 @@ let unparse_notation : type left tight right lt ls rt rs.
       | _ -> fatal (Anomaly "missing argument unparsing postfix"))
   | Closed, Closed ->
       let inner = observations_of_symbols args inner_symbols in
-      unlocated (outfix ~notn ~inner)
+      if left_closed_fits li inner_symbols then unlocated (outfix ~notn ~inner)
+      else parenthesize (unlocated (outfix ~notn ~inner))
 
 (* Unparse a variable name. *)
 let unparse_var : type lt ls rt rs. string -> (lt, ls, rt, rs) parse located =

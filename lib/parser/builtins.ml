@@ -1740,9 +1740,14 @@ let rec process_branches : type a n.
               let mtch, any_constrs = process_branches xctx xs seen branches loc sort in
               (locate (Synth (Let (name.value, locate_opt None [], stm, mtch))) loc, any_constrs))
             ~fatal:(fun d ->
-              match d.message with
-              | No_remaining_patterns -> fatal ?loc:name.loc Overlapping_patterns
-              | _ -> fatal_diagnostic d))
+              if
+                Reporter.accumulates
+                  (function
+                    | No_remaining_patterns -> true
+                    | _ -> false)
+                  d
+              then fatal ?loc:name.loc Overlapping_patterns
+              else fatal_diagnostic d))
   (* If the first pattern of the first branch is a constructor, the same must be true of all the other branches, and we can sort them by constructor.  We require that each constructor always appear with the same number of arguments. *)
   | (xctx, Constr _ :: _, _, _) :: _ as branches ->
       let cbranches =
@@ -1787,10 +1792,14 @@ let rec process_branches : type a n.
                     [ brs; newpats ]
                   |> Vec.to_list in
                 Reporter.try_with ~fatal:(fun d ->
-                    match d.message with
-                    | No_remaining_patterns ->
-                        fatal ?loc:c.loc (Duplicate_constructor_in_match c.value)
-                    | _ -> fatal_diagnostic d)
+                    if
+                      Reporter.accumulates
+                        (function
+                          | No_remaining_patterns -> true
+                          | _ -> false)
+                        d
+                    then fatal ?loc:c.loc (Duplicate_constructor_in_match c.value)
+                    else fatal_diagnostic d)
                 @@ fun () ->
                 (* Now we recurse, looking for the next pattern.  After the first outer match, we always switch to implicit matches. *)
                 let rest, bs = process_branches newxctx newxs seen newbrs loc `Implicit in
@@ -1958,12 +1967,15 @@ let pp_match triv = function
         (* The motive is parsed as an abstraction sub-notation *)
         | Token (Return, (wsreturn, _)) :: Term motive :: Token (LBracket, (wslbrack, _)) :: obs ->
             let pmotive, wmotive = pp_term motive in
-            ( pp_ws `Break wdisc
-              ^^ Token.pp Return
-              ^^ pp_ws `Nobreak wsreturn
-              ^^ pmotive
-              ^^ pp_ws `Nobreak wmotive
-              ^^ Token.pp LBracket,
+            (* The "return" clause stays on the line of the "match" if it fits there, and otherwise moves to the next line, indented further than the branches. *)
+            ( group
+                (nest 4
+                   (pp_ws `Break wdisc
+                   ^^ Token.pp Return
+                   ^^ pp_ws `Nobreak wsreturn
+                   ^^ pmotive
+                   ^^ pp_ws `Nobreak wmotive
+                   ^^ Token.pp LBracket)),
               wslbrack,
               obs )
         | Token (LBracket, (wslbrack, _)) :: obs ->
