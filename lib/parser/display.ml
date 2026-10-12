@@ -24,6 +24,8 @@ module Config = struct
     holes : holes;
     implicits : show;
     unique_keys : show;
+    (* Degeneracies that are iterated reflexivities are displayed with iterated names, like "refl (refl x)" or "Id (Id X)", when the number of iterations is at most this value, and with a superscript otherwise. *)
+    degeneracy_names : int;
     variables : string list;
   }
 end
@@ -37,6 +39,7 @@ let default : Config.t =
     holes = `Without_number;
     implicits = `Hide;
     unique_keys = `Hide;
+    degeneracy_names = 1;
     variables = [ "𝑥"; "𝑦"; "𝑧"; "𝑤"; "𝑢"; "𝑣" ];
   }
 
@@ -56,6 +59,7 @@ let implicits () = (State.get ()).implicits
 let unique_keys () = (State.get ()).unique_keys
 let holes () = (State.get ()).holes
 let variables () = (State.get ()).variables
+let degeneracy_names () = (State.get ()).degeneracy_names
 
 let alt_char uni asc =
   match (State.get ()).chars with

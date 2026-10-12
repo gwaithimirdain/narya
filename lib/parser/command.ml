@@ -124,6 +124,7 @@ module Command = struct
           | `Implicits of Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Unique_keys of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Degeneracy_names of Whitespace.t list * Whitespace.t list * int * Whitespace.t list
           | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
             `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
@@ -649,6 +650,7 @@ module Parse = struct
           match tok with
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
           | Ident [ "implicits" ] -> Some ((`Implicits, ws), state)
+          | Ident [ "degeneracy" ] -> Some ((`Degeneracy, ws), state)
           | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
@@ -665,6 +667,13 @@ module Parse = struct
             let open Monad.Ops (Monad.Maybe) in
             let* show = show_of_token tok in
             return (Display { wsdisplay; wscoloneq; what = `Implicits (wswhat, show, ws) }, state))
+    | `Degeneracy ->
+        let* wsnames = token (Ident [ "names" ]) in
+        let* wscoloneq = token Coloneq in
+        let* number, wsnumber = integer in
+        return
+          (Display
+             { wsdisplay; wscoloneq; what = `Degeneracy_names (wswhat, wsnames, number, wsnumber) })
     | `Unique ->
         let* wsb = token (Ident [ "keys" ]) in
         let* wscoloneq = token Coloneq in
@@ -1368,6 +1377,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Unique_keys (_, _, uk, _) ->
           let uk = Display.modify_unique_keys uk in
           emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))
+      | `Degeneracy_names (_, _, number, _) ->
+          Display.modify (fun s -> { s with degeneracy_names = number });
+          emit (Display_set ("degeneracy names", string_of_int number))
       | `Variables (_, xs) ->
           let variables = List.map (fun (_, x, _) -> x) xs in
           Display.modify (fun s -> { s with variables });

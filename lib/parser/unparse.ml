@@ -1297,8 +1297,18 @@ and unparse_act : type n lt ls rt rs a b.
   match is_id_deg s with
   | Some _ -> tm.unparse li ri
   | None -> (
-      match name_of_deg ~sort s with
-      | Some str -> unparse_spine vars (`Degen str) (Snoc (Emp, tm)) li ri
+      let max = Display.degeneracy_names () in
+      match name_of_deg ~sort ~max s with
+      | Some (str, k) ->
+          (* An iterated reflexivity is displayed as iterated applications of its name, like "refl (refl x)"; each application becomes the argument of the next one, so that the inner ones get parenthesized. *)
+          let rec iterate : int -> unparser -> unparser =
+           fun k tm ->
+            if k <= 0 then tm
+            else
+              iterate (k - 1)
+                { unparse = (fun li ri -> unparse_spine vars (`Degen str) (Snoc (Emp, tm)) li ri) }
+          in
+          (iterate k tm).unparse li ri
       | None ->
           unlocated
             (Superscript (Some (tm.unparse li No.Interval.empty), unlocated (string_of_deg s), [])))

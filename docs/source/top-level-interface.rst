@@ -223,9 +223,10 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display unique keys ≔ on
     display unique keys ≔ off
     display unique keys ≔ toggle
+    display degeneracy names ≔ N
     display variables ≔ X,Y,Z
 
-See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, and :ref:`Keys` for more information about unique keys.
+See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, :ref:`Keys` for more information about unique keys, and :ref:`Symmetries and degeneracies` for more information about degeneracy names.
 
 
 Chdir
@@ -328,6 +329,7 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 - ``C-c C-d C-u``: Toggle display of unicode characters.
 - ``C-c C-d C-i``: Toggle display of implicit arguments.
 - ``C-c C-d C-v``: Set the default variable names.
+- ``C-c C-d C-d``: Set the dimension up to which degeneracies are displayed with names.
 
 For Agda users
 ^^^^^^^^^^^^^^
