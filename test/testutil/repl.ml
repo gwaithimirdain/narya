@@ -116,7 +116,6 @@ let run f =
   Display.run ~init:Display.default @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
-  Discrete.run ~env:false @@ fun () ->
   Positivity.run @@ fun () ->
   Dim.Endpoints.set ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true ~hott:false;
   Reporter.run

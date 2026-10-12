@@ -32,11 +32,10 @@ let _ =
   Js.export "Narya"
     object%js
       (* The 'start' method gets things started by setting up the configuration flags and calling the initializer function. *)
-      method start ar dir intr disc startup =
+      method start ar dir intr startup =
         arity := ar;
         set_refls dir;
         internal := intr;
-        discreteness := disc;
         inputs := Snoc (Emp, `String (Js.to_string startup));
         try
           let _ = Pauser.init ~use_ansi:true ~install_hott:(fun () -> ()) (fun () -> "") in

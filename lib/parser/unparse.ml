@@ -619,7 +619,7 @@ and unparse_canonical : type mode n lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun vars c li ri ->
   match c with
-  | Data { indices = _; evaldim; constrs; discrete = _; recursive = _; tyfam = _; hints = _ } ->
+  | Data { indices = _; evaldim; constrs; recursive = _; tyfam = _; hints = _ } ->
       unparse_data vars evaldim constrs li ri
   | Codata { eta; evaldim; plusdim; fields; _ } ->
       (* The self-variable has the sum of the evaluation and intrinsic dimensions; the instances of a higher field are indexed by the evaluation dimension alone. *)

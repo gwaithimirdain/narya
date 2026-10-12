@@ -138,7 +138,7 @@ Whenever a file ``FILE.ny`` is successfully executed, Narya writes a "compiled" 
 1. ``-source-only`` was not specified,
 2. ``FILE.ny`` was not specified explicitly on the command-line (so that it must have been imported by another file),
 3. ``FILE.nyo`` exists in the same directory,
-4. the same type theory flags (``-parametric``, ``-arity``, ``-direction``, ``-internal``/``-external``, and ``-discreteness``) are in effect now as when ``FILE.nyo`` was compiled,
+4. the same type theory flags (``-parametric``, ``-arity``, ``-direction``, and ``-internal``/``-external``) are in effect now as when ``FILE.nyo`` was compiled,
 5. ``FILE.ny`` has not been modified more recently than ``FILE.nyo``, and
 6. none of the files imported by ``FILE.ny`` are newer than it or their compiled versions,
 

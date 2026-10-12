@@ -827,14 +827,13 @@ and readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = f
 (* Read back a datatype definition. *)
 and readback_data : type mode a b m j ij.
     (mode, a, b) Ctx.t -> (mode, m, j, ij) Value.data_args -> (mode, b, potential) term =
- fun ctx { constrs; discrete; recursive; tyfam; hints; dim; indices } ->
+ fun ctx { constrs; recursive; tyfam; hints; dim; indices } ->
   let ij = Fillvec.expected_length indices in
   (* Evaluate each constructor's stored function-type in its appropriately-dimensional environment and then read it back. *)
   let constrs = Abwd.mapi (readback_dataconstr ctx) constrs in
   let tyfam = readback_nf ctx (nf_of_neu (force_eval_term tyfam) "readback_data") in
   let data : (mode, b, potential) term =
-    Canonical (Data { indices = ij; evaldim = dim; constrs; discrete; recursive; tyfam; hints })
-  in
+    Canonical (Data { indices = ij; evaldim = dim; constrs; recursive; tyfam; hints }) in
   (* Now we apply it to all the saved indices.  This requires the Potential form of App, which is not re-evaluable. *)
   let mode = Ctx.mode ctx in
   List.fold_left
