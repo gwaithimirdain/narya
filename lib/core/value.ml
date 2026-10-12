@@ -636,7 +636,7 @@ let prekey_vcomp : type mode m n cod pm pn pcod.
         (Modalcell.vcomp
            (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) key)
            (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) pre))
-  | None -> fatal (Anomaly "restrict_keys: prekeys don't compose")
+  | None -> fatal (Anomaly "prekey_vcomp: prekeys don't compose")
 
 (* Given an environment whose codomain context is extended by a partial context containing some locks (and dimensions), strip off the Locks corresponding to those locks, and return the remainder of the environment along with a "prekey action" composed from all the Prekeys encountered along the way.  Since Locks carry no cells, any key action is represented by a Prekey; these act on a looked-up value at the environment's mode with a vertical target that may differ from the composite of the stripped locks, so they are accumulated separately and applied to the value at the end.  The prekeys accumulated inside a Lock act at its inner mode, so to carry them outward we prewhisker them by the lock's generator.  When no (nonidentity) prekeys are encountered, the returned cell is id2, and hence dropped by the smart constructor prekey_env.  Thus the input environment is semantically equal to the residual one, locked by the extension and then prekeyed by the returned cell. *)
 type (_, _, _, _) restrict_keys =
