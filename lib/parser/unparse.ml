@@ -108,6 +108,12 @@ let observations_of_symbols :
                (Emp, args) inner),
           wstok last )
 
+(* Whether a left-closed notation with the given symbols fits in a given left tightness interval.  Usually it fits in any interval; but if its initial token also begins a left-open notation, such as "- x" and "x - y", then when it follows a term the parser resolves the ambiguity in favor of the left-open notation (see Notation.merge_tree).  So in that case, like an application, it fits only in intervals containing +ω, and in particular it must be parenthesized as an application argument: "f (- x)" rather than "f - x". *)
+let left_closed_fits (li : ('lt, 'ls) No.iinterval) inner_symbols =
+  let (`Single tok | `Multiple (tok, _, _)) = inner_symbols in
+  Option.is_none (Scope.Situation.left_opens tok)
+  || Option.is_some (No.Interval.contains li No.plus_omega)
+
 (* Unparse a notation together with all its arguments. *)
 let unparse_notation : type left tight right lt ls rt rs.
     (left, tight, right) notation ->
@@ -118,7 +124,7 @@ let unparse_notation : type left tight right lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun notn args inner_symbols li ri ->
   let t = tightness notn in
-  (* Based on the fixity of the notation, we have to extract the first and/or last argument to treat differently.  In each case except for outfix, we also have to test whether the notation fits in the given tightness interval, and if not, parenthesize it. *)
+  (* Based on the fixity of the notation, we have to extract the first and/or last argument to treat differently.  In each case we also have to test whether the notation fits in the given tightness intervals, and if not, parenthesize it. *)
   match (left notn, right notn) with
   | Open _, Open _ -> (
       match List_extra.split_last args with
@@ -140,8 +146,8 @@ let unparse_notation : type left tight right lt ls rt rs.
       match List_extra.split_last args with
       | Some (inner, last) -> (
           let inner = observations_of_symbols inner inner_symbols in
-          match No.Interval.contains ri t with
-          | Some right_ok ->
+          match (left_closed_fits li inner_symbols, No.Interval.contains ri t) with
+          | true, Some right_ok ->
               let last = last.unparse (interval_right notn) ri in
               unlocated (prefix ~notn ~inner ~last ~right_ok)
           | _ ->
@@ -164,7 +170,8 @@ let unparse_notation : type left tight right lt ls rt rs.
       | _ -> fatal (Anomaly "missing argument unparsing postfix"))
   | Closed, Closed ->
       let inner = observations_of_symbols args inner_symbols in
-      unlocated (outfix ~notn ~inner)
+      if left_closed_fits li inner_symbols then unlocated (outfix ~notn ~inner)
+      else parenthesize (unlocated (outfix ~notn ~inner))
 
 (* Unparse a variable name. *)
 let unparse_var : type lt ls rt rs. string -> (lt, ls, rt, rs) parse located =
@@ -284,7 +291,7 @@ let rec get_spine : type mode a s.
           {
             it =
               (fun fa [ (x : (_, am, kinetic) Term.term) ] ->
-                match (Display.function_boundaries (), is_id_sface fa, all_args) with
+                match (Display.implicits (), is_id_sface fa, all_args) with
                 | `Hide, None, false -> ()
                 | _, None, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
                 | _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Explicit)));
@@ -544,11 +551,31 @@ let rec unparse : type mode n lt ls rt rs s.
       | Some res -> res
       | None ->
           let args =
-            of_list_map
-              (* The modality isn't printed for constructor applications. *)
-              (fun (Modal (_modality, plus, x)) ->
-                make_unparser (Names.add_lock vars plus) (CubeOf.find_top x))
-              args in
+            match Display.implicits () with
+            (* The modality isn't printed for constructor applications. *)
+            | `Hide ->
+                of_list_map
+                  (fun (Modal (_modality, plus, x)) ->
+                    make_unparser (Names.add_lock vars plus) (CubeOf.find_top x))
+                  args
+            (* When displaying implicits, we print the whole boundary of each argument, with the strict faces in braces. *)
+            | `Show ->
+                List.fold_left
+                  (fun s (Modal (_modality, plus, x)) ->
+                    let s = ref s in
+                    CubeOf.miter
+                      {
+                        it =
+                          (fun fa [ x ] ->
+                            let i =
+                              match is_id_sface fa with
+                              | Some _ -> `Explicit
+                              | None -> `Implicit in
+                            s := Snoc (!s, make_unparser_implicit vars (Spine_arg (Left plus, x, i))));
+                      }
+                      [ x ];
+                    !s)
+                  Emp args in
           unparse_spine vars (`Constr c) args li ri)
   | Realize tm -> unparse vars tm li ri
   | Canonical c -> unparse_canonical vars c li ri
@@ -592,7 +619,7 @@ and unparse_canonical : type mode n lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun vars c li ri ->
   match c with
-  | Data { indices = _; evaldim; constrs; discrete = _; recursive = _; tyfam = _; hints = _ } ->
+  | Data { indices = _; evaldim; constrs; recursive = _; tyfam = _; hints = _ } ->
       unparse_data vars evaldim constrs li ri
   | Codata { eta; evaldim; plusdim; fields; _ } ->
       (* The self-variable has the sum of the evaluation and intrinsic dimensions; the instances of a higher field are indexed by the evaluation dimension alone. *)
@@ -829,10 +856,6 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars plus_lock tm dim motive branches _li _ri ->
-  let mapsto =
-    match D.compare_zero dim with
-    | Zero -> Token.Mapsto
-    | Pos _ -> Token.DblMapsto in
   (* The discriminee lives in the context locked by the window modality. *)
   let disc = unparse (Names.add_lock vars plus_lock) tm No.Interval.entire No.Interval.entire in
   let window = plus_lock_modality plus_lock in
@@ -847,7 +870,7 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
         let umotive = unparse vars motive No.Interval.entire No.Interval.entire in
         (explicit_mtch, Snoc (Emp, Term disc) <: mktok Return <: Term umotive <: mktok LBracket)
     | None -> (implicit_mtch, Snoc (Emp, Term disc) <: mktok LBracket) in
-  let inner =
+  let ubranches =
     Constr.Map.fold
       (fun c br acc ->
         match br with
@@ -855,13 +878,51 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
             (* Extend the name context by the branch's pattern variables (named via the stored "annotate" witness), then permute it to the body's context. *)
             let abvars, xs = Names.add_match_vars vars annotate comp in
             let bodyvars = Names.permute perm abvars in
-            let args =
-              Bwd.of_list (List.map (fun x -> { unparse = (fun _ _ -> unparse_var x) }) xs) in
+            let args = List.fold_left unparse_pattern_var Emp xs in
             let pat = unparse_spine vars (`Constr c) args No.Interval.entire No.Interval.entire in
             let ubody = unparse bodyvars body No.Interval.entire No.Interval.entire in
-            acc <: mktok (Op "|") <: Term pat <: mktok mapsto <: Term ubody)
-      branches start in
+            let is_cube = function
+              | Names.Cube_var _ -> true
+              | Names.Boundary_var _ -> false in
+            acc <: (pat, ubody, List.exists is_cube xs, List.exists (fun x -> not (is_cube x)) xs))
+      branches Emp in
+  (* A higher-dimensional match displays with the cube abstraction ⤇, unless some of its pattern variables were given explicit boundaries and none of them are cube variables, in which case it displays with the ordinary abstraction ↦.  (A branch with no pattern variables at all, such as that of a constant constructor, says nothing about which of these to use, so it follows the other branches.) *)
+  let mapsto =
+    match D.compare_zero dim with
+    | Zero -> Token.Mapsto
+    | Pos _ ->
+        if
+          Bwd.exists (fun (_, _, _, boundary) -> boundary) ubranches
+          && not (Bwd.exists (fun (_, _, cube, _) -> cube) ubranches)
+        then Token.Mapsto
+        else Token.DblMapsto in
+  let inner =
+    Bwd.fold_left
+      (fun acc (pat, ubody, _, _) ->
+        acc <: mktok (Op "|") <: Term pat <: mktok mapsto <: Term ubody)
+      start ubranches in
   unlocated (outfix ~notn ~inner:(Multiple (wstok Match, inner, wstok RBracket)))
+
+(* Add the pattern variables bound by one argument of a constructor in a match branch to the argument spine of the pattern.  A cube variable is a single explicit argument, while an explicit boundary is one argument for each face, with the strict faces in braces and the top face explicit, exactly as in a non-cube abstraction. *)
+and unparse_pattern_var : unparser Bwd.t -> Names.pattern_var -> unparser Bwd.t =
+ fun args -> function
+  | Cube_var x -> Snoc (args, { unparse = (fun _ _ -> unparse_var x) })
+  | Boundary_var (Variables (_, _, xs)) ->
+      let module Fold = NICubeOf.Traverse (struct
+        type 'acc t = unparser Bwd.t
+      end) in
+      let folder : type left k m.
+          (k, m) sface ->
+          unparser Bwd.t ->
+          (left, k, string) NFamOf.t ->
+          (left, k, unit) NFamOf.t * unparser Bwd.t =
+       fun s acc (NFamOf x) ->
+        let arg =
+          match is_id_sface s with
+          | Some _ -> { unparse = (fun _ _ -> unparse_var x) }
+          | None -> { unparse = (fun _ _ -> braceize (unparse_var x)) } in
+        (NFamOf (), Snoc (acc, arg)) in
+      snd (Fold.fold_map_left { foldmap = (fun s acc x -> folder s acc x) } args xs)
 
 (* Unparse a comatch "[ .fld |-> body | ... ]".  An empty comatch prints with the empty (co)match notation. *)
 and unparse_comatch : type mode n a s et lt ls rt rs.
@@ -1297,8 +1358,8 @@ and unparse_named_inst : type mode n lt ls rt rs m k mk s.
           | Some () ->
               s := Snoc (!s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Explicit)))
           | None -> (
-              (* We include it implicitly if display of type boundaries is on. *)
-              match Display.type_boundaries () with
+              (* We include it implicitly if display of implicits is on. *)
+              match Display.implicits () with
               | `Show ->
                   s := Snoc (!s, make_unparser_implicit xvars (Spine_arg (Right Eq, x, `Implicit)))
               | `Hide ->

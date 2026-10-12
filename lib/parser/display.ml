@@ -22,8 +22,7 @@ module Config = struct
     argstyle : argstyle;
     spacing : spacing;
     holes : holes;
-    function_boundaries : show;
-    type_boundaries : show;
+    implicits : show;
     unique_keys : show;
     (* Degeneracies that are iterated reflexivities are displayed with iterated names, like "refl (refl x)" or "Id (Id X)", when the number of iterations is at most this value, and with a superscript otherwise. *)
     degeneracy_names : int;
@@ -38,8 +37,7 @@ let default : Config.t =
     argstyle = `Spaces;
     spacing = `Wide;
     holes = `Without_number;
-    function_boundaries = `Hide;
-    type_boundaries = `Hide;
+    implicits = `Hide;
     unique_keys = `Hide;
     degeneracy_names = 1;
     variables = [ "𝑥"; "𝑦"; "𝑧"; "𝑤"; "𝑢"; "𝑣" ];
@@ -57,8 +55,7 @@ let chars () = (State.get ()).chars
 let metas () = (State.get ()).metas
 let argstyle () = (State.get ()).argstyle
 let spacing () = (State.get ()).spacing
-let function_boundaries () = (State.get ()).function_boundaries
-let type_boundaries () = (State.get ()).type_boundaries
+let implicits () = (State.get ()).implicits
 let unique_keys () = (State.get ()).unique_keys
 let holes () = (State.get ()).holes
 let variables () = (State.get ()).variables
@@ -83,25 +80,15 @@ let modify_chars chars =
   State.set { s with chars };
   chars
 
-let modify_function_boundaries fb =
+let modify_implicits im =
   let s = State.get () in
-  let function_boundaries =
-    match (fb, s.function_boundaries) with
+  let implicits =
+    match (im, s.implicits) with
     | `Set x, _ -> x
     | `Toggle, `Show -> `Hide
     | `Toggle, `Hide -> `Show in
-  State.set { s with function_boundaries };
-  function_boundaries
-
-let modify_type_boundaries fb =
-  let s = State.get () in
-  let type_boundaries =
-    match (fb, s.type_boundaries) with
-    | `Set x, _ -> x
-    | `Toggle, `Show -> `Hide
-    | `Toggle, `Hide -> `Show in
-  State.set { s with type_boundaries };
-  type_boundaries
+  State.set { s with implicits };
+  implicits
 
 let modify_unique_keys uk =
   let s = State.get () in

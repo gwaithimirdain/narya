@@ -112,6 +112,7 @@ module Code = struct
     | Noncube_abstraction_in_higher_dimensional_match : 'n D.t -> t
     | Not_enough_arguments_to_function : t
     | Not_enough_arguments_to_instantiation : t
+    | Not_enough_arguments_to_constructor : t
     | Type_not_fully_instantiated : string * 'n D.pos -> t
     | Instantiating_zero_dimensional_type : printable -> t
     | Unequal_synthesized_type : {
@@ -182,6 +183,13 @@ module Code = struct
         Constr.t * [ `Constr of Constr.t | `Nonconstr of printable ]
         -> t
     | Unequal_indices : printable * printable * Unequal.t -> t
+    | Unequal_boundary_argument : {
+        face : ('a, 'b) sface;
+        got : printable;
+        expected : printable;
+        why : Unequal.t;
+      }
+        -> t
     | Unbound_variable : string * (string list * string list) list -> t
     | Undefined_constant : printable -> t
     | Undefined_metavariable : printable -> t
@@ -196,6 +204,7 @@ module Code = struct
     | Deprecated : string -> t
     | Matching_datatype_has_degeneracy : printable -> t
     | Wrong_number_of_arguments_to_pattern : Constr.t * int -> t
+    | Wrong_boundary_of_pattern_variable : int -> t
     | Wrong_number_of_arguments_to_motive : int -> t
     | No_such_constructor_in_match : printable * Constr.t -> t
     | Duplicate_constructor_in_match : Constr.t -> t
@@ -245,13 +254,7 @@ module Code = struct
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
     | Constant_assumed : { name : printable; parametric : bool; holes : int } -> t
-    | Constant_defined : {
-        names : printable list;
-        discrete : bool;
-        parametric : bool;
-        holes : int;
-      }
-        -> t
+    | Constant_defined : { names : printable list; parametric : bool; holes : int } -> t
     | Hole_solved : int -> t
     | Split_term : PPrint.document -> t
     | Notation_defined : string -> t
@@ -325,6 +328,7 @@ module Code = struct
     | Oracle_failed : oracle_error -> t
     | Extern : { code : string; text : string; error : extern_error } -> t
     | Invalid_flags : t
+    | Typeless_meta : ('mode, 'x, 'b, 's) Meta.t * [ `Let | `Bare ] -> t
 
   (* If an error is encountered during printing a term, we (meaning the function 'printer' to be defined in Parser.Unparse) call the function supplied by this reader effect and print it as "_UNPRINTABLE".  Usually this is a bug, but sometimes it can happen normally, particularly when accumulating errors: a term involved in a later error might be unprintable due to a previous error.  We make this a reader that supplies a function so that the function can be called at the point of *performing* the effect.  Thus, if we are not in the middle of displaying another message, there can be an outer handler for this effect that supplies the function "fatal", which is called at the point of performing the effect and is therefore inside any inner Reporter.run wrappers rather than the outermost one that just Exits. *)
   module PrintingErrorData = struct
@@ -382,6 +386,7 @@ module Code = struct
     | No_such_constructor _ -> Error
     | Missing_instantiation_constructor _ -> Error
     | Unequal_indices _ -> Error
+    | Unequal_boundary_argument _ -> Error
     | Unbound_variable _ -> Error
     | Undefined_constant _ -> Bug
     | Undefined_metavariable _ -> Bug
@@ -394,6 +399,7 @@ module Code = struct
     | Instantiating_zero_dimensional_type _ -> Error
     | Invalid_variable_face _ -> Error
     | Not_enough_arguments_to_instantiation -> Error
+    | Not_enough_arguments_to_constructor -> Error
     | Applying_nonfunction_nontype _ -> Error
     | Unexpected_implicitness _ -> Error
     | Insufficient_dimension _ -> Error
@@ -402,6 +408,7 @@ module Code = struct
     | Deprecated _ -> Warning
     | Matching_datatype_has_degeneracy _ -> Error
     | Wrong_number_of_arguments_to_pattern _ -> Error
+    | Wrong_boundary_of_pattern_variable _ -> Error
     | Wrong_number_of_arguments_to_motive _ -> Error
     | No_such_constructor_in_match _ -> Error
     | Duplicate_constructor_in_match _ -> Error
@@ -509,16 +516,18 @@ module Code = struct
     | Oracle_failed _ -> Error
     | Extern _ -> Error
     | Invalid_flags -> Error
+    | Typeless_meta _ -> Bug
 
   (** A short, concise, ideally Google-able string representation for each message code. *)
   let short_code : t -> string = function
-    (* Usually bugs *)
+    (* Usually bugs (at least, if they escape to the user) *)
     | Anomaly _ -> "E0000"
     | No_such_level _ -> "E0001"
     | Accumulated (_msg, _errs) -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
     | Self_used -> "E0004"
     | Evaluating_display_term _ -> "E0005"
+    | Typeless_meta _ -> "E0010"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
     | Deprecated _ -> "E0110"
@@ -557,6 +566,7 @@ module Code = struct
     | Type_not_fully_instantiated _ -> "E0504"
     | Instantiating_zero_dimensional_type _ -> "E0505"
     | Invalid_variable_face _ -> "E0506"
+    | Not_enough_arguments_to_constructor -> "E0507"
     | Zero_dimensional_cube_abstraction _ -> "E0508"
     | Mismatched_dimensions_in_cube_abstraction _ -> "E0509"
     | Noncube_abstraction_in_higher_dimensional_match _ -> "E0510"
@@ -591,6 +601,7 @@ module Code = struct
     | Wrong_number_of_arguments_to_constructor _ -> "E1001"
     | Missing_instantiation_constructor _ -> "E1002"
     | Unequal_indices _ -> "E1003"
+    | Unequal_boundary_argument _ -> "E1004"
     (* Matches *)
     (* - Match variable *)
     | Unnamed_variable_in_match -> "E1100"
@@ -604,6 +615,7 @@ module Code = struct
     | No_such_constructor_in_match _ -> "E1301"
     | Duplicate_constructor_in_match _ -> "E1302"
     | Wrong_number_of_arguments_to_pattern _ -> "E1303"
+    | Wrong_boundary_of_pattern_variable _ -> "E1310"
     | Duplicate_pattern_variable _ -> "E1304"
     | Wrong_number_of_patterns -> "E1305"
     | Inconsistent_patterns -> "E1306"
@@ -758,6 +770,8 @@ module Code = struct
           text "not enough arguments for a higher-dimensional function application"
       | Not_enough_arguments_to_instantiation ->
           text "not enough arguments to instantiate a higher-dimensional type"
+      | Not_enough_arguments_to_constructor ->
+          text "not enough arguments to a higher-dimensional constructor application"
       | Type_not_fully_instantiated (str, n) ->
           textf "type not fully instantiated in %s (need %s more dimensions)" str
             (string_of_dim0 (D.pos n))
@@ -896,6 +910,12 @@ module Code = struct
             "@[<hv 0>index@;<1 2>%a@ of constructor application doesn't match the corresponding index@;<1 2>%a@ of datatype instance: unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
             pp_printed (print t1) pp_printed (print t2) str pp_printed (print p1) pp_printed
             (print p2)
+      | Unequal_boundary_argument { face; got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
+          textf
+            "@[<hv 0>supplied %s-boundary argument@;<1 2>%a@ doesn't match the one determined by the type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
       | Unbound_variable (c, alt) -> (
           match alt with
           | [] -> textf "unbound variable: %s" c
@@ -953,6 +973,13 @@ module Code = struct
           else
             textf "not enough arguments to constructor %s in match pattern (need %d more)"
               (Constr.to_string c) (abs n)
+      | Wrong_boundary_of_pattern_variable n ->
+          if n > 0 then
+            textf "too many boundary arguments for higher-dimensional pattern variable (%d extra)" n
+          else
+            textf
+              "not enough boundary arguments for higher-dimensional pattern variable (need %d more)"
+              (abs n)
       | Wrong_number_of_arguments_to_motive n ->
           textf "wrong number of arguments for match motive: should be %d" n
       | No_such_constructor_in_match (d, c) ->
@@ -1080,11 +1107,8 @@ module Code = struct
           else if holes = 1 then
             textf "%saxiom %a assumed, containing 1 hole" p pp_printed (print name)
           else textf "%saxiom %a assumed" p pp_printed (print name)
-      | Constant_defined { names; discrete; parametric; holes } -> (
-          (* Nonparametricity trumps discreteness *)
-          let prefix =
-            if parametric || Dim.Endpoints.internal () then if discrete then "discrete " else ""
-            else "nonparametric " in
+      | Constant_defined { names; parametric; holes } -> (
+          let prefix = if parametric || Dim.Endpoints.internal () then "" else "nonparametric " in
           match names with
           | [] -> textf "anomaly: no constant defined"
           | [ name ] ->
@@ -1238,7 +1262,13 @@ module Code = struct
       | Invalid_instant instant -> textf "invalid instant: %s" instant
       | Oracle_failed _ -> text "oracle failed"
       | Extern { text = t; _ } -> text t
-      | Invalid_flags -> text "invalid combination of command-line flags" in
+      | Invalid_flags -> text "invalid combination of command-line flags"
+      | Typeless_meta (m, why) ->
+          textf "typeless meta in %s: %a"
+            (match why with
+            | `Let -> "let-binding"
+            | `Bare -> "bare case tree")
+            pp_printed (print (PMeta m)) in
     match !printing_errors with
     | Emp -> msg
     | Snoc _ ->
@@ -1317,6 +1347,22 @@ let rec display ?use_ansi ?output ?(empty_ok = false) (d : Code.t Asai.Diagnosti
   | Accumulated (_name, msgs) ->
       Mbwd.miter (fun [ e ] -> display ?use_ansi ?output ~empty_ok:true e) [ msgs ]
   | _ -> try_with ~fatal:(fun _ -> ()) @@ fun () -> Terminal.display ?use_ansi ?output d
+
+(* A fatal error raised inside a match branch (or a record field, a datatype constructor, etc.) doesn't propagate outwards unchanged: it is caught there and re-raised inside an "Accumulated", possibly along with the analogous errors from the sibling branches.  Thus a handler that wants to catch a specific error code can't just match on the message of the diagnostic it receives; it has to look inside any accumulations too.  These two functions do that.
+
+   'accumulated p d' applies the partial function p to d if d isn't an accumulation, and otherwise (recursively) to all the errors accumulated in d, returning the data from the first of them but only if *all* of them match.  (If only some of them match, then the others are unrelated errors that ought to be reported as usual.)  An empty accumulation is a "dependence" marker rather than a real error, so it doesn't count as an instance of anything.  Note that p is applied to the whole diagnostic, not just its message, so that the caller can also pick up the location of the actual innermost error. *)
+let rec accumulated (p : Code.t Asai.Diagnostic.t -> 'a option) (d : Code.t Asai.Diagnostic.t) :
+    'a option =
+  match d.message with
+  | Accumulated (_, errs) -> (
+      match List.map (accumulated p) (Bwd.to_list errs) with
+      | [] -> None
+      | first :: _ as subs -> if List.for_all Option.is_some subs then first else None)
+  | _ -> p d
+
+(* 'accumulates p d' is the common special case when only the code matters and not any data attached to it: it tests whether d is, or accumulates only, errors whose message satisfies p. *)
+let accumulates (p : Code.t -> bool) (d : Code.t Asai.Diagnostic.t) : bool =
+  Option.is_some (accumulated (fun d -> if p d.message then Some () else None) d)
 
 (* We also may need to extract an accumulated singleton, for testing purposes. *)
 let rec unaccumulate (c : Code.t) : Code.t =

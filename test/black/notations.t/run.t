@@ -251,3 +251,32 @@
   a
     : A
   
+
+  $ narya argparens.ny
+  f (- a)
+    : A
+  
+  g (- a) b
+    : A
+  
+  g a (- b)
+    : A
+  
+  f a - b
+    : A
+  
+  - a
+    : A
+  
+  f (- - a)
+    : A
+  
+  f (| a |)
+    : A
+  
+  f (| - a |)
+    : A
+  
+  f a | b
+    : A
+  

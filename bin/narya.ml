@@ -51,18 +51,8 @@ let speclist =
       "Don't automatically reformat files supplied on the command line" );
     ("-unicode", Arg.Set unicode, "Display and reformat code using Unicode for built-ins (default)");
     ("-ascii", Arg.Clear unicode, "Display and reformat code using ASCII for built-ins");
-    ( "-hide-function-boundaries",
-      Arg.Clear show_function_boundaries,
-      "Hide implicit boundaries of higher-dimensional applications (default)" );
-    ( "-show-function-boundaries",
-      Arg.Set show_function_boundaries,
-      "Display implicit boundaries of higher-dimensional applications" );
-    ( "-hide-type-boundaries",
-      Arg.Clear show_type_boundaries,
-      "Hide implicit boundaries of instantiations of higher-dimensional types (default)" );
-    ( "-show-type-boundaries",
-      Arg.Set show_type_boundaries,
-      "Display implicit boundaries of instantiations of higher-dimensional types" );
+    ("-hide-implicits", Arg.Clear show_implicits, "Hide implicit arguments (default)");
+    ("-show-implicits", Arg.Set show_implicits, "Display implicit arguments");
     ( "-hide-unique-keys",
       Arg.Clear show_unique_keys,
       "Hide keys that are the unique one between their endpoints (default)" );
@@ -80,7 +70,7 @@ let speclist =
       Arg.Clear hott,
       "Switch from higher observational type theory (fibrancy) to parametricity" );
     ("-hott", Arg.Set hott_deprecated, "");
-    ("-deprecated-discreteness", Arg.Set discreteness, "Enable discrete datatypes (deprecated)");
+    ("-deprecated-discreteness", Arg.Set old_discreteness, "");
     ("-discreteness", Arg.Set old_discreteness, "");
     ("-source-only", Arg.Set source_only, "Load all files from source (ignore compiled versions)");
     ( "-no-write-compiled",
@@ -394,8 +384,7 @@ let () =
     print_endline (String.trim [%blob "version.txt"]);
     exit 0);
   if !old_discreteness then (
-    Printf.eprintf
-      "-discreteness is deprecated; use discrete modalities instead.\nYou can use -deprecated-discreteness while porting old code.";
+    Printf.eprintf "-discreteness has been removed; use discrete modalities instead.";
     exit 1);
   if !mode_theories > 1 then (
     Printf.fprintf stderr "too many mode theories! specify only one.";
@@ -471,9 +460,13 @@ let rec repl terminal history buf =
             ~emit:(fun d -> Reporter.display ?use_ansi ~output:stdout d)
             ~fatal:(fun d ->
               Reporter.display ?use_ansi ~output:stdout d;
-              match d.message with
-              | Quit _ -> exit 0
-              | _ -> ())
+              if
+                Reporter.accumulates
+                  (function
+                    | Quit _ -> true
+                    | _ -> false)
+                  d
+              then exit 0)
         @@ fun () ->
           match Command.parse_single str with
           | _, Some cmd ->

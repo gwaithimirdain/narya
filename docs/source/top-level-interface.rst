@@ -21,10 +21,8 @@ Formatting output
 - ``-verbose`` or ``-v``: Show verbose messages
 - ``-unicode`` and ``-ascii``: Display and reformat code using Unicode (default) or ASCII
 - ``-no-reformat``: Do not automatically reformat source files (see :ref:`Code formatter`)
-- ``-show-function-boundaries``: Display boundaries of functions, when implicit (see :ref:`Implicit boundaries`)
-- ``-hide-function-boundaries``: Hide boundaries of functions, when implicit (default)
-- ``-show-type-boundaries``: Display boundaries of types, when implicit
-- ``-hide-type-boundaries``: Hide boundaries of types, when implicit (default)
+- ``-show-implicits``: Display implicit arguments, such as boundaries of functions and types (see :ref:`Implicit boundaries`)
+- ``-hide-implicits``: Hide implicit arguments (default)
 - ``-show-unique-keys``: Display keys that are the unique one between their endpoints (see :ref:`Keys`)
 - ``-hide-unique-keys``: Hide keys that are the unique one between their endpoints (default)
 - ``-variables X,Y,Z``: Set the default variable names (see :ref:`Default names`)
@@ -38,7 +36,6 @@ These options are discussed under :ref:`Parametricity`.
 - ``-direction X``: Set the symbol and names for reflexivity
 - ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
 - ``-internal`` and ``-external``: Set whether parametricity is internal (default) or external
-- ``-discreteness``: Enable strictly parametrically discrete types (deprecated)
 
 Modal type theory options
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -220,19 +217,16 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display chars ≔ unicode
     display chars ≔ ascii
     display chars ≔ toggle
-    display function boundaries ≔ on
-    display function boundaries ≔ off
-    display function boundaries ≔ toggle
-    display type boundaries ≔ on
-    display type boundaries ≔ off
-    display type boundaries ≔ toggle
+    display implicits ≔ on
+    display implicits ≔ off
+    display implicits ≔ toggle
     display unique keys ≔ on
     display unique keys ≔ off
     display unique keys ≔ toggle
     display degeneracy names ≔ N
     display variables ≔ X,Y,Z
 
-See :ref:`Implicit boundaries` for more information about function and type boundaries, :ref:`Keys` for more information about unique keys, and :ref:`Symmetries and degeneracies` for more information about degeneracy names.
+See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, :ref:`Keys` for more information about unique keys, and :ref:`Symmetries and degeneracies` for more information about degeneracy names.
 
 
 Chdir
@@ -333,8 +327,7 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 - ``C-c C-SPC`` : Fill the hole under point with a specified term, without retracting any code.
 - ``C-c C-y`` : Split in the hole under point based on its type.
 - ``C-c C-d C-u``: Toggle display of unicode characters.
-- ``C-c C-d C-f``: Toggle display of function boundaries.
-- ``C-c C-d C-t``: Toggle display of type boundaries.
+- ``C-c C-d C-i``: Toggle display of implicit arguments.
 - ``C-c C-d C-v``: Set the default variable names.
 - ``C-c C-d C-d``: Set the dimension up to which degeneracies are displayed with names.
 
@@ -447,5 +440,5 @@ jsNarya
 
 jsNarya is a JavaScript version of Narya that runs in a browser.  Its functionality is limited to the equivalent of ``narya -e "STARTUP" -i``: you can specify a single startup "file" by copying and pasting it into a text box, and then you drop into interactive mode.  Also there is no real Unicode input-mode, although there is a palette of buttons that can be used to enter a number of common Unicode characters.  These limitations are not intrinsic; we just have not yet found or implemented an appropriate frontend for anything more complicated.
 
-jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters, such as ``?arity=1&direction=p,rel,Br`` for unary :ref:`Parametricity`, or ``?dtt`` for :ref:`Displayed type theory`.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
+jsNarya does accept customization of the arity, direction name, and internality of parametricity for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters, such as ``?arity=1&direction=p,rel,Br`` for unary :ref:`Parametricity`, or ``?dtt`` for :ref:`Displayed type theory`.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
 

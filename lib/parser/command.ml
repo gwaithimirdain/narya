@@ -121,10 +121,7 @@ module Command = struct
         wscoloneq : Whitespace.t list;
         what :
           [ `Chars of Whitespace.t list * Display.chars Display.toggle * Whitespace.t list
-          | `Function_boundaries of
-            Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
-          | `Type_boundaries of
-            Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Implicits of Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Unique_keys of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Degeneracy_names of Whitespace.t list * Whitespace.t list * int * Whitespace.t list
@@ -652,8 +649,7 @@ module Parse = struct
       step "" (fun state _ (tok, ws) ->
           match tok with
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
-          | Ident [ "function" ] -> Some ((`Function, ws), state)
-          | Ident [ "type" ] -> Some ((`Type, ws), state)
+          | Ident [ "implicits" ] -> Some ((`Implicits, ws), state)
           | Ident [ "degeneracy" ] -> Some ((`Degeneracy, ws), state)
           | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
@@ -665,24 +661,12 @@ module Parse = struct
             let open Monad.Ops (Monad.Maybe) in
             let* chars = chars_of_token tok in
             return (Display { wsdisplay; wscoloneq; what = `Chars (wswhat, chars, ws) }, state))
-    | `Function ->
-        let* wsb = token (Ident [ "boundaries" ]) in
+    | `Implicits ->
         let* wscoloneq = token Coloneq in
         step "" (fun state _ (tok, ws) ->
             let open Monad.Ops (Monad.Maybe) in
             let* show = show_of_token tok in
-            return
-              ( Display { wsdisplay; wscoloneq; what = `Function_boundaries (wswhat, wsb, show, ws) },
-                state ))
-    | `Type ->
-        let* wsb = token (Ident [ "boundaries" ]) in
-        let* wscoloneq = token Coloneq in
-        step "" (fun state _ (tok, ws) ->
-            let open Monad.Ops (Monad.Maybe) in
-            let* show = show_of_token tok in
-            return
-              ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
-                state ))
+            return (Display { wsdisplay; wscoloneq; what = `Implicits (wswhat, show, ws) }, state))
     | `Degeneracy ->
         let* wsnames = token (Ident [ "names" ]) in
         let* wscoloneq = token Coloneq in
@@ -940,6 +924,13 @@ let split_match_cases : type mode a b.
         | _ -> fatal (Nonsynthesizing "splitting term")) in
   fst (go tms false)
 
+(* The output of 'echo', 'synth' and 'about' is not a diagnostic, so it isn't reported through the Reporter.  By default it is printed to stdout, followed by a blank line; a caller that uses stdout for something else, such as a language server, can replace this function to receive the output instead. *)
+let echo_output : (PPrint.document -> unit) ref =
+  ref (fun doc ->
+      PPrint.ToChannel.pretty 1.0 (Display.columns ()) stdout doc;
+      print_newline ();
+      print_newline ())
+
 (* Most execution of commands we can do here, but there are a couple things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), and loading another file.  So this function takes a couple of callbacks as arguments. *)
 let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (cmd : Command.t) :
     int option * (int * int * int) list =
@@ -1054,16 +1045,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                           No.Interval.entire)) in
           let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let uty = unparse names bty No.Interval.entire No.Interval.entire in
-          PPrint.(
-            ToChannel.pretty 1.0 (Display.columns ()) stdout
-              (hang 2
-                 (pp_complete_term (Wrap utm) `None
-                 ^^ hardline
-                 ^^ Token.pp Colon
-                 ^^ blank 1
-                 ^^ pp_complete_term (Wrap uty) `None)));
-          print_newline ();
-          print_newline ();
+          !echo_output
+            PPrint.(
+              hang 2
+                (pp_complete_term (Wrap utm) `None
+                ^^ hardline
+                ^^ Token.pp Colon
+                ^^ blank 1
+                ^^ pp_complete_term (Wrap uty) `None));
           (None, fun _ -> None)
       | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
   | Notation { fixity; loc; pattern; head; args; _ } ->
@@ -1382,12 +1371,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Chars (_, chars, _) ->
           let chars = Display.modify_chars chars in
           emit (Display_set ("chars", Display.to_string (chars :> Display.values)))
-      | `Function_boundaries (_, _, fb, _) ->
-          let fb = Display.modify_function_boundaries fb in
-          emit (Display_set ("function boundaries", Display.to_string (fb :> Display.values)))
-      | `Type_boundaries (_, _, tb, _) ->
-          let tb = Display.modify_type_boundaries tb in
-          emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values)))
+      | `Implicits (_, im, _) ->
+          let im = Display.modify_implicits im in
+          emit (Display_set ("implicits", Display.to_string (im :> Display.values)))
       | `Unique_keys (_, _, uk, _) ->
           let uk = Display.modify_unique_keys uk in
           emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))
