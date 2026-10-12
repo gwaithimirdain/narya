@@ -203,6 +203,14 @@ let compare_id : type dom mu nu cod.
   | Eq -> Eq
   | Neq -> Neq
 
+(* Whether a cell is an identity on some (not necessarily identity) modality. *)
+let is_id : type dom mu nu cod. (dom, mu, nu, cod) t -> bool = function
+  | Id _ -> true
+  | x -> (
+      match compare x (id (vsrc x)) with
+      | Eq -> true
+      | Neq -> false)
+
 let hcomp : type a m n b r s c mr ns.
     (a, m, b, r, c, mr) Modality.comp ->
     (a, n, b, s, c, ns) Modality.comp ->

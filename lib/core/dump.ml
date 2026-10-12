@@ -233,7 +233,7 @@ module F = struct
           | Some (Op (f, d)) -> string_of_sface f ^ "," ^ string_of_deg d
           | None -> "None" in
         fprintf ppf "%a <* (%s)" env e opstr
-    | Key (e, key, _ac) -> fprintf ppf "%a <%% %s" env e (Modalcell.to_string key)
+    | Lock (e, g) -> fprintf ppf "%a <%%lock %s" env e (Modality.to_string (Modality.of_gen g))
     | Prekey (e, key) -> fprintf ppf "%a <%%pre %s" env e (Modalcell.to_string key)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)

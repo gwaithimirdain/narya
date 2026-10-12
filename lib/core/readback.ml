@@ -684,8 +684,8 @@ and readback_ordered_env : type mode n a b c d.
             op_of_opt op <|> Anomaly "unexpected missing endpoint in readback_ordered_env" in
           (* We are reading back bindings that were defined under a modality, so they are defined in a locked context. *)
           let (Locked (bplus, lctx)) = Ctx.lock ctx modality in
-          (* We also analogously key the environment we're reading back, for purposes of evaluating types. *)
-          let lenv = key_id_env aenv dplus in
+          (* We also analogously lock the environment we're reading back, for purposes of evaluating types. *)
+          let lenv = lock_env aenv dplus in
           (* We apply the accumulated operators, degeneracies, and any prekey action to the entry we found. *)
           let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
           (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)
@@ -725,35 +725,26 @@ and readback_ordered_env : type mode n a b c d.
               filter;
               filtered;
             })
-  | Lock _ -> (
-      (* We remove as many locks as there are at the end of the codomain context, since keys in the environment could have composite modalities as their domain. *)
-      let (Ordered_remove_locks (envctx, plus_src, no_locks)) =
-        Termctx.ordered_remove_locks envctx in
-      (* Then we remove all the corresponding keys from the environment being read back. *)
-      let (Restrict_keys (env, extra, mu12, cell, pre)) = restrict_keys_plus_lock env plus_src in
-      (* Since we removed a maximal run of locks, and a key can only span locks, the split can never land in the middle of a key here, so there is nothing extra. *)
-      match (extra, no_locks) with
-      | Plus_lock (Suc _, _), _ -> .
-      | Plus_lock (Zero _, Zero), _ -> (
-          let Eq = Modality.comp_uniq mu12 (Modality.id_comp (plus_lock_modality plus_src)) in
-          match Modalcell.compare_id pre with
-          | Eq ->
-              (* If there is no prekey action, we just remove the target of the composite key cell from the context we're reading back *into*, and read back the residual environment as a keyed term environment. *)
-              let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
-              Term.Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt }
-          | Neq ->
-              (* A prekey action mediates between a context locked by its vertical source (where the keyed value was created, e.g. behind a parametric locker's locks) and one locked by its vertical target (the actual ambient context, e.g. after the locker's counit discharged those locks).  So before removing the target of the key cell, we remove the target of the prekey from the context and re-lock it with the prekey's source, recording both in the term-level Prekey. *)
-              let (Remove_lock (ctx, pre_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt pre) in
-              let (Locked (pre_src, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre) in
-              let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt cell) in
-              Prekey
-                {
-                  env =
-                    Term.Key { env = readback_ordered_env ctx env envctx; cell; plus_src; plus_tgt };
-                  cell = pre;
-                  plus_src = pre_src;
-                  plus_tgt = pre_tgt;
-                }))
+  | Lock (envctx, g) ->
+      (* We strip off the corresponding Lock from the environment being read back, along with any prekeys on top of it. *)
+      let (Restrict_keys (env, pre)) =
+        restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
+      if Modalcell.is_id pre then
+        (* If there is no prekey action, we just remove the lock from the context we're reading back *into*, and read back the residual environment as a locked term environment. *)
+        let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modality.of_gen g) in
+        Term.Lock { env = readback_ordered_env ctx env envctx; gen = g; plus_tgt }
+      else
+        (* A prekey action mediates between a context locked by its vertical source (where the keyed value was created, e.g. behind a key or a parametric locker's locks) and one locked by its vertical target (the actual ambient context, e.g. after the locker's counit discharged those locks).  So before removing the lock, we remove the target of the prekey from the context and re-lock it with the prekey's source, recording both in the term-level Prekey. *)
+        let (Remove_lock (ctx, pre_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt pre) in
+        let (Locked (pre_src, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre) in
+        let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modality.of_gen g) in
+        Prekey
+          {
+            env = Term.Lock { env = readback_ordered_env ctx env envctx; gen = g; plus_tgt };
+            cell = pre;
+            plus_src = pre_src;
+            plus_tgt = pre_tgt;
+          }
 
 (* Read back a context of values into a context of terms. *)
 
@@ -1117,10 +1108,10 @@ and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.
                     deg_env =
                       (fun adj tctx r_k e ->
                         let (Locked (plus, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
-                        eval_env (key_id_env degenv plus) r_k (readback_env lctx e tctx));
+                        eval_env (lock_env degenv plus) r_k (readback_env lctx e tctx));
                   } in
               let (Locked (fplus, flctx)) = Ctx.lock sctx left in
-              let fdegenv = key_id_env sdegenv fplus in
+              let fdegenv = lock_env sdegenv fplus in
               let (Plus r_m) = D.plus m in
               let values =
                 `Ok
