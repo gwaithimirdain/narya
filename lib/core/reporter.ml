@@ -1392,8 +1392,15 @@ type _ Effect.t += Mortal : Code.t Asai.Diagnostic.t -> unit Effect.t | Moribund
 
 let mortal_diagnostic d = perform (Mortal d)
 
+(* Formatting the message of a diagnostic can raise a silent error, if it involves printing a term that depends on a part that already failed (see Unparse.printer).  In that case the silent error replaces this one, but it remains mortal. *)
 let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
-  mortal_diagnostic (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+  match
+    Delegate.try_with ~fatal:(fun d -> Result.Error d) @@ fun () ->
+    Result.Ok (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+  with
+  | Ok d -> mortal_diagnostic d
+  | Error ({ message = Silent _; _ } as d) -> mortal_diagnostic d
+  | Error d -> fatal_diagnostic d
 
 (* Whether the current scope (see [scope] below) is moribund. *)
 let moribund () = perform Moribund
@@ -1500,6 +1507,12 @@ let display_bwd ?use_ansi ?output (errs : Code.t Asai.Diagnostic.t Bwd.t) =
 
 let display ?use_ansi ?output (err : Code.t Asai.Diagnostic.t) =
   display_bwd ?use_ansi ?output (Snoc (Emp, err))
+
+(* Whether a diagnostic is silent, i.e. it just indicates dependence on some part of the term that already failed.  A fallback that would check something different in place of what failed shouldn't be triggered by such an error, since the real error has already been reported and the fallback would only produce spurious ones. *)
+let is_silent (d : Code.t Asai.Diagnostic.t) =
+  match d.message with
+  | Silent _ -> true
+  | _ -> false
 
 (* Whether a diagnostic is a bug. *)
 let is_bug (d : Code.t Asai.Diagnostic.t) = d.severity = Bug

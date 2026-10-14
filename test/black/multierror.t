@@ -713,7 +713,7 @@ Even trivial dependency blocks going on, as long as there is the potential for d
   
   [1]
 
-A match with a failed branch is not returned without that branch, since evaluating it later in the same definition could reach the missing branch.
+A match with a failed branch records that branch as failed, and checking continues.  Evaluating the match later in the same definition at that branch fails silently, so only the real error is reported.
 
   $ cat >partialmatch.ny <<EOF
   > def Bool : Type ≔ data [ true. | false. ]
@@ -749,5 +749,109 @@ A match with a failed branch is not returned without that branch, since evaluati
          Type
        does not equal
          Bool
+  
+  [1]
+
+The same holds for conversion checking through a failed branch, and for a failed branch of an inner match in a deep match.  But a later error that doesn't depend on the failed branch is still reported, as is evaluation at a branch that didn't fail.
+
+  $ cat >partialmatch3.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > axiom P : Bool → Type
+  > axiom p : P true.
+  > def t : Bool ≔
+  >   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+  >   let q : P (g true.) ≔ p in
+  >   true.
+  > EOF
+
+  $ narya partialmatch3.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch3.ny
+   5 |   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+  $ cat >partialmatch4.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def Σ (A : Type) (B : A → Type) : Type ≔ sig ( fst : A, snd : B fst )
+  > def t : Σ Bool (_ ↦ Bool) ≔
+  >   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+  >   (g true., Bool)
+  > EOF
+
+  $ narya partialmatch4.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch4.ny
+   4 |   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch4.ny
+   5 |   (g true., Bool)
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+  $ cat >partialmatch5.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > axiom P : Bool → Type
+  > axiom p : P true.
+  > def t : Bool ≔
+  >   let g : Bool → Bool → Bool ≔ x y ↦ match x, y [
+  >   | true., true. ↦ Bool
+  >   | true., false. ↦ true.
+  >   | false., _ ↦ true. ] in
+  >   let r : P (g true. false.) ≔ p in
+  >   let s : P (g false. true.) ≔ (p : P false.) in
+  >   let q : P (g true. true.) ≔ p in
+  >   true.
+  > EOF
+
+  $ narya partialmatch5.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch5.ny
+   6 |   | true., true. ↦ Bool
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch5.ny
+   10 |   let s : P (g false. true.) ≔ (p : P false.) in
+      ^ term synthesized type
+          P false.
+        but is being checked against type
+          P true.
+        unequal constructors:
+          false
+        does not equal
+          true
   
   [1]

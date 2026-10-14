@@ -1029,7 +1029,7 @@ and check_of_synth : type mode a b s.
   | Asc (ctm, aty) ->
       (* If the term is synthesizing because it is ascribed, then we can accumulate errors: if the ascription fails to check, or if it fails to equal the checking type, we can proceed to check the ascribed term against the supplied type instead, and if that succeeds we can go on to other parts of the program.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends. *)
       let ety =
-        Reporter.accumulate ~fallback:(fun () -> ty) @@ fun () ->
+        Reporter.accumulate ~fallback:(fun () -> ty) ~passthrough:is_silent @@ fun () ->
         let cty = check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero) in
         let ety = eval_term (Ctx.env ctx) cty in
         (* It suffices for the synthesized type to be a subtype of the checking type. *)
@@ -1420,8 +1420,6 @@ and check_match_branches : type dom window mode a b bm.
     (dom, window, mode, a, b) match_motive ->
     (mode, b, potential) term * (mode, kinetic) value option =
  fun status ctx tm varty window plus_lock brs i highers loc (Motive callbacks) ->
-  (* A match with a failed branch is not returned, since evaluating it later could reach the missing branch. *)
-  Reporter.scoped ~why:"check_match_branches" @@ fun () ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_match_branches" with
   | Canonical
@@ -1469,9 +1467,9 @@ and check_match_branches : type dom window mode a b bm.
             let status =
               make_match_status status window plus_lock tm dim motive_tm branches annotate comp None
                 perm constr in
-            (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
+            (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed.  But we pass through the errors that are getting caught elsewhere. *)
             Reporter.accumulate
-              ~fallback:(fun () -> branches)
+              ~fallback:(fun () -> branches |> Constr.Map.add constr Term.Failed)
               ~passthrough:(fun d ->
                 match d.message with
                 | Missing_constructor_in_match _ -> true
@@ -1481,7 +1479,7 @@ and check_match_branches : type dom window mode a b bm.
             (* In the synthesizing case, we might still have no motive, if all the synthesis failed.  In that case, the only reason we're going through this is to annotate the contexts of each branch. *)
             | Some body, None ->
                 Annotate.ctx status newctx body;
-                branches
+                branches |> Constr.Map.add constr Term.Failed
             | Some body, Some motive ->
                 let cmotive = callbacks.use motive constr dim index_vals newvars in
                 let cbody = check status newctx body cmotive in
@@ -1493,7 +1491,8 @@ and check_match_branches : type dom window mode a b bm.
                     branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm })
                 | Error err ->
                     List.iter emit err;
-                    fatal (Missing_constructor_in_match constr)))
+                    mortal (Missing_constructor_in_match constr);
+                    branches |> Constr.Map.add constr Term.Failed))
           branches check_branches in
       (* Finally, we check that all the abstractions used the correct symbol ↦ or ⤇ *)
       List.iter
@@ -1581,8 +1580,11 @@ and synth_nondep_match : type mode a b.
                 make_match_status status window plus_lock tm dim None Constr.Map.empty annotate comp
                   None perm constr in
               Annotate.ctx status newctx (locate_opt body.loc (Synth body.value));
-              (* Trap errors and accumulate them, going on to look for other synthesizing branches. *)
-              Reporter.accumulate ~fallback:(fun () -> find_synthing_branch brs) @@ fun () ->
+              (* Trap errors and accumulate them, recording this branch as failed and going on to look for other synthesizing branches. *)
+              Reporter.accumulate ~fallback:(fun () ->
+                  let motive, branches, brs = find_synthing_branch brs in
+                  (motive, branches |> Constr.Map.add constr Term.Failed, brs))
+              @@ fun () ->
               (* If the branch successfully synthesizes a type, it is the type of the entire match, so we pass in the ?synthed callback.  Importantly, therefore, the callback gets called before any other branches are typechecked.  However, that type is only valid for the whole match if it doesn't depend on the pattern variables.  We check that by reading it back into the original context, as soon as it is known.  Thus we pass our own ?synthed callback unconditionally to do this, and also call the caller's ?synthed if it exists. *)
               let synthed sty =
                 ( Reporter.try_with ~deadly:(fun d ->
@@ -1713,8 +1715,6 @@ and check_var_match : type dom modality mode a b bm.
     Asai.Range.t option ->
     (mode, b, potential) term =
  fun status ctx level index varty window plus brs refutables highers motive loc ->
-  (* A match with a failed branch is not returned, since evaluating it later could reach the missing branch. *)
-  Reporter.scoped ~why:"check_var_match" @@ fun () ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_var_match" with
   | Canonical
@@ -1918,9 +1918,9 @@ and check_var_match : type dom modality mode a b bm.
                         (* Finally, we typecheck the "body" of the branch, if the user supplied one. *)
                         match body with
                         | Some body ->
-                            (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
+                            (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed.  But we pass through the errors that are getting caught elsewhere. *)
                             Reporter.accumulate
-                              ~fallback:(fun () -> branches)
+                              ~fallback:(fun () -> branches |> Constr.Map.add constr Term.Failed)
                               ~passthrough:(fun d ->
                                 match d.message with
                                 | Missing_constructor_in_match _ -> true
@@ -1975,7 +1975,7 @@ and check_var_match : type dom modality mode a b bm.
                             | Error err ->
                                 List.iter emit err;
                                 mortal (Missing_constructor_in_match constr);
-                                branches))))
+                                branches |> Constr.Map.add constr Term.Failed))))
             | _ -> fatal (Anomaly "created datatype is not a datatype with all its indices"))
           Constr.Map.empty user_branches in
       List.iter
@@ -3649,7 +3649,7 @@ and synth : type mode a b s.
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ -> (
         match
-          Reporter.accumulate ~fallback:(fun () -> None) @@ fun () ->
+          Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_silent @@ fun () ->
           Some (check (Kinetic `Nolet) ctx ty (universe mode D.zero))
         with
         | None -> (
