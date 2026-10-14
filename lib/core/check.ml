@@ -2386,6 +2386,20 @@ and check_data : type mode a b i.
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
             let coutput = check (Kinetic `Nolet) newctx output (universe (Ctx.mode ctx) D.zero) in
             let err = Code.Invalid_constructor_type (c, Left "head must be current datatype") in
+            (* We re-extract the indices only to validate that the output is the current datatype applied to the correct parameters and the right number of indices; the index values themselves are recovered on demand from the stored output. *)
+            let check_indices : type h any.
+                (h, mode, any) apps ->
+                Positivity.recursion
+                * (Constr.t, (mode, b, kinetic) term) Abwd.t
+                * Code.t Asai.Diagnostic.t Bwd.t =
+             fun out_apps ->
+              let (Wrap indices) = get_indices newctx c current_apps out_apps output.loc in
+              match Fwn.compare (Vec.length indices) num_indices with
+              | Eq -> (crec, checked_constrs |> Abwd.add c (Telescope.pis args coutput), errs)
+              | _ ->
+                  (* This can happen if the number of indices expected, which is computed from the type the datatype is being checked against, differs from the number of arguments the current constant actually takes.  For instance, if a 'match' with an explicit motive is used to define an indexed family, the motive could specify fewer indices than the constant has. *)
+                  fatal ?loc:output.loc
+                    (Invalid_constructor_type (c, Left "wrong number of index arguments")) in
             match eval_term (Ctx.env newctx) coutput with
             | Neu { head = Const { name = out_head; ins }; args = out_apps; value = _; ty = _ } -> (
                 match head with
@@ -2394,18 +2408,39 @@ and check_data : type mode a b i.
                     | Pos _ ->
                         fatal ?loc:output.loc
                           (Unimplemented "indexed inductive types nested inside higher comatches")
-                    | Zero -> (
-                        (* We re-extract the indices only to validate that the output is the current datatype applied to the correct parameters and the right number of indices; the index values themselves are recovered on demand from the stored output. *)
-                        let (Wrap indices) = get_indices newctx c current_apps out_apps output.loc in
-                        match Fwn.compare (Vec.length indices) num_indices with
-                        | Eq ->
-                            (crec, checked_constrs |> Abwd.add c (Telescope.pis args coutput), errs)
-                        | _ ->
-                            (* This can happen if the number of indices expected, which is computed from the type the datatype is being checked against, differs from the number of arguments the current constant actually takes.  For instance, if a 'match' with an explicit motive is used to define an indexed family, the motive could specify fewer indices than the constant has. *)
-                            fatal ?loc:output.loc
-                              (Invalid_constructor_type (c, Left "wrong number of index arguments"))
-                        ))
+                    | Zero -> check_indices out_apps)
                 | _ -> fatal ?loc:output.loc err)
+            (* A local datatype defined with "let rec" has a metavariable as its head, which must be the same metavariable with an equal environment. *)
+            | Neu
+                {
+                  head = Meta { meta = out_meta; env = out_env; ins };
+                  args = out_apps;
+                  value = _;
+                  ty = _;
+                } -> (
+                match head with
+                | Meta (meta, env) -> (
+                    match
+                      ( Meta.compare meta out_meta,
+                        Mode.compare (Meta.mode meta) (Ctx.mode newctx),
+                        D.compare (dim_env env) (dim_env out_env),
+                        Option.is_some (is_id_ins ins) )
+                    with
+                    | Eq, Eq, Eq, true -> (
+                        match D.compare_zero (dim_env env) with
+                        | Pos _ ->
+                            fatal ?loc:output.loc
+                              (Unimplemented
+                                 "indexed inductive types nested inside higher comatches")
+                        | Zero ->
+                            equal_env newctx env out_env (Global.find_meta meta).termctx
+                            |> Result.fold
+                                 ~ok:(fun () -> check_indices out_apps)
+                                 ~error:(fun why ->
+                                   fatal ?loc:output.loc (Invalid_constructor_type (c, Right why))))
+                    | Eq, Eq, Eq, false | Neq, _, _, _ | _, Neq, _, _ | _, _, Neq, _ ->
+                        fatal ?loc:output.loc err)
+                | Constant _ -> fatal ?loc:output.loc err)
             | _ -> fatal ?loc:output.loc err in
           check_data ~recursive:(Positivity.merge recursive crec) ~hints ~tyfam status ctx ty
             num_indices checked_constrs raw_constrs errs
