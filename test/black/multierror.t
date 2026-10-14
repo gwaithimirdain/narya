@@ -712,3 +712,42 @@ Even trivial dependency blocks going on, as long as there is the potential for d
      ^ checking tuple against non-record type A
   
   [1]
+
+A match with a failed branch is not returned without that branch, since evaluating it later in the same definition could reach the missing branch.
+
+  $ cat >partialmatch.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def t : Bool ≔
+  >   let g : Bool → Type ≔ x ↦ match x [ true. ↦ true. | false. ↦ Bool ] in
+  >   ((true. : g true.) : Bool)
+  > EOF
+
+  $ narya partialmatch.ny
+   ￫ error[E1000]
+   ￭ $TESTCASE_ROOT/partialmatch.ny
+   3 |   let g : Bool → Type ≔ x ↦ match x [ true. ↦ true. | false. ↦ Bool ] in
+     ^ non-datatype Type has no constructor named true
+  
+  [1]
+
+  $ cat >partialmatch2.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def t : Bool ≔
+  >   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+  >   ((refl true.) : Id Bool (g true.) true.)
+  > EOF
+
+  $ narya partialmatch2.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch2.ny
+   3 |   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]

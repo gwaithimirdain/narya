@@ -232,32 +232,8 @@
        does not equal
          Type
   
-   ￫ error[E0401]
-   ￭ command-line exec string
-   1 | echo (a : Id A)
-     ^ term synthesized type
-         Type⁽ᵉ⁾ A A
-       but is being checked against type
-         Type
-       unequal head terms:
-         Type⁽ᵉ⁾
-       does not equal
-         Type
-  
   [1]
   $ narya -parametric errors.ny -e "echo (a : Id (Id A) (refl a) (refl a))"
-   ￫ error[E0401]
-   ￭ command-line exec string
-   1 | echo (a : Id (Id A) (refl a) (refl a))
-     ^ term synthesized type
-         Type⁽ᵉ⁾ (Id A a a) (Id A a a)
-       but is being checked against type
-         Type
-       unequal head terms:
-         Type⁽ᵉ⁾
-       does not equal
-         Type
-  
    ￫ error[E0401]
    ￭ command-line exec string
    1 | echo (a : Id (Id A) (refl a) (refl a))

@@ -1386,24 +1386,39 @@ let modalcell_fatal : type a. string -> modality_error -> a =
       fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
         (Mode_mismatch (`User, str, a, Some (`Hsrc m.value), b))
 
-(* After a "fatal" error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  Specifically, we introduce "mortal" errors, which will eventually kill the program, but allow it to continue doing more checking to accumulate more errors.  A mortal error should be raised instead of a fatal one if there is something sensible that could be returned to allow typechecking to continue elsewhere, e.g. a match statement with some missing branches because they didn't typecheck.  Reporting a mortal error is an effect instead of an exception.  The program is "moribund" if at least one mortal error has been reported. *)
+(* After a "fatal" error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  Specifically, we introduce "mortal" errors, which will eventually kill the program, but allow it to continue doing more checking to accumulate more errors.  A mortal error should be raised instead of a fatal one if there is something sensible that could be returned to allow typechecking to continue elsewhere, e.g. a match statement with some missing branches because they didn't typecheck.  Reporting a mortal error is an effect instead of an exception.  A scope (see [scope] below) is "moribund" if at least one mortal error has been reported inside it. *)
 
-type _ Effect.t +=
-  | Mortal : Code.t Asai.Diagnostic.t -> unit Effect.t
-  | Moribund : bool Effect.t
-  | Make_fatal : unit Effect.t
+type _ Effect.t += Mortal : Code.t Asai.Diagnostic.t -> unit Effect.t | Moribund : bool Effect.t
 
 let mortal_diagnostic d = perform (Mortal d)
 
 let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
   mortal_diagnostic (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
 
+(* Whether the current scope (see [scope] below) is moribund. *)
 let moribund () = perform Moribund
 
-(* Kill a moribund program. *)
-let make_fatal () = perform Make_fatal
+(* Kill a moribund scope, by raising a silent fatal error.  This propagates like any fatal error, so it can be caught by an enclosing [accumulate], which records it as a (silent) mortal error and continues with its fallback.  The real errors that made the scope moribund have already been reported as mortal. *)
+let make_fatal ?(why = "make_fatal") () = if moribund () then fatal (Silent why)
 
-(* [run] accumulates mortal errors as it sees them.  If it ever sees a fatal error, or if execution terminates with at least one mortal error reported, it passes all the accumulated errors to its [fatal] argument (which therefore takes a bwd of diagnostics, not a single one). *)
+(* Delimit a scope for [moribund] and [make_fatal]: inside it, the program counts as moribund only if a mortal error has been reported inside it.  Mortal errors are still passed on outwards.  This allows, for instance, a struct to refuse to finish typechecking if one of its own fields failed, without being affected by errors in unrelated sibling terms. *)
+let scope f =
+  let local = ref false in
+  try f () with
+  | effect Mortal err, k ->
+      local := true;
+      mortal_diagnostic err;
+      continue k ()
+  | effect Moribund, k -> continue k !local
+
+(* The common case: run a callback in its own scope, and then fail (silently) if any errors occurred in it, even if it returned a partial result.  This is appropriate for anything, like a struct or a datatype, that can keep checking its later parts after an error in an earlier one, but should not be returned with some parts missing. *)
+let scoped ?why f =
+  scope @@ fun () ->
+  let result = f () in
+  make_fatal ?why ();
+  result
+
+(* [run] accumulates mortal errors as it sees them.  If it ever sees a fatal error, or if execution terminates with at least one mortal error reported, it passes all the accumulated errors to its [fatal] argument (which therefore takes a bwd of diagnostics, not a single one).  It is also the outermost scope for [moribund]. *)
 let run ?init_loc ?(init_backtrace = Emp) ~fatal ~emit f =
   let mortals : Code.t Asai.Diagnostic.t Bwd.t ref = ref Emp in
   Delegate.run ?init_loc ~init_backtrace ~emit ~fatal:(fun err -> fatal (Snoc (!mortals, err)))
@@ -1418,11 +1433,6 @@ let run ?init_loc ?(init_backtrace = Emp) ~fatal ~emit f =
       mortals := Snoc (!mortals, err);
       continue k ()
   | effect Moribund, k -> continue k (not (Bwd.is_empty !mortals))
-  | effect Make_fatal, k -> (
-      if Bwd.is_empty !mortals then continue k ()
-      else
-        let exception Killed in
-        try discontinue k Killed with Killed -> fatal !mortals)
 
 (* We can locally declare that fatal errors should become merely mortal, so that we can continue to find more.  But we have to give a fallback result in that case.  We also allow a filter that passes some fatal errors through as fatal.  *)
 let accumulate ~fallback ?passthrough f =

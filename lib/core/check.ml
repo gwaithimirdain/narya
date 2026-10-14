@@ -435,25 +435,32 @@ let rec check : type mode a b s.
     | Synth (Act (str, fa, x) as stm), _ -> (
         (* An action can always synthesize, but can usually also check. *)
         match (perm_of_deg fa, x) with
-        | Some pfa, Some x ->
+        | Some pfa, Some x -> (
             (* It can check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
             let fainv = deg_of_perm (perm_inv pfa) in
-            Reporter.try_with ~deadly:(fun d ->
-                (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
-                match d.message with
-                | Low_dimensional_argument_of_degeneracy _ ->
-                    (* However, if the given term *doesn't* synthesize, we want to report the low-dimensional error, so we pass that diagnostic on. *)
-                    `Return (check_of_synth ~nosynth:d status ctx stm tm.loc ty)
-                | _ -> `Passthrough)
-            @@ fun () ->
-            let ty_fainv =
-              gact_ty None ty fainv ~err:(low_dim_arg_err str.value) (Modalcell.id2 (Ctx.mode ctx))
-            in
-            (* A pure permutation is never locking.  *)
-            let cx = check (Kinetic `Nolet) ctx x ty_fainv in
-            realize status
-              (Term.Act
-                 (Kinetic, cx, fa, (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx)))
+            match
+              Reporter.try_with ~deadly:(fun d ->
+                  (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
+                  match d.message with
+                  | Low_dimensional_argument_of_degeneracy _ -> `Return (Error d)
+                  | _ -> `Passthrough)
+              @@ fun () ->
+              Ok
+                (gact_ty None ty fainv ~err:(low_dim_arg_err str.value)
+                   (Modalcell.id2 (Ctx.mode ctx)))
+            with
+            | Error nosynth ->
+                (* However, if the given term *doesn't* synthesize, we want to report the low-dimensional error, so we pass that diagnostic on. *)
+                check_of_synth ~nosynth status ctx stm tm.loc ty
+            | Ok ty_fainv ->
+                (* A pure permutation is never locking.  *)
+                let cx = check (Kinetic `Nolet) ctx x ty_fainv in
+                realize status
+                  (Term.Act
+                     ( Kinetic,
+                       cx,
+                       fa,
+                       (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx) )))
         | Some _, None -> fatal (Nonsynthesizing "pure symmetry of placeholder")
         | None, _ -> (
             (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
@@ -734,6 +741,7 @@ let rec check : type mode a b s.
                 fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
             | _ ->
                 let Eq = eq_of_ins_zero ins in
+                Reporter.scoped ~why:"check_codata" @@ fun () ->
                 check_codata status ctx `Opaque Noeta hints tyargs Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Noeta
                      (readback_neu ctx (head_of_potential head) apps))
@@ -760,6 +768,7 @@ let rec check : type mode a b s.
                 match has_higher_fields with
                 | Some () -> fatal (Unimplemented "higher fields in record types: use codata")
                 | None ->
+                    Reporter.scoped ~why:"check_codata" @@ fun () ->
                     check_codata status ctx opacity Eta hints tyargs Emp
                       (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                          (readback_neu ctx (head_of_potential head) apps))
@@ -775,6 +784,7 @@ let rec check : type mode a b s.
                 let Eq = eq_of_ins_zero ins in
                 let (Vars (af, vars)) =
                   vars_of_names (fun j -> Wrong_boundary_of_record j) xs.loc dim xs.value in
+                Reporter.scoped ~why:"check_record" @@ fun () ->
                 check_record status dim ctx opacity hints tyargs vars Emp Zero af Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                      (readback_neu ctx (head_of_potential head) apps))
@@ -786,6 +796,7 @@ let rec check : type mode a b s.
         let (Wrap num_indices) = Fwn.of_int n in
         (* Read back the datatype's type family: the head applied to the parameters it has been given so far, e.g. "Vec A".  This is stored in the checked term so that at evaluation time the value-level tyfam can be filled in directly. *)
         let tyfam = readback_neu ctx (head_of_potential head) apps in
+        Reporter.scoped ~why:"check_data" @@ fun () ->
         check_data ~recursive:`Nonrecursive ~hints ~tyfam status ctx ty num_indices Abwd.empty
           (Bwd.to_list constrs)
     (* If we have a term that's not valid outside a case tree, we bind it to a global metavariable. *)
@@ -1015,19 +1026,20 @@ and check_of_synth : type mode a b s.
     (mode, b, s) term =
  fun ?nosynth status ctx stm loc ty ->
   match stm with
-  | Asc (ctm, aty) -> (
+  | Asc (ctm, aty) ->
       (* If the term is synthesizing because it is ascribed, then we can accumulate errors: if the ascription fails to check, or if it fails to equal the checking type, we can proceed to check the ascribed term against the supplied type instead, and if that succeeds we can go on to other parts of the program.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends. *)
-      Reporter.accumulate ~fallback:(fun () -> check status ctx ctm ty)
-      @@ fun () ->
-      let cty = check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero) in
-      let ety = eval_term (Ctx.env ctx) cty in
-      (* It suffices for the synthesized type to be a subtype of the checking type. *)
-      match subtype_of ctx ety ty with
-      | Ok () -> check status ctx ctm ety
-      | Error why ->
-          fatal
-            (Unequal_synthesized_type
-               { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }))
+      let ety =
+        Reporter.accumulate ~fallback:(fun () -> ty) @@ fun () ->
+        let cty = check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero) in
+        let ety = eval_term (Ctx.env ctx) cty in
+        (* It suffices for the synthesized type to be a subtype of the checking type. *)
+        match subtype_of ctx ety ty with
+        | Ok () -> ety
+        | Error why ->
+            fatal
+              (Unequal_synthesized_type
+                 { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }) in
+      check status ctx ctm ety
   | _ -> (
       let sval, sty = synth ?nosynth status ctx { value = stm; loc } in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
@@ -1408,6 +1420,8 @@ and check_match_branches : type dom window mode a b bm.
     (dom, window, mode, a, b) match_motive ->
     (mode, b, potential) term * (mode, kinetic) value option =
  fun status ctx tm varty window plus_lock brs i highers loc (Motive callbacks) ->
+  (* A match with a failed branch is not returned, since evaluating it later could reach the missing branch. *)
+  Reporter.scoped ~why:"check_match_branches" @@ fun () ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_match_branches" with
   | Canonical
@@ -1596,7 +1610,8 @@ and synth_nondep_match : type mode a b.
               (c, Checkable_branch { xs; body; env; ty }) :: cbs)
             synth_branches check_branches in
         (motive, branches, check_branches) in
-      (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch. *)
+      (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch.  We delimit a scope so that if no motive was found, we can tell whether that was because of errors in this match. *)
+      Reporter.scope @@ fun () ->
       let result, motive =
         check_match_branches status ctx tm varty window plus_lock brs i highers loc
           (Motive
@@ -1607,7 +1622,9 @@ and synth_nondep_match : type mode a b.
                motive_term = (fun _ -> None);
              }) in
       match motive with
-      | None -> fatal (Anomaly "synth_nondep_match: no synthesized type of match but no errors")
+      | None ->
+          make_fatal ~why:"synth_nondep_match" ();
+          fatal (Anomaly "synth_nondep_match: no synthesized type of match but no errors")
       | Some motive -> (result, motive))
 
 (* Check a dependently typed match, with motive supplied by the user.  (Thus we have to typecheck the motive as well.)  *)
@@ -1696,6 +1713,8 @@ and check_var_match : type dom modality mode a b bm.
     Asai.Range.t option ->
     (mode, b, potential) term =
  fun status ctx level index varty window plus brs refutables highers motive loc ->
+  (* A match with a failed branch is not returned, since evaluating it later could reach the missing branch. *)
+  Reporter.scoped ~why:"check_var_match" @@ fun () ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
   match view_type varty "check_var_match" with
   | Canonical
@@ -2498,7 +2517,6 @@ and check_codata : type mode a b n et.
   let dim = TubeOf.inst tyargs in
   match raw_fields with
   | [] ->
-      make_fatal ();
       with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy
       @@ fun _ codataterm -> codataterm
   | (Wrap fld, Codatafield (x, lock, self_ty, rty)) :: raw_fields -> (
@@ -2623,7 +2641,6 @@ and check_record : type mode a f1 f2 f af d acd b n.
      raw_fields ->
   match raw_fields with
   | Emp ->
-      make_fatal ();
       let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
       Term.Canonical
         (Codata
@@ -2685,6 +2702,8 @@ and check_struct : type mode a b c s m n mn et.
     ((string * string list) option, [ `Normal | `Cube ] located * a check located) Abwd.t ->
     (mode, b, s) term =
  fun status eta ctx ty m mn ({ fields; _ } as codata_args) tyargs tms ->
+  (* Errors in previous fields of this struct, but not elsewhere, prevent us from checking later fields that depend on them, and from completing the struct. *)
+  Reporter.scoped ~why:"check_struct" @@ fun () ->
   (* The type of each record field, at which we check the corresponding field supplied in the struct, is the type associated to that field name in general, evaluated at the supplied parameters and at "the term itself".  We don't have the whole term available while typechecking, of course, but we can build a version of it that contains all the previously typechecked fields, which is all we need for a well-typed record.  So we iterate through the fields (in the order specified in the *type*, since that determines the dependencies) while also accumulating the previously typechecked and evaluated fields.  At the end, we throw away the evaluated fields (although as usual, that seems wasteful).  Note that check_fields returns a modified version of the *user* fields 'tms', since it may need to resolve positional fields to named ones. *)
   let tms, ctms =
     check_fields status eta ctx ty m mn codata_args
@@ -2715,7 +2734,6 @@ and check_struct : type mode a b c s m n mn et.
             | None, None ->
                 fatal ?loc:tmloc (Anomaly "taken raw field didn't end up in checked fields")))
       Emp tms in
-  make_fatal ();
   Term.Struct { eta; dim = m; fields; energy = energy status }
 
 and check_fields : type mode a b c s m n mn et.
@@ -2744,7 +2762,7 @@ and check_fields : type mode a b c s m n mn et.
   match (fields, status) with
   | [], _ ->
       (* If there are no more fields to check, we return, unless there were errors. *)
-      make_fatal ();
+      make_fatal ~why:"check_fields" ();
       (tms, ctms)
   | Entry (fld, cdf) :: fields, Potential (name, args, hyp) ->
       (* Temporarily bind the current constant to the up-until-now value (or an error, if any have occurred yet), for (co)recursive purposes.  Note that this means as soon as one field fails, no other fields can be typechecked if they depend *at all* on earlier ones, even ones that didn't fail.  This could be improved in the future. *)
@@ -3629,19 +3647,22 @@ and synth : type mode a b s.
                  (sort_of_ty ctx (view_type sty "synth act"), canonical_head sx) )),
           sty )
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
-    | Asc (tm, ty), _ ->
-        Reporter.accumulate ~fallback:(fun () ->
+    | Asc (tm, ty), _ -> (
+        match
+          Reporter.accumulate ~fallback:(fun () -> None) @@ fun () ->
+          Some (check (Kinetic `Nolet) ctx ty (universe mode D.zero))
+        with
+        | None -> (
             (* If the ascribed type doesn't typecheck, *and* if the term itself happens to already be synthesizing, we can proceed to try to synthesize it, accumulating errors from multiple sources.  This will rarely happen in normal use, since there is no need to ascribe a term that's already synthesizing, but with some alternative frontends it may. *)
             match tm.value with
             | Synth stm -> synth status ctx (locate_opt tm.loc stm)
             | _ -> fatal (Silent "synth Asc"))
-        @@ fun () ->
-        let cty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
-        let ety = eval_term (Ctx.env ctx) cty in
-        (* The ascription will be the type of the entire term, so we pass it into the callback.  We do this before typechecking the term, in case that term depends on having a metavariable's type installed. *)
-        call_synthed ety;
-        let ctm = check status ctx tm ety in
-        (ctm, ety)
+        | Some cty ->
+            let ety = eval_term (Ctx.env ctx) cty in
+            (* The ascription will be the type of the entire term, so we pass it into the callback.  We do this before typechecking the term, in case that term depends on having a metavariable's type installed. *)
+            call_synthed ety;
+            let ctm = check status ctx tm ety in
+            (ctm, ety))
     | AscLam ({ value = x; loc = _ }, modality, dom, body), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing ascribed lambda" (e :> modality_error)
@@ -3840,7 +3861,7 @@ and synth : type mode a b s.
                   @@ fun () -> synth status ctx (locate_opt tm.loc alt)
               | None, `Data _ | None, `Codata _ -> fatal (Anomaly "SFirst mismatch")
               | _ -> go alts) in
-        go alts
+        Reporter.scope @@ fun () -> go alts
     | Calc (x, rest), _ ->
         let idm = Modality.id mode in
         let cx, ty = synth (Kinetic `Nolet) ctx x in

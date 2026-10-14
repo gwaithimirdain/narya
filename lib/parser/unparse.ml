@@ -729,7 +729,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
   | Noeta, _ | Eta, true -> self_var_render ()
   | Eta, false -> (
       (* Try the field-variable syntax "sig (a : ..., b : a → ..., ...)", exposing the anonymous self-variable's fields as named variables.  We fall back to the self-variable syntax if a field name clashes with a name already in scope (add_fields returns None), or if a field type references the self-variable other than via a field projection ("Names.lookup" reports the Self_used bug, which we catch). *)
-      Reporter.backtrack ~deadly:(fun d ->
+      Reporter.try_with ~deadly:(fun d ->
           match d.message with
           | Self_used -> `Return (self_var_render ())
           | _ -> `Passthrough)
