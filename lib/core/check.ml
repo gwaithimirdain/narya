@@ -1026,20 +1026,29 @@ and check_of_synth : type mode a b s.
     (mode, b, s) term =
  fun ?nosynth status ctx stm loc ty ->
   match stm with
-  | Asc (ctm, aty) ->
-      (* If the term is synthesizing because it is ascribed, then we can accumulate errors: if the ascription fails to check, or if it fails to equal the checking type, we can proceed to check the ascribed term against the supplied type instead, and if that succeeds we can go on to other parts of the program.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends. *)
-      let ety =
-        Reporter.accumulate ~fallback:(fun () -> ty) ~passthrough:is_silent @@ fun () ->
+  | Asc (ctm, aty) -> (
+      (* If the term is synthesizing because it is ascribed, then we can accumulate errors.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends.  First, if the ascription fails to check, we can proceed to check the ascribed term against the supplied type instead, and if that succeeds we can go on to other parts of the program. *)
+      match
+        Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_silent @@ fun () ->
         let cty = check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero) in
-        let ety = eval_term (Ctx.env ctx) cty in
-        (* It suffices for the synthesized type to be a subtype of the checking type. *)
-        match subtype_of ctx ety ty with
-        | Ok () -> ety
-        | Error why ->
-            fatal
-              (Unequal_synthesized_type
-                 { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }) in
-      check status ctx ctm ety
+        Some (eval_term (Ctx.env ctx) cty)
+      with
+      | None -> check status ctx ctm ty
+      | Some ety -> (
+          (* It suffices for the synthesized type to be a subtype of the checking type. *)
+          match subtype_of ctx ety ty with
+          | Ok () -> check status ctx ctm ety
+          | Error why -> (
+              mortal
+                (Unequal_synthesized_type
+                   { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why });
+              (* If the ascription is a valid type that disagrees with the checking type, we don't know which of them is wrong.  We first check the term against the ascription, since that's what the user said its type should be, so any errors that produces are reported relative to it.  But if that fails, and the term does check against the checking type, then probably the user wrote the right term but the wrong ascription; in that case we discard the errors relative to the ascription, and we can even go on with a well-typed term. *)
+              match Reporter.capture (fun () -> check status ctx ctm ety) with
+              | Ok _ -> fatal (Silent "ascription mismatch")
+              | Error asc_errs -> (
+                  match Reporter.capture (fun () -> check status ctx ctm ty) with
+                  | Ok tm -> tm
+                  | Error _ -> Reporter.replay asc_errs))))
   | _ -> (
       let sval, sty = synth ?nosynth status ctx { value = stm; loc } in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)

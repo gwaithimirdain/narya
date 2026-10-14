@@ -1517,6 +1517,32 @@ let is_silent (d : Code.t Asai.Diagnostic.t) =
 (* Whether a diagnostic is a bug. *)
 let is_bug (d : Code.t Asai.Diagnostic.t) = d.severity = Bug
 
+(* Run a callback speculatively, capturing rather than reporting any errors it produces, both mortal and fatal.  It succeeds only if it returns without any errors; otherwise we get all its errors, which the caller can report later with [replay] if it decides to.  Inside the callback, [moribund] refers only to errors produced by the callback.  Bugs are not captured, since they indicate a problem that shouldn't be hidden by succeeding along some other path. *)
+let capture (f : unit -> 'a) : ('a, Code.t Asai.Diagnostic.t Bwd.t) Result.t =
+  let errs = ref Emp in
+  let result =
+    Delegate.try_with ~fatal:(fun d ->
+        if is_bug d then (
+          Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ !errs ];
+          fatal_diagnostic d)
+        else (
+          errs := Snoc (!errs, d);
+          None))
+    @@ fun () ->
+    try Some (f ()) with
+    | effect Mortal d, k ->
+        if is_bug d then mortal_diagnostic d else errs := Snoc (!errs, d);
+        continue k ()
+    | effect Moribund, k -> continue k (not (Bwd.is_empty !errs)) in
+  match (result, !errs) with
+  | Some x, Emp -> Ok x
+  | _, errs -> Error errs
+
+(* Report errors captured by [capture], and then fail silently since they were fatal. *)
+let replay (errs : Code.t Asai.Diagnostic.t Bwd.t) : 'a =
+  Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ errs ];
+  fatal (Silent "replay")
+
 (* Run a callback, backtracking with the given handler if it fails.  Bugs are re-raised instead, since they indicate a problem that shouldn't be hidden by succeeding along some other path. *)
 let backtrack
     ~(deadly : Code.t Asai.Diagnostic.t -> [ `Passthrough | `Replace of Code.t | `Return of 'a ])

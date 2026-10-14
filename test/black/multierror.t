@@ -855,3 +855,101 @@ The same holds for conversion checking through a failed branch, and for a failed
           true
   
   [1]
+
+An ascription in checking position that is a valid type, but disagrees with the checking type, is reported once.  The term is then checked against the ascription, since that's what the user said its type should be.  If that succeeds, there is nothing more to report.
+
+  $ cat >ascmismatch.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > axiom P : Bool → Type
+  > axiom p : P true.
+  > axiom q : P false.
+  > def prod (X Y : Type) : Type ≔ sig ( fst : X, snd : Y )
+  > EOF
+
+  $ narya ascmismatch.ny -e 'def t1 : P false. ≔ (p : P true.)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t1 : P false. ≔ (p : P true.)
+     ^ term synthesized type
+         P true.
+       but is being checked against type
+         P false.
+       unequal constructors:
+         true
+       does not equal
+         false
+  
+  [1]
+
+  $ narya ascmismatch.ny -e 'def t2 : Bool ≔ ((x ↦ x) : Bool → Bool)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t2 : Bool ≔ ((x ↦ x) : Bool → Bool)
+     ^ term synthesized type
+         Bool → Bool
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Bool → Bool
+       does not equal
+         Bool
+  
+  [1]
+
+If the term also fails to check against the ascription, but does check against the checking type, then probably the ascription is what's wrong.  Its errors relative to the ascription are discarded, and checking continues with the well-typed term, so here the error in the second component is still found.
+
+  $ narya ascmismatch.ny -e 'def t3 : prod (P false.) Bool ≔ ((q : P true.), Type)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t3 : prod (P false.) Bool ≔ ((q : P true.), Type)
+     ^ term synthesized type
+         P true.
+       but is being checked against type
+         P false.
+       unequal constructors:
+         true
+       does not equal
+         false
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t3 : prod (P false.) Bool ≔ ((q : P true.), Type)
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+If it fails against both, the errors relative to the ascription are reported.
+
+  $ narya ascmismatch.ny -e 'def t4 : Bool ≔ ((x ↦ x) : Bool → P true.)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t4 : Bool ≔ ((x ↦ x) : Bool → P true.)
+     ^ term synthesized type
+         Bool → P true.
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Bool → P true.
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t4 : Bool ≔ ((x ↦ x) : Bool → P true.)
+     ^ term synthesized type
+         Bool
+       but is being checked against type
+         P true.
+       unequal head constants:
+         Bool
+       does not equal
+         P
+  
+  [1]
