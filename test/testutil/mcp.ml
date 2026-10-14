@@ -23,7 +23,7 @@ let parse_term names (tm : string) =
 let synth (tm : string) : (test_mode, kinetic) value * (test_mode, kinetic) value =
   let (Ctx (ctx, names)) = !context in
   Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
-      Reporter.display d;
+      Reporter.display_bwd d;
       raise (Failure "Failed to synthesize"))
   @@ fun () ->
   match parse_term names tm with
@@ -36,7 +36,7 @@ let synth (tm : string) : (test_mode, kinetic) value * (test_mode, kinetic) valu
 let check (tm : string) (ty : (test_mode, kinetic) value) : (test_mode, kinetic) value =
   let (Ctx (ctx, names)) = !context in
   Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
-      Reporter.display d;
+      Reporter.display_bwd d;
       raise (Failure "Failed to check"))
   @@ fun () -> eval_term (Ctx.env ctx) (Check.check (Kinetic `Nolet) ctx (parse_term names tm) ty)
 
@@ -45,19 +45,19 @@ let check (tm : string) (ty : (test_mode, kinetic) value) : (test_mode, kinetic)
 let unsynth : ?print:unit -> ?code:Reporter.Code.t -> ?short:string -> string -> unit =
  fun ?print ?code ?short tm ->
   let (Ctx (ctx, names)) = !context in
-  Reporter.try_with ~fatal:(fun d ->
+  Reporter.try_with ~deadly:(fun d ->
       match code with
       | None -> (
           match short with
-          | None -> if Option.is_some print then Reporter.display d
+          | None -> `Return (if Option.is_some print then Reporter.display d)
           | Some str ->
-              if Reporter.Code.short_code d.message = str then (
-                if Option.is_some print then Reporter.display d)
+              if Reporter.Code.short_code d.message = str then
+                `Return (if Option.is_some print then Reporter.display d)
               else (
                 Reporter.display d;
                 raise (Failure "Unexpected error code")))
       | Some c ->
-          if d.message = c then (if Option.is_some print then Reporter.display d)
+          if d.message = c then `Return (if Option.is_some print then Reporter.display d)
           else (
             Reporter.display d;
             raise (Failure "Unexpected error code")))
@@ -77,20 +77,19 @@ let uncheck :
     unit =
  fun ?print ?code ?short tm ty ->
   let (Ctx (ctx, names)) = !context in
-  Reporter.try_with ~fatal:(fun d ->
+  Reporter.try_with ~deadly:(fun d ->
       match code with
       | None -> (
           match short with
-          | None -> if Option.is_some print then Reporter.display d
+          | None -> `Return (if Option.is_some print then Reporter.display d)
           | Some str ->
-              if Reporter.Code.short_code (Reporter.unaccumulate d.message) = str then (
-                if Option.is_some print then Reporter.display d)
+              if Reporter.Code.short_code d.message = str then
+                `Return (if Option.is_some print then Reporter.display d)
               else (
                 Reporter.display d;
                 raise (Failure "Unexpected error code")))
       | Some c ->
-          if Reporter.unaccumulate d.message = c then (
-            if Option.is_some print then Reporter.display d)
+          if d.message = c then `Return (if Option.is_some print then Reporter.display d)
           else (
             Reporter.display d;
             raise (Failure "Unexpected error code")))
@@ -104,7 +103,7 @@ let unparse : ?print:unit -> string -> unit =
  fun ?print tm ->
   let (Ctx (_, names)) = !context in
   Reporter.try_with
-    ~fatal:(fun d -> if Option.is_some print then Reporter.display d)
+    ~deadly:(fun d -> `Return (if Option.is_some print then Reporter.display d))
     (fun () ->
       let _ = parse_term names tm in
       raise (Failure "Unexpected parse success"))

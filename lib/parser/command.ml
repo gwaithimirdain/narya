@@ -826,10 +826,9 @@ let parse_single (content : string) : Whitespace.t list * Command.t option =
 let show_hole = function
   | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
       let termctx, ty =
+        (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)
         Reporter.backtrack
-          ~fatal:(fun _ ->
-            (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)
-            (termctx, ty))
+          ~deadly:(fun _ -> `Return (termctx, ty))
           (fun () ->
             let ctx = Norm.eval_ctx termctx in
             let ety = Norm.eval_term (Ctx.env ctx) ty in
@@ -937,477 +936,496 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
   (match (Origin.current (), needs_interactive cmd) with
   | Top, true | File _, true -> fatal (Forbidden_interactive_command (to_string cmd))
   | _ -> ());
-  match cmd with
-  | Axiom { name; nonparam; loc; parameters; ty = Wrap ty; _ } ->
-      Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
-      (match name with
-      | [ str ] ->
-          if Option.is_some (deg_of_name str) then
-            fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
-          else if List.mem_assoc str (Modal.Mode.all ()) then
-            fatal (Invalid_constant_name (name, Some "that's a mode name"))
-      | _ -> ());
-      Scope.check_name name loc;
-      let const = Scope.define ?loc name in
-      let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
-      let parametric = Option.is_none nonparam in
-      Core.Command.execute (Axiom { name = const; params; ty = process ctx ty; parametric })
-  | Def defs ->
-      Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
-      let cdefs =
-        List.map
-          (fun { name; loc; parameters; ty; tm = Wrap tm; _ } ->
-            (match name with
-            | [ str ] ->
-                if Option.is_some (deg_of_name str) then
-                  fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
-                else if List.mem_assoc str (Modal.Mode.all ()) then
-                  fatal (Invalid_constant_name (name, Some "that's a mode name"))
-            | _ -> ());
-            Scope.check_name name loc;
-            ( lazy (Scope.define ?loc name),
-              lazy
-                (let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
-                 match ty with
-                 | Some (_, Wrap ty) ->
-                     let ty = process ctx ty in
-                     let tm = lazy (process ctx tm) in
-                     Core.Command.Def_check { params; ty; tm }
-                 | None -> (
-                     match process ctx tm with
-                     | { value = Synth tm; loc } -> Def_synth { params; tm = { value = tm; loc } }
-                     | _ -> fatal (Nonsynthesizing "body of def without specified type"))) ))
-          defs in
-      Core.Command.execute (Def cdefs)
-  | Echo { tm = Wrap tm; mode; number; _ } -> (
-      let module Scope_and_ctx = struct
-        type _ ctx_of_raw = Of_raw : ('mode, 'a, 'b) Ctx.t -> 'a ctx_of_raw
+  let result =
+    match cmd with
+    | Axiom { name; nonparam; loc; parameters; ty = Wrap ty; _ } ->
+        Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
+        (match name with
+        | [ str ] ->
+            if Option.is_some (deg_of_name str) then
+              fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
+            else if List.mem_assoc str (Modal.Mode.all ()) then
+              fatal (Invalid_constant_name (name, Some "that's a mode name"))
+        | _ -> ());
+        Scope.check_name name loc;
+        let const = Scope.define ?loc name in
+        let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
+        let parametric = Option.is_none nonparam in
+        Core.Command.execute (Axiom { name = const; params; ty = process ctx ty; parametric })
+    | Def defs ->
+        Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
+        let cdefs =
+          List.map
+            (fun { name; loc; parameters; ty; tm = Wrap tm; _ } ->
+              (match name with
+              | [ str ] ->
+                  if Option.is_some (deg_of_name str) then
+                    fatal (Invalid_constant_name (name, Some "that's a degeneracy name"))
+                  else if List.mem_assoc str (Modal.Mode.all ()) then
+                    fatal (Invalid_constant_name (name, Some "that's a mode name"))
+              | _ -> ());
+              Scope.check_name name loc;
+              ( lazy (Scope.define ?loc name),
+                lazy
+                  (let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
+                   match ty with
+                   | Some (_, Wrap ty) ->
+                       let ty = process ctx ty in
+                       let tm = lazy (process ctx tm) in
+                       Core.Command.Def_check { params; ty; tm }
+                   | None -> (
+                       match process ctx tm with
+                       | { value = Synth tm; loc } -> Def_synth { params; tm = { value = tm; loc } }
+                       | _ -> fatal (Nonsynthesizing "body of def without specified type"))) ))
+            defs in
+        Core.Command.execute (Def cdefs)
+    | Echo { tm = Wrap tm; mode; number; _ } -> (
+        let module Scope_and_ctx = struct
+          type _ ctx_of_raw = Of_raw : ('mode, 'a, 'b) Ctx.t -> 'a ctx_of_raw
 
-        type t =
-          | Scope_and_ctx : (string option, 'a) Bwv.t * ('a Raw.check located -> 'a ctx_of_raw) -> t
-      end in
-      let open Scope_and_ctx in
-      let Scope_and_ctx (vars, ctx), run =
-        match number with
-        | None ->
-            ( Scope_and_ctx
-                ( Bwv.Emp,
-                  fun rtm ->
-                    match Check.synth_mode rtm with
-                    | Some (Wrap mode) -> Of_raw (Ctx.empty mode)
-                    | None -> fatal (Non_mode_synthesizing "echo") ),
-              Global.run_command_then_undo ~holes_allowed:(Ok ()) )
-        | Some number ->
-            let num = Global.find_hole number in
-            let (Found_hole { instant; termctx; vars; parametric; _ }) = num in
-            show_hole num;
-            ( Scope_and_ctx (vars, fun _ -> Of_raw (Norm.eval_ctx termctx)),
-              Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant ) in
-      run @@ fun () ->
-      let rtm = process vars tm in
-      action_taken ();
-      match rtm.value with
-      | Synth stm ->
-          let (Of_raw ctx) = ctx rtm in
-          Readback.Displaying.run ~env:true @@ fun () ->
-          let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
-          let names = Names.of_ctx ctx in
-          (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
-          let utm =
-            match mode with
-            | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
-            | `Echo ->
-                let etm = Norm.eval_term (Ctx.env ctx) ctm in
-                unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
-                  No.Interval.entire
-            | `About -> (
-                let etm = Norm.eval_term (Ctx.env ctx) ctm in
-                match etm with
-                (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written rather than as it computes.  This is more informative when possible, since the readback of a potential value falls back to a neutral application spine wherever a match is stuck.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
-                | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
-                  when Option.is_some (is_id_ins ins)
-                       &&
-                       match D.compare_zero (cod_left_ins ins) with
-                       | Zero -> true
-                       | Pos _ -> false -> (
-                    match Global.find_const name with
-                    | Definition { tm = `Defined tree; _ } ->
-                        unparse Names.empty tree No.Interval.entire No.Interval.entire
-                    | Definition { tm = `Axiom; _ } ->
-                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
-                          No.Interval.entire)
-                (* Otherwise we read back the neutral's potential value, which displays a canonical type as its declaration and a comatch as itself.  If it has no potential value at all we show its normal form. *)
-                | _ -> (
-                    match readback_about ctx etm with
-                    | Some tm -> unparse names tm No.Interval.entire No.Interval.entire
-                    | None ->
-                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
-                          No.Interval.entire)) in
-          let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
-          let uty = unparse names bty No.Interval.entire No.Interval.entire in
-          !echo_output
-            PPrint.(
-              hang 2
-                (pp_complete_term (Wrap utm) `None
-                ^^ hardline
-                ^^ Token.pp Colon
-                ^^ blank 1
-                ^^ pp_complete_term (Wrap uty) `None));
-          (None, fun _ -> None)
-      | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
-  | Notation { fixity; loc; pattern; head; args; _ } ->
-      Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
-      let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
-      let notation_name = [ "notations"; name ] in
-      Scope.check_name notation_name loc;
-      let key =
-        match head with
-        | `Constr c -> `Constr (Constr.intern c, List.length args)
-        | `Constant c -> (
-            match Scope.lookup c with
-            | Some c -> `Constant c
-            | None -> fatal (Invalid_notation_head (String.concat "." c))) in
-      (* Find the "unbound" variables, if any, in the notation definition. *)
-      let rec unbounds : type left right.
-          (string * Whitespace.t list) list ->
-          string list ->
-          (left, right) User.Pattern.t ->
-          (string * Whitespace.t list) list =
-       fun args seen pat ->
-        let check_var x =
-          if List.mem x seen then fatal (Duplicate_notation_variable x);
-          let found, rest = List.partition (fun (y, _) -> x = y) args in
-          match found with
-          | [ _ ] -> rest
-          | [] -> fatal (Unused_notation_variable x)
-          | _ -> fatal (Notation_variable_used_twice x) in
-        match pat with
-        | User.Pattern.Var ((x, _, _), pat) ->
-            let rest = check_var x in
-            unbounds rest (x :: seen) pat
-        | Op (_, pat) -> unbounds args seen pat
-        | Op_nil _ -> args
-        | Var_nil (_, (x, _)) -> check_var x in
-      (match unbounds args [] pattern with
-      | [] -> ()
-      | _ :: _ as unbound -> fatal (Unbound_variable_in_notation (List.map fst unbound)));
-      let user =
-        User { id = User.Id.make (); name; fixity; pattern; key; val_vars = List.map fst args }
-      in
-      let shadow = Scope.define_notation user ?loc notation_name in
-      List.iter
-        (fun key ->
-          let keyname =
-            match key with
-            | `Constr (c, _) -> Constr.to_string c ^ "."
-            | `Constant c -> String.concat "." (Scope.name_of c) in
-          emit (Head_already_has_notation keyname))
-        shadow;
-      (None, fun _ -> Some (Notation_defined name))
-  | Import { export; origin; op; _ } ->
-      Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
-      let trie =
-        match origin with
-        | `File file ->
-            if FilePath.check_extension file "ny" then emit (Library_has_extension file);
-            let file = FilePath.add_extension file "ny" in
-            get_file file
-        | `Path path -> Trie.find_subtree path (Scope.get_visible ()) in
-      let trie =
-        match op with
-        | Some (_, op) -> Scope.Mod.modify (process_modifier op) trie
-        | None -> trie in
-      if export then Scope.include_subtree ([], trie) else Scope.import_subtree ([], trie);
-      (None, fun _ -> None)
-  | Chdir { dir; _ } ->
-      let newdir = Effect.perform (Chdir dir) in
-      emit (Directory_changed newdir);
-      (None, [])
-  | Solve data ->
-      let (Found_hole { instant; parametric; _ } as found) = Global.find_hole data.number in
-      Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
-      let (Global.Found_hole
-             { meta; instant = _; termctx; ty; status; vars; li; ri; parametric = _; beingdefined })
-          =
-        found in
-      let (Wrap tm) = data.tm in
-      let ptm = process vars tm in
-      (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
-      let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
-      let offset = (fst (split tmloc)).offset in
-      (* Now we typecheck the supplied term, in an occurrence-analysis scope with the set of constants that were being defined when the hole was created, and record the resulting recursion verdict on the metavariable so that it can be chased by the window checks of datatypes whose constructor types contained this hole. *)
-      let ctx = Norm.eval_ctx termctx in
-      let ety = Norm.eval_term (Ctx.env ctx) ty in
-      let ctm, recursion =
-        Positivity.run_beingdefined beingdefined @@ fun () ->
-        Positivity.scope @@ fun () -> Check.check status ctx ptm ety in
-      Global.set_meta meta ~recursion ctm;
-      let buf = Buffer.create 20 in
-      PPrint.ToBuffer.compact buf (pp_complete_term data.tm `None);
-      ( Reporter.try_with ~fatal:(fun _ ->
-            data.tm <- Wrap (parenthesize tm);
-            data.parenthesized <- true)
-      @@ fun () ->
-        let _ =
-          TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None })
+          type t =
+            | Scope_and_ctx :
+                (string option, 'a) Bwv.t * ('a Raw.check located -> 'a ctx_of_raw)
+                -> t
+        end in
+        let open Scope_and_ctx in
+        let Scope_and_ctx (vars, ctx), run =
+          match number with
+          | None ->
+              ( Scope_and_ctx
+                  ( Bwv.Emp,
+                    fun rtm ->
+                      match Check.synth_mode rtm with
+                      | Some (Wrap mode) -> Of_raw (Ctx.empty mode)
+                      | None -> fatal (Non_mode_synthesizing "echo") ),
+                Global.run_command_then_undo ~holes_allowed:(Ok ()) )
+          | Some number ->
+              let num = Global.find_hole number in
+              let (Found_hole { instant; termctx; vars; parametric; _ }) = num in
+              show_hole num;
+              ( Scope_and_ctx (vars, fun _ -> Of_raw (Norm.eval_ctx termctx)),
+                Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant ) in
+        run @@ fun () ->
+        let rtm = process vars tm in
+        action_taken ();
+        match rtm.value with
+        | Synth stm ->
+            let (Of_raw ctx) = ctx rtm in
+            Readback.Displaying.run ~env:true @@ fun () ->
+            let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
+            let names = Names.of_ctx ctx in
+            (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
+            let utm =
+              match mode with
+              | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
+              | `Echo ->
+                  let etm = Norm.eval_term (Ctx.env ctx) ctm in
+                  unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                    No.Interval.entire
+              | `About -> (
+                  let etm = Norm.eval_term (Ctx.env ctx) ctm in
+                  match etm with
+                  (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written rather than as it computes.  This is more informative when possible, since the readback of a potential value falls back to a neutral application spine wherever a match is stuck.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
+                  | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
+                    when Option.is_some (is_id_ins ins)
+                         &&
+                         match D.compare_zero (cod_left_ins ins) with
+                         | Zero -> true
+                         | Pos _ -> false -> (
+                      match Global.find_const name with
+                      | Definition { tm = `Defined tree; _ } ->
+                          unparse Names.empty tree No.Interval.entire No.Interval.entire
+                      | Definition { tm = `Axiom; _ } ->
+                          unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                            No.Interval.entire)
+                  (* Otherwise we read back the neutral's potential value, which displays a canonical type as its declaration and a comatch as itself.  If it has no potential value at all we show its normal form. *)
+                  | _ -> (
+                      match readback_about ctx etm with
+                      | Some tm -> unparse names tm No.Interval.entire No.Interval.entire
+                      | None ->
+                          unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                            No.Interval.entire)) in
+            let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
+            let uty = unparse names bty No.Interval.entire No.Interval.entire in
+            if not (moribund ()) then
+              !echo_output
+                PPrint.(
+                  hang 2
+                    (pp_complete_term (Wrap utm) `None
+                    ^^ hardline
+                    ^^ Token.pp Colon
+                    ^^ blank 1
+                    ^^ pp_complete_term (Wrap uty) `None));
+            (None, fun _ -> None)
+        | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
+    | Notation { fixity; loc; pattern; head; args; _ } ->
+        Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
+        let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
+        let notation_name = [ "notations"; name ] in
+        Scope.check_name notation_name loc;
+        let key =
+          match head with
+          | `Constr c -> `Constr (Constr.intern c, List.length args)
+          | `Constant c -> (
+              match Scope.lookup c with
+              | Some c -> `Constant c
+              | None -> fatal (Invalid_notation_head (String.concat "." c))) in
+        (* Find the "unbound" variables, if any, in the notation definition. *)
+        let rec unbounds : type left right.
+            (string * Whitespace.t list) list ->
+            string list ->
+            (left, right) User.Pattern.t ->
+            (string * Whitespace.t list) list =
+         fun args seen pat ->
+          let check_var x =
+            if List.mem x seen then fatal (Duplicate_notation_variable x);
+            let found, rest = List.partition (fun (y, _) -> x = y) args in
+            match found with
+            | [ _ ] -> rest
+            | [] -> fatal (Unused_notation_variable x)
+            | _ -> fatal (Notation_variable_used_twice x) in
+          match pat with
+          | User.Pattern.Var ((x, _, _), pat) ->
+              let rest = check_var x in
+              unbounds rest (x :: seen) pat
+          | Op (_, pat) -> unbounds args seen pat
+          | Op_nil _ -> args
+          | Var_nil (_, (x, _)) -> check_var x in
+        (match unbounds args [] pattern with
+        | [] -> ()
+        | _ :: _ as unbound -> fatal (Unbound_variable_in_notation (List.map fst unbound)));
+        let user =
+          User { id = User.Id.make (); name; fixity; pattern; key; val_vars = List.map fst args }
         in
-        () );
-      (Some offset, fun h -> Some (Code.Hole_solved h))
-  | Split data ->
-      let (Found_hole { instant; termctx; ty; vars; parametric; _ }) =
-        Global.find_hole data.number in
-      Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
-      (* We have to generate a bunch of holes, possibly in different tightness intervals. *)
-      let hole li ri = locate_opt None (Hole { li; ri; num = ref (-1); ws = []; contents = None }) in
-      let ehole = hole No.Interval.entire No.Interval.entire in
-      let ctx = Norm.eval_ctx termctx in
-      let _, names = Names.uniquify_vars (Term.hole_vars termctx vars) in
-      let names = Names.of_uniquified_vars names in
-      let term =
-        match data.tms with
-        | [ (_, Wrap { value = Placeholder _; _ }) ] -> (
-            let ety = Norm.eval_term (Ctx.env ctx) ty in
-            match View.view_type ety "split" with
-            | Canonical (_, Pi { doms; _ }, _, _) ->
-                let dim = CubeOf.dim doms in
-                let cube, mapsto, notn =
-                  match D.compare_zero dim with
-                  | Zero -> (`Normal, Token.Mapsto, Builtins.abs)
-                  | Pos _ -> (`Cube, Token.DblMapsto, Builtins.cubeabs) in
-                (* Uniquify the variable names relative to the context *)
-                let names = ref (Wrap names : Names.wrapped) in
-                let xs =
-                  Mbwd.map
-                    (fun x ->
-                      let (Wrap old_names) = !names in
-                      let x, new_names = Names.add_cube dim old_names x in
-                      names := Wrap new_names;
-                      x)
-                    (Domvars.get_pi_vars ctx cube Emp ety) in
-                let vars =
-                  unparse_abs
-                    (Bwd.map (fun x -> (x, `Explicit)) xs)
-                    { strictness = No.Nonstrict; endpoint = No.minus_omega }
-                    (No.minusomega_le No.plus_omega) No.minusomegaplusone_lt_plusomega in
-                locate_opt None
-                @@ infix ~notn ~first:vars
-                     ~inner:(Single (Left (mapsto, ([], None))))
-                     ~last:(hole (interval_right notn) No.Interval.entire)
-                     ~left_ok:No.minusomega_lt_minusomegaplusone
-                     ~right_ok:No.minusomega_lt_minusomegaplusone
-            | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
-                let m = cod_left_ins ins in
-                let do_field : type a n et.
-                    (_ * a * D.zero * n * et) Term.CodatafieldAbwd.entry ->
-                    (string * string list) list ->
-                    (string * string list) list =
-                 fun (Term.CodatafieldAbwd.Entry (fld, Codatafield (_, _, _, cdf))) acc ->
-                  match cdf with
-                  | Lower _ -> (Field.to_string fld, []) :: acc
-                  | Higher _ ->
-                      let i = Field.dim fld in
-                      let pbijs = List.of_seq (all_pbij_between m i) in
-                      List.fold_right
-                        (fun (Pbij_between pbij) acc ->
-                          (Field.to_string fld, strings_of_pbij pbij) :: acc)
-                        pbijs acc in
-                let fields = Bwd.fold_right do_field fields [] in
-                match eta with
-                | Eta ->
-                    let inner =
-                      Multiple
-                        ( Left (LParen, ([], None)),
-                          Bwd_extra.intersperse (tok (Op ","))
-                            (Bwd_extra.of_list_map
-                               (fun (fld, pbij) ->
-                                 if List.length pbij > 0 then
-                                   fatal (Anomaly "record type has higher field");
-                                 Term
-                                   (locate_opt None
-                                      (infix ~notn:Builtins.coloneq
-                                         ~first:(locate_opt None (Ident ([ fld ], [])))
-                                         ~inner:(Single (Left (Coloneq, ([], None))))
-                                         ~last:ehole ~left_ok:(No.le_refl No.minus_omega)
-                                         ~right_ok:(No.le_refl No.minus_omega))))
-                               fields),
-                          Left (RParen, ([], None)) ) in
-                    locate_opt None @@ outfix ~notn:parens ~inner
-                | Noeta ->
-                    let mapsto =
-                      match D.compare_zero m with
-                      | Zero -> Token.Mapsto
-                      | Pos _ -> Token.DblMapsto in
-                    let inner =
-                      Multiple
-                        ( Left (LBracket, ([], None)),
-                          List.fold_left
-                            (fun acc (fld, pbij) ->
-                              acc
-                              <: tok (Op "|")
-                              <: Term (locate_opt None (Field (fld, pbij, [])))
-                              <: tok mapsto
-                              <: Term ehole)
-                            Emp fields,
-                          Left (RBracket, ([], None)) ) in
-                    locate_opt None @@ outfix ~notn:Builtins.comatch ~inner)
-            | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { ty; _ })); _ }, _, _)
-              ->
-                let nargs = List.length (Term.pi_names ty) in
-                unparse_spine names (`Constr constr)
-                  (Bwd.init nargs (fun _ -> { unparse = (fun li ri -> hole li ri) }))
-                  No.Interval.entire No.Interval.entire
-            | Canonical (_, Data { constrs = Emp; _ }, _, _) ->
-                fatal (Invalid_split (`Goal, "empty datatype"))
-            | Canonical (_, Data { constrs = Snoc (Snoc (_, _), _); _ }, _, _) ->
-                fatal (Invalid_split (`Goal, "datatype with multiple constructors"))
-            | Canonical (_, UU _, _, _) -> fatal (Invalid_split (`Goal, "universe"))
-            | Neutral _ -> fatal (Invalid_split (`Goal, "neutral")))
-        | _ ->
-            let tok t : observation = Token (t, ([], None)) in
-            let comma_tms =
-              List.tl
-                (let open Monad.Ops (Monad.List) in
-                 let* wscomma, Wrap tm = data.tms in
-                 [ Token (Op ",", (wscomma, None)); Term tm ]) in
-            (* We have a list of terms and we need to produce a multiple match.  We use a list monad to produce all possible combinations of constructors for all the types of all the terms, with a boolean state outside the list to track, whether it contains any higher-dimensional matches and thus should use a ⤇ instead of a ↦.  And we use a Names state *inside* the list to uniquify variables separately in each branch. *)
-            let module HigherBranch = Monad.State (Bool) in
-            let module Branches = Monad.ListT (HigherBranch) in
-            let module NameBranches =
-              Monad.StateT
-                (Branches)
-                (struct
-                  type t = Names.wrapped
-                end) in
-            let open Monad.Ops (NameBranches) in
-            let rec constr_args : type n k.
-                n Names.t ->
-                k D.t ->
-                Variables.hints list ->
-                ?acc:unparser Bwd.t ->
-                string option list ->
-                unparser Bwd.t * Names.wrapped =
-             fun names dim hints ?(acc = Emp) -> function
-               | [] -> (acc, Wrap names)
-               | x :: args ->
-                   (* If the argument is anonymous, use any display hints from its type. *)
-                   let hint, hints =
-                     match hints with
-                     | [] -> (Variables.no_hints, [])
-                     | h :: hs -> (h, hs) in
-                   let name =
-                     match x with
-                     | Some x -> `Named x
-                     | None -> `Anon hint in
-                   let x, names = Names.add_cube dim names name in
-                   constr_args names dim hints
-                     ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
-                     args in
-            let rec go = function
-              | [] ->
-                  let* higher = NameBranches.stateless (Branches.lift HigherBranch.get) in
-                  let mapsto = if higher then Token.DblMapsto else Mapsto in
-                  return [ tok mapsto; Term ehole ]
-              | (_, Wrap tm) :: tms -> (
-                  match process vars tm with
-                  | { value = Synth rtm; loc } -> (
-                      let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
-                      match View.view_type sty "split" with
-                      | Canonical (_, Data { dim; constrs; _ }, _, _) ->
-                          let* () =
-                            match D.compare_zero dim with
-                            | Zero -> return ()
-                            | Pos _ ->
-                                NameBranches.stateless (Branches.lift (HigherBranch.put true)) in
-                          let* c, Dataconstr { env; ty; fnty = _ } =
-                            NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
-                          let* (Wrap names) = NameBranches.get in
-                          let arg_hints =
-                            Reporter.backtrack ~fatal:(fun _ -> Emp) @@ fun () ->
-                            Domvars.constr_arg_hints ctx env ty in
-                          let cargs, newnames =
-                            constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in
-                          let* () = NameBranches.put newnames in
-                          let first =
-                            Term
-                              (unparse_spine names (`Constr c) cargs No.Interval.entire
-                                 No.Interval.entire) in
-                          let* rest = go tms in
-                          if List.length rest = 2 then return (first :: rest)
-                          else return (first :: tok (Op ",") :: rest)
-                      | _ -> fatal (Invalid_split (`Term, "non-datatype")))
-                  | _ -> fatal (Nonsynthesizing "splitting term")) in
-            let lines, _ = go data.tms (Wrap names) false in
-            locate_opt None
-            @@ outfix ~notn:Builtins.implicit_mtch
-                 ~inner:
-                   (Multiple
-                      ( Left (Match, ([], None)),
-                        Emp
-                        <@ comma_tms
-                        <: tok LBracket
-                        <@ List.flatten (List.map (fun (line, _) -> tok (Op "|") :: line) lines),
-                        Left (RBracket, ([], None)) )) in
-      let buf = Buffer.create 10 in
-      let s = Display.get () in
-      Display.run ~init:{ s with holes = `Without_number } @@ fun () ->
-      PPrint.(ToBuffer.pretty 1.0 (Display.columns ()) buf (pp_complete_term (Wrap term) `None));
-      let content = Buffer.contents buf in
-      let ptm = TermParse.Term.(final (parse (`String { title = None; content }))) in
-      let disp = Display.get () in
-      Display.run ~init:{ disp with holes = `Without_number } @@ fun () ->
-      data.printed_term <- pp_complete_term ptm `None;
-      (None, fun _ -> Some (Code.Split_term data.printed_term))
-  | Show { what; _ } ->
-      action_taken ();
-      (match what with
-      | `Hole (_, number) -> show_hole (Global.find_hole number)
-      | `Holes -> (
-          match Global.all_holes () with
-          | Emp -> emit No_open_holes
-          | holes -> Mbwd.miter (fun [ h ] -> show_hole h) [ holes ]));
-      (None, [])
-  | Display { what; _ } ->
-      (match what with
-      | `Chars (_, chars, _) ->
-          let chars = Display.modify_chars chars in
-          emit (Display_set ("chars", Display.to_string (chars :> Display.values)))
-      | `Implicits (_, im, _) ->
-          let im = Display.modify_implicits im in
-          emit (Display_set ("implicits", Display.to_string (im :> Display.values)))
-      | `Unique_keys (_, _, uk, _) ->
-          let uk = Display.modify_unique_keys uk in
-          emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))
-      | `Degeneracy_names (_, _, number, _) ->
-          Display.modify (fun s -> { s with degeneracy_names = number });
-          emit (Display_set ("degeneracy names", string_of_int number))
-      | `Variables (_, xs) ->
-          let variables = List.map (fun (_, x, _) -> x) xs in
-          Display.modify (fun s -> { s with variables });
-          emit (Display_set ("variables", String.concat "," variables)));
-      (None, [])
-  | Option _ -> .
-  | Undo { count; _ } ->
-      for _ = 1 to count do
-        match Origin.undo () with
-        | `Ok -> ()
-        | `No_past -> fatal Not_enough_to_undo
-        | `Not_interactive -> fatal (Forbidden_interactive_command "undo")
-      done;
-      emit (Commands_undone count);
-      (None, [])
-  | Section { prefix; _ } ->
-      Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
-      Scope.start_section prefix;
-      (None, fun _ -> Some (Section_opened prefix))
-  | Fmt _ -> (None, [])
-  | End _ -> (
-      Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
-      match Scope.end_section () with
-      | Some prefix -> (None, fun _ -> Some (Section_closed prefix))
-      | None -> fatal No_such_section)
-  | Quit _ -> fatal (Quit None)
-  | Bof _ -> (None, [])
-  | Eof -> fatal (Anomaly "EOF cannot be executed")
+        let shadow = Scope.define_notation user ?loc notation_name in
+        List.iter
+          (fun key ->
+            let keyname =
+              match key with
+              | `Constr (c, _) -> Constr.to_string c ^ "."
+              | `Constant c -> String.concat "." (Scope.name_of c) in
+            emit (Head_already_has_notation keyname))
+          shadow;
+        (None, fun _ -> Some (Notation_defined name))
+    | Import { export; origin; op; _ } ->
+        Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
+        let trie =
+          match origin with
+          | `File file ->
+              if FilePath.check_extension file "ny" then emit (Library_has_extension file);
+              let file = FilePath.add_extension file "ny" in
+              get_file file
+          | `Path path -> Trie.find_subtree path (Scope.get_visible ()) in
+        let trie =
+          match op with
+          | Some (_, op) -> Scope.Mod.modify (process_modifier op) trie
+          | None -> trie in
+        if export then Scope.include_subtree ([], trie) else Scope.import_subtree ([], trie);
+        (None, fun _ -> None)
+    | Chdir { dir; _ } ->
+        let newdir = Effect.perform (Chdir dir) in
+        emit (Directory_changed newdir);
+        (None, [])
+    | Solve data ->
+        let (Found_hole { instant; parametric; _ } as found) = Global.find_hole data.number in
+        Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
+        let (Global.Found_hole
+               {
+                 meta;
+                 instant = _;
+                 termctx;
+                 ty;
+                 status;
+                 vars;
+                 li;
+                 ri;
+                 parametric = _;
+                 beingdefined;
+               }) =
+          found in
+        let (Wrap tm) = data.tm in
+        let ptm = process vars tm in
+        (* We set the hole location offset to the start of the *term*, so that ProofGeneral can create hole overlays in the right places when solving a hole and creating new holes. *)
+        let tmloc = ptm.loc <|> Anomaly "missing location in solve" in
+        let offset = (fst (split tmloc)).offset in
+        (* Now we typecheck the supplied term, in an occurrence-analysis scope with the set of constants that were being defined when the hole was created, and record the resulting recursion verdict on the metavariable so that it can be chased by the window checks of datatypes whose constructor types contained this hole. *)
+        let ctx = Norm.eval_ctx termctx in
+        let ety = Norm.eval_term (Ctx.env ctx) ty in
+        let ctm, recursion =
+          Positivity.run_beingdefined beingdefined @@ fun () ->
+          Positivity.scope @@ fun () -> Check.check status ctx ptm ety in
+        Global.set_meta meta ~recursion ctm;
+        let buf = Buffer.create 20 in
+        PPrint.ToBuffer.compact buf (pp_complete_term data.tm `None);
+        ( Reporter.backtrack ~deadly:(fun _ ->
+              data.tm <- Wrap (parenthesize tm);
+              `Return (data.parenthesized <- true))
+        @@ fun () ->
+          let _ =
+            TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None })
+          in
+          () );
+        (Some offset, fun h -> Some (Code.Hole_solved h))
+    | Split data ->
+        let (Found_hole { instant; termctx; ty; vars; parametric; _ }) =
+          Global.find_hole data.number in
+        Global.rewind_command ~parametric ~holes_allowed:(Ok ()) instant @@ fun () ->
+        (* We have to generate a bunch of holes, possibly in different tightness intervals. *)
+        let hole li ri =
+          locate_opt None (Hole { li; ri; num = ref (-1); ws = []; contents = None }) in
+        let ehole = hole No.Interval.entire No.Interval.entire in
+        let ctx = Norm.eval_ctx termctx in
+        let _, names = Names.uniquify_vars (Term.hole_vars termctx vars) in
+        let names = Names.of_uniquified_vars names in
+        let term =
+          match data.tms with
+          | [ (_, Wrap { value = Placeholder _; _ }) ] -> (
+              let ety = Norm.eval_term (Ctx.env ctx) ty in
+              match View.view_type ety "split" with
+              | Canonical (_, Pi { doms; _ }, _, _) ->
+                  let dim = CubeOf.dim doms in
+                  let cube, mapsto, notn =
+                    match D.compare_zero dim with
+                    | Zero -> (`Normal, Token.Mapsto, Builtins.abs)
+                    | Pos _ -> (`Cube, Token.DblMapsto, Builtins.cubeabs) in
+                  (* Uniquify the variable names relative to the context *)
+                  let names = ref (Wrap names : Names.wrapped) in
+                  let xs =
+                    Mbwd.map
+                      (fun x ->
+                        let (Wrap old_names) = !names in
+                        let x, new_names = Names.add_cube dim old_names x in
+                        names := Wrap new_names;
+                        x)
+                      (Domvars.get_pi_vars ctx cube Emp ety) in
+                  let vars =
+                    unparse_abs
+                      (Bwd.map (fun x -> (x, `Explicit)) xs)
+                      { strictness = No.Nonstrict; endpoint = No.minus_omega }
+                      (No.minusomega_le No.plus_omega) No.minusomegaplusone_lt_plusomega in
+                  locate_opt None
+                  @@ infix ~notn ~first:vars
+                       ~inner:(Single (Left (mapsto, ([], None))))
+                       ~last:(hole (interval_right notn) No.Interval.entire)
+                       ~left_ok:No.minusomega_lt_minusomegaplusone
+                       ~right_ok:No.minusomega_lt_minusomegaplusone
+              | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
+                  let m = cod_left_ins ins in
+                  let do_field : type a n et.
+                      (_ * a * D.zero * n * et) Term.CodatafieldAbwd.entry ->
+                      (string * string list) list ->
+                      (string * string list) list =
+                   fun (Term.CodatafieldAbwd.Entry (fld, Codatafield (_, _, _, cdf))) acc ->
+                    match cdf with
+                    | Lower _ -> (Field.to_string fld, []) :: acc
+                    | Higher _ ->
+                        let i = Field.dim fld in
+                        let pbijs = List.of_seq (all_pbij_between m i) in
+                        List.fold_right
+                          (fun (Pbij_between pbij) acc ->
+                            (Field.to_string fld, strings_of_pbij pbij) :: acc)
+                          pbijs acc in
+                  let fields = Bwd.fold_right do_field fields [] in
+                  match eta with
+                  | Eta ->
+                      let inner =
+                        Multiple
+                          ( Left (LParen, ([], None)),
+                            Bwd_extra.intersperse (tok (Op ","))
+                              (Bwd_extra.of_list_map
+                                 (fun (fld, pbij) ->
+                                   if List.length pbij > 0 then
+                                     fatal (Anomaly "record type has higher field");
+                                   Term
+                                     (locate_opt None
+                                        (infix ~notn:Builtins.coloneq
+                                           ~first:(locate_opt None (Ident ([ fld ], [])))
+                                           ~inner:(Single (Left (Coloneq, ([], None))))
+                                           ~last:ehole ~left_ok:(No.le_refl No.minus_omega)
+                                           ~right_ok:(No.le_refl No.minus_omega))))
+                                 fields),
+                            Left (RParen, ([], None)) ) in
+                      locate_opt None @@ outfix ~notn:parens ~inner
+                  | Noeta ->
+                      let mapsto =
+                        match D.compare_zero m with
+                        | Zero -> Token.Mapsto
+                        | Pos _ -> Token.DblMapsto in
+                      let inner =
+                        Multiple
+                          ( Left (LBracket, ([], None)),
+                            List.fold_left
+                              (fun acc (fld, pbij) ->
+                                acc
+                                <: tok (Op "|")
+                                <: Term (locate_opt None (Field (fld, pbij, [])))
+                                <: tok mapsto
+                                <: Term ehole)
+                              Emp fields,
+                            Left (RBracket, ([], None)) ) in
+                      locate_opt None @@ outfix ~notn:Builtins.comatch ~inner)
+              | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { ty; _ })); _ }, _, _)
+                ->
+                  let nargs = List.length (Term.pi_names ty) in
+                  unparse_spine names (`Constr constr)
+                    (Bwd.init nargs (fun _ -> { unparse = (fun li ri -> hole li ri) }))
+                    No.Interval.entire No.Interval.entire
+              | Canonical (_, Data { constrs = Emp; _ }, _, _) ->
+                  fatal (Invalid_split (`Goal, "empty datatype"))
+              | Canonical (_, Data { constrs = Snoc (Snoc (_, _), _); _ }, _, _) ->
+                  fatal (Invalid_split (`Goal, "datatype with multiple constructors"))
+              | Canonical (_, UU _, _, _) -> fatal (Invalid_split (`Goal, "universe"))
+              | Neutral _ -> fatal (Invalid_split (`Goal, "neutral")))
+          | _ ->
+              let tok t : observation = Token (t, ([], None)) in
+              let comma_tms =
+                List.tl
+                  (let open Monad.Ops (Monad.List) in
+                   let* wscomma, Wrap tm = data.tms in
+                   [ Token (Op ",", (wscomma, None)); Term tm ]) in
+              (* We have a list of terms and we need to produce a multiple match.  We use a list monad to produce all possible combinations of constructors for all the types of all the terms, with a boolean state outside the list to track, whether it contains any higher-dimensional matches and thus should use a ⤇ instead of a ↦.  And we use a Names state *inside* the list to uniquify variables separately in each branch. *)
+              let module HigherBranch = Monad.State (Bool) in
+              let module Branches = Monad.ListT (HigherBranch) in
+              let module NameBranches =
+                Monad.StateT
+                  (Branches)
+                  (struct
+                    type t = Names.wrapped
+                  end) in
+              let open Monad.Ops (NameBranches) in
+              let rec constr_args : type n k.
+                  n Names.t ->
+                  k D.t ->
+                  Variables.hints list ->
+                  ?acc:unparser Bwd.t ->
+                  string option list ->
+                  unparser Bwd.t * Names.wrapped =
+               fun names dim hints ?(acc = Emp) -> function
+                 | [] -> (acc, Wrap names)
+                 | x :: args ->
+                     (* If the argument is anonymous, use any display hints from its type. *)
+                     let hint, hints =
+                       match hints with
+                       | [] -> (Variables.no_hints, [])
+                       | h :: hs -> (h, hs) in
+                     let name =
+                       match x with
+                       | Some x -> `Named x
+                       | None -> `Anon hint in
+                     let x, names = Names.add_cube dim names name in
+                     constr_args names dim hints
+                       ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
+                       args in
+              let rec go = function
+                | [] ->
+                    let* higher = NameBranches.stateless (Branches.lift HigherBranch.get) in
+                    let mapsto = if higher then Token.DblMapsto else Mapsto in
+                    return [ tok mapsto; Term ehole ]
+                | (_, Wrap tm) :: tms -> (
+                    match process vars tm with
+                    | { value = Synth rtm; loc } -> (
+                        let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
+                        match View.view_type sty "split" with
+                        | Canonical (_, Data { dim; constrs; _ }, _, _) ->
+                            let* () =
+                              match D.compare_zero dim with
+                              | Zero -> return ()
+                              | Pos _ ->
+                                  NameBranches.stateless (Branches.lift (HigherBranch.put true))
+                            in
+                            let* c, Dataconstr { env; ty; fnty = _ } =
+                              NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs))
+                            in
+                            let* (Wrap names) = NameBranches.get in
+                            let arg_hints =
+                              Reporter.backtrack ~deadly:(fun _ -> `Return Emp) @@ fun () ->
+                              Domvars.constr_arg_hints ctx env ty in
+                            let cargs, newnames =
+                              constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in
+                            let* () = NameBranches.put newnames in
+                            let first =
+                              Term
+                                (unparse_spine names (`Constr c) cargs No.Interval.entire
+                                   No.Interval.entire) in
+                            let* rest = go tms in
+                            if List.length rest = 2 then return (first :: rest)
+                            else return (first :: tok (Op ",") :: rest)
+                        | _ -> fatal (Invalid_split (`Term, "non-datatype")))
+                    | _ -> fatal (Nonsynthesizing "splitting term")) in
+              let lines, _ = go data.tms (Wrap names) false in
+              locate_opt None
+              @@ outfix ~notn:Builtins.implicit_mtch
+                   ~inner:
+                     (Multiple
+                        ( Left (Match, ([], None)),
+                          Emp
+                          <@ comma_tms
+                          <: tok LBracket
+                          <@ List.flatten (List.map (fun (line, _) -> tok (Op "|") :: line) lines),
+                          Left (RBracket, ([], None)) )) in
+        let buf = Buffer.create 10 in
+        let s = Display.get () in
+        Display.run ~init:{ s with holes = `Without_number } @@ fun () ->
+        PPrint.(ToBuffer.pretty 1.0 (Display.columns ()) buf (pp_complete_term (Wrap term) `None));
+        let content = Buffer.contents buf in
+        let ptm = TermParse.Term.(final (parse (`String { title = None; content }))) in
+        let disp = Display.get () in
+        Display.run ~init:{ disp with holes = `Without_number } @@ fun () ->
+        data.printed_term <- pp_complete_term ptm `None;
+        (None, fun _ -> Some (Code.Split_term data.printed_term))
+    | Show { what; _ } ->
+        action_taken ();
+        (match what with
+        | `Hole (_, number) -> show_hole (Global.find_hole number)
+        | `Holes -> (
+            match Global.all_holes () with
+            | Emp -> emit No_open_holes
+            | holes -> Mbwd.miter (fun [ h ] -> show_hole h) [ holes ]));
+        (None, [])
+    | Display { what; _ } ->
+        (match what with
+        | `Chars (_, chars, _) ->
+            let chars = Display.modify_chars chars in
+            emit (Display_set ("chars", Display.to_string (chars :> Display.values)))
+        | `Implicits (_, im, _) ->
+            let im = Display.modify_implicits im in
+            emit (Display_set ("implicits", Display.to_string (im :> Display.values)))
+        | `Unique_keys (_, _, uk, _) ->
+            let uk = Display.modify_unique_keys uk in
+            emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))
+        | `Degeneracy_names (_, _, number, _) ->
+            Display.modify (fun s -> { s with degeneracy_names = number });
+            emit (Display_set ("degeneracy names", string_of_int number))
+        | `Variables (_, xs) ->
+            let variables = List.map (fun (_, x, _) -> x) xs in
+            Display.modify (fun s -> { s with variables });
+            emit (Display_set ("variables", String.concat "," variables)));
+        (None, [])
+    | Option _ -> .
+    | Undo { count; _ } ->
+        for _ = 1 to count do
+          match Origin.undo () with
+          | `Ok -> ()
+          | `No_past -> fatal Not_enough_to_undo
+          | `Not_interactive -> fatal (Forbidden_interactive_command "undo")
+        done;
+        emit (Commands_undone count);
+        (None, [])
+    | Section { prefix; _ } ->
+        Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
+        Scope.start_section prefix;
+        (None, fun _ -> Some (Section_opened prefix))
+    | Fmt _ -> (None, [])
+    | End _ -> (
+        Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
+        match Scope.end_section () with
+        | Some prefix -> (None, fun _ -> Some (Section_closed prefix))
+        | None -> fatal No_such_section)
+    | Quit _ -> fatal (Quit None)
+    | Bof _ -> (None, [])
+    | Eof -> fatal (Anomaly "EOF cannot be executed") in
+  make_fatal ();
+  result
 
 let tightness_of_fixity : type left tight right. (left, tight, right) fixity -> string option =
   function

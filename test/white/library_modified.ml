@@ -33,10 +33,10 @@ let () =
      let later = Unix.gettimeofday () +. 10. in
      Unix.utimes "lib.ny" later later;
      Reporter.try_with
-       ~fatal:(fun d ->
+       ~deadly:(fun d ->
          match d.message with
-         | Library_modified _ -> modified := true
-         | _ -> Reporter.display ~output:stderr d)
+         | Library_modified _ -> `Return (modified := true)
+         | _ -> `Return (Reporter.display ~output:stderr d))
        (fun () -> ignore (Execute.load_file "user.ny" false))
    with Top.Exit -> ());
   if not !modified then (
