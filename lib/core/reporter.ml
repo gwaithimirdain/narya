@@ -1408,22 +1408,39 @@ let moribund () = perform Moribund
 (* Kill a moribund scope, by raising a silent fatal error.  This propagates like any fatal error, so it can be caught by an enclosing [accumulate], which records it as a (silent) mortal error and continues with its fallback.  The real errors that made the scope moribund have already been reported as mortal. *)
 let make_fatal ?(why = "make_fatal") () = if moribund () then fatal (Silent why)
 
-(* Delimit a scope for [moribund] and [make_fatal]: inside it, the program counts as moribund only if a mortal error has been reported inside it.  Mortal errors are still passed on outwards.  This allows, for instance, a struct to refuse to finish typechecking if one of its own fields failed, without being affected by errors in unrelated sibling terms. *)
-let scope f =
-  let local = ref false in
-  try f () with
-  | effect Mortal err, k ->
-      local := true;
-      mortal_diagnostic err;
-      continue k ()
-  | effect Moribund, k -> continue k !local
+(* Run a callback with its own local list of mortal errors, which are held there rather than being passed outwards.  Returns the callback's result, or the fatal error it raised, together with the mortal errors reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If it raises some other exception, the local errors are passed outwards before re-raising it, so that they aren't lost. *)
+let collect (f : unit -> 'a) :
+    ('a, Code.t Asai.Diagnostic.t) Result.t * Code.t Asai.Diagnostic.t Bwd.t =
+  let errs = ref Emp in
+  match
+    Delegate.try_with ~fatal:(fun d -> Result.Error d) @@ fun () ->
+    try Result.Ok (f ()) with
+    | effect Mortal d, k ->
+        errs := Snoc (!errs, d);
+        continue k ()
+    | effect Moribund, k -> continue k (not (Bwd.is_empty !errs))
+  with
+  | result -> (result, !errs)
+  | exception exn ->
+      let bt = Printexc.get_raw_backtrace () in
+      Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ !errs ];
+      Printexc.raise_with_backtrace exn bt
+
+(* Pass on the results of [collect] as if it hadn't happened. *)
+let uncollect (result, errs) =
+  Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ errs ];
+  match result with
+  | Result.Ok x -> x
+  | Error d -> fatal_diagnostic d
+
+(* Delimit a scope for [moribund] and [make_fatal]: inside it, the program counts as moribund only if a mortal error has been reported inside it.  The mortal errors are passed outwards when it ends.  This allows, for instance, a struct to refuse to finish typechecking if one of its own fields failed, without being affected by errors in unrelated sibling terms. *)
+let scope f = uncollect (collect f)
 
 (* The common case: run a callback in its own scope, and then fail (silently) if any errors occurred in it, even if it returned a partial result.  This is appropriate for anything, like a struct or a datatype, that can keep checking its later parts after an error in an earlier one, but should not be returned with some parts missing. *)
-let scoped ?why f =
-  scope @@ fun () ->
-  let result = f () in
-  make_fatal ?why ();
-  result
+let scoped ?(why = "scoped") f =
+  match collect f with
+  | Ok _, (Snoc _ as errs) -> uncollect (Error (diagnostic (Silent why)), errs)
+  | collected -> uncollect collected
 
 (* [run] accumulates mortal errors as it sees them.  If it ever sees a fatal error, or if execution terminates with at least one mortal error reported, it passes all the accumulated errors to its [fatal] argument (which therefore takes a bwd of diagnostics, not a single one).  It is also the outermost scope for [moribund]. *)
 let run ?init_loc ?(init_backtrace = Emp) ~fatal ~emit f =
@@ -1517,26 +1534,16 @@ let is_silent (d : Code.t Asai.Diagnostic.t) =
 (* Whether a diagnostic is a bug. *)
 let is_bug (d : Code.t Asai.Diagnostic.t) = d.severity = Bug
 
-(* Run a callback speculatively, capturing rather than reporting any errors it produces, both mortal and fatal.  It succeeds only if it returns without any errors; otherwise we get all its errors, which the caller can report later with [replay] if it decides to.  Inside the callback, [moribund] refers only to errors produced by the callback.  Bugs are not captured, since they indicate a problem that shouldn't be hidden by succeeding along some other path. *)
+(* Run a callback speculatively, capturing rather than reporting any errors it produces, both mortal and fatal.  It succeeds only if it returns without any errors; otherwise we get all its errors, which the caller can report later with [replay] if it decides to.  Inside the callback, [moribund] refers only to errors produced by the callback.  Bugs are not captured, since they indicate a problem that shouldn't be hidden by succeeding along some other path: if one occurs, all the errors are passed on as if there were no capture. *)
 let capture (f : unit -> 'a) : ('a, Code.t Asai.Diagnostic.t Bwd.t) Result.t =
-  let errs = ref Emp in
-  let result =
-    Delegate.try_with ~fatal:(fun d ->
-        if is_bug d then (
-          Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ !errs ];
-          fatal_diagnostic d)
-        else (
-          errs := Snoc (!errs, d);
-          None))
-    @@ fun () ->
-    try Some (f ()) with
-    | effect Mortal d, k ->
-        if is_bug d then mortal_diagnostic d else errs := Snoc (!errs, d);
-        continue k ()
-    | effect Moribund, k -> continue k (not (Bwd.is_empty !errs)) in
-  match (result, !errs) with
-  | Some x, Emp -> Ok x
-  | _, errs -> Error errs
+  match collect f with
+  | Ok x, Emp -> Ok x
+  | (result, errs) as collected ->
+      let all =
+        match result with
+        | Ok _ -> errs
+        | Error d -> Snoc (errs, d) in
+      if Bwd.exists is_bug all then Ok (uncollect collected) else Error all
 
 (* Report errors captured by [capture], and then fail silently since they were fatal. *)
 let replay (errs : Code.t Asai.Diagnostic.t Bwd.t) : 'a =

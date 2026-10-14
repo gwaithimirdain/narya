@@ -3829,11 +3829,13 @@ and synth : type mode a b s.
     | SFirst (alts, arg), _ ->
         let sty = Option.map (fun arg -> snd (synth status ctx (locate_opt tm.loc arg))) arg in
         let vsty = Option.map (fun sty -> view_type sty "synth_first") sty in
-        let rec go = function
+        (* The errors from alternatives that failed are reported only if they all fail. *)
+        let rec go errs = function
           | [] ->
-              make_fatal ();
-              fatal
-                (Choice_mismatch (Option.fold ~some:(fun sty -> PVal (ctx, sty)) ~none:PUnit sty))
+              if Bwd.is_empty errs then
+                fatal
+                  (Choice_mismatch (Option.fold ~some:(fun sty -> PVal (ctx, sty)) ~none:PUnit sty))
+              else Reporter.replay errs
           | (test, alt, passthru) :: alts -> (
               match (vsty, test) with
               | Some (Canonical (_, Data { constrs = data_constrs; _ }, _, _)), `Data constrs ->
@@ -3842,12 +3844,8 @@ and synth : type mode a b s.
                       (fun constr ->
                         Bwd.exists (fun (data_constr, _) -> constr = data_constr) data_constrs)
                       constrs
-                  then
-                    Reporter.accumulate
-                      ~passthrough:(fun _ -> not passthru)
-                      ~fallback:(fun () -> go alts)
-                    @@ fun () -> synth status ctx (locate_opt tm.loc alt)
-                  else go alts
+                  then try_alt errs alt passthru alts
+                  else go errs alts
               | Some (Canonical (_, Codata { fields = codata_fields; _ }, _, _)), `Codata fields ->
                   if
                     List.for_all
@@ -3857,20 +3855,18 @@ and synth : type mode a b s.
                             field = Field.to_string codata_field)
                           codata_fields)
                       fields
-                  then
-                    Reporter.accumulate
-                      ~passthrough:(fun _ -> not passthru)
-                      ~fallback:(fun () -> go alts)
-                    @@ fun () -> synth status ctx (locate_opt tm.loc alt)
-                  else go alts
-              | _, `Any ->
-                  Reporter.accumulate
-                    ~passthrough:(fun _ -> not passthru)
-                    ~fallback:(fun () -> go alts)
-                  @@ fun () -> synth status ctx (locate_opt tm.loc alt)
+                  then try_alt errs alt passthru alts
+                  else go errs alts
+              | _, `Any -> try_alt errs alt passthru alts
               | None, `Data _ | None, `Codata _ -> fatal (Anomaly "SFirst mismatch")
-              | _ -> go alts) in
-        Reporter.scope @@ fun () -> go alts
+              | _ -> go errs alts)
+        and try_alt errs alt passthru alts =
+          if passthru then
+            match Reporter.capture (fun () -> synth status ctx (locate_opt tm.loc alt)) with
+            | Ok result -> result
+            | Error alt_errs -> go (Bwd.append errs (Bwd.to_list alt_errs)) alts
+          else synth status ctx (locate_opt tm.loc alt) in
+        go Emp alts
     | Calc (x, rest), _ ->
         let idm = Modality.id mode in
         let cx, ty = synth (Kinetic `Nolet) ctx x in
