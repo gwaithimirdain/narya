@@ -37,7 +37,7 @@ let run ?(init = Constant.Map.empty) = S.run ~init
 let subtype_of ctx subtype supertype =
   (* The types should always be valid and fully instantiated here, so any internal error from viewing them is a genuine bug and is re-raised. *)
   let subty, superty =
-    Reporter.backtrack ~fatal:(fun _ -> (None, None)) @@ fun () ->
+    Reporter.discard ~fallback:(fun () -> (None, None)) @@ fun () ->
     (Some (view_type subtype "subtype_of"), Some (view_type supertype "supertype_of")) in
   let open Monad.Ops (Monad.Maybe) in
   match (subty, superty) with

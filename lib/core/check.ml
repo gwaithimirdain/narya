@@ -198,24 +198,15 @@ let rec actions : type a. a check located option -> any_deg * a check located op
 
 (* Temporarily define a given head (constant or meta) to be a given value, in executing a callback.  However, if an error has occurred earlier in typechecking other parts of it, then instead bind that head to an error value that doesn't allow it to be used. *)
 let run_with_definition : type mode a c.
-    (mode, a) potential_head ->
-    (mode, a, potential) term ->
-    Code.t Asai.Diagnostic.t Bwd.t ->
-    (unit -> c) ->
-    c =
- fun head tm errs f ->
-  match (head, errs) with
-  (* In the case of an error, we bind the head to the error "Accumulated Emp".  That has the effect that accesses to it fail, but aren't displayed to the user as anything, since what's really going on is that we refuse to even try to typecheck later parts of a term that depend on previous parts that already failed, and this "error" is just detecting that dependence. *)
+    (mode, a) potential_head -> (mode, a, potential) term -> (unit -> c) -> c =
+ fun head tm f ->
+  match (head, moribund ()) with
+  (* In the case of an error, we bind the head to a Dependent error.  That has the effect that accesses to it fail, but aren't displayed to the user as anything, since what's really going on is that we refuse to even try to typecheck later parts of a term that depend on previous parts that already failed, and this "error" is just detecting that dependence. *)
   (* We ignore the substituted dimension of the head, since this is really setting the *global* definition, which is not substituted. *)
-  | Constant (c, mode, _), Emp -> Global.with_definition c mode (`Defined tm) f
-  | Constant (c, _, _), Snoc _ -> Global.without_definition c (Accumulated ("dependence", Emp)) f
-  | Meta (m, _), Emp -> Global.with_meta_definition m tm f
-  | Meta (m, _), Snoc _ -> Global.without_meta_definition m (Accumulated ("dependence", Emp)) f
-
-let unless_error (v : 'a) (err : 'b Bwd.t) : ('a, Code.t) Result.t =
-  match err with
-  | Emp -> Ok v
-  | Snoc _ -> Error (Accumulated ("dependence", Emp))
+  | Constant (c, mode, _), false -> Global.with_definition c mode (`Defined tm) f
+  | Constant (c, _, _), true -> Global.without_definition c (Dependent "dependence") f
+  | Meta (m, _), false -> Global.with_meta_definition m tm f
+  | Meta (m, _), true -> Global.without_meta_definition m (Dependent "dependence") f
 
 (* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  The constructor's argument types and output are stored together as its function-type "ty" (as in a Value.dataconstr); the argument variables are introduced, and the type indices of this branch read off, by ext_pi at typechecking time.  *)
 type (_, _, _) checkable_branch =
@@ -333,8 +324,6 @@ type (_, _, _, _, _) match_motive =
         (* RETURN *)
         (* the motive of the match (or failure) -- note this is an abstract type, only unpackable by "use" below. *)
         'motive option
-        (* a list of errors produced by trying to find that motive *)
-        * Code.t Asai.Diagnostic.t Bwd.t
         (* a map of branches that were typechecked in the process of looking for the motive *)
         * ('mode, 'b, 'm) Term.branch Constr.Map.t
         (* and a list of branches that haven't yet been typechecked. *)
@@ -424,13 +413,9 @@ let check_window_transparency : type dom window mode k a.
 (* Report every constructor of a datatype as missing from an empty match that failed to refute anything, as a non-empty match would report each constructor it lacks. *)
 let missing_constructors : type a b. (Constr.t, a) Abwd.t -> b =
  fun constrs ->
-  match constrs with
-  | Emp -> fatal (Anomaly "no constructors to report missing")
-  | Snoc _ ->
-      fatal
-        (Accumulated
-           ( "missing_constructors",
-             Mbwd.map (fun (c, _) -> diagnostic (Missing_constructor_in_match c)) constrs ))
+  List.iter (fun (c, _) -> mortal (Missing_constructor_in_match c)) (Bwd.to_list constrs);
+  fatalize ~why:"missing_constructors" ();
+  fatal (Anomaly "no constructors to report missing")
 
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential). *)
 let rec check : type mode a b s.
@@ -460,14 +445,9 @@ let rec check : type mode a b s.
             match
               Reporter.try_with ~fatal:(fun d ->
                   (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
-                  if
-                    Reporter.accumulates
-                      (function
-                        | Low_dimensional_argument_of_degeneracy _ -> true
-                        | _ -> false)
-                      d
-                  then Error d
-                  else fatal_diagnostic d)
+                  match d.message with
+                  | Low_dimensional_argument_of_degeneracy _ -> Error d
+                  | _ -> fatal_diagnostic d)
               @@ fun () ->
               Ok
                 (gact_ty None ty fainv ~err:(low_dim_arg_err str.value)
@@ -671,10 +651,12 @@ let rec check : type mode a b s.
                     Lam (xs, m, filter, check (mkstatus xs status) ctx body output)
                 | Wrap (_, Missing j) -> fatal ?loc:cube.loc (Not_enough_lambdas j))
             | `Cube absdim -> (
-                match (D.compare_zero m, implicit) with
-                | Zero, _ -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
-                | _, `Implicit -> fatal (Unimplemented "general implicit functions")
-                | Pos _, `Explicit ->
+                (match D.compare_zero m with
+                | Zero -> mortal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
+                | Pos _ -> ());
+                match implicit with
+                | `Implicit -> fatal (Unimplemented "general implicit functions")
+                | `Explicit ->
                     (match !absdim with
                     | None -> absdim := Some (Wrap m, xloc)
                     | Some (Wrap m', xloc') -> (
@@ -765,10 +747,11 @@ let rec check : type mode a b s.
                 fatal (Unimplemented "general higher-dimensional types in HOTT: use glue")
             | _ ->
                 let Eq = eq_of_ins_zero ins in
+                Reporter.scoped ~why:"check_codata" @@ fun () ->
                 check_codata status ctx `Opaque Noeta hints tyargs Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Noeta
                      (readback_neu ctx (head_of_potential head) apps))
-                  (Bwd.to_list fields) Emp)
+                  (Bwd.to_list fields))
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
     | SelfRecord (fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking self-record" with
@@ -791,10 +774,11 @@ let rec check : type mode a b s.
                 match has_higher_fields with
                 | Some () -> fatal (Unimplemented "higher fields in record types: use codata")
                 | None ->
+                    Reporter.scoped ~why:"check_codata" @@ fun () ->
                     check_codata status ctx opacity Eta hints tyargs Emp
                       (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                          (readback_neu ctx (head_of_potential head) apps))
-                      (Bwd.to_list fields) Emp))
+                      (Bwd.to_list fields)))
         | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
     | Record (xs, fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking record" with
@@ -806,10 +790,11 @@ let rec check : type mode a b s.
                 let Eq = eq_of_ins_zero ins in
                 let (Vars (af, vars)) =
                   vars_of_names (fun j -> Wrong_boundary_of_record j) xs.loc dim xs.value in
+                Reporter.scoped ~why:"check_record" @@ fun () ->
                 check_record status dim ctx opacity hints tyargs vars Emp Zero af Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                      (readback_neu ctx (head_of_potential head) apps))
-                  fields Emp)
+                  fields)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
     | Data (constrs, hints), Potential (head, apps, _) ->
         (* For a datatype, the type to check against might not be a universe, it could include indices. *)
@@ -817,8 +802,9 @@ let rec check : type mode a b s.
         let (Wrap num_indices) = Fwn.of_int n in
         (* Read back the datatype's type family: the head applied to the parameters it has been given so far, e.g. "Vec A".  This is stored in the checked term so that at evaluation time the value-level tyfam can be filled in directly. *)
         let tyfam = readback_neu ctx (head_of_potential head) apps in
+        Reporter.scoped ~why:"check_data" @@ fun () ->
         check_data ~recursive:`Nonrecursive ~hints ~tyfam status ctx ty num_indices Abwd.empty
-          (Bwd.to_list constrs) Emp
+          (Bwd.to_list constrs)
     (* If we have a term that's not valid outside a case tree, we bind it to a global metavariable. *)
     | Struct (Noeta, _), Kinetic l -> kinetic_of_potential l ctx tm ty "comatch"
     | Synth (Match _), Kinetic l -> kinetic_of_potential l ctx tm ty "match"
@@ -915,8 +901,11 @@ let rec check : type mode a b s.
             | _, Neq -> fatal ?loc:fn.loc (Anomaly "modal implicit applications not allowed"))
         | _ -> fatal ?loc:fn.loc (Applying_nonfunction_nontype (PTerm (ctx, sfn), PVal (ctx, sty))))
     | First alts, _ ->
+        (* The errors from alternatives that failed are reported only if they all fail. *)
         let rec go errs = function
-          | [] -> fatal (Choice_mismatch (PVal (ctx, ty)))
+          | [] ->
+              if Bwd.is_empty errs then fatal (Choice_mismatch (PVal (ctx, ty)))
+              else Reporter.replay errs
           | (test, alt, passthru) :: alts -> (
               match (view_type ty "check_first", test) with
               | Canonical (_, Data { constrs = data_constrs; _ }, _, _), `Data constrs ->
@@ -925,10 +914,7 @@ let rec check : type mode a b s.
                       (fun constr ->
                         Bwd.exists (fun (data_constr, _) -> constr = data_constr) data_constrs)
                       constrs
-                  then
-                    Reporter.backtrack ~fatal:(fun d ->
-                        if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
-                    @@ fun () -> check status ctx (locate_opt tm.loc alt) ty
+                  then try_alt errs alt passthru alts
                   else go errs alts
               | Canonical (_, Codata { fields = codata_fields; _ }, _, _), `Codata fields ->
                   if
@@ -939,16 +925,17 @@ let rec check : type mode a b s.
                             field = Field.to_string codata_field)
                           codata_fields)
                       fields
-                  then
-                    Reporter.backtrack ~fatal:(fun d ->
-                        if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
-                    @@ fun () -> check status ctx (locate_opt tm.loc alt) ty
+                  then try_alt errs alt passthru alts
                   else go errs alts
-              | _, `Any ->
-                  Reporter.backtrack ~fatal:(fun d ->
-                      if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
-                  @@ fun () -> check status ctx (locate_opt tm.loc alt) ty
-              | _ -> go errs alts) in
+              | _, `Any -> try_alt errs alt passthru alts
+              | _ -> go errs alts)
+        and try_alt errs alt passthru alts =
+          let check_alt () = check status ctx (locate_opt tm.loc alt) ty in
+          if passthru then
+            match Reporter.capture check_alt with
+            | Ok result -> result
+            | Error alt_errs -> go (Bwd.append errs (Bwd.to_list alt_errs)) alts
+          else check_alt () in
         go Emp alts
     | Oracle tm, _ -> (
         let ctm = check (Kinetic `Nolet) ctx tm ty in
@@ -1047,23 +1034,40 @@ and check_of_synth : type mode a b s.
  fun ?nosynth status ctx stm loc ty ->
   match stm with
   | Asc (ctm, aty) -> (
-      (* If the term is synthesizing because it is ascribed, then we can accumulate errors: if the ascription fails to check, or if it fails to equal the checking type, we can proceed to check the ascribed term against the supplied type instead.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends. *)
-      Reporter.try_with ~fatal:(fun d1 ->
-          Reporter.try_with ~fatal:(fun d2 ->
-              fatal (Accumulated ("check_of_synth", Snoc (Snoc (Emp, d1), d2))))
-          @@ fun () ->
-          let _ = check status ctx ctm ty in
-          fatal_diagnostic d1)
-      @@ fun () ->
-      let cty = check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero) in
-      let ety = eval_term (Ctx.env ctx) cty in
-      (* It suffices for the synthesized type to be a subtype of the checking type. *)
-      match subtype_of ctx ety ty with
-      | Ok () -> check status ctx ctm ety
-      | Error why ->
-          fatal
-            (Unequal_synthesized_type
-               { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }))
+      (* If the term is synthesizing because it is ascribed, then we can accumulate errors.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends.  First, we check the ascription, making its errors only mortal.  However, if it fails only due to dependent errors, then it might actually be correct once those errors are fixed, so we don't go on to do anything else. *)
+      match
+        Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_dependent @@ fun () ->
+        let cty = check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero) in
+        Some (eval_term (Ctx.env ctx) cty)
+      with
+      (* If that fails to check, we can proceed to check the ascribed term against the supplied type instead, and if that succeeds we can go on to other parts of the program. *)
+      | None -> check status ctx ctm ty
+      | Some ety -> (
+          (* We go on *outside* the [accumulate] call because once the ascription checks, we don't want to fall back to checking directly.  We will eventually try that, but we want more control over the intermediate errors (see below). *)
+          (* It suffices for the synthesized type to be a subtype of the checking type. *)
+          match subtype_of ctx ety ty with
+          | Ok () -> check status ctx ctm ety
+          | Error why -> (
+              mortal
+                (Unequal_synthesized_type
+                   { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why });
+              (* If the ascription is a valid type that disagrees with the checking type, we don't know which of them is wrong.  Thus, we check the term against both. *)
+              match
+                ( Reporter.capture (fun () -> check status ctx ctm ety),
+                  Reporter.capture (fun () -> check status ctx ctm ty) )
+              with
+              | Ok _, Ok tm ->
+                  (* If both succeed, then the only error is the already-reported mismatch, and we can go on with the rest of the term. *)
+                  tm
+              | Error asc_errs, Ok tm ->
+                  (* If it fails to check against the ascription but checks against the outer type, we report those errors since the user was wrong that that term has the type they ascribed to it, but we make them mortal so that we can also go on with the rest of the term using the outer-checked type. *)
+                  Reporter.accumulate ~fallback:(fun () -> tm) @@ fun () -> Reporter.replay asc_errs
+              | Ok _, Error _ ->
+                  (* If it checks against the ascription but not the outer type, the only error is the type mismatch already reported, but we can't go on without a well-typed term. *)
+                  fatal (Fatalize "ascription mismatch")
+              | Error asc_errs, Error _ ->
+                  (* Finally, if it fails to check against both, we can't go on, but we only report the errors from the check against the ascription, since that's the only check the user will really expect to happen. *)
+                  Reporter.replay asc_errs)))
   | _ -> (
       let sval, sty = synth ?nosynth status ctx { value = stm; loc } in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
@@ -1459,7 +1463,7 @@ and check_match_branches : type dom window mode a b bm.
         hmode head
         * (dom, m, d_zero) canonical
         * (m', m, d_zero) insertion
-        * (D.zero, m', m', dom normal) TubeOf.t) -> (
+        * (D.zero, m', m', dom normal) TubeOf.t) ->
       (* But we can immediately identify the two different m's. *)
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
@@ -1473,15 +1477,15 @@ and check_match_branches : type dom window mode a b bm.
       (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
       let user_branches = merge_branches name brs data_constrs in
       (* We use the callback to get the motive and other data.  This might typecheck some of the branches, if it is a synthesizing match. *)
-      let motive, errs, branches, check_branches = callbacks.get dim user_branches tyfam in
+      let motive, branches, check_branches = callbacks.get dim user_branches tyfam in
       (* If the match is synthesizing, at this point we can already compute what its output type will be.  We do it now so that the computation has any desired side effects, notably (in the dependent case) passing it to the ?synthed callback before any matches are checked. *)
       let synthed_type = Option.map (callbacks.return indices inst_args) motive in
       (* The checked motive term, if the user wrote one, to be stored in the match for display. *)
       let motive_tm = Option.bind motive callbacks.motive_term in
       (* Now we iterate through the remaining constructors, typechecking the corresponding branches and inserting them in the match tree. *)
-      let branches, errs =
+      let branches =
         List.fold_left
-          (fun (branches, errs)
+          (fun branches
                (constr, (Checkable_branch { xs; body; env; ty } : (dom, a, m) checkable_branch)) ->
             (* Create new De-Bruijn-level variables for the pattern variables to which the constructor is applied, and add corresponding De-Bruijn-index variables to the context.  The types of those variables are the domains of the constructor's function-type, evaluated at the closure environment 'env' and the previous new variables (this is what ext_pi does, walking that pi-type).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes.  We also read this branch's type indices off the residual output type. *)
             let (Ext_pi { ctx = newctx; values = newvars; normals = newnfs; annotate; comp; out }) =
@@ -1491,47 +1495,34 @@ and check_match_branches : type dom window mode a b bm.
             let status =
               make_match_status status window plus_lock tm dim motive_tm branches annotate comp None
                 perm constr in
-            (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
-            Reporter.try_with ~fatal:(fun e ->
-                if
-                  Reporter.accumulates
-                    (function
-                      | Missing_constructor_in_match _ -> true
-                      | _ -> false)
-                    e
-                then fatal_diagnostic e
-                else (branches, Snoc (errs, e)))
+            (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed. *)
+            Reporter.accumulate ~fallback:(fun () -> branches |> Constr.Map.add constr Term.Failed)
             @@ fun () ->
             match (body, motive) with
             (* In the synthesizing case, we might still have no motive, if all the synthesis failed.  In that case, the only reason we're going through this is to annotate the contexts of each branch. *)
             | Some body, None ->
                 Annotate.ctx status newctx body;
-                (branches, errs)
+                branches |> Constr.Map.add constr Term.Failed
             | Some body, Some motive ->
                 let cmotive = callbacks.use motive constr dim index_vals newvars in
                 let cbody = check status newctx body cmotive in
-                ( branches
-                  |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm = cbody }),
-                  errs )
+                branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm = cbody })
             (* If there is no body, the user omitted this constructor, which is valid if and only if one of the pattern variables belongs to an empty type and can be refuted. *)
             | None, _ -> (
                 match empty_witness newctx newnfs with
                 | Ok tm ->
-                    ( branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm }),
-                      errs )
+                    branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm })
                 | Error err ->
                     List.iter emit err;
-                    fatal (Missing_constructor_in_match constr)))
-          (branches, errs) check_branches in
-      match errs with
-      | Snoc _ -> fatal (Accumulated ("check_match_branches", errs))
-      | Emp ->
-          (* Finally, we check that all the abstractions used the correct symbol ↦ or ⤇ *)
-          List.iter
-            (fun b ->
-              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
-            highers;
-          (Match { tm; window; plus_lock; dim; motive = motive_tm; branches }, synthed_type))
+                    mortal (Missing_constructor_in_match constr);
+                    branches |> Constr.Map.add constr Term.Failed))
+          branches check_branches in
+      (* Finally, we check that all the abstractions used the correct symbol ↦ or ⤇ *)
+      List.iter
+        (fun b ->
+          if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+        highers;
+      (Term.Match { tm; window; plus_lock; dim; motive = motive_tm; branches }, synthed_type)
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -1556,7 +1547,7 @@ and check_nondep_match : type dom window mode a b bm.
       (* Since the motive is already given, the callback can just return it. *)
       (Motive
          {
-           get = (fun _ user_branches _ -> (Some motive, Emp, Constr.Map.empty, user_branches));
+           get = (fun _ user_branches _ -> (Some motive, Constr.Map.empty, user_branches));
            use = (fun x _ _ _ _ -> x);
            return = (fun _ _ x -> x);
            motive_term = (fun _ -> None);
@@ -1586,7 +1577,6 @@ and synth_nondep_match : type mode a b.
           (Constr.t * (dom, a, m) checkable_branch) list ->
           (dom, kinetic) lazy_eval ->
           (mode, kinetic) value option
-          * Code.t Asai.Diagnostic.t Bwd.t
           * (mode, b, m) Term.branch Constr.Map.t
           * (Constr.t * (dom, a, m) checkable_branch) list =
        fun dim user_branches _ ->
@@ -1600,15 +1590,9 @@ and synth_nondep_match : type mode a b.
                   Left (c, Synthable_branch { xs; body; env; ty })
               | _ -> Right (c, cb))
             user_branches in
-        (* We iterate through the synthesizing branches looking for the first one that succeeds at synthesizing, accumulating errors from the ones that fail. *)
-        let rec find_synthing_branch errs = function
-          | [] ->
-              (* If they all fail, then we report the accumulated errors (we can't go on to the checking branches, since we don't have anything to even try to typecheck them against).  If there weren't any to begin with, we instead report their absence. *)
-              let errs =
-                if Bwd.is_empty errs then
-                  Snoc (Emp, diagnostic (Nonsynthesizing "match without synthesizing branches"))
-                else errs in
-              (None, errs, Constr.Map.empty, [])
+        (* We iterate through the synthesizing branches looking for the first one that succeeds at synthesizing, performing mortal errors for the ones that fail. *)
+        let rec find_synthing_branch = function
+          | [] -> (None, Constr.Map.empty, [])
           | (constr, (Synthable_branch { xs; body; env; ty } : (dom, a, m) synthable_branch)) :: brs
             ->
               (* This is the same preprocessing that's done for checking branches in check_match_branches. *)
@@ -1619,34 +1603,30 @@ and synth_nondep_match : type mode a b.
                 make_match_status status window plus_lock tm dim None Constr.Map.empty annotate comp
                   None perm constr in
               Annotate.ctx status newctx (locate_opt body.loc (Synth body.value));
-              (* Trap errors and accumulate them, going on to look for other synthesizing branches. *)
-              Reporter.try_with ~fatal:(fun e -> find_synthing_branch (Snoc (errs, e)) brs)
+              (* Trap errors and accumulate them, recording this branch as failed and going on to look for other synthesizing branches. *)
+              Reporter.accumulate ~fallback:(fun () ->
+                  let motive, branches, brs = find_synthing_branch brs in
+                  (motive, branches |> Constr.Map.add constr Term.Failed, brs))
               @@ fun () ->
               (* If the branch successfully synthesizes a type, it is the type of the entire match, so we pass in the ?synthed callback.  Importantly, therefore, the callback gets called before any other branches are typechecked.  However, that type is only valid for the whole match if it doesn't depend on the pattern variables.  We check that by reading it back into the original context, as soon as it is known.  Thus we pass our own ?synthed callback unconditionally to do this, and also call the caller's ?synthed if it exists. *)
               let synthed sty =
                 ( Reporter.try_with ~fatal:(fun d ->
-                      match
-                        Reporter.accumulated
-                          (fun d ->
-                            match d.message with
-                            | No_such_level _ -> Some d.explanation.loc
-                            | _ -> None)
-                          d
-                      with
-                      | Some errloc ->
-                          fatal ?loc:errloc
+                      match d.message with
+                      | No_such_level _ ->
+                          fatal ?loc:d.explanation.loc
                             (Invalid_synthesized_type
                                ("synthesizing branch of match", PVal (newctx, sty)))
-                      | None -> fatal_diagnostic d)
+                      | _ -> fatal_diagnostic d)
                 @@ fun () -> ignore (readback_val ctx sty) );
                 Option.iter (fun f -> f sty) synthed in
               let sbr, sty = synth ~synthed status newctx body in
               (* Finally, if we found a synthesizing branch that works, return the synthesized type, the accumulated errors, the successful typechecked branch, and the remaining synthesizing branches.  We don't need to deal again with any of the ones we've visited before the one that succeeded, as they all must have errored in order to get here, and we've accumulated their errors. *)
               ( Some sty,
-                errs,
                 Constr.Map.singleton constr (Term.Branch { annotate; comp; perm; tm = sbr }),
                 brs ) in
-        let motive, errs, branches, synth_branches = find_synthing_branch Emp synth_branches in
+        if List.is_empty synth_branches then
+          mortal (Nonsynthesizing "match without synthesizing branches");
+        let motive, branches, synth_branches = find_synthing_branch synth_branches in
         (* We put the remaining synthesizing branches back on the front of the checking ones, and return them. *)
         let check_branches =
           List.fold_right
@@ -1654,8 +1634,9 @@ and synth_nondep_match : type mode a b.
               let body = Some { value = Synth body.value; loc = body.loc } in
               (c, Checkable_branch { xs; body; env; ty }) :: cbs)
             synth_branches check_branches in
-        (motive, errs, branches, check_branches) in
-      (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch. *)
+        (motive, branches, check_branches) in
+      (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch.  We delimit a scope so that if no motive was found, we can tell whether that was because of errors in this match. *)
+      Reporter.scope @@ fun () ->
       let result, motive =
         check_match_branches status ctx tm varty window plus_lock brs i highers loc
           (Motive
@@ -1666,7 +1647,10 @@ and synth_nondep_match : type mode a b.
                motive_term = (fun _ -> None);
              }) in
       match motive with
-      | None -> fatal (Anomaly "synth_nondep_match: no synthesized type of match but no errors")
+      | None ->
+          (* If we didn't get a type, we can't proceed. *)
+          fatalize ~why:"synth_nondep_match" ();
+          fatal (Anomaly "synth_nondep_match: no synthesized type of match but no errors")
       | Some motive -> (result, motive))
 
 (* Check a dependently typed match, with motive supplied by the user.  (Thus we have to typecheck the motive as well.)  *)
@@ -1701,7 +1685,7 @@ and synth_dep_match : type mode a b.
                    let cmotive = check (Kinetic `Nolet) ctx motive emotivety in
                    let emotive = eval_term (Ctx.env ctx) cmotive in
                    (* Note that the motive object here is a *type family* value, not a single type.  Therefore, the "use" and "return" callbacks have to apply that function to appropriate arguments.  We keep the checked term alongside it, to be stored in the Match for display. *)
-                   (Some (cmotive, emotive), Emp, Constr.Map.empty, user_branches));
+                   (Some (cmotive, emotive), Constr.Map.empty, user_branches));
                use =
                  (fun (_, emotive) constr dim index_vals newvars ->
                    (* To get the type at which to typecheck the body of a branch, we apply the general dependent motive to the indices of this constructor (read off from its output type by the caller), its boundaries, and itself.  We compute the constructor and its boundaries.  TODO: Rather than building a cube and then immediately traversing it, it would be more efficient to call a function that just traverses all faces of some dimension. *)
@@ -1773,7 +1757,7 @@ and check_var_match : type dom modality mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
+        hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) ->
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
       let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
@@ -1825,20 +1809,13 @@ and check_var_match : type dom modality mode a b bm.
       in
       Reporter.try_with ~fatal:(fun d ->
           match
-            Reporter.accumulated
-              (fun d ->
-                match d.message with
-                | Matching_wont_refine (str, x) ->
-                    Some (d.explanation.loc, Code.Matching_wont_refine (str, x))
-                | No_such_level x ->
-                    Some
-                      ( d.explanation.loc,
-                        Code.Matching_wont_refine ("index variable occurs in parameter", Some x) )
-                | _ -> None)
-              d
+            match d.message with
+            | Matching_wont_refine (str, x) -> Some (str, x)
+            | No_such_level x -> Some ("index variable occurs in parameter", Some x)
+            | _ -> None
           with
-          | Some (errloc, msg) ->
-              emit ?loc:errloc msg;
+          | Some (msg, x) ->
+              emit ?loc:d.explanation.loc (Code.Matching_wont_refine (msg, x));
               check_nondep_match status ctx (Term.Var index) varty window plus brs None highers
                 motive loc
           | None -> fatal_diagnostic d)
@@ -1858,9 +1835,9 @@ and check_var_match : type dom modality mode a b bm.
       (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
       let user_branches = merge_branches name brs data_constrs in
       (* We now iterate through the constructors, typechecking the corresponding branches and inserting them in the match tree. *)
-      let branches, errs =
+      let branches =
         List.fold_left
-          (fun (branches, errs)
+          (fun branches
                (constr, (Checkable_branch { xs; body; env; ty } : (dom, a, m) checkable_branch)) ->
             (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are the domains of the constructor's function-type, evaluated at the closure environment 'env' and the previous new variables (this is what ext_pi does, walking that pi-type).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
             let (Ext_pi { ctx = newctx; values = newvars; normals = newnfs; annotate; comp; out }) =
@@ -1940,19 +1917,12 @@ and check_var_match : type dom modality mode a b bm.
                     | Bind_some { checked_perm; oldctx; newctx } -> (
                         (* We readback the index and instantiation values into this new context and discard the result, catching No_such_level to turn it into a user Error.  This has the effect of doing an occurs-check that none of the index variables occur in any of the index values.  This is a bit less general than the CDP Solution rule, which (when applied one variable at a time) prohibits only cycles of occurrence.  Note that this exception is still caught by check_var_match, above, causing a fallback to term matching. *)
                         ( Reporter.try_with ~fatal:(fun d ->
-                              match
-                                Reporter.accumulated
-                                  (fun d ->
-                                    match d.message with
-                                    | No_such_level x -> Some (d.explanation.loc, x)
-                                    | _ -> None)
-                                  d
-                              with
-                              | Some (errloc, x) ->
-                                  fatal ?loc:errloc
+                              match d.message with
+                              | No_such_level x ->
+                                  fatal ?loc:d.explanation.loc
                                     (Matching_wont_refine
                                        ("free index variable occurs in inferred index value", Some x))
-                              | None -> fatal_diagnostic d)
+                              | _ -> fatal_diagnostic d)
                         @@ fun () ->
                           let (Locked (_, oldlctx)) = Ctx.lock oldctx window in
                           Hashtbl.iter (fun _ v -> ignore (readback_nf oldlctx v)) new_vals );
@@ -1967,22 +1937,14 @@ and check_var_match : type dom modality mode a b bm.
                         (* Finally, we typecheck the "body" of the branch, if the user supplied one. *)
                         match body with
                         | Some body ->
-                            (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, but we pass through the errors that are getting caught elsewhere. *)
-                            Reporter.try_with ~fatal:(fun e ->
-                                if
-                                  Reporter.accumulates
-                                    (function
-                                      | Missing_constructor_in_match _ -> true
-                                      | _ -> false)
-                                    e
-                                then fatal_diagnostic e
-                                else (branches, Snoc (errs, e)))
+                            (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed. *)
+                            Reporter.accumulate ~fallback:(fun () ->
+                                branches |> Constr.Map.add constr Term.Failed)
                             @@ fun () ->
                             let branch = check status newctx body newty in
-                            ( branches
-                              |> Constr.Map.add constr
-                                   (Term.Branch { annotate; comp; perm = checked_perm; tm = branch }),
-                              errs )
+                            branches
+                            |> Constr.Map.add constr
+                                 (Term.Branch { annotate; comp; perm = checked_perm; tm = branch })
                         (* If not, then we look for something to refute. *)
                         | None -> (
                             (* First we check whether any of the new pattern variables created by this match belong to an empty datatype and can be refuted.  The pattern variables still have their pre-refinement levels, so we look for the witness in oldctx, just as the motive is read back there; the resulting term is over the same context either way. *)
@@ -2022,24 +1984,21 @@ and check_var_match : type dom modality mode a b bm.
                             match result with
                             (* If we found something to refute, the refuted branch records the empty match that refutes it, which is what evaluating the branch will get stuck on if it is ever reached. *)
                             | Ok tm ->
-                                ( branches
-                                  |> Constr.Map.add constr
-                                       (Term.Branch { annotate; comp; perm = checked_perm; tm }),
-                                  errs )
+                                branches
+                                |> Constr.Map.add constr
+                                     (Term.Branch { annotate; comp; perm = checked_perm; tm })
                             | Error err ->
                                 List.iter emit err;
-                                fatal (Missing_constructor_in_match constr)))))
+                                mortal (Missing_constructor_in_match constr);
+                                branches |> Constr.Map.add constr Term.Failed))))
             | _ -> fatal (Anomaly "created datatype is not a datatype with all its indices"))
-          (Constr.Map.empty, Emp) user_branches in
-      match errs with
-      | Snoc _ -> fatal (Accumulated ("check_var_match", errs))
-      | Emp ->
-          List.iter
-            (fun b ->
-              if not !(b.value) then fatal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
-            highers;
-          (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store. *)
-          Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = None; branches })
+          Constr.Map.empty user_branches in
+      List.iter
+        (fun b ->
+          if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+        highers;
+      (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store. *)
+      Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = None; branches }
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -2246,8 +2205,7 @@ and check_empty_match_lam : type mode a b.
                   let firstty = firstty <|> Anomaly "missing firstty in checking []" in
                   match view_type firstty "is_empty" with
                   | Canonical (_, Data { constrs; _ }, _, _) -> missing_constructors constrs
-                  | _ ->
-                      fatal ?loc:d.explanation.loc (Matching_on_nondatatype (PVal (wctx, firstty))))
+                  | _ -> fatal (Matching_on_nondatatype (PVal (wctx, firstty))))
               | _ -> fatal_diagnostic d))
   | _ -> fatal Invalid_refutation
 
@@ -2326,25 +2284,21 @@ and check_data : type mode a b i.
     i Fwn.t ->
     (Constr.t, (mode, b, kinetic) term) Abwd.t ->
     (Constr.t * a Raw.dataconstr located) list ->
-    Code.t Asai.Diagnostic.t Bwd.t ->
     (mode, b, potential) term =
- fun ~recursive ~hints ~tyfam status ctx ty num_indices checked_constrs raw_constrs errs ->
+ fun ~recursive ~hints ~tyfam status ctx ty num_indices checked_constrs raw_constrs ->
   match (raw_constrs, status) with
-  | [], Potential _ -> (
-      match errs with
-      | Snoc _ -> fatal (Accumulated ("check_data", errs))
-      | Emp ->
-          Canonical
-            (Data
-               {
-                 indices = num_indices;
-                 (* Typechecking a datatype declaration produces one of evaluation dimension zero. *)
-                 evaldim = D.zero;
-                 constrs = checked_constrs;
-                 recursive;
-                 hints;
-                 tyfam;
-               }))
+  | [], Potential _ ->
+      Canonical
+        (Data
+           {
+             indices = num_indices;
+             (* Typechecking a datatype declaration produces one of evaluation dimension zero. *)
+             evaldim = D.zero;
+             constrs = checked_constrs;
+             recursive;
+             hints;
+             tyfam;
+           })
   | ( (c, { value = Dataconstr (args, output); loc }) :: raw_constrs,
       Potential (head, current_apps, hyp) ) -> (
       with_loc loc @@ fun () ->
@@ -2361,14 +2315,12 @@ and check_data : type mode a b i.
                    hints;
                    tyfam;
                  })))
-        Emp
       @@ fun () ->
       match (Abwd.find_opt c checked_constrs, output) with
       | Some _, _ -> fatal (Duplicate_constructor_in_data c)
       | None, Some output ->
-          let crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t), errs =
-            Reporter.try_with ~fatal:(fun e -> (`Recursive, checked_constrs, Snoc (errs, e)))
-            @@ fun () ->
+          let crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t) =
+            Reporter.accumulate ~fallback:(fun () -> (`Recursive, checked_constrs)) @@ fun () ->
             let Checked_tel (args, newctx), crec =
               Positivity.scope @@ fun () -> check_tel ctx args in
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
@@ -2386,8 +2338,7 @@ and check_data : type mode a b i.
                         (* We re-extract the indices only to validate that the output is the current datatype applied to the correct parameters and the right number of indices; the index values themselves are recovered on demand from the stored output. *)
                         let (Wrap indices) = get_indices newctx c current_apps out_apps output.loc in
                         match Fwn.compare (Vec.length indices) num_indices with
-                        | Eq ->
-                            (crec, checked_constrs |> Abwd.add c (Telescope.pis args coutput), errs)
+                        | Eq -> (crec, checked_constrs |> Abwd.add c (Telescope.pis args coutput))
                         | _ ->
                             (* This can happen if the number of indices expected, which is computed from the type the datatype is being checked against, differs from the number of arguments the current constant actually takes.  For instance, if a 'match' with an explicit motive is used to define an indexed family, the motive could specify fewer indices than the constant has. *)
                             fatal ?loc:output.loc
@@ -2396,23 +2347,22 @@ and check_data : type mode a b i.
                 | _ -> fatal ?loc:output.loc err)
             | _ -> fatal ?loc:output.loc err in
           check_data ~recursive:(Positivity.merge recursive crec) ~hints ~tyfam status ctx ty
-            num_indices checked_constrs raw_constrs errs
+            num_indices checked_constrs raw_constrs
       | None, None -> (
           (* If the output wasn't supplied, there can't be any indices. *)
           match num_indices with
           | Zero ->
-              let crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t), errs =
-                Reporter.try_with ~fatal:(fun e -> (`Recursive, checked_constrs, Snoc (errs, e)))
-                @@ fun () ->
+              let crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t) =
+                Reporter.accumulate ~fallback:(fun () -> (`Recursive, checked_constrs)) @@ fun () ->
                 let Checked_tel (args, newctx), crec =
                   Positivity.scope @@ fun () -> check_tel ctx args in
                 (* In this case, the output of the constructor is the datatype itself. *)
                 let output =
                   readback_neu ~canonical:`Canonical newctx (head_of_potential head) current_apps
                 in
-                (crec, checked_constrs |> Abwd.add c (Telescope.pis args output), errs) in
+                (crec, checked_constrs |> Abwd.add c (Telescope.pis args output)) in
               check_data ~recursive:(Positivity.merge recursive crec) ~hints ~tyfam status ctx ty
-                Fwn.zero checked_constrs raw_constrs errs
+                Fwn.zero checked_constrs raw_constrs
           | Suc _ -> fatal (Missing_constructor_type c)))
 
 (* The argument at position i of the constant that a type is an application of, for an ImplicitApp.  It must be an ordinary 0-dimensional non-modal argument at the ambient mode; if there is no such argument, the caller reports the goal as not having the shape it was looking for. *)
@@ -2508,46 +2458,42 @@ and with_codata_so_far : type mode a b n c et.
     (D.zero, n, n, mode normal) TubeOf.t ->
     (mode * b * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, et) Fibrancy.Codata.t ->
-    Code.t Asai.Diagnostic.t Bwd.t ->
     ((mode, n) self_vars -> (mode, b, potential) term -> c) ->
     c =
  fun (Potential (h, args, hyp)) eta ctx opacity hints dim tyargs checked_fields (Fibrancy fibrancy)
-     errs cont ->
+     cont ->
   let mode = Ctx.mode ctx in
   let domvars =
-    match errs with
-    | Emp ->
-        (* We can always create a constant with the (0,0,0) insertion, even if its dimension is actually higher. *)
-        let head = head_of_potential h in
-        let fibrancy_fields = Fibrancy.Codata.finish mode checked_fields fibrancy in
-        (* The types of the self variable and its boundary: the codatatype-so-far and the boundary of the type being checked against. *)
-        let selftys () =
-          let value =
-            eval_codata (Ctx.env ctx) eta opacity hints dim checked_fields fibrancy_fields in
-          let prev_ety =
-            Neu { head; args; value = ready value; ty = lazy (inst (universe mode dim) tyargs) }
-          in
-          TubeOf.plus_cube
-            (TubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ tyargs ])
-            (CubeOf.singleton prev_ety) in
-        (* The self variable, annotated by the left adjoint f of a specified adjunction, in the context locked by the right adjoint g (which is where it will be added).  Only the level of that context matters to dom_vars, and locking doesn't change that.  But the *type* of such a variable lives in the context locked by g and then by f, whereas the codatatype-so-far lives in the unlocked context; we transport it there along the adjunction unit 1 ⇒ gf, which is exactly the substitution that MTT associates to that 2-cell.  For an ordinary field the unit is an identity cell and this is a no-op. *)
-        let domvars : type f g gmode.
-            (mode, f, g, gmode) Modalcell.adjunction -> (n, mode Ctx.Binding.t) CubeOf.t =
-         fun adj ->
-          let (Locked (_, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
-          let (Adjunction { unit; _ }) = adj in
-          let tys =
-            CubeOf.mmap { map = (fun _ [ ty ] -> act_value ty (id_deg D.zero) unit) } [ selftys () ]
-          in
-          snd (dom_vars lctx (Modalcell.adj_left adj) tys) in
-        Self_vars { self = domvars }
-    | Snoc _ ->
-        let msg =
-          match eta with
-          | Eta -> "record dependent"
-          | Noeta -> "codata dependent" in
-        let err = Ctx.Binding.error (Accumulated (msg, Emp)) in
-        Self_vars { self = (fun _ -> CubeOf.build dim { build = (fun _ -> err) }) } in
+    if moribund () then
+      let msg =
+        match eta with
+        | Eta -> "record dependent"
+        | Noeta -> "codata dependent" in
+      let err = Ctx.Binding.error (Dependent msg) in
+      Self_vars { self = (fun _ -> CubeOf.build dim { build = (fun _ -> err) }) }
+    else
+      (* We can always create a constant with the (0,0,0) insertion, even if its dimension is actually higher. *)
+      let head = head_of_potential h in
+      let fibrancy_fields = Fibrancy.Codata.finish mode checked_fields fibrancy in
+      (* The types of the self variable and its boundary: the codatatype-so-far and the boundary of the type being checked against. *)
+      let selftys () =
+        let value = eval_codata (Ctx.env ctx) eta opacity hints dim checked_fields fibrancy_fields in
+        let prev_ety =
+          Neu { head; args; value = ready value; ty = lazy (inst (universe mode dim) tyargs) } in
+        TubeOf.plus_cube
+          (TubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ tyargs ])
+          (CubeOf.singleton prev_ety) in
+      (* The self variable, annotated by the left adjoint f of a specified adjunction, in the context locked by the right adjoint g (which is where it will be added).  Only the level of that context matters to dom_vars, and locking doesn't change that.  But the *type* of such a variable lives in the context locked by g and then by f, whereas the codatatype-so-far lives in the unlocked context; we transport it there along the adjunction unit 1 ⇒ gf, which is exactly the substitution that MTT associates to that 2-cell.  For an ordinary field the unit is an identity cell and this is a no-op. *)
+      let domvars : type f g gmode.
+          (mode, f, g, gmode) Modalcell.adjunction -> (n, mode Ctx.Binding.t) CubeOf.t =
+       fun adj ->
+        let (Locked (_, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
+        let (Adjunction { unit; _ }) = adj in
+        let tys =
+          CubeOf.mmap { map = (fun _ [ ty ] -> act_value ty (id_deg D.zero) unit) } [ selftys () ]
+        in
+        snd (dom_vars lctx (Modalcell.adj_left adj) tys) in
+      Self_vars { self = domvars } in
   let codataterm =
     Term.Canonical
       (Codata
@@ -2563,7 +2509,7 @@ and with_codata_so_far : type mode a b n c et.
            fibrancy = Some fibrancy;
            is_glue = None;
          }) in
-  run_with_definition h (hyp codataterm) errs @@ fun () -> cont domvars codataterm
+  run_with_definition h (hyp codataterm) @@ fun () -> cont domvars codataterm
 
 and check_codata : type mode a b n et.
     (mode, b, potential) status ->
@@ -2575,19 +2521,15 @@ and check_codata : type mode a b n et.
     (mode * b * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, et) Fibrancy.Codata.t ->
     (Field.wrapped * a Raw.codatafield) list ->
-    Code.t Asai.Diagnostic.t Bwd.t ->
     (mode, b, potential) term =
- fun status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs ->
+ fun status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields ->
   let dim = TubeOf.inst tyargs in
   match raw_fields with
-  | [] -> (
-      match errs with
-      | Emp ->
-          with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy errs
-          @@ fun _ codataterm -> codataterm
-      | Snoc _ -> fatal (Accumulated ("check_codata", errs)))
+  | [] ->
+      with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy
+      @@ fun _ codataterm -> codataterm
   | (Wrap fld, Codatafield (x, lock, self_ty, rty)) :: raw_fields -> (
-      with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy errs
+      with_codata_so_far status eta ctx opacity hints dim tyargs checked_fields fibrancy
       @@ fun (Self_vars { self }) _ ->
       (* If a type was given for the self variable, it must be equal to the current codatatype with its parameters. *)
       (match self_ty with
@@ -2632,9 +2574,8 @@ and check_codata : type mode a b n et.
       match (D.compare_zero (Field.dim fld), D.compare_zero (TubeOf.inst tyargs), eta) with
       | Zero, _, _ ->
           (* Zero-dimensional field *)
-          let checked_fields, fibrancy, errs =
-            Reporter.try_with ~fatal:(fun e -> (checked_fields, fibrancy, Snoc (errs, e)))
-            @@ fun () ->
+          let checked_fields, fibrancy =
+            Reporter.accumulate ~fallback:(fun () -> (checked_fields, fibrancy)) @@ fun () ->
             check_name_clash ();
             let (Any_adjunction adj) = get_adjunction () in
             let (Adjunction { left; right; _ }) = adj in
@@ -2653,13 +2594,12 @@ and check_codata : type mode a b n et.
                 let entry =
                   CodatafieldAbwd.Entry (fld, Codatafield (x, adj, plus_lock, Lower cty)) in
                 ( Snoc (checked_fields, entry),
-                  Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
-                  errs ) in
-          check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
+                  Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry ) in
+          check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields
       | Pos _, Zero, Noeta ->
           (* Higher-dimensional field, currently requires a zero-dimensional codatatype (non-Gel). *)
-          let checked_fields, errs =
-            Reporter.try_with ~fatal:(fun e -> (checked_fields, Snoc (errs, e))) @@ fun () ->
+          let checked_fields =
+            Reporter.accumulate ~fallback:(fun () -> checked_fields) @@ fun () ->
             check_name_clash ();
             let (Any_adjunction adj) = get_adjunction () in
             let (Adjunction { left; right; _ }) = adj in
@@ -2686,8 +2626,8 @@ and check_codata : type mode a b n et.
                       Codatafield
                         (x, adj, plus_lock, Higher (fldtermctx, singleton_fieldtype i plusmap cty))
                     ) in
-                (Snoc (checked_fields, entry), errs) in
-          check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields errs
+                Snoc (checked_fields, entry) in
+          check_codata status ctx opacity eta hints tyargs checked_fields fibrancy raw_fields
       | Pos _, Zero, Eta -> fatal (Unimplemented "higher fields in record types")
       | Pos _, Pos _, _ -> fatal (Unimplemented "higher fields in higher-dimensional codatatypes"))
 
@@ -2705,37 +2645,33 @@ and check_record : type mode a f1 f2 f af d acd b n.
     (mode * b * D.zero * n * has_eta) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, has_eta) Fibrancy.Codata.t ->
     (af, d, acd) Raw.tel ->
-    Code.t Asai.Diagnostic.t Bwd.t ->
     (mode, b, potential) term =
- fun status dim ctx opacity hints tyargs vars ctx_fields fplus af checked_fields fibrancy raw_fields
-     errs ->
+ fun status dim ctx opacity hints tyargs vars ctx_fields fplus af checked_fields fibrancy
+     raw_fields ->
   match raw_fields with
-  | Emp -> (
-      match errs with
-      | Snoc _ -> fatal (Accumulated ("check_record", errs))
-      | Emp ->
-          let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
-          Term.Canonical
-            (Codata
-               {
-                 eta = Eta;
-                 opacity;
-                 hints;
-                 evaldim = D.zero;
-                 dim;
-                 plusdim = D.zero_plus dim;
-                 fields;
-                 fibrancy = Some fibrancy;
-                 is_glue = None;
-               }))
+  | Emp ->
+      let fields, Fibrancy fibrancy = (checked_fields, fibrancy) in
+      Term.Canonical
+        (Codata
+           {
+             eta = Eta;
+             opacity;
+             hints;
+             evaldim = D.zero;
+             dim;
+             plusdim = D.zero_plus dim;
+             fields;
+             fibrancy = Some fibrancy;
+             is_glue = None;
+           })
   | Ext (None, _, _, _) -> fatal (Anomaly "unnamed field in check_record")
   | Ext (Some name, modality, rty, raw_fields) ->
-      with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy errs
+      with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy
       @@ fun (Self_vars { self }) _ ->
       let fld = Field.intern name D.zero in
-      let checked_fields, fibrancy, ctx_fields, errs =
-        Reporter.try_with ~fatal:(fun e ->
-            (checked_fields, fibrancy, Bwv.Snoc (ctx_fields, (fld, name)), Snoc (errs, e)))
+      let checked_fields, fibrancy, ctx_fields =
+        Reporter.accumulate ~fallback:(fun () ->
+            (checked_fields, fibrancy, Bwv.Snoc (ctx_fields, (fld, name))))
         @@ fun () ->
         match Modality.of_name_tgt (Ctx.mode ctx) modality.value with
         | Error e -> modality_fatal "field annotation" (e :> modality_error)
@@ -2756,10 +2692,9 @@ and check_record : type mode a f1 f2 f af d acd b n.
                           Lower cty ) ) in
                 ( Snoc (checked_fields, entry),
                   Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
-                  Bwv.Snoc (ctx_fields, (fld, name)),
-                  errs )) in
+                  Bwv.Snoc (ctx_fields, (fld, name)) )) in
       check_record status dim ctx opacity hints tyargs vars ctx_fields (Suc fplus) (Suc af)
-        checked_fields fibrancy raw_fields errs
+        checked_fields fibrancy raw_fields
 
 and check_struct : type mode a b c s m n mn et.
     (mode, b, s) status ->
@@ -2776,6 +2711,8 @@ and check_struct : type mode a b c s m n mn et.
     ((string * string list) option, [ `Normal | `Cube ] located * a check located) Abwd.t ->
     (mode, b, s) term =
  fun status eta ctx ty m mn ({ fields; _ } as codata_args) tyargs tms ->
+  (* Errors in previous fields of this struct, but not elsewhere, prevent us from checking later fields that depend on them, and from completing the struct. *)
+  Reporter.scoped ~why:"check_struct" @@ fun () ->
   (* The type of each record field, at which we check the corresponding field supplied in the struct, is the type associated to that field name in general, evaluated at the supplied parameters and at "the term itself".  We don't have the whole term available while typechecking, of course, but we can build a version of it that contains all the previously typechecked fields, which is all we need for a well-typed record.  So we iterate through the fields (in the order specified in the *type*, since that determines the dependencies) while also accumulating the previously typechecked and evaluated fields.  At the end, we throw away the evaluated fields (although as usual, that seems wasteful).  Note that check_fields returns a modified version of the *user* fields 'tms', since it may need to resolve positional fields to named ones. *)
   let tms, ctms =
     check_fields status eta ctx ty m mn codata_args
@@ -2783,29 +2720,30 @@ and check_struct : type mode a b c s m n mn et.
       (Bwd.to_list fields)
       tyargs
       (Abwd.map (fun (cube, { value; loc }) -> (cube, { value = Some value; loc })) tms)
-      Emp Emp Emp in
+      Emp Emp in
   (* We had to typecheck the fields in the order given in the record type, since later ones might depend on earlier ones.  But then we re-order them back to the order given in the struct, to match what the user wrote. *)
-  let fields, errs =
+  let fields =
     Bwd.fold_left
-      (fun (fields, errs) -> function
+      (fun fields -> function
         (* If the term is still there, or if there are any remaining unlabeled fields, they are extra. *)
         | Some fldins, (_, { value = Some _; loc = tmloc }) ->
-            (fields, Snoc (errs, diagnostic ?loc:tmloc (extra_field_in_struct eta fldins)))
-        | None, (_, tm) -> (fields, Snoc (errs, diagnostic ?loc:tm.loc (Extra_field_in_tuple None)))
+            mortal ?loc:tmloc (extra_field_in_struct eta fldins);
+            fields
+        | None, (_, tm) ->
+            mortal ?loc:tm.loc (Extra_field_in_tuple None);
+            fields
         | Some (fld, _), (_, { value = None; loc = tmloc }) -> (
             (* In the case of higher fields, the same field name will appear more than once in tms, but it will appear only once in the returned ctms; thus we take it only if it hasn't already been taken. *)
             match
               ( Term.StructfieldAbwd.find_string_opt fields fld,
                 Term.StructfieldAbwd.find_string_opt ctms fld )
             with
-            | Some _, _ -> (fields, errs)
-            | None, Some x -> (Snoc (fields, x), errs)
+            | Some _, _ -> fields
+            | None, Some x -> Snoc (fields, x)
             | None, None ->
                 fatal ?loc:tmloc (Anomaly "taken raw field didn't end up in checked fields")))
-      (Emp, Emp) tms in
-  match errs with
-  | Emp -> Term.Struct { eta; dim = m; fields; energy = energy status }
-  | Snoc _ -> fatal (Accumulated ("check_struct", errs))
+      Emp tms in
+  Term.Struct { eta; dim = m; fields; energy = energy status }
 
 and check_fields : type mode a b c s m n mn et.
     (mode, b, s) status ->
@@ -2825,36 +2763,32 @@ and check_fields : type mode a b c s m n mn et.
     (mode * (m * b * s * et)) Term.StructfieldAbwd.t ->
     (* Evaluated versions of the fields we have checked so far *)
     (mode * m * s * et) Value.StructfieldAbwd.t ->
-    (* Errors we have accumulated so far *)
-    Code.t Asai.Diagnostic.t Bwd.t ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
     * (mode * (m * b * s * et)) Term.StructfieldAbwd.t =
- fun status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs ->
+ fun status eta ctx ty m mn codata_args fields tyargs tms ctms etms ->
   (* Build a temporary value-struct consisting of the so-far checked and evaluated fields.  The insertion on a struct being checked is the identity, but it stores the substitution dimension of the type being checked against.  If this is a higher-dimensional record (e.g. Gel), there could be a nontrivial right dimension being trivially inserted, but that will get added automatically by an appropriate symmetry action if it happens. *)
   let str = Value.Struct { fields = etms; ins = ins_zero m; energy = energy status; eta } in
   match (fields, status) with
-  | [], _ -> (
-      (* If there are no more fields to check, we return.  We have accumulated a Bwd of errors as we progress through the fields, allowing later fields to typecheck (and, more importantly, produce their own meaningful error messages) even if earlier fields already failed.  Then at the end, if there are any such errors, we raise them all together.  *)
-      match errs with
-      | Emp -> (tms, ctms)
-      | Snoc _ -> fatal (Accumulated ("check_struct", errs)))
+  | [], _ ->
+      (* We fatalize here, even though we're inside [Reporter.scoped], so that we don't get "taken raw field didn't end up in checked fields" anomalies when assembling the struct. *)
+      fatalize ~why:"check_fields" ();
+      (tms, ctms)
   | Entry (fld, cdf) :: fields, Potential (name, args, hyp) ->
       (* Temporarily bind the current constant to the up-until-now value (or an error, if any have occurred yet), for (co)recursive purposes.  Note that this means as soon as one field fails, no other fields can be typechecked if they depend *at all* on earlier ones, even ones that didn't fail.  This could be improved in the future. *)
       run_with_definition name
         (hyp (Term.Struct { eta; dim = m; fields = ctms; energy = energy status }))
-        errs
       @@ fun () ->
       (* The insertion on the *constant* being checked, by contrast, is always zero, since the constant is not nontrivially substituted at all yet. *)
       let head = head_of_potential name in
       (* The up-until-now term is also maybe an error. *)
       let prev_etm =
-        unless_error (Neu { head; args; value = ready (Val str); ty = Lazy.from_val ty }) errs in
+        if moribund () then Error (Code.Dependent "partial potential struct")
+        else Ok (Neu { head; args; value = ready (Val str); ty = Lazy.from_val ty }) in
       check_field status eta ctx ty m mn codata_args fields tyargs fld cdf prev_etm tms ctms etms
-        errs
   | Entry (fld, cdf) :: fields, Kinetic _ ->
-      let prev_etm = unless_error str errs in
+      let prev_etm =
+        if moribund () then Error (Code.Dependent "partial kinetic struct") else Ok str in
       check_field status eta ctx ty m mn codata_args fields tyargs fld cdf prev_etm tms ctms etms
-        errs
 
 and check_field : type mode a b c s m n mn i et.
     (mode, b, s) status ->
@@ -2876,11 +2810,10 @@ and check_field : type mode a b c s m n mn i et.
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
     (mode * (m * b * s * et)) Term.StructfieldAbwd.t ->
     (mode * m * s * et) Value.StructfieldAbwd.t ->
-    Code.t Asai.Diagnostic.t Bwd.t ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
     * (mode * (m * b * s * et)) Term.StructfieldAbwd.t =
- fun status eta ctx ty m mn ({ env; _ } as codata_args) fields tyargs fld cdf prev_etm tms ctms etms
-     errs ->
+ fun status eta ctx ty m mn ({ env; _ } as codata_args) fields tyargs fld cdf prev_etm tms ctms
+     etms ->
   match cdf with
   | Codatafield
       (type f g gmode ag)
@@ -2891,19 +2824,16 @@ and check_field : type mode a b c s m n mn i et.
       match Modality.filter_is_trivial m left_filter with
       | None ->
           let key = Some (Field.to_string fld, []) in
-          let tms, errs =
+          let tms =
             match
               Abwd.find_opt_and_update key key (fun (cube, x) -> (cube, locate_opt x.loc None)) tms
             with
             | Some ((_, { value = Some _; loc }), tms) ->
-                ( tms,
-                  Snoc
-                    ( errs,
-                      diagnostic ?loc (Extra_filtered_field_in_tuple (Field.to_string fld, left)) )
-                )
+                mortal ?loc (Extra_filtered_field_in_tuple (Field.to_string fld, left));
+                tms
             | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
-            | None -> (tms, errs) in
-          check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs
+            | None -> tms in
+          check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms
       | Some Eq -> (
           match (fldty, status, eta) with
           | Lower fldty, _, _ ->
@@ -2937,7 +2867,7 @@ and check_field : type mode a b c s m n mn i et.
                 | Some ((cube, { value = Some tm; loc }), tms) ->
                     (match (cube.value, D.compare_zero m) with
                     | `Cube, Zero ->
-                        fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+                        mortal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
                     | _ -> ());
                     ({ value = tm; loc }, tms, `Labeled)
                 | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
@@ -2950,15 +2880,15 @@ and check_field : type mode a b c s m n mn i et.
                     | Some ((cube, { value = Some tm; loc }), tms) ->
                         (match (cube.value, D.compare_zero m) with
                         | `Cube, Zero ->
-                            fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+                            mortal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
                         | _ -> ());
                         ({ value = tm; loc }, tms, `Unlabeled)
                     | Some ((_, { value = None; _ }), _) ->
                         fatal (Anomaly "accessing same field twice")
                     | None -> fatal (missing_field_in_struct eta fld)) in
-              let etms, ctms, errs =
-                (* We trap any errors produced by 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
-                Reporter.try_with ~fatal:(fun e -> (etms, ctms, Snoc (errs, e))) @@ fun () ->
+              let etms, ctms =
+                (* Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error. *)
+                Reporter.accumulate ~fallback:(fun () -> (etms, ctms)) @@ fun () ->
                 (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
                 let ety =
                   tyof_lower_codatafield (self_values adj prev_etm tyargs) tyargs fld adj
@@ -2975,8 +2905,8 @@ and check_field : type mode a b c s m n mn i et.
                     ( ctms,
                       Term.StructfieldAbwd.Entry
                         (fld, Term.Structfield.Lower (adj, ctx_plus_lock, ctm, lbl)) ) in
-                (etms, ctms, errs) in
-              check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms errs
+                (etms, ctms) in
+              check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms
           | Higher (fldtermctx, fldtys), Potential _, Noeta ->
               let (Fieldtype
                      (type iagx)
@@ -2988,8 +2918,8 @@ and check_field : type mode a b c s m n mn i et.
               let (Adjunction { right; _ }) = adj in
               let (Has_plus_lock (type bg) (ctx_plus_lock : (b, mode, g, gmode, bg) plus_lock)) =
                 plus_lock right in
-              check_higher_field status ctx ty m i codata_args fields tyargs tms ctms etms errs fld
-                adj ctx_plus_lock
+              check_higher_field status ctx ty m i codata_args fields tyargs tms ctms etms fld adj
+                ctx_plus_lock
                 (PlusPbijmap.build m i { build = (fun _ -> None) })
                 (InsmapOf.build m i { build = (fun _ -> None) })
                 (all_pbij_between m i) prev_etm fld_plus_lock fldtermctx ic0 fldty
@@ -3010,7 +2940,6 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t ->
     (mode * (m * b * potential * no_eta)) Term.StructfieldAbwd.t ->
     (mode * m * potential * no_eta) Value.StructfieldAbwd.t ->
-    Code.t Asai.Diagnostic.t Bwd.t ->
     (* Field being checked *)
     i Field.t ->
     (* Its adjunction, and the lock of the checked context b by the right adjoint, behind which its components live.  For an ordinary field these are the identity adjunction and the trivial lock. *)
@@ -3031,7 +2960,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
     (gmode, iagx, kinetic) term ->
     ((string * string list) option, [ `Normal | `Cube ] located * a check option located) Abwd.t
     * (mode * (m * b * potential * no_eta)) Term.StructfieldAbwd.t =
- fun status ctx ty m intrinsic ({ env; _ } as codata_args) fields tyargs tms ctms etms errs fld adj
+ fun status ctx ty m intrinsic ({ env; _ } as codata_args) fields tyargs tms ctms etms fld adj
      ctx_plus_lock cvals evals pbijs prev_etm fld_plus_lock fldtermctx ic0 fldty ->
   let (Adjunction { left; right; _ }) = adj in
   (* We recurse through all the partial bijections that could be associated to this field name. *)
@@ -3188,17 +3117,17 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
         with
         | Some ((cube, { value = Some tm; loc }), tms) ->
             (match (cube.value, D.compare_zero m) with
-            | `Cube, Zero -> fatal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+            | `Cube, Zero -> mortal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
             | _ -> ());
             ({ value = tm; loc }, tms)
         | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same method twice")
         (* Higher fields cannot be positional *)
         | None -> fatal (Missing_method_in_comatch (fld, Some pbij)) in
-      let evals, cvals, errs =
+      let evals, cvals =
         (* Go into the location of the field right away, so that errors in dimension calculations will be labeled by the right field. *)
         with_loc tm.loc @@ fun () ->
         (* We trap any errors produced by 'tyof_field' or 'check', adding them instead to the list of accumulated errors and going on.  Note that if any previous fields that have already failed, then prev_etm will be bound to an error value, and so if the type of this field depends on the value of any previous one, tyof_field will raise that error, which we catch and add to the list; but it will be (Accumulated Emp) so it won't be displayed to the user. *)
-        Reporter.try_with ~fatal:(fun e -> (evals, cvals, Snoc (errs, e))) @@ fun () ->
+        Reporter.accumulate ~fallback:(fun () -> (evals, cvals)) @@ fun () ->
         let shuf : (mode, r, h, i) Norm.shuffleable =
           Nontrivial
             {
@@ -3238,9 +3167,9 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
           | Zero ->
               let Eq = eq_of_zero_shuffle fldshuf in
               InsmapOf.set fldins (Some (lazy_eval (Ctx.env lctx) ctm)) evals in
-        (evals, cvals, errs) in
-      check_higher_field status ctx ty m intrinsic codata_args fields tyargs tms ctms etms errs fld
-        adj ctx_plus_lock cvals evals pbijs prev_etm fld_plus_lock fldtermctx ic0 fldty
+        (evals, cvals) in
+      check_higher_field status ctx ty m intrinsic codata_args fields tyargs tms ctms etms fld adj
+        ctx_plus_lock cvals evals pbijs prev_etm fld_plus_lock fldtermctx ic0 fldty
   | None ->
       let plusdim = D.zero_plus m in
       (* The stored environment and values of a modal higher field live behind the lock by the right adjoint, so we key the ambient environment by it (a no-op for ordinary fields). *)
@@ -3254,7 +3183,6 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
           ) in
       let ctms = Snoc (ctms, Entry (fld, Higher (adj, ctx_plus_lock, cvals))) in
       check_fields status Noeta ctx ty m (D.plus_zero m) codata_args fields tyargs tms ctms etms
-        errs
 
 and synth : type mode a b s.
     ?nosynth:Code.t Asai.Diagnostic.t ->
@@ -3567,17 +3495,11 @@ and synth : type mode a b s.
                   with_loc dom.loc @@ fun () : (left, m, binder_name) Build.fwrap_left ->
                   (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
                   Reporter.try_with ~fatal:(fun d ->
-                      match
-                        Reporter.accumulated
-                          (fun d ->
-                            match d.message with
-                            | No_such_level _ -> Some d.explanation.loc
-                            | _ -> None)
-                          d
-                      with
-                      | Some errloc ->
-                          fatal ?loc:errloc (Invalid_higher_function "invalid domain scope")
-                      | None -> fatal_diagnostic d)
+                      match d.message with
+                      | No_such_level _ ->
+                          fatal ?loc:d.explanation.loc
+                            (Invalid_higher_function "invalid domain scope")
+                      | _ -> fatal_diagnostic d)
                   @@ fun () : (left, m, binder_name) Build.fwrap_left ->
                   let dom, tyargs =
                     match D.compare_zero m with
@@ -3639,17 +3561,11 @@ and synth : type mode a b s.
                 let ccod = check (Kinetic `Nolet) newctx cod (universe mode D.zero) in
                 with_loc cod.loc @@ fun () ->
                 Reporter.try_with ~fatal:(fun d ->
-                    match
-                      Reporter.accumulated
-                        (fun d ->
-                          match d.message with
-                          | No_such_level _ -> Some d.explanation.loc
-                          | _ -> None)
-                        d
-                    with
-                    | Some errloc ->
-                        fatal ?loc:errloc (Invalid_higher_function "invalid codomain scope")
-                    | None -> fatal_diagnostic d)
+                    match d.message with
+                    | No_such_level _ ->
+                        fatal ?loc:d.explanation.loc
+                          (Invalid_higher_function "invalid codomain scope")
+                    | _ -> fatal_diagnostic d)
                 @@ fun () ->
                 (* It must also be fully instantiated at at least the total dimension. *)
                 match split_inst n' (eval_term (Ctx.env newctx) ccod) with
@@ -3746,24 +3662,23 @@ and synth : type mode a b s.
                  (sort_of_ty ctx (view_type sty "synth act"), canonical_head sx) )),
           sty )
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
-    | Asc (tm, ty), _ ->
-        let cty =
-          Reporter.try_with ~fatal:(fun d1 ->
-              (* If the ascribed type doesn't typecheck, *and* if the term itself happens to already be synthesizing, we can proceed to try to synthesize it, accumulating errors from multiple sources.  This will rarely happen in normal use, since there is no need to ascribe a term that's already synthesizing, but with some alternative frontends it may. *)
-              match tm.value with
-              | Synth stm ->
-                  Reporter.try_with ~fatal:(fun d2 ->
-                      fatal (Accumulated ("ascribing synth", Snoc (Snoc (Emp, d1), d2))))
-                  @@ fun () ->
-                  let _ = synth status ctx (locate_opt tm.loc stm) in
-                  fatal_diagnostic d1
-              | _ -> fatal_diagnostic d1)
-          @@ fun () -> check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
-        let ety = eval_term (Ctx.env ctx) cty in
-        (* The ascription will be the type of the entire term, so we pass it into the callback.  We do this before typechecking the term, in case that term depends on having a metavariable's type installed. *)
-        call_synthed ety;
-        let ctm = check status ctx tm ety in
-        (ctm, ety)
+    | Asc (tm, ty), _ -> (
+        (* First we check the type ascription, reporting its errors as merely mortal since there are alternatives if it fails.  However, if it fails only due to dependent errors, then it might actually be correct once those errors are fixed, so we don't go on to do anything else. *)
+        match
+          Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_dependent @@ fun () ->
+          Some (check (Kinetic `Nolet) ctx ty (universe mode D.zero))
+        with
+        | None -> (
+            (* If the ascribed type doesn't typecheck, *and* if the term itself happens to already be synthesizing, we can proceed to try to synthesize it.  If that succeeds, we can go on with the entire rest of the term using the type thereby synthesized, with the errors in the ascription only reported at the end (at least, the end of any scope enclosing this one).  This will rarely happen in normal use, since there is no need to ascribe a term that's already synthesizing, but with some alternative frontends it may. *)
+            match tm.value with
+            | Synth stm -> synth status ctx (locate_opt tm.loc stm)
+            | _ -> fatal (Fatalize "synth Asc"))
+        | Some cty ->
+            let ety = eval_term (Ctx.env ctx) cty in
+            (* The ascription will be the type of the entire term, so we pass it into the callback.  We do this before typechecking the term, in case that term depends on having a metavariable's type installed. *)
+            call_synthed ety;
+            let ctm = check status ctx tm ety in
+            (ctm, ety))
     | AscLam ({ value = x; loc = _ }, modality, dom, body), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing ascribed lambda" (e :> modality_error)
@@ -3921,12 +3836,13 @@ and synth : type mode a b s.
     | SFirst (alts, arg), _ ->
         let sty = Option.map (fun arg -> snd (synth status ctx (locate_opt tm.loc arg))) arg in
         let vsty = Option.map (fun sty -> view_type sty "synth_first") sty in
+        (* The errors from alternatives that failed are reported only if they all fail. *)
         let rec go errs = function
           | [] ->
               if Bwd.is_empty errs then
                 fatal
                   (Choice_mismatch (Option.fold ~some:(fun sty -> PVal (ctx, sty)) ~none:PUnit sty))
-              else fatal (Accumulated ("SFirst", errs))
+              else Reporter.replay errs
           | (test, alt, passthru) :: alts -> (
               match (vsty, test) with
               | Some (Canonical (_, Data { constrs = data_constrs; _ }, _, _)), `Data constrs ->
@@ -3935,10 +3851,7 @@ and synth : type mode a b s.
                       (fun constr ->
                         Bwd.exists (fun (data_constr, _) -> constr = data_constr) data_constrs)
                       constrs
-                  then
-                    Reporter.backtrack ~fatal:(fun d ->
-                        if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
-                    @@ fun () -> synth status ctx (locate_opt tm.loc alt)
+                  then try_alt errs alt passthru alts
                   else go errs alts
               | Some (Canonical (_, Codata { fields = codata_fields; _ }, _, _)), `Codata fields ->
                   if
@@ -3949,17 +3862,18 @@ and synth : type mode a b s.
                             field = Field.to_string codata_field)
                           codata_fields)
                       fields
-                  then
-                    Reporter.backtrack ~fatal:(fun d ->
-                        if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
-                    @@ fun () -> synth status ctx (locate_opt tm.loc alt)
+                  then try_alt errs alt passthru alts
                   else go errs alts
-              | _, `Any ->
-                  Reporter.backtrack ~fatal:(fun d ->
-                      if passthru then go (Snoc (errs, d)) alts else fatal_diagnostic d)
-                  @@ fun () -> synth status ctx (locate_opt tm.loc alt)
+              | _, `Any -> try_alt errs alt passthru alts
               | None, `Data _ | None, `Codata _ -> fatal (Anomaly "SFirst mismatch")
-              | _ -> go errs alts) in
+              | _ -> go errs alts)
+        and try_alt errs alt passthru alts =
+          let check_alt () = synth status ctx (locate_opt tm.loc alt) in
+          if passthru then
+            match Reporter.capture check_alt with
+            | Ok result -> result
+            | Error alt_errs -> go (Bwd.append errs (Bwd.to_list alt_errs)) alts
+          else check_alt () in
         go Emp alts
     | Calc (x, rest), _ ->
         let idm = Modality.id mode in
@@ -4022,13 +3936,15 @@ and synth : type mode a b s.
                   match dir with
                   (* A step marked as reversed is checked only in the reversed orientation. *)
                   | `Reversed -> reversed ()
-                  | `Plain ->
-                      Reporter.backtrack
-                        forward
-                        (* If that didn't work, we try reversing the equality and checking that instead. *)
-                        ~fatal:(fun d ->
-                          (* But if that also fails, we report only the error from the forwards direction (unless the reversed check hit an internal error). *)
-                          Reporter.backtrack reversed ~fatal:(fun _ -> fatal_diagnostic d)))
+                  | `Plain -> (
+                      match Reporter.capture forward with
+                      | Ok result -> result
+                      (* If that didn't work, we try reversing the equality and checking that instead. *)
+                      | Error errs -> (
+                          match Reporter.capture reversed with
+                          | Ok result -> result
+                          (* But if that also fails, we report only the errors from the forwards direction (unless the reversed check hit a bug, which [capture] passes through). *)
+                          | Error _ -> Reporter.replay errs)))
               | None -> (
                   with_loc z.loc @@ fun () ->
                   match equal_at ctx ny.tm ez ty with

@@ -209,6 +209,7 @@ module rec Term : sig
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
+    | Failed : ('mode, 'a, 'n) branch
 
   and (_, _) canonical =
     | Data : {
@@ -539,6 +540,8 @@ end = struct
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
+    (* A branch that the user wrote but that failed to typechek, or that the user omitted but failed to be refutable.  The error has already been reported (as mortal), so the whole command will fail; but other parts of it can still be checked, and if they evaluate the match at this constructor, they fail silently rather than reporting an anomaly as for a constructor genuinely missing from the match. *)
+    | Failed : ('mode, 'a, 'n) branch
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and (_, _) canonical =

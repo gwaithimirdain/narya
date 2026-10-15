@@ -1,3 +1,5 @@
+open Effect
+open Effect.Deep
 open Bwd
 open Util
 open Modal
@@ -322,7 +324,8 @@ module Code = struct
     | Display_set : string * string -> t
     | Option_set : string * string -> t
     | Break : t
-    | Accumulated : string * t Asai.Diagnostic.t Bwd.t -> t
+    | Dependent : string -> t
+    | Fatalize : string -> t
     | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
     | Invalid_instant : string -> t
     | Oracle_failed : oracle_error -> t
@@ -508,7 +511,8 @@ module Code = struct
     | Display_set _ -> Info
     | Option_set _ -> Info
     | Break -> Error
-    | Accumulated _ -> Error
+    | Dependent _ -> Error
+    | Fatalize _ -> Error
     | No_holes_allowed _ -> Error
     | Invalid_instant _ -> Bug
     | Wrong_dimension_of_field _ -> Error
@@ -523,10 +527,11 @@ module Code = struct
     (* Usually bugs (at least, if they escape to the user) *)
     | Anomaly _ -> "E0000"
     | No_such_level _ -> "E0001"
-    | Accumulated (_msg, _errs) -> "E0002"
+    | Dependent _msg -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
     | Self_used -> "E0004"
     | Evaluating_display_term _ -> "E0005"
+    | Fatalize _msg -> "E0006"
     | Typeless_meta _ -> "E0010"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
@@ -736,7 +741,8 @@ module Code = struct
     let msg =
       PrintingError.run ~env:(fun d -> printing_errors := Snoc (!printing_errors, d)) @@ fun () ->
       match err with
-      | Accumulated _ -> text "anomaly: multiple accumulated errors"
+      | Dependent _ -> text "silent error: dependence on a previous error"
+      | Fatalize _ -> text "silent error: fatalization"
       | Parse_error str -> textf "parse error: %s" str
       | Encoding_error -> text "UTF-8 encoding error"
       | Parsing_ambiguity strs ->
@@ -1284,13 +1290,30 @@ module Code = struct
             msg
 end
 
-include Asai.StructuredReporter.Make (Code)
-open Code
+module Delegate = Asai.StructuredReporter.Make (Code)
+include Delegate
+
+let ( <|> ) : type a. a option -> Code.t -> a =
+ fun x e ->
+  match x with
+  | Some x -> x
+  | None -> fatal e
+
+(* Re-raise one diagnostic, if given, otherwise another. *)
+let fatal_or d e =
+  match d with
+  | Some d -> fatal_diagnostic d
+  | None -> fatal e
 
 (* Don't try to set the 'message' field of an Asai.Diagnostic.t directly, since the 'explanation' field was already computed from it.  Use this function instead.  See https://github.com/RedPRL/asai/issues/189. *)
 let with_message d message =
   let explanation = Asai.Range.locate_opt d.explanation.loc (Code.default_text message) in
   { d with message; explanation }
+
+(* Whether a diagnostic is a bug. *)
+let is_bug (d : Code.t Asai.Diagnostic.t) = d.severity = Bug
+
+(* Smart constructors *)
 
 let struct_at_degenerated_type : type s et. (s, et) eta -> printable -> Code.t =
  fun eta name ->
@@ -1328,63 +1351,6 @@ let struct_at_nonrecord : type s et. (s, et) eta -> printable -> Code.t =
   match eta with
   | Eta -> Checking_tuple_at_nonrecord p
   | Noeta -> Comatching_at_noncodata p
-
-let ( <|> ) : type a. a option -> Code.t -> a =
- fun x e ->
-  match x with
-  | Some x -> x
-  | None -> fatal e
-
-(* After a fatal error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  This is handled by a special "Accumulated" error that encapsulates a backwards list of diagnostics.  When displaying this error, we instead descend into its list, recursively, and display all the constituent errors. *)
-
-module Terminal = Asai.Tty.Make (Code)
-
-let rec display ?use_ansi ?output ?(empty_ok = false) (d : Code.t Asai.Diagnostic.t) =
-  match d.message with
-  | Accumulated (why, Emp) when not empty_ok ->
-      Terminal.display ?use_ansi ?output
-        (with_message d (Anomaly ("unexpected empty error accumulation: " ^ why)))
-  | Accumulated (_name, msgs) ->
-      Mbwd.miter (fun [ e ] -> display ?use_ansi ?output ~empty_ok:true e) [ msgs ]
-  | _ -> try_with ~fatal:(fun _ -> ()) @@ fun () -> Terminal.display ?use_ansi ?output d
-
-(* A fatal error raised inside a match branch (or a record field, a datatype constructor, etc.) doesn't propagate outwards unchanged: it is caught there and re-raised inside an "Accumulated", possibly along with the analogous errors from the sibling branches.  Thus a handler that wants to catch a specific error code can't just match on the message of the diagnostic it receives; it has to look inside any accumulations too.  These two functions do that.
-
-   'accumulated p d' applies the partial function p to d if d isn't an accumulation, and otherwise (recursively) to all the errors accumulated in d, returning the data from the first of them but only if *all* of them match.  (If only some of them match, then the others are unrelated errors that ought to be reported as usual.)  An empty accumulation is a "dependence" marker rather than a real error, so it doesn't count as an instance of anything.  Note that p is applied to the whole diagnostic, not just its message, so that the caller can also pick up the location of the actual innermost error. *)
-let rec accumulated (p : Code.t Asai.Diagnostic.t -> 'a option) (d : Code.t Asai.Diagnostic.t) :
-    'a option =
-  match d.message with
-  | Accumulated (_, errs) -> (
-      match List.map (accumulated p) (Bwd.to_list errs) with
-      | [] -> None
-      | first :: _ as subs -> if List.for_all Option.is_some subs then first else None)
-  | _ -> p d
-
-(* 'accumulates p d' is the common special case when only the code matters and not any data attached to it: it tests whether d is, or accumulates only, errors whose message satisfies p. *)
-let accumulates (p : Code.t -> bool) (d : Code.t Asai.Diagnostic.t) : bool =
-  Option.is_some (accumulated (fun d -> if p d.message then Some () else None) d)
-
-(* We also may need to extract an accumulated singleton, for testing purposes. *)
-let rec unaccumulate (c : Code.t) : Code.t =
-  match c with
-  | Accumulated (_, Snoc (Emp, c)) -> unaccumulate c.message
-  | c -> c
-
-(* Whether a diagnostic is, or accumulates, an internal error. *)
-let rec is_bug (d : Code.t Asai.Diagnostic.t) =
-  match d.message with
-  | Accumulated (_, ds) -> Bwd.exists is_bug ds
-  | _ -> d.severity = Bug
-
-(* Run a callback, backtracking with the given handler if it fails.  Internal errors are re-raised instead, since they indicate a problem that shouldn't be hidden by succeeding along some other path. *)
-let backtrack ~(fatal : Code.t Asai.Diagnostic.t -> 'a) (f : unit -> 'a) : 'a =
-  try_with ~fatal:(fun d -> if is_bug d then fatal_diagnostic d else fatal d) f
-
-(* Re-raise one diagnostic, if given, otherwise another. *)
-let fatal_or d e =
-  match d with
-  | Some d -> fatal_diagnostic d
-  | None -> fatal e
 
 type dim_err = { make : 'a 'b. needed:'a D.t -> got:'b D.t -> Code.t }
 
@@ -1426,3 +1392,161 @@ let modalcell_fatal : type a. string -> modality_error -> a =
   | `Wrong_src (Wrap a, m, Wrap b) ->
       fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
         (Mode_mismatch (`User, str, a, Some (`Hsrc m.value), b))
+
+(* After a "fatal" error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  Specifically, we introduce "mortal" errors, which will eventually kill the program, but allow it to continue doing more checking to accumulate more errors.  A mortal error should be raised instead of a fatal one if there is something sensible that could be returned to allow typechecking to continue elsewhere, e.g. a branch of a match statement that doesn't typecheck can be marked as failing while other branches can continue to be typechecked.  Reporting a mortal error is an effect instead of an exception.  A scope (see [scope] below) is "moribund" if at least one mortal error has been reported inside it. *)
+
+type _ Effect.t +=
+  | Mortal : Code.t Asai.Diagnostic.t -> unit Effect.t
+  | Moribund : Code.t Asai.Diagnostic.t Bwd.t Effect.t
+
+(* Whether the current scope (see [scope] below) is moribund. *)
+let moribund () = not (Bwd.is_empty (perform Moribund))
+
+(* Raise a mortal error whose diagnostic is already constructed. *)
+let mortal_diagnostic d = perform (Mortal d)
+
+(* There are two kinds of silent error, which are never displayed to the user since the real errors they come from are reported elsewhere.  A dependent error means that something depends on a part of the term that already failed, such as a failed match branch or a constant whose definition failed. *)
+let is_dependent (d : Code.t Asai.Diagnostic.t) =
+  match d.message with
+  | Dependent _ -> true
+  | _ -> false
+
+(* The other kind of silent error is a fatalization error, which indicates that the accumulation of mortal errors is complete, at least locally, and the part of the term that they occurred in should now fail fatally.  When raising such an error, however, if *all* the accumulated mortal errors that it fatalizes were themselves dependent, then the failure should be considered dependent too. *)
+let fatalize_with why errs =
+  if Bwd.for_all is_dependent errs then fatal (Dependent why) else fatal (Fatalize why)
+
+(* If the current scope is moribund (has accumulated some mortal errors), kill it by raising a silent fatal error based on those mortal errors.  This propagates like any fatal error, so it can be caught by an enclosing scope. *)
+let fatalize ?(why = "fatalize") () =
+  match perform Moribund with
+  | Emp -> ()
+  | errs -> fatalize_with why errs
+
+let fatalize_after f =
+  let result = f () in
+  fatalize ();
+  result
+
+(* Formatting the message of a diagnostic can raise a fatal dependent error, if it involves printing a term that depends on a part that already failed (see Unparse.printer).  If that happens while formatting the message of a mortal error, we convert the fatal dependent error to a mortal one, replacing the one we were trying to format. *)
+let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  (* Note that [mortal_diagnostic] is *not* inside the [try_with].  This means that if a mortal-error handler discontinues its continuation with a fatal error, that fatal error won't be caught here. *)
+  mortal_diagnostic
+  @@ Delegate.try_with
+       (fun () -> diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+       ~fatal:(fun d -> if is_dependent d then d else fatal_diagnostic d)
+
+(* Open a scope that accumulates a local list of mortal errors.  Returns the result of the body, or a fatal error it raised, together with any mortal errors reported inside it, in order.  Inside the body, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally accumulated mortal errors are re-performed outwards before re-raising the exception, so that they aren't lost.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the accumulated mortal errors are re-performed first so that they aren't lost. *)
+let collect ?passthrough (f : unit -> 'a) :
+    ('a, Code.t Asai.Diagnostic.t) Result.t * Code.t Asai.Diagnostic.t Bwd.t =
+  let mortals = ref Emp in
+  match
+    (* The nesting of [try_with] and [try] doesn't matter, since one catches only fatal errors and the other catches only Mortal and Moribund effects.  However, they do have to be nested inside the outer exception handler, since fatal errors are implemented as exceptions. *)
+    Delegate.try_with ~fatal:(fun d ->
+        match passthrough with
+        | Some test when test d ->
+            Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ !mortals ];
+            fatal_diagnostic d
+        | _ -> Result.Error d)
+    @@ fun () ->
+    try Ok (f ()) with
+    | effect Mortal d, k ->
+        (match passthrough with
+        | Some test when test d -> perform (Mortal d)
+        | _ -> mortals := Snoc (!mortals, d));
+        continue k ()
+    | effect Moribund, k -> continue k !mortals
+  with
+  | result -> (result, !mortals)
+  | exception exn ->
+      let bt = Printexc.get_raw_backtrace () in
+      Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ !mortals ];
+      Printexc.raise_with_backtrace exn bt
+
+(* Pass on the results of [collect] as if it hadn't happened, performing the mortal errors and either returning the result or re-raising the fatal error. *)
+let uncollect (result, errs) =
+  Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ errs ];
+  match result with
+  | Result.Ok x -> x
+  | Error d -> fatal_diagnostic d
+
+(* Combining these two, we simply delimit a scope for [moribund] and [fatalize].  Inside this scope, the program counts as moribund only if a mortal error has been reported inside that same scope.  The mortal errors are passed outwards to the next enclosing scope when it ends, remaining merely mortal. *)
+let scope f = uncollect (collect f)
+
+(* As [scope], but if any mortal errors are encountered, raise a (silent) fatal error at the end, even if the body returned a partial result.  This is appropriate for anything that can keep checking its later parts after an error in an earlier one, but should not be returned with some parts missing. *)
+let scoped ?(why = "scoped") f =
+  match collect f with
+  | Ok _, (Snoc _ as errs) ->
+      uncollect (Ok (), errs);
+      fatalize_with why errs
+  | collected -> uncollect collected
+
+(* [run] is like [scoped], defining a scope for mortal errors that fails at the end if any mortal errors were reported.  But it is an outermost scope, never passing mortal errors further out.  Instead, if it ever sees a fatal error, or if execution terminates with at least one mortal error reported, it passes all the accumulated errors to its [fatal] argument (which therefore takes a bwd of diagnostics, not a single one). *)
+let run ?init_loc ?(init_backtrace = Emp) ~fatal ~emit f =
+  let mortals : Code.t Asai.Diagnostic.t Bwd.t ref = ref Emp in
+  Delegate.run ?init_loc ~init_backtrace ~emit ~fatal:(fun err -> fatal (Snoc (!mortals, err)))
+  @@ fun () ->
+  try
+    let result = f () in
+    match !mortals with
+    | Emp -> result
+    | Snoc _ -> fatal !mortals
+  with
+  | effect Mortal err, k ->
+      mortals := Snoc (!mortals, err);
+      continue k ()
+  | effect Moribund, k -> continue k !mortals
+
+(* We can locally declare that fatal errors should become merely mortal, so that we can continue to find more.  But we have to give a fallback result in that case.  We also allow a filter that passes some fatal errors through as fatal.  *)
+let accumulate ~fallback ?passthrough f =
+  Delegate.try_with
+    ~fatal:(fun err ->
+      match passthrough with
+      | Some test when test err -> fatal_diagnostic err
+      | _ ->
+          perform (Mortal err);
+          fallback ())
+    f
+
+(* [scope] and [accumulate] never discard errors; they just delay reporting them in order to accumulate more errors.  However, sometimes we may want to run some code speculatively, and if it fails try something else, such that if the second try succeeds the errors in the first try are completely discarded.  However, we always want to report bugs in Narya, even if they appear in a speculative branch, so we give [collect] a [passthrough] argument that lets bugs through.  The return value is either a success or a nonempty bwd of errors.  Note that [capture] also fatalizes: it considers itself to have failed if any mortal errors were reported. *)
+let capture (f : unit -> 'a) : ('a, Code.t Asai.Diagnostic.t Bwd.t) Result.t =
+  match collect ~passthrough:is_bug f with
+  | Ok x, Emp -> Ok x
+  | Ok _, (Snoc _ as errs) -> Error errs
+  | Error e, errs -> Error (Snoc (errs, e))
+
+(* Report errors captured by [capture], and then fail silently since they were collectively fatal.  Note that this fails silently even if passed an empty list, but [capture] never returns an empty list as an [Error] result. *)
+let replay (errs : Code.t Asai.Diagnostic.t Bwd.t) : 'a =
+  Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ errs ];
+  fatalize_with "replay" errs
+
+(* Like [capture], but if there are any errors, discard them and return a fallback computation. *)
+let discard (f : unit -> 'a) ~(fallback : unit -> 'a) : 'a =
+  match collect ~passthrough:is_bug f with
+  | Ok x, Emp -> x
+  | _ -> fallback ()
+
+(* Another thing we may want to do is to catch some *specific* fatal errors and either recover from them or replace them by a different error.  For instance, the specific error may be a missing De Bruijn level, which would normally be a bug, but is interpreted by a specific caller as a failure of an occurs-check.  For this we use Asai's [try_with] (included above from [Delegate]), whose [fatal] handler can return a result, re-raise the error with [fatal_diagnostic], or raise a different one.  This deliberately doesn't see mortal errors: a mortal error means that something inside has already failed and been dealt with locally, so it's not a failure of the callback as a whole.  In particular, it does not define a scope for mortal errors.  To ask whether a callback succeeded at all, without any errors, use [capture] instead. *)
+
+(* When displaying an accumulated list of errors, we display all the constituent errors, except for the silent ones.  Except that if all the errors were silent, we report where the silent ones came from. *)
+
+module Terminal = Asai.Tty.Make (Code)
+
+let display_bwd ?use_ansi ?output (errs : Code.t Asai.Diagnostic.t Bwd.t) =
+  let silents = ref Emp in
+  let nonsilent = ref false in
+  Mbwd.miter
+    (fun [ (e : Code.t Asai.Diagnostic.t) ] ->
+      try_with ~fatal:(fun _ -> ()) @@ fun () ->
+      match e.message with
+      | Dependent why | Fatalize why -> silents := Snoc (!silents, why)
+      | _ ->
+          nonsilent := true;
+          Terminal.display ?use_ansi ?output e)
+    [ errs ];
+  if not !nonsilent then
+    Terminal.display ?use_ansi ?output
+      (diagnostic
+         (Anomaly
+            ("unexpected empty error accumulation: " ^ String.concat ", " (Bwd.to_list !silents))))
+
+let display ?use_ansi ?output (err : Code.t Asai.Diagnostic.t) =
+  display_bwd ?use_ansi ?output (Snoc (Emp, err))

@@ -712,3 +712,355 @@ Even trivial dependency blocks going on, as long as there is the potential for d
      ^ checking tuple against non-record type A
   
   [1]
+
+A match with a failed branch records that branch as failed, and checking continues.  Evaluating the match later in the same definition at that branch fails silently, so only the real error is reported.
+
+  $ cat >partialmatch.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def t : Bool ≔
+  >   let g : Bool → Type ≔ x ↦ match x [ true. ↦ true. | false. ↦ Bool ] in
+  >   ((true. : g true.) : Bool)
+  > EOF
+
+  $ narya partialmatch.ny
+   ￫ error[E1000]
+   ￭ $TESTCASE_ROOT/partialmatch.ny
+   3 |   let g : Bool → Type ≔ x ↦ match x [ true. ↦ true. | false. ↦ Bool ] in
+     ^ non-datatype Type has no constructor named true
+  
+  [1]
+
+  $ cat >partialmatch2.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def t : Bool ≔
+  >   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+  >   ((refl true.) : Id Bool (g true.) true.)
+  > EOF
+
+  $ narya partialmatch2.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch2.ny
+   3 |   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+The same holds for conversion checking through a failed branch, and for a failed branch of an inner match in a deep match.  But a later error that doesn't depend on the failed branch is still reported, as is evaluation at a branch that didn't fail.
+
+  $ cat >partialmatch3.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > axiom P : Bool → Type
+  > axiom p : P true.
+  > def t : Bool ≔
+  >   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+  >   let q : P (g true.) ≔ p in
+  >   true.
+  > EOF
+
+  $ narya partialmatch3.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch3.ny
+   5 |   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+  $ cat >partialmatch4.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def Σ (A : Type) (B : A → Type) : Type ≔ sig ( fst : A, snd : B fst )
+  > def t : Σ Bool (_ ↦ Bool) ≔
+  >   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+  >   (g true., Bool)
+  > EOF
+
+  $ narya partialmatch4.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch4.ny
+   4 |   let g : Bool → Bool ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch4.ny
+   5 |   (g true., Bool)
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+  $ cat >partialmatch5.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > axiom P : Bool → Type
+  > axiom p : P true.
+  > def t : Bool ≔
+  >   let g : Bool → Bool → Bool ≔ x y ↦ match x, y [
+  >   | true., true. ↦ Bool
+  >   | true., false. ↦ true.
+  >   | false., _ ↦ true. ] in
+  >   let r : P (g true. false.) ≔ p in
+  >   let s : P (g false. true.) ≔ (p : P false.) in
+  >   let q : P (g true. true.) ≔ p in
+  >   true.
+  > EOF
+
+  $ narya partialmatch5.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch5.ny
+   6 |   | true., true. ↦ Bool
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch5.ny
+   10 |   let s : P (g false. true.) ≔ (p : P false.) in
+      ^ term synthesized type
+          P false.
+        but is being checked against type
+          P true.
+        unequal constructors:
+          false
+        does not equal
+          true
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/partialmatch5.ny
+   10 |   let s : P (g false. true.) ≔ (p : P false.) in
+      ^ term synthesized type
+          P true.
+        but is being checked against type
+          P false.
+        unequal constructors:
+          true
+        does not equal
+          false
+  
+  [1]
+
+An ascription in checking position that is a valid type, but disagrees with the checking type, is reported once.  The term is then checked against the ascription, since that's what the user said its type should be.  If that succeeds, there is nothing more to report.
+
+  $ cat >ascmismatch.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > axiom P : Bool → Type
+  > axiom p : P true.
+  > axiom q : P false.
+  > def prod (X Y : Type) : Type ≔ sig ( fst : X, snd : Y )
+  > EOF
+
+  $ narya ascmismatch.ny -e 'def t1 : P false. ≔ (p : P true.)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t1 : P false. ≔ (p : P true.)
+     ^ term synthesized type
+         P true.
+       but is being checked against type
+         P false.
+       unequal constructors:
+         true
+       does not equal
+         false
+  
+  [1]
+
+  $ narya ascmismatch.ny -e 'def t2 : Bool ≔ ((x ↦ x) : Bool → Bool)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t2 : Bool ≔ ((x ↦ x) : Bool → Bool)
+     ^ term synthesized type
+         Bool → Bool
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Bool → Bool
+       does not equal
+         Bool
+  
+  [1]
+
+If the term also fails to check against the ascription, but does check against the checking type, we report both errors, and checking continues with the well-typed term.
+
+  $ narya ascmismatch.ny -e 'def t3 : prod (P false.) Bool ≔ ((q : P true.), Type)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t3 : prod (P false.) Bool ≔ ((q : P true.), Type)
+     ^ term synthesized type
+         P true.
+       but is being checked against type
+         P false.
+       unequal constructors:
+         true
+       does not equal
+         false
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t3 : prod (P false.) Bool ≔ ((q : P true.), Type)
+     ^ term synthesized type
+         P false.
+       but is being checked against type
+         P true.
+       unequal constructors:
+         false
+       does not equal
+         true
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t3 : prod (P false.) Bool ≔ ((q : P true.), Type)
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+If it fails against both, the errors relative to the ascription are reported.
+
+  $ narya ascmismatch.ny -e 'def t4 : Bool ≔ ((x ↦ x) : Bool → P true.)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t4 : Bool ≔ ((x ↦ x) : Bool → P true.)
+     ^ term synthesized type
+         Bool → P true.
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Bool → P true.
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t4 : Bool ≔ ((x ↦ x) : Bool → P true.)
+     ^ term synthesized type
+         Bool
+       but is being checked against type
+         P true.
+       unequal head constants:
+         Bool
+       does not equal
+         P
+  
+  [1]
+
+If the ascribed type itself has an error, the term is checked against the checking type instead, so that its errors are also reported.  This applies even when the error in the ascription is inside a part, like a record field, that accumulates its errors.
+
+  $ narya ascmismatch.ny -e 'def t5 : Bool ≔ (Type : sig (x : Bool, y : true.))'
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def t5 : Bool ≔ (Type : sig (x : Bool, y : true.))
+     ^ non-datatype Type has no constructor named true
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t5 : Bool ≔ (Type : sig (x : Bool, y : true.))
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+But if the ascribed type fails only because it depends on something that already failed, the term is not checked against the checking type, since what's wrong is that earlier failure.
+
+  $ narya ascmismatch.ny -e 'def t6 : Bool ≔ let f : Bool → Type ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in (Type : f false.)'
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def t6 : Bool ≔ let f : Bool → Type ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in (Type : f false.)
+     ^ non-datatype Type has no constructor named true
+  
+  [1]
+
+A failed empty pattern-matching lambda in one branch of a match doesn't prevent other branches from being checked.
+
+  $ narya -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]'
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]
+     ^ missing match clause for constructor true
+  
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]
+     ^ missing match clause for constructor false
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+Mismatches in cube abstraction symbols are just syntax restrictions, so they are fully recoverable.
+
+  $ narya -e "axiom A:Type" -e "def sum (X Y:Type) : Type ≔ data [ left. (_:X) | right. (_:Y) ]" -e "def foo (u:sum A A) : Type ≔ match u [ left. _ ⤇ A | right. _ ⤇ A ]"
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def foo (u:sum A A) : Type ≔ match u [ left. _ ⤇ A | right. _ ⤇ A ]
+     ^ cube abstraction not allowed for zero-dimensional match
+  
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def foo (u:sum A A) : Type ≔ match u [ left. _ ⤇ A | right. _ ⤇ A ]
+     ^ cube abstraction not allowed for zero-dimensional match
+  
+  [1]
+
+  $ narya -e "axiom A:Type" -e "def prod (X Y : Type) : Type ≔ sig (fst:X,snd:Y)" -e "def f : prod (A→A) (A→A) ≔ (x ⤇ x, x ⤇ x)"
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def f : prod (A→A) (A→A) ≔ (x ⤇ x, x ⤇ x)
+     ^ cube abstraction not allowed for zero-dimensional function
+  
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def f : prod (A→A) (A→A) ≔ (x ⤇ x, x ⤇ x)
+     ^ cube abstraction not allowed for zero-dimensional function
+  
+  [1]
