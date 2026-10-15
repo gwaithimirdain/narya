@@ -1133,7 +1133,7 @@ The same holds for an ascription that is wrong in a way that is recoverable beca
   
   [1]
 
-Similarly, an echo isn't displayed, and a definition isn't reported, if there are any errors, even recoverable ones.
+Similarly, an echo isn't displayed, and neither a definition nor its holes are reported, if there are any errors, even recoverable ones.
 
   $ narya ascmismatch.ny -e 'echo ((x ⤇ x) : Bool → Bool)'
    ￫ error[E0508]
@@ -1158,12 +1158,6 @@ Similarly, an echo isn't displayed, and a definition isn't reported, if there ar
   
    ￫ info[I0000]
    ￮ constant prod defined
-  
-   ￫ info[I3003]
-   ￮ hole ?0:
-     
-     ----------------------------------------------------------------------
-     Bool
   
    ￫ error[E0508]
    ￭ command-line exec string

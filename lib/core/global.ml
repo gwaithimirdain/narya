@@ -292,12 +292,13 @@ let end_command (offset, make_msg) =
       | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Parametric
       | _ -> `Nonparametric in
     { h with parametric } in
-  if not (moribund ~recoverable:true ()) then
-    Option.iter emit (make_msg (Bwd.length d.current_holes));
+  (* If the command had any errors, it will fail, so its holes won't exist; thus we don't display either the message about the command or the hole goals. *)
+  let failed = moribund ~recoverable:true () in
+  if not failed then Option.iter emit (make_msg (Bwd.length d.current_holes));
   Mbwd.miter
     (fun [ ({ meta = Meta.Wrap m; printable; _ } : Command_state.hole) ] ->
       (* We intentionally do not "locate" this emission, since we want to display only the hole context and type, not its location in the source. *)
-      emit (Hole (Meta.name m, printable));
+      if not failed then emit (Hole (Meta.name m, printable));
       match Holetable.find_opt m holes with
       | Some h -> Holetable.add m (update_parametric h) holes
       | None -> ())
