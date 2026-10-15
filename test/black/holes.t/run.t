@@ -396,6 +396,13 @@
    ￫ info[I0000]
    ￮ constant f defined
   
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     X : Type (locked: △□)
+     ----------------------------------------------------------------------
+     Type
+  
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/dtt-holes.ny
    6 | def g (X : Type) : Type⁽ᵈ⁾ X ≔ (f ?)⁽ᵈ⁾

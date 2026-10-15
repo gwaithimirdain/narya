@@ -1256,10 +1256,10 @@ A failed constructor of a datatype makes the corresponding branches of matches f
 
 Similarly, a match on that datatype can omit the failed constructor, and using the failed constructor fails silently.
 
-  $ narya failed.ny -e 'def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ ok. ↦ true. ] and h : D ≔ ok. a and g : D ≔ bad. a'
+  $ narya failed.ny -e 'def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ ok. ↦ true. ] and g : D ≔ bad. a and h : D ≔ ok. a'
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ ok. ↦ true. ] and h : D ≔ ok. a and g : D ≔ bad. a
+   1 | def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ ok. ↦ true. ] and g : D ≔ bad. a and h : D ≔ ok. a
      ^ term synthesized type
          A
        but is being checked against type
@@ -1271,7 +1271,7 @@ Similarly, a match on that datatype can omit the failed constructor, and using t
   
    ￫ error[E1001]
    ￭ command-line exec string
-   1 | def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ ok. ↦ true. ] and h : D ≔ ok. a and g : D ≔ bad. a
+   1 | def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ ok. ↦ true. ] and g : D ≔ bad. a and h : D ≔ ok. a
      ^ too many arguments to constructor ok (1 extra)
   
   [1]
@@ -1478,5 +1478,112 @@ A failed modal field keeps its modality, so projecting it with the right locking
    ￭ command-line exec string
    1 | def C : Type ≔ codata [ (x :♭| _) .fld : a | x .g : A ] and f (c :♭| C) : A ≔ (c :♯| _) .fld
      ^ field fld is modal with left adjoint ♭, but was projected with locking modality ♯
+  
+  [1]
+
+A failing definition in a mutual block doesn't prevent the later ones from being checked.  If its term fails, the later ones can still use its type, but anything that needs its value fails silently.
+
+  $ narya failed.ny -e 'def f : A ≔ true. and g : A ≔ f and h : A ≔ Type'
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def f : A ≔ true. and g : A ≔ f and h : A ≔ Type
+     ^ non-datatype A has no constructor named true
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : A ≔ true. and g : A ≔ f and h : A ≔ Type
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         A
+       unequal head terms:
+         Type
+       does not equal
+         A
+  
+  [1]
+
+  $ narya failed.ny -e 'def f : Bool ≔ Type and g : P f ≔ a and h : A ≔ Type'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : Bool ≔ Type and g : P f ≔ a and h : A ≔ Type
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : Bool ≔ Type and g : P f ≔ a and h : A ≔ Type
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         A
+       unequal head terms:
+         Type
+       does not equal
+         A
+  
+  [1]
+
+If its type fails, then anything that uses it fails silently.
+
+  $ narya failed.ny -e 'def f : a ≔ a and g : f ≔ a and h : A ≔ Type'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : a ≔ a and g : f ≔ a and h : A ≔ Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : a ≔ a and g : f ≔ a and h : A ≔ Type
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         A
+       unequal head terms:
+         Type
+       does not equal
+         A
+  
+  [1]
+
+The same goes for a synthesizing definition.
+
+  $ narya failed.ny -e 'def f ≔ (a : Bool) and h : A ≔ Type'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f ≔ (a : Bool) and h : A ≔ Type
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Bool
+       unequal head constants:
+         A
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f ≔ (a : Bool) and h : A ≔ Type
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         A
+       unequal head terms:
+         Type
+       does not equal
+         A
   
   [1]

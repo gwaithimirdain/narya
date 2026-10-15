@@ -88,7 +88,13 @@ let check_term (def : defined_const) : checked_term =
       Global.add const (Definition { mode; ty; tm = `Defined tm; parametric = `Maybe_parametric });
       Checked (const, mode, tm)
 
-(* Iterate through a collection of such things checking them all, and then redefine them all with their final parametricity.  Returns a list of constant names to print, and whether they are parametric. *)
+(* If checking the term of a constant fails, we define it to be a failed term, so that later constants in the mutual block can still use its type, but anything that needs its value fails silently.  A synthesizing constant has no type either, so it becomes an error. *)
+let fail_term (def : defined_const) : unit =
+  match def with
+  | Defined_check { const; mode; _ } -> Global.set const mode ~parametric:`Maybe_parametric Failed
+  | Defined_synth { const; _ } -> Global.add_error const (Dependent "failed definition")
+
+(* Iterate through a collection of such things checking them all, and then redefine them all with their final parametricity.  If one of them fails, we report the error and go on to check the others.  Returns a list of constant names to print, and whether they are parametric. *)
 let check_terms (defs : defined_const list) : printable list * bool =
   let rec go defs defineds =
     match defs with
@@ -101,10 +107,41 @@ let check_terms (defs : defined_const list) : printable list * bool =
               PConstant c)
             defineds,
           p = `Parametric )
-    | d :: defs -> go defs (Snoc (defineds, check_term d)) in
+    | d :: defs ->
+        let defineds =
+          Reporter.accumulate ~fallback:(fun () ->
+              fail_term d;
+              defineds)
+          @@ fun () -> Snoc (defineds, check_term d) in
+        go defs defineds in
   go defs Emp
 
-(* When checking a "def", therefore, we first iterate through checking the parameters and types, and then go back and check all the terms.  Moreover, whenever we check a type, we temporarily define the corresponding constant as an axiom having that type, so that its type can be used recursively in typechecking its definition, as well as the types of later mutual constants and the definitions of any other mutual constants. *)
+(* Check the parameters and type of one constant in a mutual "def", and define it as an axiom with that type. *)
+let check_type (const : Constant.t Lazy.t) (defconst : defconst) : Constant.t * defined_const =
+  match defconst with
+  | Def_check { params; ty; tm } ->
+      let (Wrap mode) =
+        match synth_mode_tel params with
+        | Some mode -> mode
+        | None -> (
+            match synth_mode ty with
+            | Some mode -> mode
+            | None -> fatal (Non_mode_synthesizing "checking def")) in
+      let bplus = Raw.bplus_of_tel params in
+      let (Checked_tel (params, ctx)) = check_tel (Ctx.empty mode) params in
+      let ty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
+      let pi_cty = Telescope.pis params ty in
+      (* We set the type now; the value will be added later.  We mark it as "maybe parametric" so that we can detect if it is used behind an external degeneracy. *)
+      let const = Lazy.force const in
+      Global.add const
+        (Definition { mode; ty = pi_cty; tm = `Axiom; parametric = `Maybe_parametric });
+      (const, Defined_check { const; bplus; mode; params; ty; tm })
+  | Def_synth { params; tm } ->
+      let const = Lazy.force const in
+      Global.add_error const (Synthesizing_recursion (Reporter.PConstant const));
+      (const, Defined_synth { const; params; tm })
+
+(* When checking a "def", therefore, we first iterate through checking the parameters and types, and then go back and check all the terms.  Moreover, whenever we check a type, we temporarily define the corresponding constant as an axiom having that type, so that its type can be used recursively in typechecking its definition, as well as the types of later mutual constants and the definitions of any other mutual constants.  If checking the parameters or type of a constant fails, we report the error and make the constant an error, so that later constants that use it fail silently, and go on to check the others (but not its own term, since it has no type to check against). *)
 let check_defs (defs : (Constant.t Lazy.t * defconst Lazy.t) list) : printable list * bool =
   let rec go defs beingdefined defineds =
     match defs with
@@ -112,32 +149,16 @@ let check_defs (defs : (Constant.t Lazy.t * defconst Lazy.t) list) : printable l
         (* The bodies are checked knowing the set of all the constants of this mutual block, so that occurrences of them in datatype constructor types can be detected as recursive.  (This set must contain exactly the being-defined constants, since real axioms appearing in constructor types are not recursion.) *)
         Positivity.run_beingdefined beingdefined @@ fun () -> check_terms (Bwd.to_list defineds)
     | (const, defconst) :: defs -> (
-        match Lazy.force defconst with
-        | Def_check { params; ty; tm } ->
-            let (Wrap mode) =
-              match synth_mode_tel params with
-              | Some mode -> mode
-              | None -> (
-                  match synth_mode ty with
-                  | Some mode -> mode
-                  | None -> fatal (Non_mode_synthesizing "checking def")) in
-            let bplus = Raw.bplus_of_tel params in
-            let (Checked_tel (params, ctx)) = check_tel (Ctx.empty mode) params in
-            let ty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
-            let pi_cty = Telescope.pis params ty in
-            (* We set the type now; the value will be added later.  We mark it as "maybe parametric" so that we can detect if it is used behind an external degeneracy. *)
+        match
+          Reporter.accumulate ~fallback:(fun () -> None) @@ fun () ->
+          Some (check_type const (Lazy.force defconst))
+        with
+        | Some (const, defined) ->
+            go defs (Constant.Map.add const () beingdefined) (Snoc (defineds, defined))
+        | None ->
             let const = Lazy.force const in
-            Global.add const
-              (Definition { mode; ty = pi_cty; tm = `Axiom; parametric = `Maybe_parametric });
-            go defs
-              (Constant.Map.add const () beingdefined)
-              (Snoc (defineds, Defined_check { const; bplus; mode; params; ty; tm }))
-        | Def_synth { params; tm } ->
-            let const = Lazy.force const in
-            Global.add_error const (Synthesizing_recursion (Reporter.PConstant const));
-            go defs
-              (Constant.Map.add const () beingdefined)
-              (Snoc (defineds, Defined_synth { const; params; tm }))) in
+            Global.add_error const (Dependent "failed type of definition");
+            go defs (Constant.Map.add const () beingdefined) defineds) in
   go defs Constant.Map.empty Emp
 
 let execute : t -> int option * (int -> Reporter.Code.t option) = function
