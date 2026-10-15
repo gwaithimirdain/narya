@@ -994,6 +994,11 @@ A failed empty pattern-matching lambda in one branch of a match doesn't prevent 
    1 | def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]
      ^ missing match clause for constructor true
   
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]
+     ^ missing match clause for constructor false
+  
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]

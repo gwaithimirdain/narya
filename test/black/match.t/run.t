@@ -272,6 +272,11 @@
    1 | def foo3 (x : bool) (y : unit) : ⊥ ≔ match x, y [ ]
      ^ missing match clause for constructor true
   
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def foo3 (x : bool) (y : unit) : ⊥ ≔ match x, y [ ]
+     ^ missing match clause for constructor false
+  
   [1]
 
 A refutation only matches against a discriminee whose type is literally an empty datatype; it doesn't perform additional matches to expose a term of empty type.  But discriminees that aren't of empty type, or even of a datatype at all, are skipped over.
@@ -281,6 +286,11 @@ A refutation only matches against a discriminee whose type is literally an empty
    ￭ command-line exec string
    1 | def abort2 (A : Type) (u : ⊔ ⊥ ⊥) : A ≔ match u [ ]
      ^ missing match clause for constructor inl
+  
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def abort2 (A : Type) (u : ⊔ ⊥ ⊥) : A ≔ match u [ ]
+     ^ missing match clause for constructor inr
   
   [1]
 
@@ -329,6 +339,11 @@ A refutation only matches against a discriminee whose type is literally an empty
    ￭ command-line exec string
    1 | def foo : bool → bool → bool ≔ [ ]
      ^ missing match clause for constructor true
+  
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def foo : bool → bool → bool ≔ [ ]
+     ^ missing match clause for constructor false
   
   [1]
 

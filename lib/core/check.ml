@@ -413,6 +413,13 @@ let check_window_transparency : type dom window mode k a.
           -> ()
         | r -> fatal (Nontransparent_window_modality (window, single, r)))
 
+(* Report every constructor of a datatype as missing from an empty match that failed to refute anything, as a non-empty match would report each constructor it lacks. *)
+let missing_constructors : type a b. ?loc:Asai.Range.t -> (Constr.t, a) Abwd.t -> b =
+ fun ?loc constrs ->
+  List.iter (fun (c, _) -> mortal ?loc (Missing_constructor_in_match c)) (Bwd.to_list constrs);
+  fatalize ~why:"missing_constructors" ();
+  fatal (Anomaly "no constructors to report missing")
+
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential). *)
 let rec check : type mode a b s.
     (mode, b, s) status ->
@@ -2064,7 +2071,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     hyp (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches }) in
   Potential (head, apps, hyp)
 
-(* Refute the first of the supplied terms whose type is an empty datatype, by matching against it with zero branches.  Here "empty" means literally declared as a datatype with no constructors: we don't perform additional matches to expose a term of empty type.  Each term carries its own optional window modality.  If none of them can be refuted, an implicit refutation reports the error that matching against the first one with zero branches would produce. *)
+(* Refute the first of the supplied terms whose type is an empty datatype, by matching against it with zero branches.  Here "empty" means literally declared as a datatype with no constructors: we don't perform additional matches to expose a term of empty type.  Each term carries its own optional window modality.  If none of them can be refuted, an implicit refutation reports the errors that matching against the first one with zero branches would produce. *)
 and check_refute : type mode a b.
     (mode, a, b) Ctx.t ->
     (a synth located * string located list located option) list ->
@@ -2075,7 +2082,8 @@ and check_refute : type mode a b.
     | [] -> (
         match (i, err) with
         | `Explicit, _ -> fatal Invalid_refutation
-        | `Implicit, Some err -> fatal err
+        | `Implicit, Some (`Missing constrs) -> missing_constructors constrs
+        | `Implicit, Some (`Error err) -> fatal err
         | `Implicit, None -> fatal (Anomaly "no discriminees to refute"))
     | (tm, window_name) :: tms -> (
         let (Wrap window) = get_window (Ctx.mode ctx) window_name in
@@ -2096,8 +2104,8 @@ and check_refute : type mode a b.
                 branches = Constr.Map.empty;
               }
         | Canonical (_, Data { constrs = Snoc _ as constrs; _ }, _, _) ->
-            go (err (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))) tms
-        | _ -> go (err (Matching_on_nondatatype (PVal (wctx, sty)))) tms) in
+            go (err (`Missing (Bwd.map (fun (c, _) -> (c, ())) constrs))) tms
+        | _ -> go (err (`Error (Code.Matching_on_nondatatype (PVal (wctx, sty))))) tms) in
   go None tms
 
 (* Try empty-matching against each successive domain in an iterated pi-type.  For higher-dimensional pi-types, try empty-matching against each variable in the abstraction cube. *)
@@ -2188,8 +2196,7 @@ and check_empty_match_lam : type mode a b.
                   let firstty = firstty <|> Anomaly "missing firstty in checking []" in
                   match view_type firstty "is_empty" with
                   | Canonical (_, Data { constrs; _ }, _, _) ->
-                      fatal ?loc:d.explanation.loc
-                        (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
+                      missing_constructors ?loc:d.explanation.loc constrs
                   | _ ->
                       fatal ?loc:d.explanation.loc (Matching_on_nondatatype (PVal (wctx, firstty))))
               | _ -> fatal_diagnostic d))
