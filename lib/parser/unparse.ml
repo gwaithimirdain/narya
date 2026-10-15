@@ -1760,8 +1760,8 @@ let () =
     fun pr ->
       Reporter.try_with ~deadly:(fun d ->
           match d.message with
-          (* A silent error means the term depends on a part that already failed, such as a failed match branch.  Then the message we are printing is just a consequence of that failure, so we let the silent error replace it. *)
-          | Silent _ -> `Passthrough
+          (* A dependent error means the term depends on a part that already failed, such as a failed match branch.  Then the message we are printing is just a consequence of that failure, so we let the dependent error replace it. *)
+          | Dependent _ -> `Passthrough
           | _ ->
               Reporter.Code.PrintingError.read () d.message;
               `Return (string "_UNPRINTABLE"))

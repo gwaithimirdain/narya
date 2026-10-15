@@ -201,15 +201,15 @@ let run_with_definition : type mode a c.
     (mode, a) potential_head -> (mode, a, potential) term -> (unit -> c) -> c =
  fun head tm f ->
   match (head, moribund ()) with
-  (* In the case of an error, we bind the head to the Silent error.  That has the effect that accesses to it fail, but aren't displayed to the user as anything, since what's really going on is that we refuse to even try to typecheck later parts of a term that depend on previous parts that already failed, and this "error" is just detecting that dependence. *)
+  (* In the case of an error, we bind the head to a Dependent error.  That has the effect that accesses to it fail, but aren't displayed to the user as anything, since what's really going on is that we refuse to even try to typecheck later parts of a term that depend on previous parts that already failed, and this "error" is just detecting that dependence. *)
   (* We ignore the substituted dimension of the head, since this is really setting the *global* definition, which is not substituted. *)
   | Constant (c, mode, _), false -> Global.with_definition c mode (`Defined tm) f
-  | Constant (c, _, _), true -> Global.without_definition c (Silent "dependence") f
+  | Constant (c, _, _), true -> Global.without_definition c (Dependent "dependence") f
   | Meta (m, _), false -> Global.with_meta_definition m tm f
-  | Meta (m, _), true -> Global.without_meta_definition m (Silent "dependence") f
+  | Meta (m, _), true -> Global.without_meta_definition m (Dependent "dependence") f
 
 let unless_error (v : 'a) : ('a, Code.t) Result.t =
-  if moribund () then Error (Silent "dependence") else Ok v
+  if moribund () then Error (Dependent "dependence") else Ok v
 
 (* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  The constructor's argument types and output are stored together as its function-type "ty" (as in a Value.dataconstr); the argument variables are introduced, and the type indices of this branch read off, by ext_pi at typechecking time.  *)
 type (_, _, _) checkable_branch =
@@ -1029,7 +1029,7 @@ and check_of_synth : type mode a b s.
   | Asc (ctm, aty) -> (
       (* If the term is synthesizing because it is ascribed, then we can accumulate errors.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends.  First, if the ascription fails to check, we can proceed to check the ascribed term against the supplied type instead, and if that succeeds we can go on to other parts of the program. *)
       match
-        Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_silent @@ fun () ->
+        Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_dependent @@ fun () ->
         let cty = check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero) in
         Some (eval_term (Ctx.env ctx) cty)
       with
@@ -1044,7 +1044,7 @@ and check_of_synth : type mode a b s.
                    { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why });
               (* If the ascription is a valid type that disagrees with the checking type, we don't know which of them is wrong.  We first check the term against the ascription, since that's what the user said its type should be, so any errors that produces are reported relative to it.  But if that fails, and the term does check against the checking type, then probably the user wrote the right term but the wrong ascription; in that case we discard the errors relative to the ascription, and we can even go on with a well-typed term. *)
               match Reporter.capture (fun () -> check status ctx ctm ety) with
-              | Ok _ -> fatal (Silent "ascription mismatch")
+              | Ok _ -> fatal (Accumulated "ascription mismatch")
               | Error asc_errs -> (
                   match Reporter.capture (fun () -> check status ctx ctm ty) with
                   | Ok tm -> tm
@@ -2469,7 +2469,7 @@ and with_codata_so_far : type mode a b n c et.
         match eta with
         | Eta -> "record dependent"
         | Noeta -> "codata dependent" in
-      let err = Ctx.Binding.error (Silent msg) in
+      let err = Ctx.Binding.error (Dependent msg) in
       Self_vars { self = (fun _ -> CubeOf.build dim { build = (fun _ -> err) }) }
     else
       (* We can always create a constant with the (0,0,0) insertion, even if its dimension is actually higher. *)
@@ -3658,14 +3658,14 @@ and synth : type mode a b s.
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ -> (
         match
-          Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_silent @@ fun () ->
+          Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_dependent @@ fun () ->
           Some (check (Kinetic `Nolet) ctx ty (universe mode D.zero))
         with
         | None -> (
             (* If the ascribed type doesn't typecheck, *and* if the term itself happens to already be synthesizing, we can proceed to try to synthesize it, accumulating errors from multiple sources.  This will rarely happen in normal use, since there is no need to ascribe a term that's already synthesizing, but with some alternative frontends it may. *)
             match tm.value with
             | Synth stm -> synth status ctx (locate_opt tm.loc stm)
-            | _ -> fatal (Silent "synth Asc"))
+            | _ -> fatal (Accumulated "synth Asc"))
         | Some cty ->
             let ety = eval_term (Ctx.env ctx) cty in
             (* The ascription will be the type of the entire term, so we pass it into the callback.  We do this before typechecking the term, in case that term depends on having a metavariable's type installed. *)

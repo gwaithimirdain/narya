@@ -953,3 +953,35 @@ If it fails against both, the errors relative to the ascription are reported.
          P
   
   [1]
+
+If the ascribed type itself has an error, the term is checked against the checking type instead, so that its errors are also reported.  This applies even when the error in the ascription is inside a part, like a record field, that accumulates its errors.
+
+  $ narya ascmismatch.ny -e 'def t5 : Bool ≔ (Type : sig (x : Bool, y : true.))'
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def t5 : Bool ≔ (Type : sig (x : Bool, y : true.))
+     ^ non-datatype Type has no constructor named true
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t5 : Bool ≔ (Type : sig (x : Bool, y : true.))
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]
+
+But if the ascribed type fails only because it depends on something that already failed, the term is not checked against the checking type, since what's wrong is that earlier failure.
+
+  $ narya ascmismatch.ny -e 'def t6 : Bool ≔ let f : Bool → Type ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in (Type : f false.)'
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def t6 : Bool ≔ let f : Bool → Type ≔ x ↦ match x [ true. ↦ Bool | false. ↦ true. ] in (Type : f false.)
+     ^ non-datatype Type has no constructor named true
+  
+  [1]
