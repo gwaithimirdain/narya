@@ -673,7 +673,7 @@ let () =
         let p, src = Parser.Command.Parse.start_parse source in
         Reporter.run ~emit:(Reporter.display ?use_ansi ~output:stdout)
           ~fatal:(Reporter.display_bwd ?use_ansi ~output:stdout) (fun () ->
-            Execute.batch None p src `None []))
+            Execute.batch None (ref false) p src `None []))
       [ !fake_interacts ];
     if !interactive then Lwt_main.run (interact ())
     else if !proofgeneral then (

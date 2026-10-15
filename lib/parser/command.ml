@@ -947,6 +947,11 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | _ -> ());
       Scope.check_name name loc;
       let const = Scope.define ?loc name in
+      (* If checking the axiom fails, we make the constant an error, so that later commands that use it fail silently. *)
+      Reporter.try_with ~fatal:(fun d ->
+          Global.add_error const (Dependent "failed axiom");
+          fatal_diagnostic d)
+      @@ fun () ->
       let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
       let parametric = Option.is_none nonparam in
       Core.Command.execute (Axiom { name = const; params; ty = process ctx ty; parametric })

@@ -1164,9 +1164,6 @@ Similarly, an echo isn't displayed, and neither a definition nor its holes are r
    1 | def h : prod (Bool → Bool) Bool ≔ (x ⤇ x, ?)
      ^ cube abstraction not allowed for zero-dimensional function
   
-   ￫ error[E3002]
-   ￮ command-line exec string contains open holes
-  
   [1]
 
 Diagnostics emitted during a speculative check that is discarded are not displayed.  Here the term is checked against both its ascription and the outer type, but the hint about the match is only displayed once.
@@ -1571,6 +1568,64 @@ The same goes for a synthesizing definition.
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def f ≔ (a : Bool) and h : A ≔ Type
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         A
+       unequal head terms:
+         Type
+       does not equal
+         A
+  
+  [1]
+
+When checking a file, a failing command doesn't prevent later commands from being checked.  As in a mutual block, if a definition fails, later commands can still use its type, but anything that needs its value fails silently; and if the type of a definition or axiom fails, anything that uses it fails silently.
+
+  $ cat >cmds.ny <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def f : A ≔ true.
+  > def g : A ≔ f
+  > echo f
+  > axiom b : a
+  > def h : b ≔ a
+  > def k : A ≔ Type
+  > EOF
+
+  $ narya -v cmds.ny
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0000]
+   ￮ constant g defined
+  
+   ￫ error[E1000]
+   ￭ $TESTCASE_ROOT/cmds.ny
+   4 | def f : A ≔ true.
+     ^ non-datatype A has no constructor named true
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/cmds.ny
+   7 | axiom b : a
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/cmds.ny
+   9 | def k : A ≔ Type
      ^ term synthesized type
          Type
        but is being checked against type
