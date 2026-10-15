@@ -1044,7 +1044,7 @@ and check_of_synth : type mode a b s.
                    { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why });
               (* If the ascription is a valid type that disagrees with the checking type, we don't know which of them is wrong.  We first check the term against the ascription, since that's what the user said its type should be, so any errors that produces are reported relative to it.  But if that fails, and the term does check against the checking type, then probably the user wrote the right term but the wrong ascription; in that case we discard the errors relative to the ascription, and we can even go on with a well-typed term. *)
               match Reporter.capture (fun () -> check status ctx ctm ety) with
-              | Ok _ -> fatal (Accumulated "ascription mismatch")
+              | Ok _ -> fatal (Fatalize "ascription mismatch")
               | Error asc_errs -> (
                   match Reporter.capture (fun () -> check status ctx ctm ty) with
                   | Ok tm -> tm
@@ -1634,7 +1634,7 @@ and synth_nondep_match : type mode a b.
              }) in
       match motive with
       | None ->
-          make_fatal ~why:"synth_nondep_match" ();
+          fatalize ~why:"synth_nondep_match" ();
           fatal (Anomaly "synth_nondep_match: no synthesized type of match but no errors")
       | Some motive -> (result, motive))
 
@@ -2771,7 +2771,7 @@ and check_fields : type mode a b c s m n mn et.
   match (fields, status) with
   | [], _ ->
       (* If there are no more fields to check, we return, unless there were errors. *)
-      make_fatal ~why:"check_fields" ();
+      fatalize ~why:"check_fields" ();
       (tms, ctms)
   | Entry (fld, cdf) :: fields, Potential (name, args, hyp) ->
       (* Temporarily bind the current constant to the up-until-now value (or an error, if any have occurred yet), for (co)recursive purposes.  Note that this means as soon as one field fails, no other fields can be typechecked if they depend *at all* on earlier ones, even ones that didn't fail.  This could be improved in the future. *)
@@ -3665,7 +3665,7 @@ and synth : type mode a b s.
             (* If the ascribed type doesn't typecheck, *and* if the term itself happens to already be synthesizing, we can proceed to try to synthesize it, accumulating errors from multiple sources.  This will rarely happen in normal use, since there is no need to ascribe a term that's already synthesizing, but with some alternative frontends it may. *)
             match tm.value with
             | Synth stm -> synth status ctx (locate_opt tm.loc stm)
-            | _ -> fatal (Accumulated "synth Asc"))
+            | _ -> fatal (Fatalize "synth Asc"))
         | Some cty ->
             let ety = eval_term (Ctx.env ctx) cty in
             (* The ascription will be the type of the entire term, so we pass it into the callback.  We do this before typechecking the term, in case that term depends on having a metavariable's type installed. *)

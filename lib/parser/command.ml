@@ -1424,7 +1424,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
     | Quit _ -> fatal (Quit None)
     | Bof _ -> (None, [])
     | Eof -> fatal (Anomaly "EOF cannot be executed") in
-  make_fatal ();
+  fatalize ();
   result
 
 let tightness_of_fixity : type left tight right. (left, tight, right) fixity -> string option =
