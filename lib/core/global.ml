@@ -292,7 +292,8 @@ let end_command (offset, make_msg) =
       | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Parametric
       | _ -> `Nonparametric in
     { h with parametric } in
-  if not (moribund ()) then Option.iter emit (make_msg (Bwd.length d.current_holes));
+  if not (moribund ~recoverable:true ()) then
+    Option.iter emit (make_msg (Bwd.length d.current_holes));
   Mbwd.miter
     (fun [ ({ meta = Meta.Wrap m; printable; _ } : Command_state.hole) ] ->
       (* We intentionally do not "locate" this emission, since we want to display only the hole context and type, not its location in the source. *)

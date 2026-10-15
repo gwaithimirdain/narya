@@ -652,7 +652,7 @@ let rec check : type mode a b s.
                 | Wrap (_, Missing j) -> fatal ?loc:cube.loc (Not_enough_lambdas j))
             | `Cube absdim -> (
                 (match D.compare_zero m with
-                | Zero -> mortal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
+                | Zero -> recoverable ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
                 | Pos _ -> ());
                 match implicit with
                 | `Implicit -> fatal (Unimplemented "general implicit functions")
@@ -1022,6 +1022,22 @@ and check_constr : type mode a b s.
         ty
   | _ -> fatal (No_such_constructor (`Other (PVal (ctx, ty)), constr))
 
+(* Check the type ascribed to a term speculatively, so that if it fails the caller can try something else and decide whether its errors are recoverable.  If it fails only due to dependent errors, though, we fail right away, since the ascription might actually be correct once those errors are fixed. *)
+and check_ascription : type mode a b.
+    (mode, a, b) Ctx.t ->
+    a check located ->
+    ((mode, b, kinetic) term, Reporter.pending Bwd.t) Result.t =
+ fun ctx aty ->
+  match
+    Reporter.speculate (fun () -> check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero))
+  with
+  | Ok (cty, ps) ->
+      Reporter.release ps;
+      Ok cty
+  | Error ps when Bwd.for_all is_dependent (Reporter.pending_errors ~recoverable:false ps) ->
+      Reporter.replay ps
+  | Error ps -> Error ps
+
 (* Deal with a synthesizing term in checking position. *)
 and check_of_synth : type mode a b s.
     ?nosynth:Code.t Asai.Diagnostic.t ->
@@ -1034,39 +1050,49 @@ and check_of_synth : type mode a b s.
  fun ?nosynth status ctx stm loc ty ->
   match stm with
   | Asc (ctm, aty) -> (
-      (* If the term is synthesizing because it is ascribed, then we can accumulate errors.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends.  First, we check the ascription, making its errors only mortal.  However, if it fails only due to dependent errors, then it might actually be correct once those errors are fixed, so we don't go on to do anything else. *)
-      match
-        Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_dependent @@ fun () ->
-        let cty = check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero) in
-        Some (eval_term (Ctx.env ctx) cty)
-      with
-      (* If that fails to check, we can proceed to check the ascribed term against the supplied type instead, and if that succeeds we can go on to other parts of the program. *)
-      | None -> check status ctx ctm ty
-      | Some ety -> (
-          (* We go on *outside* the [accumulate] call because once the ascription checks, we don't want to fall back to checking directly.  We will eventually try that, but we want more control over the intermediate errors (see below). *)
+      (* If the term is synthesizing because it is ascribed, then we can accumulate errors.  This will rarely happen in normal use, since there is no need to ascribe a term that's in checking position, but it can occur with some alternative frontends.  First, we check the ascription speculatively.  If it fails only due to dependent errors, then it might actually be correct once those errors are fixed, so we don't go on to do anything else. *)
+      match check_ascription ctx aty with
+      | Error asc_errs -> (
+          (* If the ascription fails to check, we can proceed to check the ascribed term against the supplied type instead.  If that succeeds, then the errors in the ascription are recoverable, and we can go on to other parts of the program. *)
+          match Reporter.speculate (fun () -> check status ctx ctm ty) with
+          | Ok (tm, ps) ->
+              Reporter.release_recoverable asc_errs;
+              Reporter.release ps;
+              tm
+          | Error ps ->
+              Reporter.release asc_errs;
+              Reporter.replay ps)
+      | Ok cty -> (
+          let ety = eval_term (Ctx.env ctx) cty in
           (* It suffices for the synthesized type to be a subtype of the checking type. *)
           match subtype_of ctx ety ty with
           | Ok () -> check status ctx ctm ety
           | Error why -> (
-              mortal
-                (Unequal_synthesized_type
-                   { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why });
+              let mismatch =
+                Code.Unequal_synthesized_type
+                  { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why } in
               (* If the ascription is a valid type that disagrees with the checking type, we don't know which of them is wrong.  Thus, we check the term against both. *)
-              match
-                ( Reporter.capture (fun () -> check status ctx ctm ety),
-                  Reporter.capture (fun () -> check status ctx ctm ty) )
-              with
-              | Ok _, Ok tm ->
-                  (* If both succeed, then the only error is the already-reported mismatch, and we can go on with the rest of the term. *)
+              let asc_result = Reporter.speculate (fun () -> check status ctx ctm ety) in
+              let result = Reporter.speculate (fun () -> check status ctx ctm ty) in
+              match (asc_result, result) with
+              | Ok (_, asc_ps), Ok (tm, _) ->
+                  (* If both succeed, then the mismatch is recoverable, and we can go on with the rest of the term.  We report any recoverable errors relative to the ascription, since that's the check the user will really expect to happen. *)
+                  recoverable mismatch;
+                  Reporter.release asc_ps;
                   tm
-              | Error asc_errs, Ok tm ->
-                  (* If it fails to check against the ascription but checks against the outer type, we report those errors since the user was wrong that that term has the type they ascribed to it, but we make them mortal so that we can also go on with the rest of the term using the outer-checked type. *)
-                  Reporter.accumulate ~fallback:(fun () -> tm) @@ fun () -> Reporter.replay asc_errs
-              | Ok _, Error _ ->
-                  (* If it checks against the ascription but not the outer type, the only error is the type mismatch already reported, but we can't go on without a well-typed term. *)
+              | Error asc_errs, Ok (tm, _) ->
+                  (* If it fails to check against the ascription but checks against the outer type, we report those errors since the user was wrong that that term has the type they ascribed to it, but they are recoverable since we can go on with the rest of the term using the outer-checked term. *)
+                  recoverable mismatch;
+                  Reporter.release_recoverable asc_errs;
+                  tm
+              | Ok (_, asc_ps), Error _ ->
+                  (* If it checks against the ascription but not the outer type, the only error is the type mismatch, but we can't go on without a well-typed term. *)
+                  mortal mismatch;
+                  Reporter.release asc_ps;
                   fatal (Fatalize "ascription mismatch")
               | Error asc_errs, Error _ ->
                   (* Finally, if it fails to check against both, we can't go on, but we only report the errors from the check against the ascription, since that's the only check the user will really expect to happen. *)
+                  mortal mismatch;
                   Reporter.replay asc_errs)))
   | _ -> (
       let sval, sty = synth ?nosynth status ctx { value = stm; loc } in
@@ -1520,7 +1546,7 @@ and check_match_branches : type dom window mode a b bm.
       (* Finally, we check that all the abstractions used the correct symbol ↦ or ⤇ *)
       List.iter
         (fun b ->
-          if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+          if not !(b.value) then recoverable ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
         highers;
       (Term.Match { tm; window; plus_lock; dim; motive = motive_tm; branches }, synthed_type)
   | _ ->
@@ -1995,7 +2021,7 @@ and check_var_match : type dom modality mode a b bm.
           Constr.Map.empty user_branches in
       List.iter
         (fun b ->
-          if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
+          if not !(b.value) then recoverable ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
         highers;
       (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store. *)
       Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = None; branches }
@@ -2867,7 +2893,7 @@ and check_field : type mode a b c s m n mn i et.
                 | Some ((cube, { value = Some tm; loc }), tms) ->
                     (match (cube.value, D.compare_zero m) with
                     | `Cube, Zero ->
-                        mortal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+                        recoverable ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
                     | _ -> ());
                     ({ value = tm; loc }, tms, `Labeled)
                 | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same field twice")
@@ -2880,7 +2906,7 @@ and check_field : type mode a b c s m n mn i et.
                     | Some ((cube, { value = Some tm; loc }), tms) ->
                         (match (cube.value, D.compare_zero m) with
                         | `Cube, Zero ->
-                            mortal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+                            recoverable ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
                         | _ -> ());
                         ({ value = tm; loc }, tms, `Unlabeled)
                     | Some ((_, { value = None; _ }), _) ->
@@ -3117,7 +3143,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
         with
         | Some ((cube, { value = Some tm; loc }), tms) ->
             (match (cube.value, D.compare_zero m) with
-            | `Cube, Zero -> mortal ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
+            | `Cube, Zero -> recoverable ?loc:cube.loc (Zero_dimensional_cube_abstraction "comatch")
             | _ -> ());
             ({ value = tm; loc }, tms)
         | Some ((_, { value = None; _ }), _) -> fatal (Anomaly "accessing same method twice")
@@ -3663,17 +3689,22 @@ and synth : type mode a b s.
           sty )
     | Act _, _ -> fatal_or nosynth (Nonsynthesizing "argument of degeneracy")
     | Asc (tm, ty), _ -> (
-        (* First we check the type ascription, reporting its errors as merely mortal since there are alternatives if it fails.  However, if it fails only due to dependent errors, then it might actually be correct once those errors are fixed, so we don't go on to do anything else. *)
-        match
-          Reporter.accumulate ~fallback:(fun () -> None) ~passthrough:is_dependent @@ fun () ->
-          Some (check (Kinetic `Nolet) ctx ty (universe mode D.zero))
-        with
-        | None -> (
-            (* If the ascribed type doesn't typecheck, *and* if the term itself happens to already be synthesizing, we can proceed to try to synthesize it.  If that succeeds, we can go on with the entire rest of the term using the type thereby synthesized, with the errors in the ascription only reported at the end (at least, the end of any scope enclosing this one).  This will rarely happen in normal use, since there is no need to ascribe a term that's already synthesizing, but with some alternative frontends it may. *)
+        (* First we check the type ascription speculatively, since there are alternatives if it fails.  However, if it fails only due to dependent errors, then it might actually be correct once those errors are fixed, so we don't go on to do anything else. *)
+        match check_ascription ctx ty with
+        | Error asc_errs -> (
+            (* If the ascribed type doesn't typecheck, *and* if the term itself happens to already be synthesizing, we can proceed to try to synthesize it.  If that succeeds, the errors in the ascription are recoverable, and we can go on with the entire rest of the term using the type thereby synthesized.  This will rarely happen in normal use, since there is no need to ascribe a term that's already synthesizing, but with some alternative frontends it may. *)
             match tm.value with
-            | Synth stm -> synth status ctx (locate_opt tm.loc stm)
-            | _ -> fatal (Fatalize "synth Asc"))
-        | Some cty ->
+            | Synth stm -> (
+                match Reporter.speculate (fun () -> synth status ctx (locate_opt tm.loc stm)) with
+                | Ok (result, ps) ->
+                    Reporter.release_recoverable asc_errs;
+                    Reporter.release ps;
+                    result
+                | Error ps ->
+                    Reporter.release asc_errs;
+                    Reporter.replay ps)
+            | _ -> Reporter.replay asc_errs)
+        | Ok cty ->
             let ety = eval_term (Ctx.env ctx) cty in
             (* The ascription will be the type of the entire term, so we pass it into the callback.  We do this before typechecking the term, in case that term depends on having a metavariable's type installed. *)
             call_synthed ety;

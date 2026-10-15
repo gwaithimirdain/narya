@@ -1064,3 +1064,142 @@ Mismatches in cube abstraction symbols are just syntax restrictions, so they are
      ^ cube abstraction not allowed for zero-dimensional function
   
   [1]
+
+A recoverable error doesn't cause the part of the term containing it to fail, so later parts that depend on it can still be checked.
+
+  $ narya ascmismatch.ny -e 'def r1 : sig (b : Bool → Bool, c : P (b true.)) ≔ (x ⤇ x, q)'
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def r1 : sig (b : Bool → Bool, c : P (b true.)) ≔ (x ⤇ x, q)
+     ^ cube abstraction not allowed for zero-dimensional function
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def r1 : sig (b : Bool → Bool, c : P (b true.)) ≔ (x ⤇ x, q)
+     ^ term synthesized type
+         P false.
+       but is being checked against type
+         P true.
+       unequal constructors:
+         false
+       does not equal
+         true
+  
+  [1]
+
+The same holds for an ascription that is wrong in a way that is recoverable because the term checks against the outer type.
+
+  $ narya ascmismatch.ny -e 'def r2 : sig (b : Bool, c : P b) ≔ ((true. : P true.), q)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def r2 : sig (b : Bool, c : P b) ≔ ((true. : P true.), q)
+     ^ term synthesized type
+         P true.
+       but is being checked against type
+         Bool
+       unequal head constants:
+         P
+       does not equal
+         Bool
+  
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def r2 : sig (b : Bool, c : P b) ≔ ((true. : P true.), q)
+     ^ non-datatype P true. has no constructor named true
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def r2 : sig (b : Bool, c : P b) ≔ ((true. : P true.), q)
+     ^ term synthesized type
+         P false.
+       but is being checked against type
+         P true.
+       unequal constructors:
+         false
+       does not equal
+         true
+  
+  [1]
+
+Similarly, an echo isn't displayed, and a definition isn't reported, if there are any errors, even recoverable ones.
+
+  $ narya ascmismatch.ny -e 'echo ((x ⤇ x) : Bool → Bool)'
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | echo ((x ⤇ x) : Bool → Bool)
+     ^ cube abstraction not allowed for zero-dimensional function
+  
+  [1]
+
+  $ narya -v ascmismatch.ny -e 'def h : prod (Bool → Bool) Bool ≔ (x ⤇ x, ?)'
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0001]
+   ￮ axiom P assumed
+  
+   ￫ info[I0001]
+   ￮ axiom p assumed
+  
+   ￫ info[I0001]
+   ￮ axiom q assumed
+  
+   ￫ info[I0000]
+   ￮ constant prod defined
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     ----------------------------------------------------------------------
+     Bool
+  
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def h : prod (Bool → Bool) Bool ≔ (x ⤇ x, ?)
+     ^ cube abstraction not allowed for zero-dimensional function
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+Diagnostics emitted during a speculative check that is discarded are not displayed.  Here the term is checked against both its ascription and the outer type, but the hint about the match is only displayed once.
+
+  $ cat >emit.ny <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def M (X : Type) : Type ≔ data [ c. (_ : Bool) ]
+  > axiom A : Type
+  > axiom B : Type
+  > EOF
+
+  $ narya -v emit.ny -e 'def t (b : Bool) : M A ≔ (c. (match b [ true. ↦ false. | false. ↦ true. ]) : M B)'
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0000]
+   ￮ constant M defined
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ hint[H0403]
+   ￭ command-line exec string
+   1 | def t (b : Bool) : M A ≔ (c. (match b [ true. ↦ false. | false. ↦ true. ]) : M B)
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t (b : Bool) : M A ≔ (c. (match b [ true. ↦ false. | false. ↦ true. ]) : M B)
+     ^ term synthesized type
+         M B
+       but is being checked against type
+         M A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+  [1]

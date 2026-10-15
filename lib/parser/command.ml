@@ -1043,7 +1043,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                           No.Interval.entire)) in
           let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let uty = unparse names bty No.Interval.entire No.Interval.entire in
-          if not (moribund ()) then
+          if not (moribund ~recoverable:true ()) then
             !echo_output
               PPrint.(
                 hang 2
