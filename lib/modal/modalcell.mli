@@ -88,6 +88,8 @@ val compare_id :
   ('dom, 'mu, 'nu, 'cod) t ->
   ('dom * 'mu * 'nu, 'cod * 'dom Modality.id * 'dom Modality.id) Util.Eq.compare
 
+val is_id : ('dom, 'mu, 'nu, 'cod) t -> bool
+
 type (_, _) wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'b) wrapped
 type (_, _, _) cod_wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) cod_wrapped
 type (_, _, _) dom_wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'n, 'b) dom_wrapped
