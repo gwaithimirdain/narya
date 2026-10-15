@@ -1394,13 +1394,12 @@ let mortal_diagnostic d = perform (Mortal d)
 
 (* Formatting the message of a diagnostic can raise a silent error, if it involves printing a term that depends on a part that already failed (see Unparse.printer).  In that case the silent error replaces this one, but it remains mortal. *)
 let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
-  match
-    Delegate.try_with ~fatal:(fun d -> Result.Error d) @@ fun () ->
-    Result.Ok (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
-  with
-  | Ok d -> mortal_diagnostic d
-  | Error ({ message = Silent _; _ } as d) -> mortal_diagnostic d
-  | Error d -> fatal_diagnostic d
+  mortal_diagnostic
+  @@ Delegate.try_with
+       (fun () -> diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+       ~fatal:(function
+         | { message = Silent _; _ } as d -> d
+         | d -> fatal_diagnostic d)
 
 (* Whether the current scope (see [scope] below) is moribund. *)
 let moribund () = perform Moribund
