@@ -147,8 +147,10 @@ let variables_entry : type dom modality mode f n. (dom, modality, mode, f, n) en
   | Invis { bindings; _ } ->
       (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
       let hints =
-        Reporter.backtrack ~deadly:(fun _ -> `Return no_hints) @@ fun () ->
-        View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
+        Result.value ~default:no_hints
+        @@ Reporter.capture
+        @@ fun () -> View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty)
+      in
       singleton_variables (CubeOf.dim bindings) (`Anon hints)
 
 (* Given an entry containing no let-bound variables, produce an "app" that says how to apply a function to its cube of (free) variables. *)
@@ -577,8 +579,10 @@ module Ordered = struct
     | Snoc (ctx, Invis { bindings; filter; _ }, _) when all_free bindings ->
         (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
         let hints =
-          Reporter.backtrack ~deadly:(fun _ -> `Return no_hints) @@ fun () ->
-          View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
+          Result.value ~default:no_hints
+          @@ Reporter.capture
+          @@ fun () -> View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty)
+        in
         lam ctx
           (Lam
              ( singleton_variables (CubeOf.dim bindings) (`Anon hints),

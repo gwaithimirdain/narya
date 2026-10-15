@@ -439,11 +439,11 @@ let rec check : type mode a b s.
             (* It can check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
             let fainv = deg_of_perm (perm_inv pfa) in
             match
-              Reporter.try_with ~deadly:(fun d ->
+              Reporter.try_with ~fatal:(fun d ->
                   (* If the user has given a symmetrized term that synthesizes but doesn't match the checking type, we want the error reported to be Unequal_synthesized_type.  So we fall back to synthesizing if the checking type doesn't symmetrize.  *)
                   match d.message with
-                  | Low_dimensional_argument_of_degeneracy _ -> `Return (Error d)
-                  | _ -> `Passthrough)
+                  | Low_dimensional_argument_of_degeneracy _ -> Error d
+                  | _ -> fatal_diagnostic d)
               @@ fun () ->
               Ok
                 (gact_ty None ty fainv ~err:(low_dim_arg_err str.value)
@@ -895,8 +895,11 @@ let rec check : type mode a b s.
             | _, Neq -> fatal ?loc:fn.loc (Anomaly "modal implicit applications not allowed"))
         | _ -> fatal ?loc:fn.loc (Applying_nonfunction_nontype (PTerm (ctx, sfn), PVal (ctx, sty))))
     | First alts, _ ->
+        (* The errors from alternatives that failed are reported only if they all fail. *)
         let rec go errs = function
-          | [] -> fatal (Choice_mismatch (PVal (ctx, ty)))
+          | [] ->
+              if Bwd.is_empty errs then fatal (Choice_mismatch (PVal (ctx, ty)))
+              else Reporter.replay errs
           | (test, alt, passthru) :: alts -> (
               match (view_type ty "check_first", test) with
               | Canonical (_, Data { constrs = data_constrs; _ }, _, _), `Data constrs ->
@@ -905,10 +908,7 @@ let rec check : type mode a b s.
                       (fun constr ->
                         Bwd.exists (fun (data_constr, _) -> constr = data_constr) data_constrs)
                       constrs
-                  then
-                    Reporter.backtrack ~deadly:(fun d ->
-                        if passthru then `Return (go (Snoc (errs, d)) alts) else `Passthrough)
-                    @@ fun () -> check status ctx (locate_opt tm.loc alt) ty
+                  then try_alt errs alt passthru alts
                   else go errs alts
               | Canonical (_, Codata { fields = codata_fields; _ }, _, _), `Codata fields ->
                   if
@@ -919,16 +919,16 @@ let rec check : type mode a b s.
                             field = Field.to_string codata_field)
                           codata_fields)
                       fields
-                  then
-                    Reporter.backtrack ~deadly:(fun d ->
-                        if passthru then `Return (go (Snoc (errs, d)) alts) else `Passthrough)
-                    @@ fun () -> check status ctx (locate_opt tm.loc alt) ty
+                  then try_alt errs alt passthru alts
                   else go errs alts
-              | _, `Any ->
-                  Reporter.backtrack ~deadly:(fun d ->
-                      if passthru then `Return (go (Snoc (errs, d)) alts) else `Passthrough)
-                  @@ fun () -> check status ctx (locate_opt tm.loc alt) ty
-              | _ -> go errs alts) in
+              | _, `Any -> try_alt errs alt passthru alts
+              | _ -> go errs alts)
+        and try_alt errs alt passthru alts =
+          if passthru then
+            match Reporter.capture (fun () -> check status ctx (locate_opt tm.loc alt) ty) with
+            | Ok result -> result
+            | Error alt_errs -> go (Bwd.append errs (Bwd.to_list alt_errs)) alts
+          else check status ctx (locate_opt tm.loc alt) ty in
         go Emp alts
     | Oracle tm, _ -> (
         let ctm = check (Kinetic `Nolet) ctx tm ty in
@@ -1476,13 +1476,8 @@ and check_match_branches : type dom window mode a b bm.
             let status =
               make_match_status status window plus_lock tm dim motive_tm branches annotate comp None
                 perm constr in
-            (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed.  But we pass through the errors that are getting caught elsewhere. *)
-            Reporter.accumulate
-              ~fallback:(fun () -> branches |> Constr.Map.add constr Term.Failed)
-              ~passthrough:(fun d ->
-                match d.message with
-                | Missing_constructor_in_match _ -> true
-                | _ -> false)
+            (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed. *)
+            Reporter.accumulate ~fallback:(fun () -> branches |> Constr.Map.add constr Term.Failed)
             @@ fun () ->
             match (body, motive) with
             (* In the synthesizing case, we might still have no motive, if all the synthesis failed.  In that case, the only reason we're going through this is to annotate the contexts of each branch. *)
@@ -1596,13 +1591,13 @@ and synth_nondep_match : type mode a b.
               @@ fun () ->
               (* If the branch successfully synthesizes a type, it is the type of the entire match, so we pass in the ?synthed callback.  Importantly, therefore, the callback gets called before any other branches are typechecked.  However, that type is only valid for the whole match if it doesn't depend on the pattern variables.  We check that by reading it back into the original context, as soon as it is known.  Thus we pass our own ?synthed callback unconditionally to do this, and also call the caller's ?synthed if it exists. *)
               let synthed sty =
-                ( Reporter.try_with ~deadly:(fun d ->
+                ( Reporter.try_with ~fatal:(fun d ->
                       match d.message with
                       | No_such_level _ ->
-                          `Replace
+                          fatal ?loc:d.explanation.loc
                             (Invalid_synthesized_type
                                ("synthesizing branch of match", PVal (newctx, sty)))
-                      | _ -> `Passthrough)
+                      | _ -> fatal_diagnostic d)
                 @@ fun () -> ignore (readback_val ctx sty) );
                 Option.iter (fun f -> f sty) synthed in
               let sbr, sty = synth ~synthed status newctx body in
@@ -1792,7 +1787,7 @@ and check_var_match : type dom modality mode a b bm.
             let (Locked (_, lctx)) = Ctx.lock ctx window in
             fatal (Matching_wont_refine ("index is not a free variable", Some (PNormal (lctx, x))))
       in
-      Reporter.try_with ~deadly:(fun d ->
+      Reporter.try_with ~fatal:(fun d ->
           match
             match d.message with
             | Matching_wont_refine (str, x) ->
@@ -1805,10 +1800,9 @@ and check_var_match : type dom modality mode a b bm.
           with
           | Some (errloc, msg) ->
               emit ?loc:errloc msg;
-              `Return
-                (check_nondep_match status ctx (Term.Var index) varty window plus brs None highers
-                   motive loc)
-          | None -> `Passthrough)
+              check_nondep_match status ctx (Term.Var index) varty window plus brs None highers
+                motive loc
+          | None -> fatal_diagnostic d)
       @@ fun () ->
       let index_vars =
         Vec.mmap
@@ -1906,13 +1900,13 @@ and check_var_match : type dom modality mode a b bm.
                         fatal (Matching_wont_refine ("no consistent permutation of context", None))
                     | Bind_some { checked_perm; oldctx; newctx } -> (
                         (* We readback the index and instantiation values into this new context and discard the result, catching No_such_level to turn it into a user Error.  This has the effect of doing an occurs-check that none of the index variables occur in any of the index values.  This is a bit less general than the CDP Solution rule, which (when applied one variable at a time) prohibits only cycles of occurrence.  Note that this exception is still caught by check_var_match, above, causing a fallback to term matching. *)
-                        ( Reporter.try_with ~deadly:(fun d ->
+                        ( Reporter.try_with ~fatal:(fun d ->
                               match d.message with
                               | No_such_level x ->
-                                  `Replace
+                                  fatal ?loc:d.explanation.loc
                                     (Matching_wont_refine
                                        ("free index variable occurs in inferred index value", Some x))
-                              | _ -> `Passthrough)
+                              | _ -> fatal_diagnostic d)
                         @@ fun () ->
                           let (Locked (_, oldlctx)) = Ctx.lock oldctx window in
                           Hashtbl.iter (fun _ v -> ignore (readback_nf oldlctx v)) new_vals );
@@ -1927,13 +1921,9 @@ and check_var_match : type dom modality mode a b bm.
                         (* Finally, we typecheck the "body" of the branch, if the user supplied one. *)
                         match body with
                         | Some body ->
-                            (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed.  But we pass through the errors that are getting caught elsewhere. *)
-                            Reporter.accumulate
-                              ~fallback:(fun () -> branches |> Constr.Map.add constr Term.Failed)
-                              ~passthrough:(fun d ->
-                                match d.message with
-                                | Missing_constructor_in_match _ -> true
-                                | _ -> false)
+                            (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed. *)
+                            Reporter.accumulate ~fallback:(fun () ->
+                                branches |> Constr.Map.add constr Term.Failed)
                             @@ fun () ->
                             let branch = check status newctx body newty in
                             branches
@@ -2192,15 +2182,17 @@ and check_empty_match_lam : type mode a b.
           Reporter.try_with
             (fun () ->
               Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst))
-            ~deadly:(fun d ->
+            ~fatal:(fun d ->
               match d.message with
               | Invalid_refutation -> (
                   let firstty = firstty <|> Anomaly "missing firstty in checking []" in
                   match view_type firstty "is_empty" with
                   | Canonical (_, Data { constrs; _ }, _, _) ->
-                      `Replace (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
-                  | _ -> `Replace (Matching_on_nondatatype (PVal (wctx, firstty))))
-              | _ -> `Passthrough))
+                      fatal ?loc:d.explanation.loc
+                        (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))
+                  | _ ->
+                      fatal ?loc:d.explanation.loc (Matching_on_nondatatype (PVal (wctx, firstty))))
+              | _ -> fatal_diagnostic d))
   | _ -> fatal Invalid_refutation
 
 (* If a type is an empty datatype, return its dimension. *)
@@ -3486,10 +3478,12 @@ and synth : type mode a b s.
                   (* Further errors here should also be reported on the relevant domain term. *)
                   with_loc dom.loc @@ fun () : (left, m, binder_name) Build.fwrap_left ->
                   (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
-                  Reporter.try_with ~deadly:(fun d ->
+                  Reporter.try_with ~fatal:(fun d ->
                       match d.message with
-                      | No_such_level _ -> `Replace (Invalid_higher_function "invalid domain scope")
-                      | _ -> `Passthrough)
+                      | No_such_level _ ->
+                          fatal ?loc:d.explanation.loc
+                            (Invalid_higher_function "invalid domain scope")
+                      | _ -> fatal_diagnostic d)
                   @@ fun () : (left, m, binder_name) Build.fwrap_left ->
                   let dom, tyargs =
                     match D.compare_zero m with
@@ -3550,10 +3544,12 @@ and synth : type mode a b s.
                 (* We likewise check the codomain against universe 0. *)
                 let ccod = check (Kinetic `Nolet) newctx cod (universe mode D.zero) in
                 with_loc cod.loc @@ fun () ->
-                Reporter.try_with ~deadly:(fun d ->
+                Reporter.try_with ~fatal:(fun d ->
                     match d.message with
-                    | No_such_level _ -> `Replace (Invalid_higher_function "invalid codomain scope")
-                    | _ -> `Passthrough)
+                    | No_such_level _ ->
+                        fatal ?loc:d.explanation.loc
+                          (Invalid_higher_function "invalid codomain scope")
+                    | _ -> fatal_diagnostic d)
                 @@ fun () ->
                 (* It must also be fully instantiated at at least the total dimension. *)
                 match split_inst n' (eval_term (Ctx.env newctx) ccod) with
@@ -3922,14 +3918,15 @@ and synth : type mode a b s.
                   match dir with
                   (* A step marked as reversed is checked only in the reversed orientation. *)
                   | `Reversed -> reversed ()
-                  | `Plain ->
-                      Reporter.backtrack
-                        forward
-                        (* If that didn't work, we try reversing the equality and checking that instead. *)
-                        ~deadly:(fun d ->
-                          (* But if that also fails, we report only the error from the forwards direction (unless the reversed check hit a bug). *)
-                          `Return
-                            (Reporter.backtrack reversed ~deadly:(fun _ -> fatal_diagnostic d))))
+                  | `Plain -> (
+                      match Reporter.capture forward with
+                      | Ok result -> result
+                      (* If that didn't work, we try reversing the equality and checking that instead. *)
+                      | Error errs -> (
+                          match Reporter.capture reversed with
+                          | Ok result -> result
+                          (* But if that also fails, we report only the errors from the forwards direction (unless the reversed check hit a bug, which [capture] passes through). *)
+                          | Error _ -> Reporter.replay errs)))
               | None -> (
                   with_loc z.loc @@ fun () ->
                   match equal_at ctx ny.tm ez ty with

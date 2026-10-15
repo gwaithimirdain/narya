@@ -1513,39 +1513,7 @@ let replay (errs : Code.t Asai.Diagnostic.t Bwd.t) : 'a =
   Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ errs ];
   fatalize_with "replay" errs
 
-(* Another thing we may want to do is to catch some *specific* fatal/mortal errors and either recover from them or replace them by a different error.  For instance, the specific error may be a missing De Bruijn level, which would normally be a bug, but is interpreted by a specific caller as a failure of an occurs-check.  For this purpose, [try_with] supplies a "deadly" handler that indicates whether that a fatal or mortal error should be propagated as usual (retaining its status), blocked and a specific result returned instead, or some other error raised instead (with the same status).  It also allows overriding the "emit" handler locally. *)
-let try_with : type res.
-    ?emit:(Code.t Asai.Diagnostic.t -> unit) ->
-    deadly:(Code.t Asai.Diagnostic.t -> [ `Passthrough | `Replace of Code.t | `Return of res ]) ->
-    (unit -> res) ->
-    res =
- fun ?(emit = Delegate.emit_diagnostic) ~deadly f ->
-  let exception Killed of res in
-  try
-    Delegate.try_with ~emit
-      ~fatal:(fun d ->
-        match deadly d with
-        | `Return res -> res
-        | `Passthrough -> fatal_diagnostic d
-        | `Replace c -> fatal ?loc:d.explanation.loc c)
-      f
-  with
-  | effect Mortal d, k -> (
-      match deadly d with
-      | `Return res -> discontinue k (Killed res)
-      | `Passthrough ->
-          perform (Mortal d);
-          continue k ()
-      | `Replace c ->
-          mortal ?loc:d.explanation.loc c;
-          continue k ())
-  | Killed res -> res
-
-(* Run a callback, backtracking with the given handler if it fails.  Bugs are re-raised instead, since they indicate a problem that shouldn't be hidden by succeeding along some other path. *)
-let backtrack
-    ~(deadly : Code.t Asai.Diagnostic.t -> [ `Passthrough | `Replace of Code.t | `Return of 'a ])
-    (f : unit -> 'a) : 'a =
-  try_with ~deadly:(fun d -> if is_bug d then `Passthrough else deadly d) f
+(* Another thing we may want to do is to catch some *specific* fatal errors and either recover from them or replace them by a different error.  For instance, the specific error may be a missing De Bruijn level, which would normally be a bug, but is interpreted by a specific caller as a failure of an occurs-check.  For this we use Asai's [try_with] (included above from [Delegate]), whose [fatal] handler can return a result, re-raise the error with [fatal_diagnostic], or raise a different one.  This deliberately doesn't see mortal errors: a mortal error means that something inside has already failed and been dealt with locally, so it's not a failure of the callback as a whole.  To ask whether a callback succeeded at all, without any errors, use [capture] instead. *)
 
 (* When displaying an accumulated list of errors, we display all the constituent errors, except for the silent ones.  Except that if all the errors were silent, we report where the silent ones came from. *)
 
@@ -1556,7 +1524,7 @@ let display_bwd ?use_ansi ?output (errs : Code.t Asai.Diagnostic.t Bwd.t) =
   let nonsilent = ref false in
   Mbwd.miter
     (fun [ (e : Code.t Asai.Diagnostic.t) ] ->
-      try_with ~deadly:(fun _ -> `Return ()) @@ fun () ->
+      try_with ~fatal:(fun _ -> ()) @@ fun () ->
       match e.message with
       | Dependent why | Fatalize why -> silents := Snoc (!silents, why)
       | _ ->

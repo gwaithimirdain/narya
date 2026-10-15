@@ -343,15 +343,15 @@ and execute_source ~holes_allowed ?init_visible ?renderer file (source : Asai.Ra
   let p, src = Parser.Command.Parse.start_parse source in
   Reporter.try_with
     (fun () -> batch renderer p src `None [])
-    ~deadly:(fun d ->
+    ~fatal:(fun d ->
       match d.message with
       | Quit _ ->
           let src =
             match source with
             | `File name -> Some name
             | `String { title; _ } -> title in
-          `Return (Reporter.emit (Quit src))
-      | _ -> `Passthrough);
+          Reporter.emit (Quit src)
+      | _ -> fatal_diagnostic d);
   (Scope.get_export (), Global.current_unsolved_holes ())
 
 (* Parse, execute (if requested by Flags), and reformat (if requested by Flags) all the commands in a source. *)

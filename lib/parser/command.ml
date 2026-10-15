@@ -827,12 +827,12 @@ let show_hole = function
   | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
       let termctx, ty =
         (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)
-        Reporter.backtrack
-          ~deadly:(fun _ -> `Return (termctx, ty))
-          (fun () ->
-            let ctx = Norm.eval_ctx termctx in
-            let ety = Norm.eval_term (Ctx.env ctx) ty in
-            Readback.Displaying.run ~env:true @@ fun () -> (readback_ctx ctx, readback_val ctx ety))
+        Result.value ~default:(termctx, ty)
+        @@ Reporter.capture
+        @@ fun () ->
+        let ctx = Norm.eval_ctx termctx in
+        let ety = Norm.eval_term (Ctx.env ctx) ty in
+        Readback.Displaying.run ~env:true @@ fun () -> (readback_ctx ctx, readback_val ctx ety)
       in
       emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
@@ -1157,14 +1157,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
         Global.set_meta meta ~recursion ctm;
         let buf = Buffer.create 20 in
         PPrint.ToBuffer.compact buf (pp_complete_term data.tm `None);
-        ( Reporter.backtrack ~deadly:(fun _ ->
-              data.tm <- Wrap (parenthesize tm);
-              `Return (data.parenthesized <- true))
-        @@ fun () ->
-          let _ =
-            TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None })
-          in
-          () );
+        (match
+           Reporter.capture @@ fun () ->
+           TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None })
+         with
+        | Ok _ -> ()
+        | Error _ ->
+            data.tm <- Wrap (parenthesize tm);
+            data.parenthesized <- true);
         (Some offset, fun h -> Some (Code.Hole_solved h))
     | Split data ->
         let (Found_hole { instant; termctx; ty; vars; parametric; _ }) =
@@ -1338,8 +1338,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             in
                             let* (Wrap names) = NameBranches.get in
                             let arg_hints =
-                              Reporter.backtrack ~deadly:(fun _ -> `Return Emp) @@ fun () ->
-                              Domvars.constr_arg_hints ctx env ty in
+                              Result.value ~default:Emp
+                              @@ Reporter.capture
+                              @@ fun () -> Domvars.constr_arg_hints ctx env ty in
                             let cargs, newnames =
                               constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in
                             let* () = NameBranches.put newnames in

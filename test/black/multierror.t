@@ -985,3 +985,25 @@ But if the ascribed type fails only because it depends on something that already
      ^ non-datatype Type has no constructor named true
   
   [1]
+
+A failed empty pattern-matching lambda in one branch of a match doesn't prevent other branches from being checked.
+
+  $ narya -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]'
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]
+     ^ missing match clause for constructor true
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f (b : Bool) : Bool → Bool ≔ match b [ true. ↦ [ ] | false. ↦ x ↦ Type ]
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         Bool
+       unequal head terms:
+         Type
+       does not equal
+         Bool
+  
+  [1]

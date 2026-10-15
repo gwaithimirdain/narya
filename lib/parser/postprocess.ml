@@ -77,13 +77,15 @@ let process_ident ctx loc parts =
 let rec detect_spaceless_fields ctx loc (bwd_parts : string Bwd.t) fields found =
   match bwd_parts with
   | Emp | Snoc (Emp, _) -> found
-  | Snoc (bwd_parts, fld) ->
-      Reporter.backtrack
-        (fun () ->
-          let parts = Bwd.to_list bwd_parts in
-          let _ = process_ident ctx loc parts in
-          detect_spaceless_fields ctx loc bwd_parts (fld :: fields) ((parts, fld :: fields) :: found))
-        ~deadly:(fun _ -> `Return (detect_spaceless_fields ctx loc bwd_parts (fld :: fields) found))
+  | Snoc (bwd_parts, fld) -> (
+      match
+        Reporter.capture @@ fun () ->
+        let parts = Bwd.to_list bwd_parts in
+        let _ = process_ident ctx loc parts in
+        detect_spaceless_fields ctx loc bwd_parts (fld :: fields) ((parts, fld :: fields) :: found)
+      with
+      | Ok found -> found
+      | Error _ -> detect_spaceless_fields ctx loc bwd_parts (fld :: fields) found)
 
 (* Now the master postprocessing function.  Note that this function calls the "process" functions registered for individual notations, but those functions will be defined to call *this* function on their constituents, so we have some "open recursion" going on. *)
 
@@ -100,12 +102,12 @@ let rec process : type n lt ls rt rs.
   | Ident (parts, _) ->
       Reporter.try_with
         (fun () -> process_ident ctx loc parts)
-        ~deadly:(fun d ->
+        ~fatal:(fun d ->
           match d.message with
           | Unbound_variable (p, _) ->
               let alt = detect_spaceless_fields ctx loc (Bwd.of_list parts) [] [] in
-              `Replace (Reporter.Code.Unbound_variable (p, alt))
-          | _ -> `Passthrough)
+              fatal ?loc:d.explanation.loc (Reporter.Code.Unbound_variable (p, alt))
+          | _ -> fatal_diagnostic d)
   | Constr (ident, _) -> { value = Raw.Constr ({ value = Constr.intern ident; loc }, []); loc }
   | Field _ ->
       (* This can happen if the user tries to project a field from a constructor. *)

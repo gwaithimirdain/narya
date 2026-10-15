@@ -113,7 +113,9 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
     | Some str ->
         List.iter
           (fun x ->
-            Reporter.try_with ~deadly:(fun _ -> `Replace (Invalid_variable [ x ])) @@ fun () ->
+            Reporter.try_with ~fatal:(fun d ->
+                fatal ?loc:d.explanation.loc (Invalid_variable [ x ]))
+            @@ fun () ->
             match Lexer.single x with
             (* We require y = x so that names with surrounding whitespace, which the lexer would skip over, are also rejected, since the raw string is what gets stored in the Display state. *)
             | Some (Ident [ y ]) when y = x && Lexer.valid_var y -> ()

@@ -729,10 +729,10 @@ and unparse_codata : type mode m n a et lt ls rt rs.
   | Noeta, _ | Eta, true -> self_var_render ()
   | Eta, false -> (
       (* Try the field-variable syntax "sig (a : ..., b : a → ..., ...)", exposing the anonymous self-variable's fields as named variables.  We fall back to the self-variable syntax if a field name clashes with a name already in scope (add_fields returns None), or if a field type references the self-variable other than via a field projection ("Names.lookup" reports the Self_used bug, which we catch). *)
-      Reporter.try_with ~deadly:(fun d ->
+      Reporter.try_with ~fatal:(fun d ->
           match d.message with
-          | Self_used -> `Return (self_var_render ())
-          | _ -> `Passthrough)
+          | Self_used -> self_var_render ()
+          | _ -> fatal_diagnostic d)
       @@ fun () ->
       let field_names =
         Bwd.fold_left (fun acc { Instance.name; _ } -> acc @ [ name ]) [] instances in
@@ -1758,13 +1758,13 @@ let () =
   let open Print in
   Reporter.printer :=
     fun pr ->
-      Reporter.try_with ~deadly:(fun d ->
+      Reporter.try_with ~fatal:(fun d ->
           match d.message with
           (* A dependent error means the term depends on a part that already failed, such as a failed match branch.  Then the message we are printing is just a consequence of that failure, so we let the dependent error replace it. *)
-          | Dependent _ -> `Passthrough
+          | Dependent _ -> fatal_diagnostic d
           | _ ->
               Reporter.Code.PrintingError.read () d.message;
-              `Return (string "_UNPRINTABLE"))
+              string "_UNPRINTABLE")
       @@ fun () ->
       Readback.Displaying.run ~env:true @@ fun () ->
       match pr with
