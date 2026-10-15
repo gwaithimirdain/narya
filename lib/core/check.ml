@@ -731,7 +731,7 @@ let rec check : type mode a b s.
         | Canonical (_, Pi _, _, _), Potential _ -> check_empty_match_lam ctx ty `First
         | Canonical (_, Pi _, _, _), Kinetic l -> kinetic_of_potential l ctx tm ty "matching lambda"
         | _, _ -> check status ctx { value = Struct (Noeta, Abwd.empty); loc = tm.loc } ty)
-    | Refute (tms, i), Potential _ -> check_refute status ctx tms ty i None
+    | Refute (tms, i), Potential _ -> check_refute ctx tms i
     (* Now we go through the canonical types. *)
     | Codata (fields, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking codata" with
@@ -2074,47 +2074,41 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     hyp (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches }) in
   Potential (head, apps, hyp)
 
-(* Try matching against all the supplied terms with zero branches, producing an empty match if any succeeds and raising an error if none succeed.  Each term carries its own optional window modality. *)
+(* Refute the first of the supplied terms whose type is an empty datatype, by matching against it with zero branches.  Here "empty" means literally declared as a datatype with no constructors: we don't perform additional matches to expose a term of empty type.  Each term carries its own optional window modality.  If none of them can be refuted, an implicit refutation reports the error that matching against the first one with zero branches would produce. *)
 and check_refute : type mode a b.
-    (mode, b, potential) status ->
     (mode, a, b) Ctx.t ->
     (a synth located * string located list located option) list ->
-    (mode, kinetic) value ->
     [ `Explicit | `Implicit ] ->
-    Constr.t option ->
     (mode, b, potential) term =
- fun status ctx tms ty i missing ->
-  match tms with
-  | [] -> (
-      match i with
-      | `Implicit -> fatal (Anomaly "no discriminees to refute")
-      | `Explicit -> fatal Invalid_refutation)
-  (* If all the possibilities fail, we want to report a "missing constructor" error for the particular constructor supplied as an argument, if any, which comes from the first place where the refutation began. *)
-  | [ (tm, window_name) ] ->
-      let (Wrap window) = get_window (Ctx.mode ctx) window_name in
-      let (Locked (plus, wctx)) = Ctx.lock ctx window in
-      let stm, sty = synth (Kinetic `Nolet) wctx tm in
-      Reporter.try_with
-        (fun () -> check_nondep_match status ctx stm sty window plus Emp None [] ty tm.loc)
-        ~deadly:(fun d ->
-          match d.message with
-          | Missing_constructor_in_match _ -> (
-              match (i, missing) with
-              | `Explicit, _ -> `Replace Invalid_refutation
-              | `Implicit, Some missing -> `Replace (Missing_constructor_in_match missing)
-              | `Implicit, None -> `Passthrough)
-          | _ -> `Passthrough)
-  | (tm, window_name) :: (_ :: _ as tms) ->
-      let (Wrap window) = get_window (Ctx.mode ctx) window_name in
-      let (Locked (plus, wctx)) = Ctx.lock ctx window in
-      let stm, sty = synth (Kinetic `Nolet) wctx tm in
-      Reporter.try_with
-        (fun () -> check_nondep_match status ctx stm sty window plus Emp None [] ty tm.loc)
-        ~deadly:(fun d ->
-          match d.message with
-          | Missing_constructor_in_match c ->
-              `Return (check_refute status ctx tms ty i (Some (Option.value missing ~default:c)))
-          | _ -> `Passthrough)
+ fun ctx tms i ->
+  let rec go err = function
+    | [] -> (
+        match (i, err) with
+        | `Explicit, _ -> fatal Invalid_refutation
+        | `Implicit, Some err -> fatal err
+        | `Implicit, None -> fatal (Anomaly "no discriminees to refute"))
+    | (tm, window_name) :: tms -> (
+        let (Wrap window) = get_window (Ctx.mode ctx) window_name in
+        let (Locked (plus_lock, wctx)) = Ctx.lock ctx window in
+        let stm, sty = synth (Kinetic `Nolet) wctx tm in
+        (* The error to report if nothing can be refuted comes from the first term. *)
+        let err default = Some (Option.value err ~default) in
+        match view_type sty "check_refute" with
+        | Canonical (_, Data { constrs = Emp as constrs; recursive; _ }, ins, _) ->
+            check_window_transparency window constrs recursive;
+            Term.Match
+              {
+                window;
+                plus_lock;
+                tm = stm;
+                dim = cod_left_ins ins;
+                motive = None;
+                branches = Constr.Map.empty;
+              }
+        | Canonical (_, Data { constrs = Snoc _ as constrs; _ }, _, _) ->
+            go (err (Missing_constructor_in_match (fst (Bwd_extra.head constrs)))) tms
+        | _ -> go (err (Matching_on_nondatatype (PVal (wctx, sty)))) tms) in
+  go None tms
 
 (* Try empty-matching against each successive domain in an iterated pi-type.  For higher-dimensional pi-types, try empty-matching against each variable in the abstraction cube. *)
 and check_empty_match_lam : type mode a b.
