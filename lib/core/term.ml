@@ -210,7 +210,7 @@ module rec Term : sig
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
-    | Failed : ('mode, 'a, 'n) branch
+    | Failed_branch : ('mode, 'a, 'n) branch
 
   and (_, _) canonical =
     | Data : {
@@ -543,8 +543,8 @@ end = struct
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
-    (* A branch that the user wrote but that failed to typechek, or that the user omitted but failed to be refutable.  The error has already been reported (as mortal), so the whole command will fail; but other parts of it can still be checked, and if they evaluate the match at this constructor, they fail silently rather than reporting an anomaly as for a constructor genuinely missing from the match. *)
-    | Failed : ('mode, 'a, 'n) branch
+    (* A branch that the user wrote but that failed to typecheck, or that the user omitted but failed to be refutable, or whose constructor itself failed to typecheck.  The error has already been reported (as mortal), so the whole command will fail; but other parts of it can still be checked, and if they evaluate the match at this constructor, they fail silently rather than reporting an anomaly as for a constructor genuinely missing from the match.  We can't just use a Branch whose body is a Failed term, because the other data of a Branch (annotate, comp, perm) describe how the pattern variables extend the context, and these are computed from the constructor's type, which may be unavailable (e.g. if the constructor itself failed, its arity is unknown). *)
+    | Failed_branch : ('mode, 'a, 'n) branch
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and (_, _) canonical =

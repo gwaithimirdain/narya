@@ -196,9 +196,6 @@ let rec actions : type a. a check located option -> any_deg * a check located op
       (Any_deg ss', tm)
   | _ -> (Any_deg (id_deg D.zero), tm)
 
-(* A component of a structure that failed to typecheck.  (We give it a type annotation to distinguish it from a failed match branch.) *)
-let failed_term : type mode a s. (mode, a, s) term = Failed
-
 let is_failed : type mode a s. (mode, a, s) term -> bool = function
   | Failed -> true
   | _ -> false
@@ -1514,7 +1511,7 @@ and check_match_branches : type dom window mode a b bm.
           (fun branches
                (constr, (Checkable_branch { xs; body; env; ty } : (dom, a, m) checkable_branch)) ->
             (* A branch for a constructor that failed to typecheck fails dependently, whether or not the user supplied it. *)
-            if is_failed ty then branches |> Constr.Map.add constr Term.Failed
+            if is_failed ty then branches |> Constr.Map.add constr Term.Failed_branch
             else
               (* Create new De-Bruijn-level variables for the pattern variables to which the constructor is applied, and add corresponding De-Bruijn-index variables to the context.  The types of those variables are the domains of the constructor's function-type, evaluated at the closure environment 'env' and the previous new variables (this is what ext_pi does, walking that pi-type).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes.  We also read this branch's type indices off the residual output type. *)
               let (Ext_pi { ctx = newctx; values = newvars; normals = newnfs; annotate; comp; out })
@@ -1527,13 +1524,13 @@ and check_match_branches : type dom window mode a b bm.
                   None perm constr in
               (* Recurse into the "body" of the branch.  We catch errors and accumulate them so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed. *)
               Reporter.accumulate ~fallback:(fun () ->
-                  branches |> Constr.Map.add constr Term.Failed)
+                  branches |> Constr.Map.add constr Term.Failed_branch)
               @@ fun () ->
               match (body, motive) with
               (* In the synthesizing case, we might still have no motive, if all the synthesis failed.  In that case, the only reason we're going through this is to annotate the contexts of each branch. *)
               | Some body, None ->
                   Annotate.ctx status newctx body;
-                  branches |> Constr.Map.add constr Term.Failed
+                  branches |> Constr.Map.add constr Term.Failed_branch
               | Some body, Some motive ->
                   let cmotive = callbacks.use motive constr dim index_vals newvars in
                   let cbody = check status newctx body cmotive in
@@ -1547,7 +1544,7 @@ and check_match_branches : type dom window mode a b bm.
                   | Error err ->
                       List.iter emit err;
                       mortal (Missing_constructor_in_match constr);
-                      branches |> Constr.Map.add constr Term.Failed))
+                      branches |> Constr.Map.add constr Term.Failed_branch))
           branches check_branches in
       (* Finally, we check that all the abstractions used the correct symbol ↦ or ⤇ *)
       List.iter
@@ -1629,7 +1626,7 @@ and synth_nondep_match : type mode a b.
             when is_failed ty ->
               (* A branch for a constructor that failed to typecheck fails dependently. *)
               let motive, branches, brs = find_synthing_branch brs in
-              (motive, branches |> Constr.Map.add constr Term.Failed, brs)
+              (motive, branches |> Constr.Map.add constr Term.Failed_branch, brs)
           | (constr, (Synthable_branch { xs; body; env; ty } : (dom, a, m) synthable_branch)) :: brs
             ->
               (* This is the same preprocessing that's done for checking branches in check_match_branches. *)
@@ -1643,7 +1640,7 @@ and synth_nondep_match : type mode a b.
               (* Trap errors and accumulate them, recording this branch as failed and going on to look for other synthesizing branches. *)
               Reporter.accumulate ~fallback:(fun () ->
                   let motive, branches, brs = find_synthing_branch brs in
-                  (motive, branches |> Constr.Map.add constr Term.Failed, brs))
+                  (motive, branches |> Constr.Map.add constr Term.Failed_branch, brs))
               @@ fun () ->
               (* If the branch successfully synthesizes a type, it is the type of the entire match, so we pass in the ?synthed callback.  Importantly, therefore, the callback gets called before any other branches are typechecked.  However, that type is only valid for the whole match if it doesn't depend on the pattern variables.  We check that by reading it back into the original context, as soon as it is known.  Thus we pass our own ?synthed callback unconditionally to do this, and also call the caller's ?synthed if it exists. *)
               let synthed sty =
@@ -1877,7 +1874,7 @@ and check_var_match : type dom modality mode a b bm.
           (fun branches
                (constr, (Checkable_branch { xs; body; env; ty } : (dom, a, m) checkable_branch)) ->
             (* A branch for a constructor that failed to typecheck fails dependently, whether or not the user supplied it. *)
-            if is_failed ty then branches |> Constr.Map.add constr Term.Failed
+            if is_failed ty then branches |> Constr.Map.add constr Term.Failed_branch
             else
               (* Create new level variables for the pattern variables to which the constructor is applied, and add corresponding index variables to the context.  The types of those variables are the domains of the constructor's function-type, evaluated at the closure environment 'env' and the previous new variables (this is what ext_pi does, walking that pi-type).  For a higher-dimensional match, the new variables come with their boundaries in n-dimensional cubes. *)
               let (Ext_pi { ctx = newctx; values = newvars; normals = newnfs; annotate; comp; out })
@@ -1982,7 +1979,7 @@ and check_var_match : type dom modality mode a b bm.
                           | Some body ->
                               (* We catch and accumulate errors so that later branches can continue to be checked and produce their own errors even if earlier ones fail, recording this branch as failed. *)
                               Reporter.accumulate ~fallback:(fun () ->
-                                  branches |> Constr.Map.add constr Term.Failed)
+                                  branches |> Constr.Map.add constr Term.Failed_branch)
                               @@ fun () ->
                               let branch = check status newctx body newty in
                               branches
@@ -2033,7 +2030,7 @@ and check_var_match : type dom modality mode a b bm.
                               | Error err ->
                                   List.iter emit err;
                                   mortal (Missing_constructor_in_match constr);
-                                  branches |> Constr.Map.add constr Term.Failed))))
+                                  branches |> Constr.Map.add constr Term.Failed_branch))))
               | _ -> fatal (Anomaly "created datatype is not a datatype with all its indices"))
           Constr.Map.empty user_branches in
       List.iter
@@ -2367,7 +2364,7 @@ and check_data : type mode a b i.
       | None, Some output ->
           let crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t) =
             Reporter.accumulate ~fallback:(fun () ->
-                (`Recursive, checked_constrs |> Abwd.add c failed_term))
+                (`Recursive, checked_constrs |> Abwd.add c Failed))
             @@ fun () ->
             let Checked_tel (args, newctx), crec =
               Positivity.scope @@ fun () -> check_tel ctx args in
@@ -2402,7 +2399,7 @@ and check_data : type mode a b i.
           | Zero ->
               let crec, (checked_constrs : (Constr.t, (mode, b, kinetic) term) Abwd.t) =
                 Reporter.accumulate ~fallback:(fun () ->
-                    (`Recursive, checked_constrs |> Abwd.add c failed_term))
+                    (`Recursive, checked_constrs |> Abwd.add c Failed))
                 @@ fun () ->
                 let Checked_tel (args, newctx), crec =
                   Positivity.scope @@ fun () -> check_tel ctx args in
@@ -2416,7 +2413,7 @@ and check_data : type mode a b i.
           | Suc _ ->
               mortal (Missing_constructor_type c);
               check_data ~recursive:`Recursive ~hints ~tyfam status ctx ty num_indices
-                (checked_constrs |> Abwd.add c failed_term)
+                (checked_constrs |> Abwd.add c Failed)
                 raw_constrs))
 
 (* The argument at position i of the constant that a type is an application of, for an ImplicitApp.  It must be an ordinary 0-dimensional non-modal argument at the ambient mode; if there is no such argument, the caller reports the goal as not having the shape it was looking for. *)
@@ -2628,8 +2625,7 @@ and check_codata : type mode a b n et.
               (mode * b * D.zero * n * et) Term.CodatafieldAbwd.t
               * (mode, n, n, b, et) Fibrancy.Codata.t =
            fun adj plus_lock ->
-            let entry =
-              CodatafieldAbwd.Entry (fld, Codatafield (x, adj, plus_lock, Lower failed_term)) in
+            let entry = CodatafieldAbwd.Entry (fld, Codatafield (x, adj, plus_lock, Lower Failed)) in
             (Snoc (checked_fields, entry), Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry)
           in
           let checked_fields, fibrancy =
@@ -2678,7 +2674,7 @@ and check_codata : type mode a b n et.
             let (Locked (plus_lock, lctx)) = Ctx.lock ctx right in
             let newctx = Ctx.cube_vis lctx (Modality.filter_zero left) x (self adj) in
             let (Degctx (plusmap, _, _)) = degctx newctx (Field.dim fld) in
-            let fldty = singleton_fieldtype (Field.dim fld) plusmap failed_term in
+            let fldty = singleton_fieldtype (Field.dim fld) plusmap Failed in
             Snoc
               ( checked_fields,
                 CodatafieldAbwd.Entry
@@ -2780,7 +2776,7 @@ and check_record : type mode a f1 f2 f af d acd b n.
                     ( None,
                       Modalcell.id_adjunction (Ctx.mode ctx),
                       plus_no_lock (Ctx.mode ctx),
-                      Lower failed_term ) ) in
+                      Lower Failed ) ) in
             ( Snoc (checked_fields, entry),
               Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
               Bwv.Snoc (ctx_fields, (fld, name)) ))
@@ -3004,10 +3000,10 @@ and check_field : type mode a b c s m n mn i et.
                         (fld, Term.Structfield.Lower (adj, ctx_plus_lock, ctm, lbl)) ) ) in
               let etms, ctms =
                 match field with
-                | None -> add_field failed_term `Labeled
+                | None -> add_field Failed `Labeled
                 | Some (tm, lbl) ->
                     (* Note that if any previous fields have failed, then they are Failed in prev_etm, and so if the type of this field depends on the value of any of them, tyof_field will raise a dependent error. *)
-                    Reporter.accumulate ~fallback:(fun () -> add_field failed_term lbl) @@ fun () ->
+                    Reporter.accumulate ~fallback:(fun () -> add_field Failed lbl) @@ fun () ->
                     (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
                     let ety =
                       tyof_lower_codatafield (self_values adj prev_etm tyargs) tyargs fld adj
@@ -3246,12 +3242,12 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
             (None, tms) in
       let evals, cvals =
         match tm with
-        | None -> add_val failed_term
+        | None -> add_val Failed
         | Some tm ->
             (* Go into the location of the field right away, so that errors in dimension calculations will be labeled by the right field. *)
             with_loc tm.loc @@ fun () ->
             (* We trap any errors produced by 'tyof_field' or 'check', adding them instead to the list of accumulated errors, recording this method as Failed, and going on.  Note that if any previous fields have failed, then they are Failed in prev_etm, and so if the type of this field depends on the value of any of them, tyof_field will raise a dependent error. *)
-            Reporter.accumulate ~fallback:(fun () -> add_val failed_term) @@ fun () ->
+            Reporter.accumulate ~fallback:(fun () -> add_val Failed) @@ fun () ->
             let shuf : (mode, r, h, i) Norm.shuffleable =
               Nontrivial
                 {
