@@ -186,6 +186,7 @@ module rec Term : sig
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    | Failed : ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -514,6 +515,8 @@ end = struct
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    (* A component of a structure (such as a field of a struct, or a constructor of a datatype) that failed to typecheck, allowing the rest of the structure to be checked and used.  Evaluating it raises a dependent error. *)
+    | Failed : ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -786,6 +789,8 @@ let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = functio
           let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
           let (Wrap n) = pi_arity cod in
           Wrap (Suc n))
+  (* A constructor that failed to typecheck has no known arity, so anything that needs it fails dependently. *)
+  | Failed -> Reporter.fatal (Dependent "arity of failed constructor")
   | _ -> Wrap Zero
 
 (* Collect the binder names of the zero-dimensional pi-types on the front of a term, in order, as a plain list — the names of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to name the pattern variables when displaying a "split". *)

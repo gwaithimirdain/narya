@@ -250,7 +250,7 @@
   
   [1]
 
-Even trivial dependency blocks going on, as long as there is the potential for dependency.  Avoiding this would probably involve more laziness in function arguments.
+A later field whose type only trivially depends on a failed one can still be checked, since its type doesn't actually use the failed field.
 
   $ cat >multierr.ny <<EOF
   > axiom A:Type
@@ -272,6 +272,18 @@ Even trivial dependency blocks going on, as long as there is the potential for d
   
    ￫ info[I0000]
    ￮ constant Sigma defined
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/multierr.ny
+   5 | def foo : Sigma B (_ ↦ B) := (a, a)
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/multierr.ny
@@ -1201,5 +1213,270 @@ Diagnostics emitted during a speculative check that is discarded are not display
          B
        does not equal
          A
+  
+  [1]
+
+A component of a datatype, codatatype, record type, tuple, or comatch that fails to typecheck is recorded as failed, so that the rest of the term can still be checked and used.  Only things that use the failed component fail, and they fail silently.
+
+  $ cat >failed.ny <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def P : Bool → Type ≔ [ true. ↦ A | false. ↦ Bool ]
+  > EOF
+
+A failed constructor of a datatype makes the corresponding branches of matches fail, but not the other branches.
+
+  $ narya failed.ny -e 'def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ bad. _ ↦ true. | ok. ↦ a ]'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ bad. _ ↦ true. | ok. ↦ a ]
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ bad. _ ↦ true. | ok. ↦ a ]
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Bool
+       unequal head constants:
+         A
+       does not equal
+         Bool
+  
+  [1]
+
+Similarly, a match on that datatype can omit the failed constructor, and using the failed constructor fails silently.
+
+  $ narya failed.ny -e 'def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ ok. ↦ true. ] and h : D ≔ ok. a and g : D ≔ bad. a'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ ok. ↦ true. ] and h : D ≔ ok. a and g : D ≔ bad. a
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E1001]
+   ￭ command-line exec string
+   1 | def D : Type ≔ data [ bad. (_ : a) | ok. ] and f (x : D) : Bool ≔ match x [ ok. ↦ true. ] and h : D ≔ ok. a and g : D ≔ bad. a
+     ^ too many arguments to constructor ok (1 extra)
+  
+  [1]
+
+A duplicate constructor is reported, but the first one can still be used.
+
+  $ narya failed.ny -e 'def D : Type ≔ data [ c. | c. (_ : a) ] and f : D ≔ c.'
+   ￫ error[E1503]
+   ￭ command-line exec string
+   1 | def D : Type ≔ data [ c. | c. (_ : a) ] and f : D ≔ c.
+     ^ duplicate constructor in datatype: c
+  
+  [1]
+
+A failed field of a record type or codatatype fails only the projections of that field.
+
+  $ narya failed.ny -e 'def R : Type ≔ sig (x : a, y : Bool, z : Bool) and f : R ≔ (Type, true., a) and g (s : R) : A ≔ s .z'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def R : Type ≔ sig (x : a, y : Bool, z : Bool) and f : R ≔ (Type, true., a) and g (s : R) : A ≔ s .z
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def R : Type ≔ sig (x : a, y : Bool, z : Bool) and f : R ≔ (Type, true., a) and g (s : R) : A ≔ s .z
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Bool
+       unequal head constants:
+         A
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def R : Type ≔ sig (x : a, y : Bool, z : Bool) and f : R ≔ (Type, true., a) and g (s : R) : A ≔ s .z
+     ^ term synthesized type
+         Bool
+       but is being checked against type
+         A
+       unequal head constants:
+         Bool
+       does not equal
+         A
+  
+  [1]
+
+  $ narya failed.ny -e 'def S : Type ≔ codata [ s .x : a | s .y : Bool ] and f (s : S) : A ≔ s .y'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def S : Type ≔ codata [ s .x : a | s .y : Bool ] and f (s : S) : A ≔ s .y
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def S : Type ≔ codata [ s .x : a | s .y : Bool ] and f (s : S) : A ≔ s .y
+     ^ term synthesized type
+         Bool
+       but is being checked against type
+         A
+       unequal head constants:
+         Bool
+       does not equal
+         A
+  
+  [1]
+
+A failed field of a tuple fails only the things that need its value.  Here the second field is used, so its error is found.
+
+  $ narya failed.ny -e 'def f : A ≔ let s : sig (x : Bool, y : Bool) ≔ (a, true.) in (true. : P (s .y))'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : A ≔ let s : sig (x : Bool, y : Bool) ≔ (a, true.) in (true. : P (s .y))
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Bool
+       unequal head constants:
+         A
+       does not equal
+         Bool
+  
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def f : A ≔ let s : sig (x : Bool, y : Bool) ≔ (a, true.) in (true. : P (s .y))
+     ^ non-datatype A has no constructor named true
+  
+  [1]
+
+But here the value of the first field is needed, so the second error fails silently.
+
+  $ narya failed.ny -e 'def f : A ≔ let s : sig (x : Bool, y : Bool) ≔ (a, true.) in (true. : P (s .x))'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : A ≔ let s : sig (x : Bool, y : Bool) ≔ (a, true.) in (true. : P (s .x))
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Bool
+       unequal head constants:
+         A
+       does not equal
+         Bool
+  
+  [1]
+
+A missing field is treated like a failed one.
+
+  $ narya failed.ny -e 'def f : sig (x : Bool, y : Bool) ≔ (y ≔ a)'
+   ￫ error[E0902]
+   ￭ command-line exec string
+   1 | def f : sig (x : Bool, y : Bool) ≔ (y ≔ a)
+     ^ record field 'x' missing in tuple
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : sig (x : Bool, y : Bool) ≔ (y ≔ a)
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Bool
+       unequal head constants:
+         A
+       does not equal
+         Bool
+  
+  [1]
+
+A failed method of a comatch doesn't prevent the other methods from being checked, even corecursively.
+
+  $ narya failed.ny -e 'def S : Type ≔ codata [ s .head : Bool | s .tail : S ] and f : S ≔ [ .head ↦ a | .tail ↦ g ] and g : S ≔ [ .head ↦ true. | .tail ↦ a ]'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def S : Type ≔ codata [ s .head : Bool | s .tail : S ] and f : S ≔ [ .head ↦ a | .tail ↦ g ] and g : S ≔ [ .head ↦ true. | .tail ↦ a ]
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Bool
+       unequal head constants:
+         A
+       does not equal
+         Bool
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def S : Type ≔ codata [ s .head : Bool | s .tail : S ] and f : S ≔ [ .head ↦ a | .tail ↦ g ] and g : S ≔ [ .head ↦ true. | .tail ↦ a ]
+     ^ term synthesized type
+         A
+       but is being checked against type
+         S
+       unequal head constants:
+         A
+       does not equal
+         S
+  
+  [1]
+
+A failed modal field keeps its modality, so projecting it with the right locking modality fails silently, while projecting it with the wrong one is still an error.
+
+  $ narya -spatial -e "axiom A : Type" -e "axiom a : A" -e "def C : Type ≔ codata [ (x :♭| _) .fld : a | x .g : A ] and f (c :♭| C) : A ≔ (c :♭| _) .fld"
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def C : Type ≔ codata [ (x :♭| _) .fld : a | x .g : A ] and f (c :♭| C) : A ≔ (c :♭| _) .fld
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+  [1]
+
+  $ narya -spatial -e "axiom A : Type" -e "axiom a : A" -e "def C : Type ≔ codata [ (x :♭| _) .fld : a | x .g : A ] and f (c :♭| C) : A ≔ (c :♯| _) .fld"
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def C : Type ≔ codata [ (x :♭| _) .fld : a | x .g : A ] and f (c :♭| C) : A ≔ (c :♯| _) .fld
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E1712]
+   ￭ command-line exec string
+   1 | def C : Type ≔ codata [ (x :♭| _) .fld : a | x .g : A ] and f (c :♭| C) : A ≔ (c :♯| _) .fld
+     ^ field fld is modal with left adjoint ♭, but was projected with locking modality ♯
   
   [1]

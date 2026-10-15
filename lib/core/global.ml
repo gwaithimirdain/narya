@@ -426,19 +426,3 @@ let with_meta_definition m tm f =
   | None ->
       (* If the metavariable isn't found, that means that when we created it we didn't have a type for it.  That, in turn, means that the user doesn't have a name for it, since the metavariable is only bound to a user name in a "let rec".  So we don't need to do anything. *)
       f ()
-
-(* Temporarily set the value of a constant to produce an error, and restore it afterwards. *)
-let without_definition c err f =
-  match Constant.Table.find_opt c constants with
-  | Some old ->
-      consttable_add c (Error err);
-      Fun.protect ~finally:(fun () -> consttable_add c old) f
-  | _ -> fatal (Anomaly "missing definition in without_definition")
-
-(* Similarly, temporarily set the value of a global metavariable to produce an error. *)
-let without_meta_definition m err f =
-  match Metatable.find_opt m metas with
-  | Some old ->
-      metatable_add m (Error err);
-      Fun.protect ~finally:(fun () -> metatable_add m old) f
-  | None -> f ()

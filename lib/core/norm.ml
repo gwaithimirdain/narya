@@ -599,6 +599,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus mn) = D.plus n in
       eval (Unshift (env, mn, plusmap)) tm
   | Weaken tm -> eval (remove_top env) tm
+  (* A component that failed to typecheck has already reported its error, so we fail silently. *)
+  | Failed -> fatal (Dependent "failed component")
 
 and eval_with_boundary : type mode m a.
     (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =

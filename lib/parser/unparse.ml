@@ -249,6 +249,7 @@ let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   | Unact (_, tm) -> synths tm
   | Shift (_, _, tm) -> synths tm
   | Weaken tm -> synths tm
+  | Failed -> false
 
 (* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
 let show_ins : type nk n k. (nk, n, k) insertion -> int list =
@@ -588,6 +589,8 @@ let rec unparse : type mode n lt ls rt rs s.
   | Unact (_, tm) -> unparse vars tm li ri
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
   | Weaken tm -> unparse (Names.remove vars Now) tm li ri
+  (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
+  | Failed -> fatal (Dependent "unparsing failed component")
 
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =

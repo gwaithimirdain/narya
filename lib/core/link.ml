@@ -72,6 +72,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Unact (o, tm) -> Unact (o, term f tm)
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
   | Weaken tm -> Weaken (term f tm)
+  | Failed -> Failed
 
 and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, a, n) branch =
  fun f br ->
