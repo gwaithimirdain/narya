@@ -1501,6 +1501,18 @@ let accumulate ~fallback ?passthrough f =
           fallback ())
     f
 
+(* [scope] and [accumulate] never discard errors; they just delay reporting them in order to accumulate more errors.  However, sometimes we may want to run some code speculatively, and if it fails try something else, such that if the second try succeeds the errors in the first try are completely discarded.  This would be a simple application of [collect]/[uncollect] except that we always want to report bugs in Narya, even if they appear in a speculative branch.  Thus, we define [capture]/[replay] as versions of [collect]/[uncollect] that let bugs through.  [capture] also fatalizes: it considers itself to have failed if any mortal errors were reported. *)
+let capture (f : unit -> 'a) : ('a, Code.t Asai.Diagnostic.t Bwd.t) Result.t =
+  match collect ~passthrough:is_bug f with
+  | Ok x, Emp -> Ok x
+  | Ok _, (Snoc _ as errs) -> Error errs
+  | Error e, errs -> Error (Snoc (errs, e))
+
+(* Report errors captured by [capture], and then fail silently since they were fatal.  Note that this fails silently even if passed an empty list, but [capture] never returns an empty list as an [Error] result. *)
+let replay (errs : Code.t Asai.Diagnostic.t Bwd.t) : 'a =
+  Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ errs ];
+  fatalize_with "replay" errs
+
 (* Another thing we may want to do is to catch some *specific* fatal/mortal errors and either recover from them or replace them by a different error.  For instance, the specific error may be a missing De Bruijn level, which would normally be a bug, but is interpreted by a specific caller as a failure of an occurs-check.  For this purpose, [try_with] supplies a "deadly" handler that indicates whether that a fatal or mortal error should be propagated as usual (retaining its status), blocked and a specific result returned instead, or some other error raised instead (with the same status).  It also allows overriding the "emit" handler locally. *)
 let try_with : type res.
     ?emit:(Code.t Asai.Diagnostic.t -> unit) ->
@@ -1559,19 +1571,3 @@ let display_bwd ?use_ansi ?output (errs : Code.t Asai.Diagnostic.t Bwd.t) =
 
 let display ?use_ansi ?output (err : Code.t Asai.Diagnostic.t) =
   display_bwd ?use_ansi ?output (Snoc (Emp, err))
-
-(* Run a callback speculatively, capturing rather than reporting any errors it produces, both mortal and fatal.  It succeeds only if it returns without any errors; otherwise we get all its errors, which the caller can report later with [replay] if it decides to.  Inside the callback, [moribund] refers only to errors produced by the callback.  Bugs are not captured, since they indicate a problem that shouldn't be hidden by succeeding along some other path: if one occurs, all the errors are passed on as if there were no capture. *)
-let capture (f : unit -> 'a) : ('a, Code.t Asai.Diagnostic.t Bwd.t) Result.t =
-  match collect f with
-  | Ok x, Emp -> Ok x
-  | (result, errs) as collected ->
-      let all =
-        match result with
-        | Ok _ -> errs
-        | Error d -> Snoc (errs, d) in
-      if Bwd.exists is_bug all then Ok (uncollect collected) else Error all
-
-(* Report errors captured by [capture], and then fail silently since they were fatal. *)
-let replay (errs : Code.t Asai.Diagnostic.t Bwd.t) : 'a =
-  Mbwd.miter (fun [ e ] -> mortal_diagnostic e) [ errs ];
-  fatalize_with "replay" errs
