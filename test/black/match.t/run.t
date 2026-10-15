@@ -272,7 +272,35 @@
    1 | def foo3 (x : bool) (y : unit) : ⊥ ≔ match x, y [ ]
      ^ missing match clause for constructor true
   
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def foo3 (x : bool) (y : unit) : ⊥ ≔ match x, y [ ]
+     ^ missing match clause for constructor false
+  
   [1]
+
+A refutation only matches against a discriminee whose type is literally an empty datatype; it doesn't perform additional matches to expose a term of empty type.  But discriminees that aren't of empty type, or even of a datatype at all, are skipped over.
+
+  $ narya -e 'def ⊥ : Type ≔ data [ ]' -e 'def ⊔ (A B : Type) : Type ≔ data [ inl. (_ : A) | inr. (_ : B) ]' -e 'def abort2 (A : Type) (u : ⊔ ⊥ ⊥) : A ≔ match u [ ]'
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def abort2 (A : Type) (u : ⊔ ⊥ ⊥) : A ≔ match u [ ]
+     ^ missing match clause for constructor inl
+  
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def abort2 (A : Type) (u : ⊔ ⊥ ⊥) : A ≔ match u [ ]
+     ^ missing match clause for constructor inr
+  
+  [1]
+
+  $ narya -v -e 'def ⊥ : Type ≔ data [ ]' -e 'def nd (A : Type) (f : A → A) (x : ⊥) : A ≔ match f, x [ ]'
+   ￫ info[I0000]
+   ￮ constant ⊥ defined
+  
+   ￫ info[I0000]
+   ￮ constant nd defined
+  
 
   $ narya -e 'def bool : Type ≔ data [ true. | false. ]' -e 'def foo (x : bool) : bool ≔ match x [ true. ↦ false. | false. y ↦ true. ]'
    ￫ error[E1303]
@@ -311,6 +339,11 @@
    ￭ command-line exec string
    1 | def foo : bool → bool → bool ≔ [ ]
      ^ missing match clause for constructor true
+  
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def foo : bool → bool → bool ≔ [ ]
+     ^ missing match clause for constructor false
   
   [1]
 
