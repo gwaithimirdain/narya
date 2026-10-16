@@ -377,8 +377,7 @@ and batch renderer failed p src cdns ws =
       let result, ps = Reporter.collect ~delay_emits:false (fun () -> execute_command cmd) in
       (match result with
       | Error d when not (is_quit d) -> failed := true
-      | _ ->
-          if not (Bwd.is_empty (Reporter.pending_errors ~recoverable:true ps)) then failed := true);
+      | _ -> if not (Bwd.is_empty (Reporter.pending_errors ps)) then failed := true);
       (* We discard the offset and hole information, since this is not used in interactive mode. *)
       Reporter.accumulate
         ~fallback:(fun () -> ())

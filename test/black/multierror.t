@@ -1049,7 +1049,7 @@ A failed empty pattern-matching lambda in one branch of a match doesn't prevent 
   
   [1]
 
-Mismatches in cube abstraction symbols are just syntax restrictions, so they are fully recoverable.
+Mismatches in cube abstraction symbols are just syntax restrictions, so checking goes on normally after reporting them.
 
   $ narya -e "axiom A:Type" -e "def sum (X Y:Type) : Type ≔ data [ left. (_:X) | right. (_:Y) ]" -e "def foo (u:sum A A) : Type ≔ match u [ left. _ ⤇ A | right. _ ⤇ A ]"
    ￫ error[E0508]
@@ -1077,7 +1077,7 @@ Mismatches in cube abstraction symbols are just syntax restrictions, so they are
   
   [1]
 
-A recoverable error doesn't cause the part of the term containing it to fail, so later parts that depend on it can still be checked.
+Such an error doesn't cause the part of the term containing it to fail, so later parts that depend on it can still be checked.
 
   $ narya ascmismatch.ny -e 'def r1 : sig (b : Bool → Bool, c : P (b true.)) ≔ (x ⤇ x, q)'
    ￫ error[E0508]
@@ -1099,7 +1099,7 @@ A recoverable error doesn't cause the part of the term containing it to fail, so
   
   [1]
 
-The same holds for an ascription that is wrong in a way that is recoverable because the term checks against the outer type.
+The same holds for a wrong ascription on a term that checks against the outer type.
 
   $ narya ascmismatch.ny -e 'def r2 : sig (b : Bool, c : P b) ≔ ((true. : P true.), q)'
    ￫ error[E0401]
@@ -1133,7 +1133,40 @@ The same holds for an ascription that is wrong in a way that is recoverable beca
   
   [1]
 
-Similarly, an echo isn't displayed, and neither a definition nor its holes are reported, if there are any errors, even recoverable ones.
+However, a speculative check fails if it reports any error at all.  Thus, a calc step is checked in reverse if its proof has any error when checked forwards, and if it also has an error when checked in reverse, the errors from checking it forwards are reported.
+
+  $ cat >calcrev.ny <<EOF
+  > axiom A : Type
+  > axiom x : A
+  > axiom y : A
+  > axiom p : Id A y x
+  > def yx : Id A x y ≔ calc
+  >   x
+  >   = y
+  >       by ((u ⤇ p) : A → Id A y x) x ∎
+  > EOF
+
+  $ narya calcrev.ny
+   ￫ error[E0508]
+   ￭ $TESTCASE_ROOT/calcrev.ny
+   8 |       by ((u ⤇ p) : A → Id A y x) x ∎
+     ^ cube abstraction not allowed for zero-dimensional function
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/calcrev.ny
+   8 |       by ((u ⤇ p) : A → Id A y x) x ∎
+     ^ term synthesized type
+         Id A y x
+       but is being checked against type
+         Id A x y
+       unequal head constants:
+         y
+       does not equal
+         x
+  
+  [1]
+
+An echo isn't displayed, and neither a definition nor its holes are reported, if there are any errors, even ones that didn't make any part of the term fail.
 
   $ narya ascmismatch.ny -e 'echo ((x ⤇ x) : Bool → Bool)'
    ￫ error[E0508]

@@ -45,8 +45,8 @@ let check (tm : string) (ty : (test_mode, kinetic) value) : (test_mode, kinetic)
 let expect_error ?print ?code ?short (success : string) (f : unit -> unit) : unit =
   let errs =
     match Reporter.collect f with
-    | Ok (), ps -> Reporter.pending_errors ~recoverable:true ps
-    | Error d, ps -> Snoc (Reporter.pending_errors ~recoverable:true ps, d) in
+    | Ok (), ps -> Reporter.pending_errors ps
+    | Error d, ps -> Snoc (Reporter.pending_errors ps, d) in
   match Bwd_extra.to_list_map Fun.id errs with
   | [] -> raise (Failure success)
   | d :: _ ->
