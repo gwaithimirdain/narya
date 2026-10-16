@@ -2689,7 +2689,7 @@ and check_codata : type mode a b n et.
               | Some (Any_adjunction adj) -> (
                   (* Recording the failed field with its own adjunction involves locking and degenerating the context, which might fail if, for instance, the modality is nonparametric; in that case we use the identity adjunction instead. *)
                   Reporter.accumulate ~fallback:(fun () ->
-                      Reporter.discard
+                      Reporter.discard_errors
                         ~fallback:(fun () -> failed (Modalcell.id_adjunction (Ctx.mode ctx)))
                         (fun () -> failed adj))
                   @@ fun () ->

@@ -1540,8 +1540,8 @@ let replay (ps : pending Bwd.t) : 'a =
   release ps;
   fatalize_with "replay" (pending_errors ps)
 
-(* Like [capture], but if there are any errors, discard them and return a fallback computation. *)
-let discard (f : unit -> 'a) ~(fallback : unit -> 'a) : 'a =
+(* Like [capture], but if there are any errors, discard them and return the result of a fallback computation. *)
+let discard_errors (f : unit -> 'a) ~(fallback : unit -> 'a) : 'a =
   match capture f with
   | Ok x -> x
   | Error _ -> fallback ()

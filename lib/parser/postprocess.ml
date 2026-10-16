@@ -78,7 +78,7 @@ let rec detect_spaceless_fields ctx loc (bwd_parts : string Bwd.t) fields found 
   match bwd_parts with
   | Emp | Snoc (Emp, _) -> found
   | Snoc (bwd_parts, fld) ->
-      Reporter.discard
+      Reporter.discard_errors
         (fun () ->
           let parts = Bwd.to_list bwd_parts in
           ignore (process_ident ctx loc parts);
