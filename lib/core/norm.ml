@@ -760,6 +760,18 @@ and tyof_app : type dom modality mode k n.
     (k, (dom, kinetic) value) CubeOf.t ->
     (mode, kinetic) value =
  fun cods fns filter args ->
+  let mode = Modality.src (Modality.filter_modality filter) in
+  tyof_app_lazy cods fns filter
+    (CubeOf.mmap { map = (fun _ [ v ] -> defer mode (fun () -> Val v)) } [ args ])
+
+(* Like tyof_app, but with arguments that may not yet have been evaluated.  They are forced only if the function is higher-dimensional (so that its boundary has to be applied to them) or if the codomain uses them. *)
+and tyof_app_lazy : type dom modality mode k n.
+    (n, mode * modality * dom) BindCube.t ->
+    (D.zero, n, n, mode normal) TubeOf.t ->
+    (dom, modality, mode, k, n) Modality.filter_dim ->
+    (k, (dom, kinetic) lazy_eval) CubeOf.t ->
+    (mode, kinetic) value =
+ fun cods fns filter args ->
   let out_arg_tbl = Hashtbl.create 10 in
   let out_args =
     TubeOf.mmap
@@ -768,7 +780,9 @@ and tyof_app : type dom modality mode k n.
           (fun fa [ { tm = afn; ty = _ } ] ->
             let fa = sface_of_tface fa in
             let (Filter_sface (fb, bf)) = Modality.filter_sface filter fa in
-            let tmargs = CubeOf.subcube fb args in
+            let tmargs =
+              CubeOf.mmap { map = (fun _ [ a ] -> force_eval_term a) } [ CubeOf.subcube fb args ]
+            in
             let (BindFam b) = BindCube.find cods fa in
             let tm = apply_term afn bf tmargs in
             let cod = apply_binder_term b bf tmargs in
@@ -787,7 +801,8 @@ and tyof_app : type dom modality mode k n.
       }
       [ fns ] in
   let (BindFam b) = BindCube.find_top cods in
-  inst (apply_binder_term b filter args) out_args
+  let (Val cod) = apply_binder_lazy b filter args in
+  inst cod out_args
 
 (* Compute a field of a structure (or a fibrant type).  The modality is the left adjoint of the field's adjunction: the term being projected lives at its source mode (behind a lock by it), and the projection at its target mode.  For ordinary fields it is the identity. *)
 and field : type src f mode n k nk s.

@@ -4089,13 +4089,13 @@ and synth_apps : type mode a b.
           Annotate.tm ctx asfn.value);
       synth_apps ctx asfn aty afn aargs
 
-(* This is a common subroutine for synth_app and synth_inst that picks up a whole cube of arguments and checks their types.  Since in one case we need a cube of values and the other case a cube of normals, we let the caller choose. *)
+(* This is a common subroutine for synth_app and synth_inst that picks up a whole cube of arguments and checks their types.  The checked arguments are evaluated lazily, since often their values aren't needed (e.g. if the codomain is non-dependent).  Since in one case we need a cube of lazy values and the other case a cube of normals, we let the caller choose, given each lazy value and its type. *)
 and synth_arg_cube : type dom modality mode a b n c.
     not_enough:Reporter.Code.t ->
     which:string ->
     (mode, a, b) Ctx.t ->
     (dom, modality, mode) Modality.t ->
-    ((dom, kinetic) value -> dom normal -> c) ->
+    ((dom, kinetic) lazy_eval -> (dom, kinetic) value -> c) ->
     (n, (dom, kinetic) value) CubeOf.t ->
     Asai.Range.t option
     * a check located
@@ -4135,7 +4135,7 @@ and synth_arg_cube : type dom modality mode a b n c.
     | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
         fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
   in
-  (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it, producing Cubes of checked terms and values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go.  We thread the leftover arguments through the cube iteration in a mutable reference. *)
+  (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it lazily, producing Cubes of checked terms and lazy values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go, forcing them only when they are used to instantiate such a type.  We thread the leftover arguments through the cube iteration in a mutable reference. *)
   let eargtbl = Hashtbl.create 10 in
   let state = ref (sfnloc, fn, args) in
   let first = ref true in
@@ -4153,9 +4153,11 @@ and synth_arg_cube : type dom modality mode a b n c.
                    {
                      build =
                        (fun fc ->
-                         Hashtbl.find eargtbl (SFace_of (comp_sface fa (sface_of_tface fc))));
+                         let etm, ety =
+                           Hashtbl.find eargtbl (SFace_of (comp_sface fa (sface_of_tface fc))) in
+                         { tm = force_eval_term etm; ty = Lazy.from_val ety });
                    }) in
-            let ctm, tm =
+            let ctm, etm =
               match (pface_of_sface fa, taken_args) with
               (* If we are synthesizing the implicit boundary and this is a proper face, we look up the corresponding normal value, check that it has the correct type, and read it back to get the required checked term. *)
               | `Proper pfa, Given (toploc, nk, argtyargs) ->
@@ -4174,7 +4176,7 @@ and synth_arg_cube : type dom modality mode a b n c.
                                  why;
                                }));
                   let ctm = readback_at Kinetic lctx etm (Lazy.force ety) in
-                  (ctm, etm)
+                  (ctm, ready (Val etm))
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
               | _ ->
                   let tm =
@@ -4202,13 +4204,11 @@ and synth_arg_cube : type dom modality mode a b n c.
                     | Some value -> { value; loc = tm.loc }
                     | None -> fatal ?loc:tm.loc Invalid_nullary_application in
                   let ctm = check (Kinetic `Nolet) lctx tm ty in
-                  let etm = eval_term (Ctx.env lctx) ctm in
-                  (ctm, etm) in
-            (* In both cases, we store the resulting value term as a normal in the hashtable of previous values, to use in instantiating later types. *)
-            let ntm = { tm; ty = Lazy.from_val ty } in
-            Hashtbl.add eargtbl (SFace_of fa) ntm;
+                  (ctm, lazy_eval (Ctx.env lctx) ctm) in
+            (* In both cases, we store the resulting lazy value with its type in the hashtable of previous values, to use in instantiating later types. *)
+            Hashtbl.add eargtbl (SFace_of fa) (etm, ty);
             first := false;
-            [ ctm; choose tm ntm ]);
+            [ ctm; choose etm ty ]);
       }
       [ doms ] (Cons (Cons Nil)) in
   ((Modal (modality, plus, cargs), eargs), !state)
@@ -4230,10 +4230,10 @@ and synth_app : type dom modality mode a b k n.
   let (cargs, eargs), (newloc, newfn, rest) =
     synth_arg_cube ~not_enough:Not_enough_arguments_to_function
       ~which:"higher-dimensional application" ctx (Modality.filter_modality filter)
-      (fun tm _ -> tm)
+      (fun etm _ -> etm)
       doms (sfn.loc, fn, args) in
-  (* Evaluate cod at these evaluated arguments and instantiate it at the appropriate values of tyargs. *)
-  let output = tyof_app cods tyargs filter eargs in
+  (* Evaluate cod at these lazily evaluated arguments and instantiate it at the appropriate values of tyargs. *)
+  let output = tyof_app_lazy cods tyargs filter eargs in
   ( { value = Term.App (Kinetic, sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
     output,
     newfn,
@@ -4276,7 +4276,7 @@ and synth_inst : type mode a b n.
                   let (Modal (Path (Zero, _), Plus_lock (Zero _, Zero), cargs), eargs), s =
                     synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation
                       ~which:"instantiation" ctx idm
-                      (fun _ ntm -> ntm)
+                      (fun etm ty -> { tm = force_eval_term etm; ty = Lazy.from_val ty })
                       doms !state in
                   state := s;
                   [ (cargs : (nminusone, (mode, b, kinetic) term) CubeOf.t); eargs ])
