@@ -2241,14 +2241,18 @@ and check_empty_match_lam : type mode a b.
             (fun () ->
               Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst))
             ~fatal:(fun d ->
-              match d.message with
-              | Invalid_refutation -> (
-                  let firstty = firstty <|> Anomaly "missing firstty in checking []" in
-                  match view_type firstty "is_empty" with
-                  | Canonical (_, Data { constrs; _ }, _, _) -> missing_constructors constrs
-                  | _ ->
-                      fatal ?loc:d.explanation.loc (Matching_on_nondatatype (PVal (wctx, firstty))))
-              | _ -> fatal_diagnostic d))
+              if
+                Reporter.accumulates
+                  (function
+                    | Invalid_refutation -> true
+                    | _ -> false)
+                  d
+              then
+                let firstty = firstty <|> Anomaly "missing firstty in checking []" in
+                match view_type firstty "empty_match_lam" with
+                | Canonical (_, Data { constrs; _ }, _, _) -> missing_constructors constrs
+                | _ -> fatal (Matching_on_nondatatype (PVal (wctx, firstty)))
+              else fatal_diagnostic d))
   | _ -> fatal Invalid_refutation
 
 (* If a type is an empty datatype, return its dimension. *)
