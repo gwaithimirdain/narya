@@ -561,6 +561,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                 (Anomaly
                    (Printf.sprintf "constructor %s missing from compiled match"
                       (Constr.to_string name)))
+          (* A branch that failed to typecheck has already reported its error, so we fail silently. *)
+          | Some Failed_branch -> fatal (Dependent "failed match branch")
           | Some (Branch { annotate; comp; perm; tm }) -> (
               let total_dim = D.plus_out (Modality.filtered env_dim fw) plus_dim in
               match D.compare constr_dim total_dim with
@@ -597,6 +599,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus mn) = D.plus n in
       eval (Unshift (env, mn, plusmap)) tm
   | Weaken tm -> eval (remove_top env) tm
+  (* A component that failed to typecheck has already reported its error, so we fail silently. *)
+  | Failed -> fatal (Dependent "failed component")
 
 and eval_with_boundary : type mode m a.
     (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =
