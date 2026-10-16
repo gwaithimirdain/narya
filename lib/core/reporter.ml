@@ -1396,30 +1396,30 @@ let modalcell_fatal : type a. string -> modality_error -> a =
 (* After a "fatal" error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  Specifically, we introduce "mortal" errors, which will eventually kill the program, but allow it to continue doing more checking to accumulate more errors.  A mortal error should be raised instead of a fatal one if there is something sensible that could be returned to allow typechecking to continue elsewhere, e.g. a branch of a match statement that doesn't typecheck can be marked as failing while other branches can continue to be typechecked.  Reporting a mortal error is an effect instead of an exception.  The reported errors are collected by a handler (see [collect] below), such as the one around each command, which is "moribund" if at least one error has been reported inside it.  Some mortal errors leave nothing to mark as failed at all, e.g. if the user wrote ⤇ where ↦ was expected, in which case checking simply continues. *)
 
 (* An error or other diagnostic that has been reported but whose reporting has been delayed by [collect] below.  Non-error diagnostics that are emitted with Asai's [emit] (such as warnings) are also delayed, so that they can be discarded along with errors if a computation is speculative. *)
-type pending = Mortal of Code.t Asai.Diagnostic.t | Emitted of Code.t Asai.Diagnostic.t
+type pending = [ `Mortal of Code.t Asai.Diagnostic.t | `Emitted of Code.t Asai.Diagnostic.t ]
 
 type _ Effect.t +=
-  | Report : pending -> unit Effect.t
+  | Mortal : Code.t Asai.Diagnostic.t -> unit Effect.t
   | Moribund : Code.t Asai.Diagnostic.t Bwd.t Effect.t
 
 (* Select the errors from a list of pending diagnostics. *)
 let pending_errors (ps : pending Bwd.t) : Code.t Asai.Diagnostic.t Bwd.t =
   Bwd.filter_map
     (function
-      | Mortal d -> Some d
-      | Emitted _ -> None)
+      | `Mortal d -> Some d
+      | `Emitted _ -> None)
     ps
 
 (* Whether any errors have been reported inside the innermost [collect], such as the one around each command.  This is appropriate for deciding whether to display output that would only be meaningful if there were no errors at all. *)
 let moribund () = not (Bwd.is_empty (perform Moribund))
 
 (* Raise a mortal error whose diagnostic is already constructed. *)
-let mortal_diagnostic d = perform (Report (Mortal d))
+let mortal_diagnostic d = perform (Mortal d)
 
 (* Pass on a pending diagnostic outwards, as if it were reported again here. *)
 let release_one = function
-  | Emitted d -> emit_diagnostic d
-  | p -> perform (Report p)
+  | `Emitted d -> emit_diagnostic d
+  | `Mortal d -> mortal_diagnostic d
 
 let release (ps : pending Bwd.t) = Mbwd.miter (fun [ p ] -> release_one p) [ ps ]
 
@@ -1435,11 +1435,11 @@ let fatalize_with why errs =
 
 (* Formatting the message of a diagnostic can raise a fatal dependent error, if it involves printing a term that depends on a part that already failed (see Unparse.printer).  If that happens while formatting the message of a mortal error, we convert the fatal dependent error to a mortal one, replacing the one we were trying to format. *)
 let make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
-  (* Note that [mortal_diagnostic] is *not* inside the [try_with].  This means that if a mortal-error handler discontinues its continuation with a fatal error, that fatal error won't be caught here. *)
   Delegate.try_with
     (fun () -> diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
     ~fatal:(fun d -> if is_dependent d then d else fatal_diagnostic d)
 
+(* When raising a new mortal error, however, we do not put the call to [mortal_diagnostic] inside the [try_with] above.  This means that if a mortal-error handler discontinues its continuation with a fatal error, that fatal error won't be caught here. *)
 let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
   mortal_diagnostic (make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg)
 
@@ -1452,11 +1452,11 @@ let collect ?(delay_emits = true) ?passthrough (f : unit -> 'a) :
     | Some test -> test d
     | None -> false in
   match
-    (* The nesting of [try_with] and [try] doesn't matter, since one catches only fatal errors and emits and the other catches only Report and Moribund effects.  However, they do have to be nested inside the outer exception handler, since fatal errors are implemented as exceptions. *)
+    (* The nesting of [try_with] and [try] doesn't matter, since one catches only fatal errors and emits and the other catches only Mortal and Moribund effects.  However, they do have to be nested inside the outer exception handler, since fatal errors are implemented as exceptions. *)
     Delegate.try_with
       ~emit:(fun d ->
         if passes d || not delay_emits then emit_diagnostic d
-        else pendings := Snoc (!pendings, Emitted d))
+        else pendings := Snoc (!pendings, `Emitted d))
       ~fatal:(fun d ->
         if passes d then (
           release !pendings;
@@ -1464,10 +1464,8 @@ let collect ?(delay_emits = true) ?passthrough (f : unit -> 'a) :
         else Result.Error d)
     @@ fun () ->
     try Ok (f ()) with
-    | effect Report p, k ->
-        (match p with
-        | (Mortal d | Emitted d) when passes d -> release_one p
-        | _ -> pendings := Snoc (!pendings, p));
+    | effect Mortal p, k ->
+        if passes p then release_one (`Mortal p) else pendings := Snoc (!pendings, `Mortal p);
         continue k ()
     | effect Moribund, k -> continue k (pending_errors !pendings)
   with
@@ -1504,11 +1502,8 @@ let run ?init_loc ?(init_backtrace = Emp) ~fatal ~emit f =
     | Emp -> result
     | Snoc _ as errs -> fatal errs
   with
-  | effect Report (Emitted d), k ->
-      emit_diagnostic d;
-      continue k ()
-  | effect Report p, k ->
-      pendings := Snoc (!pendings, p);
+  | effect Mortal p, k ->
+      pendings := Snoc (!pendings, `Mortal p);
       continue k ()
   | effect Moribund, k -> continue k (errors ())
 
@@ -1530,7 +1525,7 @@ let speculate (f : unit -> 'a) : ('a * pending Bwd.t, pending Bwd.t) Result.t =
   match collect ~passthrough:is_bug f with
   | Ok x, ps when Bwd.is_empty (pending_errors ps) -> Ok (x, ps)
   | Ok _, ps -> Error ps
-  | Error e, ps -> Error (Snoc (ps, Mortal e))
+  | Error e, ps -> Error (Snoc (ps, `Mortal e))
 
 (* [capture] is like [speculate], but in the case of success it releases the pending diagnostics immediately. *)
 let capture (f : unit -> 'a) : ('a, pending Bwd.t) Result.t =
