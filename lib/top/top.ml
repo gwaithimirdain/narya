@@ -176,7 +176,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
                   "command-line exec string" content in
               `String in
         (* Within an input, we go on after a failing command, but if an input had any errors we stop, since later inputs may depend on it. *)
-        if Reporter.moribund ~recoverable:true () then Reporter.fatal (Fatalize "input");
+        if Reporter.moribund () then Reporter.fatal (Fatalize "input");
         if Global.unsolved_holes () > 0 then Reporter.fatal (Open_holes_remaining source))
       [ !inputs ];
     (* Interactive mode also has all the other units loaded.  Note that this should affect the "Top" origin. *)

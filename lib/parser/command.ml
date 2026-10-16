@@ -934,7 +934,6 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
   (match (Origin.current (), needs_interactive cmd) with
   | Top, true | File _, true -> fatal (Forbidden_interactive_command (to_string cmd))
   | _ -> ());
-  Reporter.fatalize_after @@ fun () ->
   match cmd with
   | Axiom { name; nonparam; loc; parameters; ty = Wrap ty; _ } ->
       Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
@@ -1048,7 +1047,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                           No.Interval.entire)) in
           let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let uty = unparse names bty No.Interval.entire No.Interval.entire in
-          if not (moribund ~recoverable:true ()) then
+          if not (moribund ()) then
             !echo_output
               PPrint.(
                 hang 2

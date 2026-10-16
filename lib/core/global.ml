@@ -293,7 +293,7 @@ let end_command (offset, make_msg) =
       | _ -> `Nonparametric in
     { h with parametric } in
   (* If the command had any errors, it will fail, so its holes won't exist; thus we don't display either the message about the command or the hole goals. *)
-  let failed = moribund ~recoverable:true () in
+  let failed = moribund () in
   if not failed then Option.iter emit (make_msg (Bwd.length d.current_holes));
   Mbwd.miter
     (fun [ ({ meta = Meta.Wrap m; printable; _ } : Command_state.hole) ] ->
@@ -310,17 +310,20 @@ let end_command (offset, make_msg) =
         (Meta.hole_number meta, startpos, endpos))
       d.current_holes )
 
-(* Run a command.  The different versions correspond to the Origin command functions that they call. *)
+(* Run a command.  If it reports any errors, even if it returns, it fails with a silent fatal error.  This has to happen inside the Origin command functions, so that in interactive mode they undo its effects, such as definitions with failed parts or partially failed hole solutions. *)
+let in_command init f =
+  Reporter.failing_on_errors ~why:"command" @@ fun () ->
+  Current_command.run ~init @@ fun () -> end_command (f ())
+
+(* The different versions correspond to the Origin command functions that they call. *)
 
 let run_command ~holes_allowed f =
   Origin.do_command @@ fun () ->
-  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric = `Maybe_parametric }
-  @@ fun () -> end_command (f ())
+  in_command { holes_allowed; current_holes = Emp; parametric = `Maybe_parametric } f
 
 let run_command_then_undo ~holes_allowed f =
   Origin.do_command_then_undo @@ fun () ->
-  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric = `Maybe_parametric }
-  @@ fun () -> end_command (f ())
+  in_command { holes_allowed; current_holes = Emp; parametric = `Maybe_parametric } f
 
 (* In the rewind cases, we have to restore the parametric-ness information from the past also. *)
 let rewind_command ~parametric ~holes_allowed instant f =
@@ -329,8 +332,7 @@ let rewind_command ~parametric ~holes_allowed instant f =
     | `Parametric -> `Must_be_parametric
     | `Nonparametric -> `Nonparametric in
   Origin.rewind_command instant @@ fun () ->
-  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric } @@ fun () ->
-  end_command (f ())
+  in_command { holes_allowed; current_holes = Emp; parametric } f
 
 let rewind_command_then_undo ~parametric ~holes_allowed instant f =
   let parametric =
@@ -338,8 +340,7 @@ let rewind_command_then_undo ~parametric ~holes_allowed instant f =
     | `Parametric -> `Must_be_parametric
     | `Nonparametric -> `Nonparametric in
   Origin.rewind_command_then_undo instant @@ fun () ->
-  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric } @@ fun () ->
-  end_command (f ())
+  in_command { holes_allowed; current_holes = Emp; parametric } f
 
 (* For white box testing *)
 let run f =

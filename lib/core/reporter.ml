@@ -1393,9 +1393,9 @@ let modalcell_fatal : type a. string -> modality_error -> a =
       fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
         (Mode_mismatch (`User, str, a, Some (`Hsrc m.value), b))
 
-(* After a "fatal" error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  Specifically, we introduce "mortal" errors, which will eventually kill the program, but allow it to continue doing more checking to accumulate more errors.  A mortal error should be raised instead of a fatal one if there is something sensible that could be returned to allow typechecking to continue elsewhere, e.g. a branch of a match statement that doesn't typecheck can be marked as failing while other branches can continue to be typechecked.  Reporting a mortal error is an effect instead of an exception.  A scope (see [scope] below) is "moribund" if at least one mortal error has been reported inside it.
+(* After a "fatal" error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  Specifically, we introduce "mortal" errors, which will eventually kill the program, but allow it to continue doing more checking to accumulate more errors.  A mortal error should be raised instead of a fatal one if there is something sensible that could be returned to allow typechecking to continue elsewhere, e.g. a branch of a match statement that doesn't typecheck can be marked as failing while other branches can continue to be typechecked.  Reporting a mortal error is an effect instead of an exception.  The reported errors are collected by a handler (see [collect] below), such as the one around each command, which is "moribund" if at least one error has been reported inside it.
 
-   Some errors are even less serious: they are "recoverable" if what is returned from the place where they are reported is exactly as good as if they hadn't occurred, e.g. the user wrote ⤇ where ↦ was expected, or ascribed the wrong type to a term that nevertheless checks against the type it was expected to have.  A recoverable error will still eventually kill the program, but it doesn't make its scope moribund, so that the part of the term containing it can still be used normally. *)
+   Some errors are even less serious: they are "recoverable" if what is returned from the place where they are reported is exactly as good as if they hadn't occurred, e.g. the user wrote ⤇ where ↦ was expected, or ascribed the wrong type to a term that nevertheless checks against the type it was expected to have.  A recoverable error will still eventually kill the program, but it doesn't count as a failure of a speculative computation (see [speculate] below), so that the part of the term containing it can still be used normally. *)
 
 (* An error or other diagnostic that has been reported but whose reporting has been delayed by [collect] below.  Non-error diagnostics that are emitted with Asai's [emit] (such as warnings) are also delayed, so that they can be discarded along with errors if a computation is speculative. *)
 type pending =
@@ -1405,10 +1405,9 @@ type pending =
 
 type _ Effect.t +=
   | Report : pending -> unit Effect.t
-  | (* The mortal errors reported in the current scope, also including the recoverable ones if the argument is true. *)
+  | (* The errors, mortal and recoverable, reported inside the innermost [collect]. *)
       Moribund :
-      bool
-      -> Code.t Asai.Diagnostic.t Bwd.t Effect.t
+      Code.t Asai.Diagnostic.t Bwd.t Effect.t
 
 (* Select the errors from a list of pending diagnostics, possibly including the recoverable ones. *)
 let pending_errors ~recoverable (ps : pending Bwd.t) : Code.t Asai.Diagnostic.t Bwd.t =
@@ -1419,8 +1418,8 @@ let pending_errors ~recoverable (ps : pending Bwd.t) : Code.t Asai.Diagnostic.t 
       | Recoverable _ | Emitted _ -> None)
     ps
 
-(* Whether the current scope (see [scope] below) is moribund.  With [~recoverable:true], it also counts as moribund if it has reported any recoverable errors; this is appropriate for deciding whether to display output that would only be meaningful if there were no errors at all. *)
-let moribund ?(recoverable = false) () = not (Bwd.is_empty (perform (Moribund recoverable)))
+(* Whether any errors, mortal or recoverable, have been reported inside the innermost [collect], such as the one around each command.  This is appropriate for deciding whether to display output that would only be meaningful if there were no errors at all. *)
+let moribund () = not (Bwd.is_empty (perform Moribund))
 
 (* Raise a mortal error whose diagnostic is already constructed. *)
 let mortal_diagnostic d = perform (Report (Mortal d))
@@ -1438,20 +1437,9 @@ let is_dependent (d : Code.t Asai.Diagnostic.t) =
   | Dependent _ -> true
   | _ -> false
 
-(* The other kind of silent error is a fatalization error, which indicates that the accumulation of mortal errors is complete, at least locally, and the part of the term that they occurred in should now fail fatally.  When raising such an error, however, if *all* the accumulated mortal errors that it fatalizes were themselves dependent, then the failure should be considered dependent too. *)
+(* The other kind of silent error is a fatalization error, which indicates that some errors have been reported as mortal, and the part of the term that they occurred in should now fail fatally.  When raising such an error, however, if *all* the mortal errors that it fatalizes were themselves dependent, then the failure should be considered dependent too. *)
 let fatalize_with why errs =
   if Bwd.for_all is_dependent errs then fatal (Dependent why) else fatal (Fatalize why)
-
-(* If the current scope is moribund (has accumulated some mortal errors), kill it by raising a silent fatal error based on those mortal errors.  This propagates like any fatal error, so it can be caught by an enclosing scope.  Recoverable errors don't count. *)
-let fatalize ?(why = "fatalize") () =
-  match perform (Moribund false) with
-  | Emp -> ()
-  | errs -> fatalize_with why errs
-
-let fatalize_after f =
-  let result = f () in
-  fatalize ();
-  result
 
 (* Formatting the message of a diagnostic can raise a fatal dependent error, if it involves printing a term that depends on a part that already failed (see Unparse.printer).  If that happens while formatting the message of a mortal error, we convert the fatal dependent error to a mortal one, replacing the one we were trying to format. *)
 let make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
@@ -1467,7 +1455,7 @@ let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
 let recoverable ?severity ?loc ?text ?backtrace ?extra_remarks msg =
   perform (Report (Recoverable (make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg)))
 
-(* Open a scope that delays all reported mortal and recoverable errors, and all emitted diagnostics.  Returns the result of the body, or a fatal error it raised, together with everything reported inside it, in order.  Inside the body, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost.  If [delay_emits] is false, emitted diagnostics are passed through immediately rather than delayed; this is appropriate when nothing is speculative.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost. *)
+(* Delay all mortal and recoverable errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost.  If [delay_emits] is false, emitted diagnostics are passed through immediately rather than delayed; this is appropriate when nothing is speculative.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost. *)
 let collect ?(delay_emits = true) ?passthrough (f : unit -> 'a) :
     ('a, Code.t Asai.Diagnostic.t) Result.t * pending Bwd.t =
   let pendings = ref Emp in
@@ -1493,7 +1481,7 @@ let collect ?(delay_emits = true) ?passthrough (f : unit -> 'a) :
         | (Mortal d | Recoverable d | Emitted d) when passes d -> release_one p
         | _ -> pendings := Snoc (!pendings, p));
         continue k ()
-    | effect Moribund recoverable, k -> continue k (pending_errors ~recoverable !pendings)
+    | effect Moribund, k -> continue k (pending_errors ~recoverable:true !pendings)
   with
   | result -> (result, !pendings)
   | exception exn ->
@@ -1508,18 +1496,15 @@ let uncollect (result, ps) =
   | Result.Ok x -> x
   | Error d -> fatal_diagnostic d
 
-(* Combining these two, we simply delimit a scope for [moribund] and [fatalize].  Inside this scope, the program counts as moribund only if a mortal error has been reported inside that same scope.  The mortal errors are passed outwards to the next enclosing scope when it ends, remaining merely mortal. *)
-let scope f = uncollect (collect f)
-
-(* As [scope], but if any mortal errors are encountered, raise a (silent) fatal error at the end, even if the body returned a partial result.  This is appropriate for anything that can keep checking its later parts after an error in an earlier one, but should not be returned with some parts missing.  Recoverable errors are just passed on. *)
-let scoped ?(why = "scoped") f =
-  match collect f with
-  | Ok _, ps when not (Bwd.is_empty (pending_errors ~recoverable:false ps)) ->
+(* Run a callback that should fail if it reports any errors, mortal or recoverable, even if it returns a result.  This is appropriate for a unit of work, such as a command, that shouldn't take effect if it had any errors.  The errors are passed on outwards, followed by a (silent) fatal error. *)
+let failing_on_errors ?(why = "failing_on_errors") f =
+  match collect ~delay_emits:false f with
+  | Ok _, ps when not (Bwd.is_empty (pending_errors ~recoverable:true ps)) ->
       release ps;
-      fatalize_with why (pending_errors ~recoverable:false ps)
+      fatalize_with why (pending_errors ~recoverable:true ps)
   | collected -> uncollect collected
 
-(* [run] is like [scoped], defining a scope for mortal errors that fails at the end if any errors were reported, including recoverable ones.  But it is an outermost scope, never passing errors further out.  Instead, if it ever sees a fatal error, or if execution terminates with at least one mortal or recoverable error reported, it passes all the accumulated errors to its [fatal] argument (which therefore takes a bwd of diagnostics, not a single one).  Emitted diagnostics are passed to its [emit] argument immediately. *)
+(* [run] is like [failing_on_errors], delimiting a region whose reported errors make it fail at the end.  But it is outermost, never passing errors further out.  Instead, if it ever sees a fatal error, or if execution terminates with at least one mortal or recoverable error reported, it passes all the accumulated errors to its [fatal] argument (which therefore takes a bwd of diagnostics, not a single one).  Emitted diagnostics are passed to its [emit] argument immediately. *)
 let run ?init_loc ?(init_backtrace = Emp) ~fatal ~emit f =
   let pendings : pending Bwd.t ref = ref Emp in
   let errors () = pending_errors ~recoverable:true !pendings in
@@ -1537,7 +1522,7 @@ let run ?init_loc ?(init_backtrace = Emp) ~fatal ~emit f =
   | effect Report p, k ->
       pendings := Snoc (!pendings, p);
       continue k ()
-  | effect Moribund recoverable, k -> continue k (pending_errors ~recoverable !pendings)
+  | effect Moribund, k -> continue k (errors ())
 
 (* We can locally declare that fatal errors should become merely mortal, so that we can continue to find more.  But we have to give a fallback result in that case.  We also allow a filter that passes some fatal errors through as fatal.  *)
 let accumulate ~fallback ?passthrough f =
@@ -1550,7 +1535,7 @@ let accumulate ~fallback ?passthrough f =
           fallback ())
     f
 
-(* [scope] and [accumulate] never discard errors; they just delay reporting them in order to accumulate more errors.  However, sometimes we may want to run some code speculatively, and if it fails try something else, such that if the second try succeeds the errors in the first try are completely discarded.  However, we always want to report bugs in Narya, even if they appear in a speculative branch, so we give [collect] a [passthrough] argument that lets bugs through.
+(* [collect] and [accumulate] never discard errors; they just delay reporting them in order to accumulate more errors.  However, sometimes we may want to run some code speculatively, and if it fails try something else, such that if the second try succeeds the errors in the first try are completely discarded.  However, we always want to report bugs in Narya, even if they appear in a speculative branch, so we give [collect] a [passthrough] argument that lets bugs through.
 
    [speculate] considers itself to have failed if any mortal errors were reported, but not if only recoverable ones were.  Its return value is either a success, together with any recoverable errors and other emitted diagnostics, or a list of pending diagnostics containing at least one mortal error (a fatal error being included as a mortal one).  In both cases, the caller should either discard or [release] the pending diagnostics. *)
 let speculate (f : unit -> 'a) : ('a * pending Bwd.t, pending Bwd.t) Result.t =
@@ -1587,7 +1572,7 @@ let discard (f : unit -> 'a) ~(fallback : unit -> 'a) : 'a =
   | Ok x -> x
   | Error _ -> fallback ()
 
-(* Another thing we may want to do is to catch some *specific* fatal errors and either recover from them or replace them by a different error.  For instance, the specific error may be a missing De Bruijn level, which would normally be a bug, but is interpreted by a specific caller as a failure of an occurs-check.  For this we use Asai's [try_with] (included above from [Delegate]), whose [fatal] handler can return a result, re-raise the error with [fatal_diagnostic], or raise a different one.  This deliberately doesn't see mortal errors: a mortal error means that something inside has already failed and been dealt with locally, so it's not a failure of the callback as a whole.  In particular, it does not define a scope for mortal errors.  To ask whether a callback succeeded at all, without any errors, use [capture] instead. *)
+(* Another thing we may want to do is to catch some *specific* fatal errors and either recover from them or replace them by a different error.  For instance, the specific error may be a missing De Bruijn level, which would normally be a bug, but is interpreted by a specific caller as a failure of an occurs-check.  For this we use Asai's [try_with] (included above from [Delegate]), whose [fatal] handler can return a result, re-raise the error with [fatal_diagnostic], or raise a different one.  This deliberately doesn't see mortal errors: a mortal error means that something inside has already failed and been dealt with locally, so it's not a failure of the callback as a whole.  In particular, it doesn't affect what [moribund] sees.  To ask whether a callback succeeded at all, without any errors, use [capture] instead. *)
 
 (* When displaying an accumulated list of errors, we display all the constituent errors, except for the silent ones.  Except that if all the errors were silent, we report where the silent ones came from. *)
 

@@ -414,9 +414,11 @@ let check_window_transparency : type dom window mode k a.
 (* Report every constructor of a datatype as missing from an empty match that failed to refute anything, as a non-empty match would report each constructor it lacks. *)
 let missing_constructors : type a b. (Constr.t, a) Abwd.t -> b =
  fun constrs ->
-  List.iter (fun (c, _) -> mortal (Missing_constructor_in_match c)) (Bwd.to_list constrs);
-  fatalize ~why:"missing_constructors" ();
-  fatal (Anomaly "no constructors to report missing")
+  match Bwd.to_list constrs with
+  | [] -> fatal (Anomaly "no constructors to report missing")
+  | constrs ->
+      List.iter (fun (c, _) -> mortal (Missing_constructor_in_match c)) constrs;
+      fatal (Fatalize "missing_constructors")
 
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential). *)
 let rec check : type mode a b s.
@@ -1669,8 +1671,7 @@ and synth_nondep_match : type mode a b.
               (c, Checkable_branch { xs; body; env; ty }) :: cbs)
             synth_branches check_branches in
         (motive, branches, check_branches) in
-      (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch.  We delimit a scope so that if no motive was found, we can tell whether that was because of errors in this match. *)
-      Reporter.scope @@ fun () ->
+      (* Now using that callback, we pass off to the subroutine.  Since this match is non-dependent, the "use" and "return" callbacks can just return the type we have computed by synthesizing a branch. *)
       let result, motive =
         check_match_branches status ctx tm varty window plus_lock brs i highers loc
           (Motive
@@ -1682,9 +1683,8 @@ and synth_nondep_match : type mode a b.
              }) in
       match motive with
       | None ->
-          (* If we didn't get a type, we can't proceed. *)
-          fatalize ~why:"synth_nondep_match" ();
-          fatal (Anomaly "synth_nondep_match: no synthesized type of match but no errors")
+          (* If we didn't get a type, we can't proceed.  But every synthesizing branch failed, either with an error that was reported mortally, or because its constructor failed, so this failure is a consequence of those. *)
+          fatal (Dependent "synth_nondep_match")
       | Some motive -> (result, motive))
 
 (* Check a dependently typed match, with motive supplied by the user.  (Thus we have to typecheck the motive as well.)  *)
