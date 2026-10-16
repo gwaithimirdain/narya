@@ -456,17 +456,12 @@ let rec repl terminal history buf =
         let* () = Lwt_io.flush Lwt_io.stdout in
         let use_ansi = if !use_ansi then Some true else None in
         (* In interactive mode, we display all messages verbosely, and don't quit on fatal errors except for the Quit command. *)
-        ( Reporter.try_with
-            ~emit:(fun d -> Reporter.display ?use_ansi ~output:stdout d)
-            ~fatal:(fun d ->
+        ( Reporter.run ~emit:(Reporter.display ?use_ansi ~output:stdout)
+            ~mortal:(Reporter.display ?use_ansi ~output:stdout) ~fatal:(fun _ d ->
               Reporter.display ?use_ansi ~output:stdout d;
-              if
-                Reporter.accumulates
-                  (function
-                    | Quit _ -> true
-                    | _ -> false)
-                  d
-              then exit 0)
+              match d.message with
+              | Quit _ -> exit 0
+              | _ -> ())
         @@ fun () ->
           match Command.parse_single str with
           | _, Some cmd ->
@@ -501,16 +496,13 @@ let interact () =
           let* () = LTerm_history.save history history_file in
           Lwt.fail exn)
 
-let rec print_error_locs (d : Reporter.Code.t Asai.Diagnostic.t) =
-  match d.message with
-  | Accumulated (_name, msgs) -> Mbwd.miter (fun [ e ] -> print_error_locs e) [ msgs ]
-  | _ -> (
-      match d.explanation.loc with
-      | Some loc -> (
-          match Asai.Range.view loc with
-          | `Range (s, e) -> Format.printf "%d %d\n" s.offset e.offset
-          | `End_of_file p -> Format.printf "%d\n" p.offset)
-      | None -> ())
+let print_error_locs (d : Reporter.Code.t Asai.Diagnostic.t) =
+  match d.explanation.loc with
+  | Some loc -> (
+      match Asai.Range.view loc with
+      | `Range (s, e) -> Format.printf "%d %d\n" s.offset e.offset
+      | `End_of_file p -> Format.printf "%d\n" p.offset)
+  | None -> ()
 
 (* In ProofGeneral interaction mode, the prompt is delimited by formfeeds, and commands are ended by a formfeed on a line by itself.  This prevents any possibility of collision with other input or output.  This doesn't require initialization. *)
 let rec interact_pg () : unit =
@@ -530,16 +522,17 @@ let rec interact_pg () : unit =
     let cmd = Buffer.contents buf in
     let holes = ref Emp in
     Display.modify (fun s -> { s with holes = `With_number });
-    Reporter.try_with
+    Reporter.run
     (* ProofGeneral sets TERM=dumb, but in fact it can display ANSI colors, so we tell Asai to override TERM and use colors unconditionally. *)
       ~emit:(fun d ->
         match d.message with
         | Hole _ -> holes := Snoc (!holes, d.message)
         | _ -> Reporter.display ~use_ansi:true ~output:stdout d)
-      ~fatal:(fun d ->
+      ~mortal:(Reporter.display ~use_ansi:true ~output:stdout)
+      ~fatal:(fun errs d ->
         Reporter.display ~use_ansi:true ~output:stdout d;
         Format.printf "\x0C[errors]\x0C\n%!";
-        print_error_locs d)
+        Mbwd.miter (fun [ d ] -> print_error_locs d) [ Snoc (errs, d) ])
       (fun () ->
         try
           match Command.parse_single cmd with
@@ -673,9 +666,11 @@ let () =
           if try FileUtil.test Is_file file with _ -> false then `File file
           else `String { title = Some "command line fake-interact"; content = file } in
         let p, src = Parser.Command.Parse.start_parse source in
-        Reporter.try_with ~emit:(Reporter.display ?use_ansi ~output:stdout)
-          ~fatal:(Reporter.display ?use_ansi ~output:stdout) (fun () ->
-            Execute.batch None p src `None []))
+        Reporter.run
+          ~emit:(Reporter.display ?use_ansi ~output:stdout)
+          ~mortal:(Reporter.display ?use_ansi ~output:stdout)
+          ~fatal:(fun _ d -> Reporter.display ?use_ansi ~output:stdout d)
+          (fun () -> Execute.batch None (ref false) p src `None []))
       [ !fake_interacts ];
     if !interactive then Lwt_main.run (interact ())
     else if !proofgeneral then (

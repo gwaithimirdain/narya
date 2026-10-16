@@ -186,6 +186,7 @@ module rec Term : sig
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    | Failed : ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -209,6 +210,7 @@ module rec Term : sig
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
+    | Failed_branch : ('mode, 'a, 'n) branch
 
   and (_, _) canonical =
     | Data : {
@@ -513,6 +515,8 @@ end = struct
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    (* A component of a structure (such as a field of a struct, or a constructor of a datatype) that failed to typecheck, allowing the rest of the structure to be checked and used.  Evaluating it raises a dependent error. *)
+    | Failed : ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -539,6 +543,8 @@ end = struct
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
+    (* A branch that the user wrote but that failed to typecheck, or that the user omitted but failed to be refutable, or whose constructor itself failed to typecheck.  The error has already been reported (as mortal), so the whole command will fail; but other parts of it can still be checked, and if they evaluate the match at this constructor, they fail silently rather than reporting an anomaly as for a constructor genuinely missing from the match.  We can't just use a Branch whose body is a Failed term, because the other data of a Branch (annotate, comp, perm) describe how the pattern variables extend the context, and these are computed from the constructor's type, which may be unavailable (e.g. if the constructor itself failed, its arity is unknown). *)
+    | Failed_branch : ('mode, 'a, 'n) branch
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and (_, _) canonical =
@@ -783,6 +789,8 @@ let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = functio
           let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
           let (Wrap n) = pi_arity cod in
           Wrap (Suc n))
+  (* A constructor that failed to typecheck has no known arity, so anything that needs it fails dependently. *)
+  | Failed -> Reporter.fatal (Dependent "arity of failed constructor")
   | _ -> Wrap Zero
 
 (* Collect the binder names of the zero-dimensional pi-types on the front of a term, in order, as a plain list — the names of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to name the pattern variables when displaying a "split". *)

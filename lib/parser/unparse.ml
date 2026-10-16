@@ -249,6 +249,7 @@ let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   | Unact (_, tm) -> synths tm
   | Shift (_, _, tm) -> synths tm
   | Weaken tm -> synths tm
+  | Failed -> false
 
 (* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
 let show_ins : type nk n k. (nk, n, k) insertion -> int list =
@@ -588,6 +589,8 @@ let rec unparse : type mode n lt ls rt rs s.
   | Unact (_, tm) -> unparse vars tm li ri
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
   | Weaken tm -> unparse (Names.remove vars Now) tm li ri
+  (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
+  | Failed -> fatal (Dependent "unparsing failed component")
 
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
@@ -884,7 +887,9 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
             let is_cube = function
               | Names.Cube_var _ -> true
               | Names.Boundary_var _ -> false in
-            acc <: (pat, ubody, List.exists is_cube xs, List.exists (fun x -> not (is_cube x)) xs))
+            acc <: (pat, ubody, List.exists is_cube xs, List.exists (fun x -> not (is_cube x)) xs)
+        (* A failed branch can only be displayed in an error message of the command whose checking failed.  We don't have names for its pattern variables, so we just omit it. *)
+        | Term.Failed_branch -> acc)
       branches Emp in
   (* A higher-dimensional match displays with the cube abstraction ⤇, unless some of its pattern variables were given explicit boundaries and none of them are cube variables, in which case it displays with the ordinary abstraction ↦.  (A branch with no pattern variables at all, such as that of a constant constructor, says nothing about which of these to use, so it follows the other branches.) *)
   let mapsto =
@@ -1757,8 +1762,12 @@ let () =
   Reporter.printer :=
     fun pr ->
       Reporter.try_with ~fatal:(fun d ->
-          Reporter.Code.PrintingError.read () d.message;
-          string "_UNPRINTABLE")
+          match d.message with
+          (* A dependent error means the term depends on a part that already failed, such as a failed match branch.  Then the message we are printing is just a consequence of that failure, so we let the dependent error replace it. *)
+          | Dependent _ -> fatal_diagnostic d
+          | _ ->
+              Reporter.Code.PrintingError.read () d.message;
+              string "_UNPRINTABLE")
       @@ fun () ->
       Readback.Displaying.run ~env:true @@ fun () ->
       match pr with
