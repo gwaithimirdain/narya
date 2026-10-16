@@ -125,9 +125,6 @@ A command that fails is undone, even if it fails only after recording a partial 
    ￫ info[I0001]
    ￮ axiom A assumed
   
-   ￫ info[I0006]
-   ￮ 1 command undone
-  
    ￫ error[E0505]
    ￭ undo-fail.ny
    2 | def f : Type := Type Type
@@ -137,6 +134,9 @@ A command that fails is undone, even if it fails only after recording a partial 
    ￭ undo-fail.ny
    3 | def B : Type := sig (x : Type, y : Type Type)
      ^ can't apply/instantiate a zero-dimensional type Type
+  
+   ￫ info[I0006]
+   ￮ 1 command undone
   
    ￫ error[E0300]
    ￭ undo-fail.ny
@@ -166,11 +166,11 @@ A hole solution that fails is undone
      ----------------------------------------------------------------------
      S
   
-  s .x
-    : Type
-  
    ￫ error[E0902]
    ￭ solve-fail.ny
    3 | solve 0 := (x := Type)
      ^ record field 'y' missing in tuple
+  
+  s .x
+    : Type
   

@@ -1490,22 +1490,19 @@ let failing_on_errors ?(why = "failing_on_errors") f =
       fatalize_with why (pending_errors ps)
   | collected -> uncollect collected
 
-(* [run] is like [failing_on_errors], delimiting a region whose reported errors make it fail at the end.  But it is outermost, never passing errors further out.  Instead, if it ever sees a fatal error, or if execution terminates with at least one mortal error reported, it passes all the accumulated errors to its [fatal] argument (which therefore takes a bwd of diagnostics, not a single one).  Emitted diagnostics are passed to its [emit] argument immediately. *)
-let run ?init_loc ?(init_backtrace = Emp) ~fatal ~emit f =
-  let pendings : pending Bwd.t ref = ref Emp in
-  let errors () = pending_errors !pendings in
-  Delegate.run ?init_loc ~init_backtrace ~emit ~fatal:(fun err -> fatal (Snoc (errors (), err)))
-  @@ fun () ->
+(* [run] is like [failing_on_errors], delimiting a region whose reported errors make it fail at the end.  But it is outermost, never passing errors further out, and "reporting" all emissions and errors to appropriately-named handlers right away as they occur.  The [~emit] and [~mortal] handlers receive one diagnostic and return [unit].  The [~fatal] handler receives a bwd of *already-reported* mortal errors (in case it wants to summarize them in some way) along with one new fatal error, and must return the same type as the body.  If the body raises mortal errors but completes without a fatal error, [~fatal] is called with the silent fatal error [Fatalize]. *)
+let run ?init_loc ?init_backtrace ~fatal ~mortal ~emit f =
+  let errors : Code.t Asai.Diagnostic.t Bwd.t ref = ref Emp in
+  Delegate.run ?init_loc ?init_backtrace ~emit ~fatal:(fatal !errors) @@ fun () ->
   try
     let result = f () in
-    match errors () with
-    | Emp -> result
-    | Snoc _ as errs -> fatal errs
+    if Bwd.is_empty !errors then result else fatal !errors (diagnostic (Fatalize "run"))
   with
   | effect Mortal p, k ->
-      pendings := Snoc (!pendings, `Mortal p);
+      mortal p;
+      errors := Snoc (!errors, p);
       continue k ()
-  | effect Moribund, k -> continue k (errors ())
+  | effect Moribund, k -> continue k !errors
 
 (* We can locally declare that fatal errors should become merely mortal, so that we can continue to find more.  But we have to give a fallback result in that case.  We also allow a filter that passes some fatal errors through as fatal.  *)
 let accumulate ~fallback ?passthrough f =
@@ -1518,9 +1515,7 @@ let accumulate ~fallback ?passthrough f =
           fallback ())
     f
 
-(* [collect] and [accumulate] never discard errors; they just delay reporting them in order to accumulate more errors.  However, sometimes we may want to run some code speculatively, and if it fails try something else, such that if the second try succeeds the errors in the first try are completely discarded.  However, we always want to report bugs in Narya, even if they appear in a speculative branch, so we give [collect] a [passthrough] argument that lets bugs through.
-
-   [speculate] considers itself to have failed if any mortal errors were reported.  Its return value is either a success, together with any emitted diagnostics, or a list of pending diagnostics containing at least one mortal error (a fatal error being included as a mortal one).  In both cases, the caller should either discard or [release] the pending diagnostics. *)
+(* Sometimes we may want to run some code speculatively, and if it fails try something else, such that if the second try succeeds the errors in the first try are completely discarded.  We can define this [speculate] in terms of [collect].  However, we always want to report bugs in Narya, even if they appear in a speculative branch, so we give [collect] a [passthrough] argument that lets bugs through.  [speculate] considers itself to have failed if any mortal errors were reported.  Its return value is either a success, together with any emitted diagnostics containing no mortal errors, or a list of pending diagnostics containing at least one mortal error (a fatal error being included as a mortal one).  In both cases, the caller should either discard or [release] the pending diagnostics. *)
 let speculate (f : unit -> 'a) : ('a * pending Bwd.t, pending Bwd.t) Result.t =
   match collect ~passthrough:is_bug f with
   | Ok x, ps when Bwd.is_empty (pending_errors ps) -> Ok (x, ps)
@@ -1535,7 +1530,7 @@ let capture (f : unit -> 'a) : ('a, pending Bwd.t) Result.t =
       Ok x
   | Error ps -> Error ps
 
-(* Report errors captured by [capture] or [speculate], and then fail silently since they were collectively fatal.  Note that this should only be passed a list containing at least one mortal error, as [capture] and [speculate] return when they fail. *)
+(* Report errors captured by [capture] or [speculate], and then fail silently since they were collectively fatal.  Note that this should only be passed a list containing at least one mortal error, such as [capture] and [speculate] return when they fail. *)
 let replay (ps : pending Bwd.t) : 'a =
   release ps;
   fatalize_with "replay" (pending_errors ps)
@@ -1552,23 +1547,8 @@ let discard_errors (f : unit -> 'a) ~(fallback : unit -> 'a) : 'a =
 
 module Terminal = Asai.Tty.Make (Code)
 
-let display_bwd ?use_ansi ?output (errs : Code.t Asai.Diagnostic.t Bwd.t) =
-  let silents = ref Emp in
-  let nonsilent = ref false in
-  Mbwd.miter
-    (fun [ (e : Code.t Asai.Diagnostic.t) ] ->
-      try_with ~fatal:(fun _ -> ()) @@ fun () ->
-      match e.message with
-      | Dependent why | Fatalize why -> silents := Snoc (!silents, why)
-      | _ ->
-          nonsilent := true;
-          Terminal.display ?use_ansi ?output e)
-    [ errs ];
-  if not !nonsilent then
-    Terminal.display ?use_ansi ?output
-      (diagnostic
-         (Anomaly
-            ("unexpected empty error accumulation: " ^ String.concat ", " (Bwd.to_list !silents))))
-
-let display ?use_ansi ?output (err : Code.t Asai.Diagnostic.t) =
-  display_bwd ?use_ansi ?output (Snoc (Emp, err))
+let display ?use_ansi ?output (e : Code.t Asai.Diagnostic.t) =
+  try_with ~fatal:(fun _ -> ()) @@ fun () ->
+  match e.message with
+  | Dependent _ | Fatalize _ -> ()
+  | _ -> Terminal.display ?use_ansi ?output e

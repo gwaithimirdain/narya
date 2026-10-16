@@ -101,8 +101,9 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
       ~emit:(fun d ->
         if !verbose || d.severity = Error || d.severity = Warning then
           Reporter.display ?use_ansi ~output:stderr d)
-      ~fatal:(fun d ->
-        Reporter.display_bwd ?use_ansi ~output:stderr d;
+      ~mortal:(Reporter.display ?use_ansi ~output:stderr)
+      ~fatal:(fun _ d ->
+        Reporter.display ?use_ansi ~output:stderr d;
         raise Exit)
   @@ fun () ->
     if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [0,9]");
@@ -127,8 +128,9 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
     ~emit:(fun d ->
       if !verbose || d.severity = Error || d.severity = Warning then
         Reporter.display ?use_ansi ~output:stderr d)
-    ~fatal:(fun d ->
-      Reporter.display_bwd ?use_ansi ~output:stderr d;
+    ~mortal:(Reporter.display ?use_ansi ~output:stderr)
+    ~fatal:(fun _ d ->
+      Reporter.display ?use_ansi ~output:stderr d;
       raise Exit)
   @@ fun () ->
   (* Some anomalies are thrown as Failure instead because they're in code that's defined before Reporter. *)

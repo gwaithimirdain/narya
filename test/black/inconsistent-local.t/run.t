@@ -81,8 +81,26 @@
   
 
   $ narya -v -parametric -direction p,rel,Br -discrete-local inconsistency.ny
+   ￫ error[E1709]
+   ￮ modality ∇ is not tangible
+  
+   ￫ error[E1709]
+   ￮ modality ∇ is not tangible
+  
+   ￫ error[E1709]
+   ￮ modality ∇ is not tangible
+  
+   ￫ error[E1709]
+   ￮ modality ∇ is not tangible
+  
+   ￫ error[E1709]
+   ￮ modality ∇ is not tangible
+  
    ￫ info[I0000]
    ￮ constant eq defined
+  
+   ￫ error[E1709]
+   ￮ modality ∇ is not tangible
   
    ￫ info[I0000]
    ￮ constant 𝔹 defined
@@ -105,6 +123,9 @@
    ￫ info[I0000]
    ￮ constant ap defined
   
+   ￫ error[E1709]
+   ￮ modality ∇ is not tangible
+  
    ￫ info[I0000]
    ￮ constant ⊘ defined
   
@@ -113,26 +134,5 @@
   
   oops
     : ⊘
-  
-   ￫ error[E1709]
-   ￮ modality ∇ is not tangible
-  
-   ￫ error[E1709]
-   ￮ modality ∇ is not tangible
-  
-   ￫ error[E1709]
-   ￮ modality ∇ is not tangible
-  
-   ￫ error[E1709]
-   ￮ modality ∇ is not tangible
-  
-   ￫ error[E1709]
-   ￮ modality ∇ is not tangible
-  
-   ￫ error[E1709]
-   ￮ modality ∇ is not tangible
-  
-   ￫ error[E1709]
-   ￮ modality ∇ is not tangible
   
   [1]

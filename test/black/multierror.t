@@ -1636,13 +1636,13 @@ When checking a file, a failing command doesn't prevent later commands from bein
    ￫ info[I0000]
    ￮ constant Bool defined
   
-   ￫ info[I0000]
-   ￮ constant g defined
-  
    ￫ error[E1000]
    ￭ $TESTCASE_ROOT/cmds.ny
    4 | def f : A ≔ true.
      ^ non-datatype A has no constructor named true
+  
+   ￫ info[I0000]
+   ￮ constant g defined
   
    ￫ error[E0401]
    ￭ $TESTCASE_ROOT/cmds.ny

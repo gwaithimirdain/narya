@@ -118,8 +118,12 @@ let run f =
   Readback.Displaying.run ~env:false @@ fun () ->
   Positivity.run @@ fun () ->
   Dim.Endpoints.set ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true ~hott:false;
-  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
-      Reporter.display_bwd d;
+  Reporter.run ~emit:Reporter.display
+    ~mortal:(fun d ->
+      Reporter.display d;
+      raise (Failure "Fatal error"))
+    ~fatal:(fun _ d ->
+      Reporter.display d;
       raise (Failure "Fatal error"))
   @@ fun () ->
   Subtype.run @@ fun () ->

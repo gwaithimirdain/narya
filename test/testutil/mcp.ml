@@ -22,8 +22,12 @@ let parse_term names (tm : string) =
 
 let synth (tm : string) : (test_mode, kinetic) value * (test_mode, kinetic) value =
   let (Ctx (ctx, names)) = !context in
-  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
-      Reporter.display_bwd d;
+  Reporter.run ~emit:Reporter.display
+    ~mortal:(fun d ->
+      Reporter.display d;
+      raise (Failure "Failed to synthesize"))
+    ~fatal:(fun _ d ->
+      Reporter.display d;
       raise (Failure "Failed to synthesize"))
   @@ fun () ->
   match parse_term names tm with
@@ -35,8 +39,12 @@ let synth (tm : string) : (test_mode, kinetic) value * (test_mode, kinetic) valu
 
 let check (tm : string) (ty : (test_mode, kinetic) value) : (test_mode, kinetic) value =
   let (Ctx (ctx, names)) = !context in
-  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
-      Reporter.display_bwd d;
+  Reporter.run ~emit:Reporter.display
+    ~mortal:(fun d ->
+      Reporter.display d;
+      raise (Failure "Failed to check"))
+    ~fatal:(fun _ d ->
+      Reporter.display d;
       raise (Failure "Failed to check"))
   @@ fun () -> eval_term (Ctx.env ctx) (Check.check (Kinetic `Nolet) ctx (parse_term names tm) ty)
 
