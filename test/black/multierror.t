@@ -1669,3 +1669,128 @@ When checking a file, a failing command doesn't prevent later commands from bein
          A
   
   [1]
+
+A failed argument of a function or constructor doesn't prevent the other arguments from being checked, as long as their types don't depend on it.  The output type of the application can also be used if it doesn't depend on the failed argument.
+
+  $ cat >args.ny <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom C : Type
+  > axiom a : A
+  > axiom c : C
+  > def List (X : Type) : Type ≔ data [ nil. | cons. (x : X) (xs : List X) ]
+  > EOF
+
+  $ narya args.ny -e 'axiom f : A → C → A' -e 'def t : C ≔ f c a'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : C ≔ f c a
+     ^ term synthesized type
+         C
+       but is being checked against type
+         A
+       unequal head constants:
+         C
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : C ≔ f c a
+     ^ term synthesized type
+         A
+       but is being checked against type
+         C
+       unequal head constants:
+         A
+       does not equal
+         C
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : C ≔ f c a
+     ^ term synthesized type
+         A
+       but is being checked against type
+         C
+       unequal head constants:
+         A
+       does not equal
+         C
+  
+  [1]
+
+Here the type of the second argument depends on the first, so its error fails silently.
+
+  $ narya args.ny -e 'axiom f : (x : A) → B x → C' -e 'def t : C ≔ f c a'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : C ≔ f c a
+     ^ term synthesized type
+         C
+       but is being checked against type
+         A
+       unequal head constants:
+         C
+       does not equal
+         A
+  
+  [1]
+
+Here the second argument can be checked, but the output type depends on the first, so checking it against the expected type fails silently.
+
+  $ narya args.ny -e 'axiom f : (x : A) → C → B x' -e 'def t : B a ≔ f c a'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : B a ≔ f c a
+     ^ term synthesized type
+         C
+       but is being checked against type
+         A
+       unequal head constants:
+         C
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : B a ≔ f c a
+     ^ term synthesized type
+         A
+       but is being checked against type
+         C
+       unequal head constants:
+         A
+       does not equal
+         C
+  
+  [1]
+
+The same goes for constructors.
+
+  $ narya args.ny -e 'def t : List A ≔ cons. c (cons. c nil.)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : List A ≔ cons. c (cons. c nil.)
+     ^ term synthesized type
+         C
+       but is being checked against type
+         A
+       unequal head constants:
+         C
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : List A ≔ cons. c (cons. c nil.)
+     ^ term synthesized type
+         C
+       but is being checked against type
+         A
+       unequal head constants:
+         C
+       does not equal
+         A
+  
+  [1]

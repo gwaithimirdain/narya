@@ -4225,7 +4225,10 @@ and synth_arg_cube : type dom modality mode a b n c.
                     match tm.value with
                     | Some value -> { value; loc = tm.loc }
                     | None -> fatal ?loc:tm.loc Invalid_nullary_application in
-                  let ctm = check (Kinetic `Nolet) lctx tm ty in
+                  (* If the argument fails to typecheck, we record it as Failed and go on.  Since it is evaluated lazily, later arguments can still be checked as long as their types, and the output type, don't depend on it. *)
+                  let ctm =
+                    Reporter.accumulate ~fallback:(fun () -> Term.Failed) @@ fun () ->
+                    check (Kinetic `Nolet) lctx tm ty in
                   (ctm, lazy_eval (Ctx.env lctx) ctm) in
             (* In both cases, we store the resulting lazy value with its type in the hashtable of previous values, to use in instantiating later types. *)
             Hashtbl.add eargtbl (SFace_of fa) (etm, ty);
@@ -4526,8 +4529,11 @@ and check_at_pi : type mode n a c e.
                  "expecting explicit primary argument of constructor " ^ Constr.to_string c ))
       | (tm, { value = `Explicit; _ }) :: rest ->
           let ity = inst (CubeOf.find_top doms) tyarg in
-          let ctm = check (Kinetic `Nolet) lctx tm ity in
-          (* We evaluate the checked argument lazily, since often it isn't needed (e.g. if the codomain is non-dependent), and evaluating it eagerly makes checking deeply nested constructor applications such as large numerals quadratic. *)
+          (* If the argument fails to typecheck, we record it as Failed and go on, so that later arguments can still be checked if their types don't depend on it. *)
+          let ctm =
+            Reporter.accumulate ~fallback:(fun () -> Term.Failed) @@ fun () ->
+            check (Kinetic `Nolet) lctx tm ity in
+          (* We evaluate the checked argument lazily, since often it isn't needed (e.g. if the codomain is non-dependent), and evaluating it eagerly makes checking deeply nested constructor applications such as large numerals quadratic.  This also means that a Failed argument only causes a dependent error if its value is actually needed. *)
           let etm = lazy_eval (Ctx.env lctx) ctm in
           let argcube =
             TubeOf.plus_cube

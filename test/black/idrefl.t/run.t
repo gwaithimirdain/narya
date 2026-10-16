@@ -178,6 +178,30 @@
        does not equal
          Y
   
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def gof' : X -> Z := x |-> f (g x) 
+     ^ term synthesized type
+         Z
+       but is being checked against type
+         X
+       unequal head constants:
+         Z
+       does not equal
+         X
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def gof' : X -> Z := x |-> f (g x) 
+     ^ term synthesized type
+         Y
+       but is being checked against type
+         Z
+       unequal head constants:
+         Y
+       does not equal
+         Z
+  
   [1]
   $ narya idrefl.ny -e "def idff_eq_idff' : Id Type idff idff' := refl idff"
    ￫ error[E0401]
