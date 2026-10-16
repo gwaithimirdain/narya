@@ -23,15 +23,14 @@ type defconst =
       -> defconst
   | Def_synth : { params : (N.zero, 'b, 'c) Raw.tel; tm : 'c synth located } -> defconst
 
+(* The parameters and type of an axiom. *)
+type axiom_type =
+  | Axiom_type : { params : (N.zero, 'b, 'c) Raw.tel; ty : 'c check located } -> axiom_type
+
 type t =
-  | Axiom : {
-      name : Constant.t;
-      params : (N.zero, 'b, 'c) Raw.tel;
-      ty : 'c check located;
-      parametric : bool;
-    }
-      -> t
-  (* We make the constant lazy so we can wait to create it, and in particular put it in scope, until after the type is checked, so as to avoid "very dependent types" where the object appears in its own type.  And we make the parameters and type lazy so that we can wait to process them until after previous definitions in the mutual block are defined in the scope. *)
+  (* We make the parameters and type of an axiom lazy so that if processing them fails, that failure happens inside the handler in [execute] below that makes the axiom an error. *)
+  | Axiom : { name : Constant.t; ty : axiom_type Lazy.t; parametric : bool } -> t
+  (* We make the constant lazy so we can wait to create it, and in particular put it in scope, until after the type is checked, so as to avoid "very dependent types" where the object appears in its own type.  And we make the parameters and type lazy so that we can wait to process them until after previous definitions in the mutual block are defined in the scope, and so that if processing them fails, that failure happens inside the handler in [check_defs] below that makes the constant an error. *)
   | Def : (Constant.t Lazy.t * defconst Lazy.t) list -> t
 
 (* When checking a mutual "def", we first check all the parameter telescopes, and the types in the checking cases when they are provided.  Here are the outputs of that stage, saving the as-yet-unchecked raw term along with its checked parameters and type. *)
@@ -116,26 +115,42 @@ let check_terms (defs : defined_const list) : printable list * bool =
         go defs defineds in
   go defs Emp
 
+(* The checked parameters and type of an axiom or a checking constant, with 'b the number of parameters. *)
+type 'b checked_type =
+  | Checked_type : {
+      mode : 'mode Mode.t;
+      params : ('mode, 'mode emp, 'b, 'bc) Telescope.t;
+      ty : ('mode, 'bc, kinetic) term;
+    }
+      -> 'b checked_type
+
+(* Check the parameters and type of an axiom or a checking constant, in the mode that they synthesize. *)
+let check_type_of : type b c. string -> (N.zero, b, c) Raw.tel -> c check located -> b checked_type
+    =
+ fun which params ty ->
+  let (Wrap mode) =
+    match synth_mode_tel params with
+    | Some mode -> mode
+    | None -> (
+        match synth_mode ty with
+        | Some mode -> mode
+        | None -> fatal (Non_mode_synthesizing which)) in
+  let (Checked_tel (params, ctx)) = check_tel (Ctx.empty mode) params in
+  let ty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
+  Checked_type { mode; params; ty }
+
 (* Check the parameters and type of one constant in a mutual "def", and define it as an axiom with that type. *)
 let check_type (const : Constant.t Lazy.t) (defconst : defconst) : Constant.t * defined_const =
   match defconst with
   | Def_check { params; ty; tm } ->
-      let (Wrap mode) =
-        match synth_mode_tel params with
-        | Some mode -> mode
-        | None -> (
-            match synth_mode ty with
-            | Some mode -> mode
-            | None -> fatal (Non_mode_synthesizing "checking def")) in
-      let bplus = Raw.bplus_of_tel params in
-      let (Checked_tel (params, ctx)) = check_tel (Ctx.empty mode) params in
-      let ty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
-      let pi_cty = Telescope.pis params ty in
+      let (Checked_type { mode; params = cparams; ty }) = check_type_of "checking def" params ty in
       (* We set the type now; the value will be added later.  We mark it as "maybe parametric" so that we can detect if it is used behind an external degeneracy. *)
       let const = Lazy.force const in
       Global.add const
-        (Definition { mode; ty = pi_cty; tm = `Axiom; parametric = `Maybe_parametric });
-      (const, Defined_check { const; bplus; mode; params; ty; tm })
+        (Definition
+           { mode; ty = Telescope.pis cparams ty; tm = `Axiom; parametric = `Maybe_parametric });
+      ( const,
+        Defined_check { const; bplus = Raw.bplus_of_tel params; mode; params = cparams; ty; tm } )
   | Def_synth { params; tm } ->
       let const = Lazy.force const in
       Global.add_error const (Synthesizing_recursion (Reporter.PConstant const));
@@ -163,20 +178,18 @@ let check_defs (defs : (Constant.t Lazy.t * defconst Lazy.t) list) : printable l
 
 let execute : t -> int option * (int -> Reporter.Code.t option) = function
   (* We let Parser.Command do the calling of Global.run_command etc. *)
-  | Axiom { name; params; ty; parametric } ->
+  | Axiom { name; ty; parametric } ->
       if parametric then Global.set_parametric name else Global.set_nonparametric None;
-      let (Wrap mode) =
-        match synth_mode_tel params with
-        | Some mode -> mode
-        | None -> (
-            match synth_mode ty with
-            | Some mode -> mode
-            | None -> fatal (Non_mode_synthesizing "axiom")) in
-      let (Checked_tel (params, ctx)) = check_tel (Ctx.empty mode) params in
-      let cty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
-      let cty = Telescope.pis params cty in
-      let p = (Global.get_parametric () :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
-      Global.add name (Definition { mode; ty = cty; tm = `Axiom; parametric = p });
+      (* If checking the axiom fails, we make the constant an error, so that later commands that use it fail silently. *)
+      ( Reporter.try_with ~fatal:(fun d ->
+            Global.add_error name (Dependent "failed axiom");
+            fatal_diagnostic d)
+      @@ fun () ->
+        let (Axiom_type { params; ty }) = Lazy.force ty in
+        let (Checked_type { mode; params; ty }) = check_type_of "axiom" params ty in
+        let p = (Global.get_parametric () :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
+        Global.add name
+          (Definition { mode; ty = Telescope.pis params ty; tm = `Axiom; parametric = p }) );
       (None, fun holes -> Some (Constant_assumed { name = PConstant name; parametric; holes }))
   | Def defs ->
       Global.set_maybe_parametric ();
