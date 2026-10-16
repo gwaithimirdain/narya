@@ -61,7 +61,7 @@ let rec sort_of_ty : type mode a z.
 let sort_of_val : type mode. mode Mode.t -> (mode, kinetic) value -> [ `Type | `Function | `Other ]
     =
  fun mode ty ->
-  Reporter.backtrack ~fatal:(fun _ -> `Other) @@ fun () ->
+  Reporter.discard ~fallback:(fun () -> `Other) @@ fun () ->
   sort_of_ty (Ctx.empty mode) (view_type ty "sort_of_val")
 
 (* Whether a constant is defined to be a canonical type, possibly a family of them.  Such a constant is displayed with a superscript degeneracy rather than a name like "Id", even if the term in which it appears is not itself a type (e.g. a field projection out of a degenerated record type). *)
@@ -72,7 +72,7 @@ let rec is_canonical_def : type mode a. (mode, a, potential) term -> bool = func
 
 let is_canonical_const : Constant.t -> [ `Canonical | `Other ] =
  fun c ->
-  Reporter.backtrack ~fatal:(fun _ -> `Other) @@ fun () ->
+  Reporter.discard ~fallback:(fun () -> `Other) @@ fun () ->
   let (Definition { tm; _ }) = Global.find_const c in
   match tm with
   | `Defined tm when is_canonical_def tm -> `Canonical
@@ -561,7 +561,7 @@ and readback_head : type mode c z.
       | None ->
           (* Likewise, a degeneracy acting on a constant is displayed according to the sort of the constant's own type, and according to whether that constant is (a family of) canonical types. *)
           let sort =
-            Reporter.backtrack ~fatal:(fun _ -> `Other) @@ fun () ->
+            Reporter.discard ~fallback:(fun () -> `Other) @@ fun () ->
             let (Definition { mode; ty; _ }) = Global.find_const name in
             sort_of_val mode (eval_term (Emp (mode, D.zero)) ty) in
           let canonical =
@@ -807,7 +807,7 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
           let modality = Modality.filter_modality filter in
           (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
           let hints =
-            Reporter.backtrack ~fatal:(fun _ -> no_hints) @@ fun () ->
+            Reporter.discard ~fallback:(fun () -> no_hints) @@ fun () ->
             View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
           Ext

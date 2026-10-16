@@ -179,6 +179,18 @@ Let affects typechecking:
        does not equal
          x
   
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def untest : B a0 ≔ ((x ↦ f x b) : A → B a0) a0
+     ^ term synthesized type
+         B x
+       but is being checked against type
+         B a0
+       unequal head terms:
+         x
+       does not equal
+         a0
+  
   [1]
 
 Let can check in addition to synthesize:

@@ -102,7 +102,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         if !verbose || d.severity = Error || d.severity = Warning then
           Reporter.display ?use_ansi ~output:stderr d)
       ~fatal:(fun d ->
-        Reporter.display ?use_ansi ~output:stderr d;
+        Reporter.display_bwd ?use_ansi ~output:stderr d;
         raise Exit)
   @@ fun () ->
     if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [0,9]");
@@ -113,7 +113,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
     | Some str ->
         List.iter
           (fun x ->
-            Reporter.try_with ~fatal:(fun _ -> Reporter.fatal (Invalid_variable [ x ])) @@ fun () ->
+            Reporter.try_with ~fatal:(fun _ -> fatal (Invalid_variable [ x ])) @@ fun () ->
             match Lexer.single x with
             (* We require y = x so that names with surrounding whitespace, which the lexer would skip over, are also rejected, since the raw string is what gets stored in the Display state. *)
             | Some (Ident [ y ]) when y = x && Lexer.valid_var y -> ()
@@ -128,7 +128,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
       if !verbose || d.severity = Error || d.severity = Warning then
         Reporter.display ?use_ansi ~output:stderr d)
     ~fatal:(fun d ->
-      Reporter.display ?use_ansi ~output:stderr d;
+      Reporter.display_bwd ?use_ansi ~output:stderr d;
       raise Exit)
   @@ fun () ->
   (* Some anomalies are thrown as Failure instead because they're in code that's defined before Reporter. *)
@@ -175,6 +175,8 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
                 Execute.load_string ~init_visible:(Execute.Loaded.get_scope ())
                   "command-line exec string" content in
               `String in
+        (* Within an input, we go on after a failing command, but if an input had any errors we stop, since later inputs may depend on it. *)
+        if Reporter.moribund () then Reporter.fatal (Fatalize "input");
         if Global.unsolved_holes () > 0 then Reporter.fatal (Open_holes_remaining source))
       [ !inputs ];
     (* Interactive mode also has all the other units loaded.  Note that this should affect the "Top" origin. *)

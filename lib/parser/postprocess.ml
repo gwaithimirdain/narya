@@ -78,12 +78,12 @@ let rec detect_spaceless_fields ctx loc (bwd_parts : string Bwd.t) fields found 
   match bwd_parts with
   | Emp | Snoc (Emp, _) -> found
   | Snoc (bwd_parts, fld) ->
-      Reporter.try_with
+      Reporter.discard
         (fun () ->
           let parts = Bwd.to_list bwd_parts in
-          let _ = process_ident ctx loc parts in
+          ignore (process_ident ctx loc parts);
           detect_spaceless_fields ctx loc bwd_parts (fld :: fields) ((parts, fld :: fields) :: found))
-        ~fatal:(fun _ -> detect_spaceless_fields ctx loc bwd_parts (fld :: fields) found)
+        ~fallback:(fun () -> detect_spaceless_fields ctx loc bwd_parts (fld :: fields) found)
 
 (* Now the master postprocessing function.  Note that this function calls the "process" functions registered for individual notations, but those functions will be defined to call *this* function on their constituents, so we have some "open recursion" going on. *)
 
@@ -101,22 +101,11 @@ let rec process : type n lt ls rt rs.
       Reporter.try_with
         (fun () -> process_ident ctx loc parts)
         ~fatal:(fun d ->
-          fatal_diagnostic
-            (Option.value ~default:d
-               (Reporter.accumulated
-                  (fun { severity; message; backtrace; explanation; extra_remarks } ->
-                    match message with
-                    | Unbound_variable (p, _) ->
-                        let alt = detect_spaceless_fields ctx loc (Bwd.of_list parts) [] [] in
-                        (* We create a new diagnostic, preserving all the information except the message, but we have to recompute the 'explanation'. *)
-                        let message = Reporter.Code.Unbound_variable (p, alt) in
-                        let explanation =
-                          locate_opt explanation.loc (Reporter.Code.default_text message) in
-                        Some
-                          ({ severity; message; backtrace; extra_remarks; explanation }
-                            : Reporter.Code.t Asai.Diagnostic.t)
-                    | _ -> None)
-                  d)))
+          match d.message with
+          | Unbound_variable (p, _) ->
+              let alt = detect_spaceless_fields ctx loc (Bwd.of_list parts) [] [] in
+              fatal ?loc:d.explanation.loc (Reporter.Code.Unbound_variable (p, alt))
+          | _ -> fatal_diagnostic d)
   | Constr (ident, _) -> { value = Raw.Constr ({ value = Constr.intern ident; loc }, []); loc }
   | Field _ ->
       (* This can happen if the user tries to project a field from a constructor. *)

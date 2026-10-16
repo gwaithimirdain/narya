@@ -288,10 +288,12 @@ and load_file filename top =
                 else None in
               let renderer = Option.map (PPrint.ToBuffer.pretty 1.0 (Display.columns ())) buf in
               (* Parse and execute the file and save its exported trie and global definitions *)
-              let exported, unsolved =
+              let exported, unsolved, failed =
                 execute_source ~holes_allowed:top file ?renderer (`File filename) in
+              (* We don't reformat a file that had errors, since the errors might be displayed later, referring to locations in the file as it is now. *)
               (match buf with
               | None -> ()
+              | Some _ when failed -> ()
               | Some buf -> (
                   (* If the reformatted version didn't change, do nothing. *)
                   let infile = open_in_bin filename in
@@ -313,8 +315,8 @@ and load_file filename top =
                       output_string outfile (Buffer.contents buf)
                       (* Ignore file errors (e.g. read-only source file) *)
                     with Sys_error _ -> ()));
-              (* Save the compiled version, if it contains no holes (holes contain a functional value). *)
-              if unsolved = 0 then marshal file filename exported;
+              (* Save the compiled version, if it contains no holes (holes contain a functional value) and no errors. *)
+              if unsolved = 0 && not failed then marshal file filename exported;
               (exported, Global.find_file file, (Loading.get ()).imports, `Source) in
         (* Then we add it to the table of loaded files and (possibly) the content of top-level files. *)
         if not top then emit (File_loaded (filename, which));
@@ -329,38 +331,34 @@ and load_file filename top =
 and load_string ?init_visible title content =
   (* There is no caching and no change of state, since it can't be "required" from another file.  The caller specifies whether to use a special initial namespace. *)
   let file = File.make (`Other title) in
-  let trie, _ =
+  let trie, _, _ =
     execute_source ~holes_allowed:true ?init_visible file (`String { title = Some title; content })
   in
   (* A string is always at top-level, so we always add it to 'all'. *)
   Loaded.add_to_scope trie;
   trie
 
-(* Given a source (file or string), parse and execute all the commands in it, in a local scope that starts with either the supplied scope or a default one. *)
+(* Given a source (file or string), parse and execute all the commands in it, in a local scope that starts with either the supplied scope or a default one.  Also returns whether any of the commands failed. *)
 and execute_source ~holes_allowed ?init_visible ?renderer file (source : Asai.Range.source) =
   Origin.with_file ~holes_allowed file @@ fun () ->
   Option.iter Scope.set_visible init_visible;
   let p, src = Parser.Command.Parse.start_parse source in
+  let failed = ref false in
   Reporter.try_with
-    (fun () -> batch renderer p src `None [])
+    (fun () -> batch renderer failed p src `None [])
     ~fatal:(fun d ->
-      if
-        Reporter.accumulates
-          (function
-            | Quit _ -> true
-            | _ -> false)
-          d
-      then
-        let src =
-          match source with
-          | `File name -> Some name
-          | `String { title; _ } -> title in
-        Reporter.emit (Quit src)
-      else Reporter.fatal_diagnostic d);
-  (Scope.get_export (), Global.current_unsolved_holes ())
+      match d.message with
+      | Quit _ ->
+          let src =
+            match source with
+            | `File name -> Some name
+            | `String { title; _ } -> title in
+          Reporter.emit (Quit src)
+      | _ -> fatal_diagnostic d);
+  (Scope.get_export (), Global.current_unsolved_holes (), !failed)
 
-(* Parse, execute (if requested by Flags), and reformat (if requested by Flags) all the commands in a source. *)
-and batch renderer p src cdns ws =
+(* Parse, execute (if requested by Flags), and reformat (if requested by Flags) all the commands in a source.  If a command fails, we report its errors and go on to the next one, recording that something failed. *)
+and batch renderer failed p src cdns ws =
   match Parser.Command.Parse.final p with
   | Eof -> (
       match renderer with
@@ -368,11 +366,25 @@ and batch renderer p src cdns ws =
       | None -> ())
   | Bof ws ->
       let p, src = Parser.Command.Parse.restart_parse p src in
-      batch renderer p src `Bof ws
+      batch renderer failed p src `Bof ws
   | cmd ->
       let new_cdns = Parser.Command.condense cmd in
+      (* Each command is a separate scope for errors, so that the errors of one command don't affect later ones.  A failed command leaves the constants it defines as errors or Failed (see Core.Command), so that later commands using them fail silently.  However, quitting stops everything. *)
+      let is_quit (d : Reporter.Code.t Asai.Diagnostic.t) =
+        match d.message with
+        | Quit _ -> true
+        | _ -> false in
+      let result, ps = Reporter.collect ~delay_emits:false (fun () -> execute_command cmd) in
+      (match result with
+      | Error d when not (is_quit d) -> failed := true
+      | _ -> if not (Bwd.is_empty (Reporter.pending_errors ps)) then failed := true);
       (* We discard the offset and hole information, since this is not used in interactive mode. *)
-      let _ = execute_command cmd in
+      Reporter.accumulate
+        ~fallback:(fun () -> ())
+        ~passthrough:is_quit
+        (fun () ->
+          let _ = Reporter.uncollect (result, ps) in
+          ());
       let ws =
         match renderer with
         | Some render ->
@@ -387,7 +399,7 @@ and batch renderer p src cdns ws =
             wcmd
         | None -> [] in
       let p, src = Parser.Command.Parse.restart_parse p src in
-      batch renderer p src new_cdns ws
+      batch renderer failed p src new_cdns ws
 
 (* Wrapper around Parser.Command.execute that passes it the correct callbacks.  Does NOT check flags or reformat.  An uncaught "Failure" from anywhere inside a command (e.g. an internal invariant checked with "failwith") is a bug, so we convert it here into an ordinary fatal Anomaly.  This way it is reported like any other bug, and the caller -- an interactive loop, or the loading of another input file -- can carry on afterwards, rather than the exception escaping all the way out to the handler in Top.run_top and killing the whole session. *)
 and execute_command cmd =
