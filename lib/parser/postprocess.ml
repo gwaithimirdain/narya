@@ -103,8 +103,9 @@ let rec process : type n lt ls rt rs.
         ~fatal:(fun d ->
           match d.message with
           | Unbound_variable (p, _) ->
+              (* Rather than failing immediately, we postpone the error until the typechecker reaches the unbound identifier, so that it can go on to report errors in other parts of the term that don't depend on it. *)
               let alt = detect_spaceless_fields ctx loc (Bwd.of_list parts) [] [] in
-              fatal ?loc:d.explanation.loc (Reporter.Code.Unbound_variable (p, alt))
+              { value = Synth (Fail (Unbound_variable (p, alt))); loc }
           | _ -> fatal_diagnostic d)
   | Constr (ident, _) -> { value = Raw.Constr ({ value = Constr.intern ident; loc }, []); loc }
   | Field _ ->

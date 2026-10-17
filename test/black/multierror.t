@@ -2156,3 +2156,40 @@ Similarly, if the domain of a pi-type fails to typecheck, its codomain is still 
          Type
   
   [1]
+
+An unbound identifier is reported when the typechecker reaches it, so that other errors elsewhere in the term are still reported.
+
+  $ narya let.ny -e 'def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq'
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+     ^ unbound variable: Foo
+  
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+     ^ unbound variable: Bar
+  
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+     ^ unbound variable: zz
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+     ^ unbound variable: qq
+  
+  [1]
