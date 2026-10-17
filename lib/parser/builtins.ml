@@ -1001,21 +1001,38 @@ let rec process_higher_dom_group : type n.
   | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } as data) :: rest
     -> (
       let cdom = process ctx dom in
-      let newdoms =
-        match xs with
-        | [] -> rest
-        | _ :: _ -> Dep { data with vars = xs } :: rest in
       let loc =
         match loc with
         | Some loc -> Some loc
         | None -> xloc in
       match implicit with
-      | `Explicit -> Higher_dom_group (Ext (x, modality, cdom, Emp), Bwv.snoc ctx x, newdoms, loc)
+      | `Explicit ->
+          (* The primary domain ends the group, so any other variables sharing its type begin the next group. *)
+          let newdoms =
+            match xs with
+            | [] -> rest
+            | _ :: _ -> Dep { data with vars = xs } :: rest in
+          Higher_dom_group (Ext (x, modality, cdom, Emp), Bwv.snoc ctx x, newdoms, loc)
       | `Implicit ->
+          (* The other variables of an implicit group share its type, which we process only once, in the scope outside all of them. *)
           let (Higher_dom_group (tele, newctx, rest2, loc2)) =
-            process_higher_dom_group (Bwv.snoc ctx x) newdoms loc in
+            process_higher_dom_same (Bwv.snoc ctx x) xs rest loc in
           Higher_dom_group (Ext (x, modality, cdom, tele), newctx, rest2, loc2))
   | _ -> invalid "higher pi"
+
+and process_higher_dom_same : type n.
+    (string option, n) Bwv.t ->
+    (string option * Whitespace.t list) list ->
+    pi_dom list ->
+    Asai.Range.t option ->
+    n higher_dom_group =
+ fun ctx xs doms loc ->
+  match xs with
+  | [] -> process_higher_dom_group ctx doms loc
+  | (x, _) :: xs ->
+      let (Higher_dom_group (tele, newctx, rest, loc)) =
+        process_higher_dom_same (Bwv.snoc ctx x) xs doms loc in
+      Higher_dom_group (Same (x, tele), newctx, rest, loc)
 
 let rec process_inst_higher_pi : type n lt ls rt rs m.
     (string option, n) Bwv.t ->
