@@ -1535,11 +1535,21 @@ let replay (ps : pending Bwd.t) : 'a =
   release ps;
   fatalize_with "replay" (pending_errors ps)
 
-(* Like [capture], but if there are any errors, discard them and return the result of a fallback computation. *)
+(* Like [capture], but if there are any errors, discard them and return the result of a fallback computation.  Since the result is going to be discarded anyway, we give up as soon as the first error is reported, rather than continuing on to collect more of them; thus [moribund] is always false inside the callback.  Emitted diagnostics are passed through immediately.  As with [capture], bugs are not discarded but passed through. *)
 let discard_errors (f : unit -> 'a) ~(fallback : unit -> 'a) : 'a =
-  match capture f with
-  | Ok x -> x
-  | Error _ -> fallback ()
+  let exception Killed in
+  match
+    Delegate.try_with ~fatal:(fun d -> if is_bug d then fatal_diagnostic d else None) @@ fun () ->
+    try Some (f ()) with
+    | effect Mortal d, k ->
+        if is_bug d then (
+          mortal_diagnostic d;
+          continue k ())
+        else discontinue k Killed
+    | effect Moribund, k -> continue k Emp
+  with
+  | Some x -> x
+  | None | (exception Killed) -> fallback ()
 
 (* Another thing we may want to do is to catch some *specific* fatal errors and either recover from them or replace them by a different error.  For instance, the specific error may be a missing De Bruijn level, which would normally be a bug, but is interpreted by a specific caller as a failure of an occurs-check.  For this we use Asai's [try_with] (included above from [Delegate]), whose [fatal] handler can return a result, re-raise the error with [fatal_diagnostic], or raise a different one.  This deliberately doesn't see mortal errors: a mortal error means that something inside has already failed and been dealt with locally, so it's not a failure of the callback as a whole.  In particular, it doesn't affect what [moribund] sees.  To ask whether a callback succeeded at all, without any errors, use [capture] instead. *)
 
