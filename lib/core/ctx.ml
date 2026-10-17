@@ -43,8 +43,10 @@ module Binding : sig
   val delay : 'mode t -> 'mode t
   val force : 'mode t -> unit
 
-  (* An error value raises an exception when accessed. *)
+  (* An error binding, such as that of a let-bound variable whose value failed to typecheck, raises an error when its value is accessed.  It has no level, like a let-bound variable, so that it can be passed over when looking for other variables.  Operations that reconstruct a context, such as readback and bind_some, should reconstruct it as an error binding too. *)
   val error : Reporter.Code.t -> 'mode t
+  val error_of : 'mode t -> Reporter.Code.t option
+  val specify_error : 'mode t -> Reporter.Code.t -> unit
 end = struct
   type 'mode state =
     | Known of level option * 'mode normal
@@ -59,8 +61,7 @@ end = struct
   let level b =
     match !(b.state) with
     | Known (i, _) -> i
-    | Unknown | Delayed _ -> None
-    | Error e -> fatal e
+    | Unknown | Delayed _ | Error _ -> None
 
   let value b =
     match !(b.state) with
@@ -72,14 +73,25 @@ end = struct
   let set_dirt b d = b.dirt <- d
   let unknown () = { state = ref Unknown; dirt = `Nonrecursive }
   let specify b i x = b.state := Known (i, x)
-  let delay b = { state = ref (Delayed (level b, value b)); dirt = b.dirt }
+
+  let delay b =
+    match !(b.state) with
+    | Error e -> { state = ref (Error e); dirt = b.dirt }
+    | _ -> { state = ref (Delayed (level b, value b)); dirt = b.dirt }
+
   let error e = { state = ref (Error e); dirt = `Nonrecursive }
+
+  let error_of b =
+    match !(b.state) with
+    | Error e -> Some e
+    | Known _ | Unknown | Delayed _ -> None
+
+  let specify_error b e = b.state := Error e
 
   let force b =
     match !(b.state) with
-    | Known _ | Unknown -> ()
+    | Known _ | Unknown | Error _ -> ()
     | Delayed (i, x) -> b.state := Known (i, x)
-    | Error e -> fatal e
 end
 
 (* Test whether all the variables in a cube of bindings are free (none are let-bound). *)
@@ -539,6 +551,15 @@ module Ordered = struct
     let b = Binding.make (Some (n, 0)) { tm = var modality (n, 0) ty; ty = Lazy.from_val ty } in
     (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
 
+  (* Extend a context by one new variable with a given binding, such as an error binding. *)
+  let ext_binding : type dom modality mode a b.
+      (mode, a, b) t ->
+      (dom, modality, mode) Modality.t ->
+      string option ->
+      dom Binding.t ->
+      (mode, a N.suc, (b, (modality, D.zero) dim_entry) snoc) t * dom Binding.t =
+   fun ctx modality x b -> (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
+
   (* Extend a context by one new variable with an assigned value.  The optional ?dirt records whether that value contains occurrences of currently-being-defined constants. *)
   let ext_let : type dom modality mode a b.
       ?dirt:Positivity.recursion ->
@@ -547,9 +568,7 @@ module Ordered = struct
       string option ->
       dom normal ->
       (mode, a N.suc, (b, (modality, D.zero) dim_entry) snoc) t * dom Binding.t =
-   fun ?dirt ctx modality x v ->
-    let b = Binding.make ?dirt None v in
-    (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
+   fun ?dirt ctx modality x v -> ext_binding ctx modality x (Binding.make ?dirt None v)
 
   (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields. *)
   type ('mode, _, _) pop =
@@ -855,8 +874,8 @@ let ext (Permute { perm; env; level; ctx }) modality xs ty =
       ctx;
     }
 
-let ext_let ?dirt (Permute { perm; env; level; ctx }) modality xs tm =
-  let ctx, b = Ordered.ext_let ?dirt ctx modality xs tm in
+let ext_binding (Permute { perm; env; level; ctx }) modality xs b =
+  let ctx, b = Ordered.ext_binding ctx modality xs b in
   Permute
     {
       perm = Insert (perm, Top);
@@ -872,6 +891,12 @@ let ext_let ?dirt (Permute { perm; env; level; ctx }) modality xs tm =
       level = level + 1;
       ctx;
     }
+
+let ext_let ?dirt ctx modality xs tm = ext_binding ctx modality xs (Binding.make ?dirt None tm)
+
+(* Extend a context by a let-bound variable whose value failed to typecheck, so that accessing it raises a dependent error. *)
+let ext_failed_let ctx modality xs =
+  ext_binding ctx modality xs (Binding.error (Dependent "failed let-binding"))
 
 (* Remove the last cube entry in a context.  This only works if it is a pure cube variable with no fields and the context has not been permuted after its addition. *)
 type (_, _, _) pop =
