@@ -241,6 +241,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                    | _ -> fatal (Anomaly "eval of lower-dim meta not neutral/canonical"));
              }) in
       match (Global.find_meta meta, ambient) with
+      (* A metavariable whose definition failed (such as a let-rec variable whose value failed to typecheck) evaluates in a kinetic context to a neutral whose value is computed lazily, so that its value is only needed (and hence its failure only noticed) if it is actually used. *)
+      | { tm = `Defined Failed; ty; _ }, Kinetic ->
+          Val (Neu { head; args = Emp; value = lazy_eval env Failed; ty = lazy (make_ty meta ty) })
       (* If a metavariable has a definition that fits with the current energy, we simply evaluate that definition. *)
       | { tm = `Defined tm; energy = Potential; _ }, Potential -> eval env tm
       | { tm = `Defined tm; energy = Kinetic; _ }, Kinetic -> eval env tm
