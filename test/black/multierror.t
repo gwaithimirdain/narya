@@ -1929,3 +1929,112 @@ This also works across a match in the body, and a let-binding of a case tree.
          A
   
   [1]
+
+In a let-rec, a variable whose value fails to typecheck can still be used for its type, by the body and by the other values, but anything that needs its value fails silently.
+
+  $ narya let.ny -e 'def t : A ≔ let rec f : Bool → A ≔ x ↦ (b : A) and g : Bool → A ≔ x ↦ f x in (g true. : B)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let rec f : Bool → A ≔ x ↦ (b : A) and g : Bool → A ≔ x ↦ f x in (g true. : B)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let rec f : Bool → A ≔ x ↦ (b : A) and g : Bool → A ≔ x ↦ f x in (g true. : B)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let rec f : Bool → A ≔ x ↦ (b : A) and g : Bool → A ≔ x ↦ f x in (g true. : B)
+     ^ term synthesized type
+         A
+       but is being checked against type
+         B
+       unequal head constants:
+         A
+       does not equal
+         B
+  
+  [1]
+
+  $ narya let.ny -e 'def t : A ≔ let rec f : A ≔ (b : A) and g : Id A f a ≔ refl a in (b : A)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let rec f : A ≔ (b : A) and g : Id A f a ≔ refl a in (b : A)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let rec f : A ≔ (b : A) and g : Id A f a ≔ refl a in (b : A)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+  [1]
+
+A variable whose type fails to typecheck is an error, so its value isn't checked, and the later types, values, and parts of the body that use it fail silently, while the others can still be checked.
+
+  $ narya let.ny -e 'axiom h : A → A → A' -e 'def t : A ≔ let rec x : b ≔ a and y : x ≔ a and z : A ≔ (b : A) in h x (b : A)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let rec x : b ≔ a and y : x ≔ a and z : A ≔ (b : A) in h x (b : A)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let rec x : b ≔ a and y : x ≔ a and z : A ≔ (b : A) in h x (b : A)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let rec x : b ≔ a and y : x ≔ a and z : A ≔ (b : A) in h x (b : A)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+  [1]
