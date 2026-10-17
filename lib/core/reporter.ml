@@ -1393,7 +1393,7 @@ let modalcell_fatal : type a. string -> modality_error -> a =
       fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
         (Mode_mismatch (`User, str, a, Some (`Hsrc m.value), b))
 
-(* After a "fatal" error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  Specifically, we introduce "mortal" errors, which will eventually kill the program, but allow it to continue doing more checking to accumulate more errors.  A mortal error should be raised instead of a fatal one if there is something sensible that could be returned to allow typechecking to continue elsewhere, e.g. a branch of a match statement that doesn't typecheck can be marked as failing while other branches can continue to be typechecked.  Reporting a mortal error is an effect instead of an exception.  The reported errors are collected by a handler (see [collect] below), such as the one around each command, which is "moribund" if at least one error has been reported inside it.  Some mortal errors leave nothing to mark as failed at all, e.g. if the user wrote ⤇ where ↦ was expected, in which case checking simply continues. *)
+(* After a "fatal" error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  Specifically, we introduce "mortal" errors, which will eventually kill the program, but allow it to continue doing more checking to accumulate more errors.  A mortal error should be raised instead of a fatal one if there is something sensible that could be returned to allow typechecking to continue elsewhere, e.g. a branch of a match statement that doesn't typecheck can be marked as failing while other branches can continue to be typechecked.  Reporting a mortal error is an effect instead of an exception.  The reported errors are collected by a handler (see [collect] and [failing_on_errors] below), such as the one around each command, which is "moribund" if at least one error has been reported inside it.  Some mortal errors leave nothing to mark as failed at all, e.g. if the user wrote ⤇ where ↦ was expected, in which case checking simply continues. *)
 
 (* An error or other diagnostic that has been reported but whose reporting has been delayed by [collect] below.  Non-error diagnostics that are emitted with Asai's [emit] (such as warnings) are also delayed, so that they can be discarded along with errors if a computation is speculative. *)
 type pending = [ `Mortal of Code.t Asai.Diagnostic.t | `Emitted of Code.t Asai.Diagnostic.t ]
@@ -1410,7 +1410,7 @@ let pending_errors (ps : pending Bwd.t) : Code.t Asai.Diagnostic.t Bwd.t =
       | `Emitted _ -> None)
     ps
 
-(* Whether any errors have been reported inside the innermost [collect], such as the one around each command.  This is appropriate for deciding whether to display output that would only be meaningful if there were no errors at all. *)
+(* Whether any errors have been reported inside the innermost [collect] or [failing_on_errors], such as the one around each command.  This is appropriate for deciding whether to display output that would only be meaningful if there were no errors at all. *)
 let moribund () = not (Bwd.is_empty (perform Moribund))
 
 (* Raise a mortal error whose diagnostic is already constructed. *)
@@ -1482,13 +1482,19 @@ let uncollect (result, ps) =
   | Result.Ok x -> x
   | Error d -> fatal_diagnostic d
 
-(* Run a callback that should fail if it reports any mortal errors, even if it returns a result.  This is appropriate for a unit of work, such as a command, that shouldn't take effect if it had any errors.  The errors are passed on outwards, followed by a (silent) fatal error. *)
+(* Run a callback that should fail if it reports any mortal errors, even if it returns a result.  This is appropriate for a unit of work, such as a command, that shouldn't take effect if it had any errors.  All errors are passed on outwards immediately, and if any such errors occurred, a (silent) fatal error is raised at the end.  Inside the callback, [moribund] refers only to the errors it has reported. *)
 let failing_on_errors ?(why = "failing_on_errors") f =
-  match collect ~delay_emits:false f with
-  | Ok _, ps when not (Bwd.is_empty (pending_errors ps)) ->
-      release ps;
-      fatalize_with why (pending_errors ps)
-  | collected -> uncollect collected
+  let errors = ref Emp in
+  let result =
+    try f () with
+    | effect Mortal p, k ->
+        errors := Snoc (!errors, p);
+        perform (Mortal p);
+        continue k ()
+    | effect Moribund, k -> continue k !errors in
+  match !errors with
+  | Emp -> result
+  | Snoc _ -> fatalize_with why !errors
 
 (* [run] is like [failing_on_errors], delimiting a region whose reported errors make it fail at the end.  But it is outermost, never passing errors further out, and "reporting" all emissions and errors to appropriately-named handlers right away as they occur.  The [~emit] and [~mortal] handlers receive one diagnostic and return [unit].  The [~fatal] handler receives a bwd of *already-reported* mortal errors (in case it wants to summarize them in some way) along with one new fatal error, and must return the same type as the body.  If the body raises mortal errors but completes without a fatal error, [~fatal] is called with the silent fatal error [Fatalize]. *)
 let run ?init_loc ?init_backtrace ~fatal ~mortal ~emit f =
