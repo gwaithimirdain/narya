@@ -1443,10 +1443,11 @@ let make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
 let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
   mortal_diagnostic (make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg)
 
-(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost.  If the optional [emits_only] is true, collect only emitted non-errors and fail as soon as any mortal or fatal error is encountered, returning that error as the Error result (even if it was originally only mortal). *)
+(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost.  If the optional [emits_only] is true, collect only emitted non-errors and fail as soon as any mortal or fatal error is encountered, returning that error as the Error result (even if it was originally only mortal).  In that case the callback is abandoned by unwinding it with an exception, during which some cleanup code (such as an inner [collect]) may report more mortal errors; these are ignored, so that the error returned is the first one. *)
 let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
     ('a, Code.t Asai.Diagnostic.t) Result.t * pending Bwd.t =
   let exception Killed of Code.t Asai.Diagnostic.t in
+  let killed = ref false in
   let pendings = ref Emp in
   let passes d =
     match passthrough with
@@ -1465,10 +1466,17 @@ let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
     @@ fun () ->
     try Ok (f ()) with
     | effect Mortal p, k ->
-        if passes p then mortal_diagnostic p
-        else if emits_only then ignore (discontinue k (Killed p))
-        else pendings := Snoc (!pendings, `Mortal p);
-        continue k ()
+        if passes p then (
+          mortal_diagnostic p;
+          continue k ())
+        else if emits_only then
+          if !killed then continue k ()
+          else (
+            killed := true;
+            discontinue k (Killed p))
+        else (
+          pendings := Snoc (!pendings, `Mortal p);
+          continue k ())
     | effect Moribund, k -> continue k (pending_errors !pendings)
   with
   | result -> (result, !pendings)
@@ -1544,13 +1552,15 @@ let replay (ps : pending Bwd.t) : 'a =
   release ps;
   fatalize_with "replay" (pending_errors ps)
 
-(* Like [capture], but if there are any errors, discard them and return the result of a fallback computation.  Since the result is going to be discarded anyway, we give up as soon as the first error is reported, rather than continuing on to collect more of them; thus [moribund] is always false inside the callback.  Emitted diagnostics are collected and passed on only in the case of success.  As with [capture], bugs are not discarded but passed through. *)
+(* Like [capture], but if there are any errors, discard them and return the result of a fallback computation.  Since the result is going to be discarded anyway, we give up as soon as the first error is reported, rather than continuing on to collect more of them; thus [moribund] is always false inside the callback.  Emitted diagnostics are collected and passed on only in the case of success.  Bugs stop the callback like any other error, but they are not discarded: we report them as mortal errors before falling back, so that the bug is seen and the enclosing command fails, but checking can go on. *)
 let discard_errors (f : unit -> 'a) ~(fallback : unit -> 'a) : 'a =
-  match collect ~passthrough:is_bug ~emits_only:true f with
+  match collect ~emits_only:true f with
   | Ok x, ps ->
       release ps;
       x
-  | Error _, _ -> fallback ()
+  | Error d, _ ->
+      if is_bug d then mortal_diagnostic d;
+      fallback ()
 
 (* Another thing we may want to do is to catch some *specific* fatal errors and either recover from them or replace them by a different error.  For instance, the specific error may be a missing De Bruijn level, which would normally be a bug, but is interpreted by a specific caller as a failure of an occurs-check.  For this we use Asai's [try_with] (included above from [Delegate]), whose [fatal] handler can return a result, re-raise the error with [fatal_diagnostic], or raise a different one.  This deliberately doesn't see mortal errors: a mortal error means that something inside has already failed and been dealt with locally, so it's not a failure of the callback as a whole.  In particular, it doesn't affect what [moribund] sees.  To ask whether a callback succeeded at all, without any errors, use [capture] instead. *)
 
