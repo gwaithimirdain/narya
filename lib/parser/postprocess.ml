@@ -358,10 +358,23 @@ and process_vars : type n.
   match names with
   | [] -> process_tel ctx parameters
   | (name, w) :: names ->
+      (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
       let pty = process ctx ty in
-      let (Processed_tel (tel, ctx, ws)) =
-        process_vars (Bwv.snoc ctx name) names modality (Wrap ty) parameters in
+      let (Processed_tel (tel, ctx, ws)) = process_same (Bwv.snoc ctx name) names parameters in
       Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
+
+(* The remaining variables that share the type of the previous one. *)
+and process_same : type n.
+    (string option, n) Bwv.t ->
+    (string option * Whitespace.t list) list ->
+    Parameter.t list ->
+    n processed_tel =
+ fun ctx names parameters ->
+  match names with
+  | [] -> process_tel ctx parameters
+  | (name, w) :: names ->
+      let (Processed_tel (tel, ctx, ws)) = process_same (Bwv.snoc ctx name) names parameters in
+      Processed_tel (Same (name, tel), ctx, w :: ws)
 
 let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
  fun pat ->

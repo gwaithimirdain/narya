@@ -115,3 +115,85 @@ When the domain is modal, the domains of the later variables are weakenings of t
     : Type⁽ᵉ⁾ ((x :♭| F A) (y :♭| F A) (v : A) (w : A) → A)
         ((x :♭| F A) (y :♭| F A) (v : A) (w : A) → A)
   
+
+The same goes for the parameters of a definition or axiom, and the arguments of a constructor.
+
+  $ narya pi.ny -e 'def t (A y : A) : Type ≔ Type  echo t  axiom u (A y : A) : Type  echo u  def D : Type ≔ data [ c. (A y : A) ]  echo (c. a a : D)'
+  t
+    : (A : A) (y : A) → Type
+  
+  u
+    : (A : A) (y : A) → Type
+  
+  c. a a
+    : D
+  
+
+  $ narya -v pi.ny -fake-interact 'def t (x y : ?) : Type ≔ Type  solve 0 ≔ A  echo t'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b assumed
+  
+   ￫ info[I0000]
+   ￮ constant t defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ info[I0005]
+   ￮ hole solved
+  
+  t
+    : (x : A) (y : A) → Type
+  
+
+A match on a parameter refines the types of the parameters that share a type depending on it.
+
+  $ cat >vec.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > def Vec (A : Type) : ℕ → Type ≔ data [ nil. : Vec A zero. | cons. (n : ℕ) (x : A) (xs : Vec A n) : Vec A (suc. n) ]
+  > def f (n : ℕ) (u v : Vec ℕ n) : ℕ ≔ match u [ nil. ↦ ? | cons. k x xs ↦ ? ]
+  > EOF
+
+  $ narya -v -fake-interact vec.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant Vec defined
+  
+   ￫ info[I0000]
+   ￮ constant f defined, containing 2 holes
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     n ≔ 0 : ℕ
+     u ≔ nil. : Vec ℕ 0
+     v : Vec ℕ 0
+     ----------------------------------------------------------------------
+     ℕ
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     k : ℕ
+     n ≔ suc. k : ℕ
+     v : Vec ℕ (suc. k)
+     x : ℕ
+     xs : Vec ℕ k
+     u ≔ cons. k x xs : Vec ℕ (suc. k)
+     ----------------------------------------------------------------------
+     ℕ
+  

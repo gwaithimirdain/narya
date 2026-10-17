@@ -146,6 +146,7 @@ module rec Make : functor (I : Indices) -> sig
     | Ext :
         I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
         -> ('a, 'b Fwn.suc, 'ab) tel
+    | Same : I.name * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
 
   val fwn_of_tel : ('a, 'b, 'c) tel -> 'b Fwn.t
   val mods_of_tel : ('a, 'b, 'c) tel -> string located list located list
@@ -327,16 +328,27 @@ functor
       | Ext :
           I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
           -> ('a, 'b Fwn.suc, 'ab) tel
+      (* Another variable with the same modality and type as the previous entry, such as y in "(x y : A)".  The type is stored only once, in the scope outside all the variables that share it, so it is processed and typechecked only once.  This can only follow an Ext or another Same. *)
+      | Same : I.name * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
 
     (* The length of a telescope is a forwards nat. *)
     let rec fwn_of_tel : type a b c. (a, b, c) tel -> b Fwn.t = function
       | Emp -> Zero
       | Ext (_, _, _, tel) -> Suc (fwn_of_tel tel)
+      | Same (_, tel) -> Suc (fwn_of_tel tel)
 
     (* The modality annotations of the entries of a telescope. *)
-    let rec mods_of_tel : type a b c. (a, b, c) tel -> string located list located list = function
-      | Emp -> []
-      | Ext (_, modality, _, tel) -> modality :: mods_of_tel tel
+    let mods_of_tel : type a b c. (a, b, c) tel -> string located list located list =
+      let rec go : type a b c.
+          string located list located option -> (a, b, c) tel -> string located list located list =
+       fun prev -> function
+         | Emp -> []
+         | Ext (_, modality, _, tel) -> modality :: go (Some modality) tel
+         | Same (_, tel) -> (
+             match prev with
+             | Some modality -> modality :: go prev tel
+             | None -> Reporter.fatal (Anomaly "Same at the start of a telescope")) in
+      fun tel -> go None tel
   end
 
 module Indexed = Make (DeBruijnIndices)
@@ -601,6 +613,11 @@ module Resolve (R : Resolver) = struct
         let ab = R.T2.bplus_suc ab in
         let rest3, ctx3 = tel ctx2 rest ab in
         (Ext (R.rename ctx x, modality, check ctx ty, rest3), ctx3)
+    | Same (x, rest) ->
+        let ctx2 = R.snoc ctx x in
+        let ab = R.T2.bplus_suc ab in
+        let rest3, ctx3 = tel ctx2 rest ab in
+        (Same (R.rename ctx x, rest3), ctx3)
 end
 
 (* Since the De Bruijn index version is the standard one, we include that here. *)
@@ -644,3 +661,4 @@ let rec lams : type a b ab.
 let rec bplus_of_tel : type a b c. (a, b, c) tel -> (a, b, c) Fwn.bplus = function
   | Emp -> Zero
   | Ext (_, _, _, tel) -> Suc (bplus_of_tel tel)
+  | Same (_, tel) -> Suc (bplus_of_tel tel)

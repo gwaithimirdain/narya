@@ -2857,11 +2857,24 @@ and process_dataconstr_vars : type n.
   match vars with
   | [] -> process_dataconstr ctx tel_args ty
   | x :: xs ->
-      let newctx = Bwv.snoc ctx x in
-      let (Dataconstr (args, body)) =
-        process_dataconstr_vars newctx xs modality (Wrap argty) tel_args ty in
+      (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
       let arg = process ctx argty in
+      let (Dataconstr (args, body)) = process_dataconstr_same (Bwv.snoc ctx x) xs tel_args ty in
       Dataconstr (Ext (x, modality, arg, args), body)
+
+(* The remaining variables that share the type of the previous one. *)
+and process_dataconstr_same : type n.
+    (string option, n) Bwv.t ->
+    string option list ->
+    (string option list * string located list located * wrapped_parse) list ->
+    wrapped_parse option ->
+    n Raw.dataconstr =
+ fun ctx vars tel_args ty ->
+  match vars with
+  | [] -> process_dataconstr ctx tel_args ty
+  | x :: xs ->
+      let (Dataconstr (args, body)) = process_dataconstr_same (Bwv.snoc ctx x) xs tel_args ty in
+      Dataconstr (Same (x, args), body)
 
 let rec process_data : type n.
     Variables.hints ->

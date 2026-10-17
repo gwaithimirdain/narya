@@ -296,6 +296,15 @@ type (_, _, _, _, _) checked_tel =
       ('mode, 'b, 'c, 'bc) Telescope.t * ('mode, 'ac, 'bc) Ctx.t
       -> ('mode, 'a, 'b, 'c, 'ac) checked_tel
 
+(* The previous entry of a telescope being checked, for the following entries that share its type (see Raw.Same): its modality, its checked type in the context locked by that modality, and that type evaluated. *)
+type (_, _) tel_prev =
+  | Tel_prev :
+      ('dom, 'modality, 'mode) Modality.t
+      * ('b, 'mode, 'modality, 'dom, 'bm) plus_lock
+      * ('dom, 'bm, kinetic) term
+      * ('dom, kinetic) value
+      -> ('mode, 'b) tel_prev
+
 (* A telescope of metavariables instead of types.  Created from a telescope of types by make_letrec_metas. *)
 type (_, _, _, _) meta_tel =
   | Nil : ('mode, 'b, Fwn.zero, 'b) meta_tel
@@ -2734,6 +2743,8 @@ and check_record : type mode a f1 f2 f af d acd b n.
                  is_glue = None;
                }))
   | Ext (None, _, _, _) -> fatal (Anomaly "unnamed field in check_record")
+  (* The fields of a record type are never grouped to share a type. *)
+  | Same _ -> fatal (Anomaly "shared type in check_record")
   | Ext (Some name, modality, rty, raw_fields) ->
       with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy errs
       @@ fun (Self_vars { self }) _ ->
@@ -3574,6 +3585,8 @@ and synth : type mode a b s.
              fun s (State { xctx; plus = ac; tele }) ->
               match tele with
               | Emp -> fatal (Not_enough_domains k)
+              (* The domains of an instantiated higher pi-type are never grouped to share a type. *)
+              | Same _ -> fatal (Anomaly "shared domain type in instantiated higher pi-type")
               | Ext (x, _, dom, rest) -> (
                   let m = dom_sface s in
                   (* We check the domains against universe 0, since they should be fully instantiated. *)
@@ -3642,6 +3655,7 @@ and synth : type mode a b s.
             match rest with
             | Ext (_, _, { loc; _ }, _) ->
                 fatal ?loc (Invalid_higher_function "too many domains for the dimension")
+            | Same _ -> fatal (Invalid_higher_function "too many domains for the dimension")
             | Emp -> (
                 (* Since the leftover telescope is empty, the raw context at its end, which is the context of the codomain, is equal to the current raw context. *)
                 let cdoms =
@@ -4528,7 +4542,15 @@ and check_at_pi : type mode n a c e.
 (* Given a context and a raw telescope, we can check it to produce a checked telescope, a new context extended by that telescope, and a function for extending other contexts by that telescope. *)
 and check_tel : type mode a b c ac.
     (mode, a, b) Ctx.t -> (a, c, ac) Raw.tel -> (mode, a, b, c, ac) checked_tel =
- fun ctx tel ->
+ fun ctx tel -> check_tel_after ctx None tel
+
+(* Check a telescope, given the previous entry in case the first one shares its type. *)
+and check_tel_after : type mode a b c ac.
+    (mode, a, b) Ctx.t ->
+    (mode, b) tel_prev option ->
+    (a, c, ac) Raw.tel ->
+    (mode, a, b, c, ac) checked_tel =
+ fun ctx prev tel ->
   match tel with
   | Emp -> Checked_tel (Emp, ctx)
   | Ext (x, modality, ty, tys) -> (
@@ -4539,10 +4561,30 @@ and check_tel : type mode a b c ac.
           let (Locked (plus, lctx)) = Ctx.lock ctx modality in
           let cty = check (Kinetic `Nolet) lctx ty (universe (Modality.src modality) D.zero) in
           let ety = eval_term (Ctx.env lctx) cty in
-          let _, newnfs = dom_vars ctx modality (CubeOf.singleton ety) in
-          let ctx = Ctx.cube_vis ctx (Modality.filter_zero modality) x newnfs in
-          let (Checked_tel (ctys, ctx)) = check_tel ctx tys in
-          Checked_tel (Ext (x, Modal (modality, plus, cty), ctys), ctx))
+          check_tel_ext ctx (Tel_prev (modality, plus, cty, ety)) x tys)
+  | Same (x, tys) -> (
+      match prev with
+      | Some prev -> check_tel_ext ctx prev x tys
+      | None -> fatal (Anomaly "Same at the start of a telescope"))
+
+(* Extend the context by a variable of an already-checked type, and go on checking the rest of the telescope.  If the next entry shares that type, its checked type is the weakening of this one behind the lock, while its evaluated type is the same. *)
+and check_tel_ext : type mode a b c ac.
+    (mode, a, b) Ctx.t ->
+    (mode, b) tel_prev ->
+    string option ->
+    (a N.suc, c, ac) Raw.tel ->
+    (mode, a, b, c Fwn.suc, ac) checked_tel =
+ fun ctx (Tel_prev (modality, plus, cty, ety)) x tys ->
+  let _, newnfs = dom_vars ctx modality (CubeOf.singleton ety) in
+  let newctx = Ctx.cube_vis ctx (Modality.filter_zero modality) x newnfs in
+  let next =
+    match tys with
+    | Same _ ->
+        let (Locked (newplus, _)) = Ctx.lock newctx modality in
+        Some (Tel_prev (modality, newplus, Weaken (plus, cty, newplus), ety))
+    | _ -> None in
+  let (Checked_tel (ctys, ctx)) = check_tel_after newctx next tys in
+  Checked_tel (Ext (x, Modal (modality, plus, cty), ctys), ctx)
 
 (* We also need to be able to synthesize a mode for a definition.  In theory we could incorporate this into 'synth' to avoid multiple traversals, but the attempt proved very complicated, and not much of the term should need to be traversed to find its mode.  You might think we should do this in a "context" of raw variables with possibly-known modes so we can look up the modes of variables, but in practice that's not useful: whenever a variable is introduced, if we *know* its mode, then we can immediately deduce the mode of the whole term anyway. *)
 let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
@@ -4662,6 +4704,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
 
 and synth_mode_tel : type a b ab. (a, b, ab) Raw.tel -> Modal.Mode.wrapped option = function
   | Emp -> None
+  | Same (_, tel) -> synth_mode_tel tel
   | Ext (_, modality, ty, tel) -> (
       match synth_mode ty with
       | Some (Wrap dmode) -> (
