@@ -1439,6 +1439,21 @@ let is_silent (d : Code.t Asai.Diagnostic.t) =
   | Dependent _ | Fatalize _ -> true
   | _ -> false
 
+(* In interactive mode, a command that fails is undone, and later commands are only executed after earlier ones succeed (unlike when executing an entire file, where we go on after a failed command).  Thus an interactive command should never fail with only silent errors, since there is no earlier error for them to come from: if it does, that's a bug.  So the fatal handler of an interactive command passes its mortal errors and fatal error through this function, which replaces the fatal error by an anomaly in that case. *)
+let interactive_fatal errs d =
+  let errs = Snoc (errs, d) in
+  if Bwd.for_all is_silent errs then
+    let whys =
+      Bwd_extra.to_list_map
+        (fun (e : Code.t Asai.Diagnostic.t) ->
+          match e.message with
+          | Dependent why | Fatalize why -> why
+          | _ -> "")
+        errs in
+    diagnostic ?loc:d.explanation.loc
+      (Anomaly ("interactive command failed with only silent errors: " ^ String.concat ", " whys))
+  else d
+
 (* Formatting the message of a diagnostic can raise a fatal dependent error, if it involves printing a term that depends on a part that already failed (see Unparse.printer).  If that happens while formatting the message of a mortal error, we convert the fatal dependent error to a mortal one, replacing the one we were trying to format. *)
 let make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
   Delegate.try_with

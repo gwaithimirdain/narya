@@ -16,8 +16,8 @@ let interact_js : string -> string =
   let buf = Buffer.create 70 in
   Sys_js.set_channel_flusher stdout (fun str -> Buffer.add_string buf str);
   ( Reporter.run ~emit:(Reporter.display ~use_ansi:true ~output:stdout)
-      ~mortal:(Reporter.display ~use_ansi:true ~output:stdout) ~fatal:(fun _ d ->
-        Reporter.display ~use_ansi:true ~output:stdout d)
+      ~mortal:(Reporter.display ~use_ansi:true ~output:stdout) ~fatal:(fun errs d ->
+        Reporter.display ~use_ansi:true ~output:stdout (Reporter.interactive_fatal errs d))
   @@ fun () ->
     match Command.parse_single cmd with
     | _, None -> ()

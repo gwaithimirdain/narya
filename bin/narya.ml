@@ -457,7 +457,8 @@ let rec repl terminal history buf =
         let use_ansi = if !use_ansi then Some true else None in
         (* In interactive mode, we display all messages verbosely, and don't quit on fatal errors except for the Quit command. *)
         ( Reporter.run ~emit:(Reporter.display ?use_ansi ~output:stdout)
-            ~mortal:(Reporter.display ?use_ansi ~output:stdout) ~fatal:(fun _ d ->
+            ~mortal:(Reporter.display ?use_ansi ~output:stdout) ~fatal:(fun errs d ->
+              let d = Reporter.interactive_fatal errs d in
               Reporter.display ?use_ansi ~output:stdout d;
               match d.message with
               | Quit _ -> exit 0
@@ -530,6 +531,7 @@ let rec interact_pg () : unit =
         | _ -> Reporter.display ~use_ansi:true ~output:stdout d)
       ~mortal:(Reporter.display ~use_ansi:true ~output:stdout)
       ~fatal:(fun errs d ->
+        let d = Reporter.interactive_fatal errs d in
         Reporter.display ~use_ansi:true ~output:stdout d;
         Format.printf "\x0C[errors]\x0C\n%!";
         (* Silent errors aren't displayed, so we don't report their locations either. *)
