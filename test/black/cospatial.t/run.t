@@ -130,4 +130,9 @@ And there are no 2-cells crossing directly between ʃ and ♭ in the "wrong" dir
    1 | def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x
      ^ use of ʃ variable behind ♭ lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x
+     ^ use of ʃ variable behind id lock requires a key
+  
   [1]
