@@ -3456,20 +3456,33 @@ and synth : type mode a b s.
     | Pi (x, modality, dom, cod), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing pi-type" (e :> modality_error)
-        | Ok (Wrap modality) ->
+        | Ok (Wrap modality) -> (
             if not (Modality.tangible modality) then fatal (Intangible_modality modality);
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-            (* These user-level pi-types are always dimension zero, so the domain must be a zero-dimensional type. *)
-            let cdom = check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
-            let edom = eval_term (Ctx.env lctx) cdom in
-            let ccod =
-              check (Kinetic `Nolet) (Ctx.ext ctx modality x edom) cod (universe mode D.zero) in
-            ( realize status
-                (pi
-                   (singleton_variables D.zero (View.hinted x edom))
-                   (Modal (modality, plus, cdom))
-                   ccod),
-              universe mode D.zero ))
+            (* These user-level pi-types are always dimension zero, so the domain must be a zero-dimensional type.  If it fails to typecheck, we go on to check the codomain in a context where the variable is an error binding, so as to report any other errors there.  But then there is no pi-type, so we fail at the end. *)
+            match
+              Reporter.accumulate
+                ~fallback:(fun () -> None)
+                (fun () ->
+                  Some (check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero)))
+            with
+            | None ->
+                let _ =
+                  check (Kinetic `Nolet)
+                    (Ctx.ext_failed_let ctx modality x)
+                    cod (universe mode D.zero) in
+                fatal (Dependent "failed pi-type domain")
+            | Some cdom ->
+                let edom = eval_term (Ctx.env lctx) cdom in
+                let ccod =
+                  check (Kinetic `Nolet) (Ctx.ext ctx modality x edom) cod (universe mode D.zero)
+                in
+                ( realize status
+                    (pi
+                       (singleton_variables D.zero (View.hinted x edom))
+                       (Modal (modality, plus, cdom))
+                       ccod),
+                  universe mode D.zero )))
     | HigherPi (x, modality, dom, cod), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)

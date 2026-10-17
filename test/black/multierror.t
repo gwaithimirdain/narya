@@ -2115,3 +2115,44 @@ If some parameters of a definition or axiom fail to typecheck, the later paramet
          Type
   
   [1]
+
+Similarly, if the domain of a pi-type fails to typecheck, its codomain is still checked, although whatever uses the variable fails silently.  The pi-type itself still fails.
+
+  $ narya let.ny -e 'def f : (x : a) → b ≔ ?  def g : (x : b) → A → x ≔ ?  echo g'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : (x : a) → b ≔ ?  def g : (x : b) → A → x ≔ ?  echo g
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : (x : a) → b ≔ ?  def g : (x : b) → A → x ≔ ?  echo g
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f : (x : a) → b ≔ ?  def g : (x : b) → A → x ≔ ?  echo g
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+  [1]
