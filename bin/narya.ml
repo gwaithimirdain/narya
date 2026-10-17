@@ -532,7 +532,10 @@ let rec interact_pg () : unit =
       ~fatal:(fun errs d ->
         Reporter.display ~use_ansi:true ~output:stdout d;
         Format.printf "\x0C[errors]\x0C\n%!";
-        Mbwd.miter (fun [ d ] -> print_error_locs d) [ Snoc (errs, d) ])
+        (* Silent errors aren't displayed, so we don't report their locations either. *)
+        Mbwd.miter
+          (fun [ d ] -> if not (Reporter.is_silent d) then print_error_locs d)
+          [ Snoc (errs, d) ])
       (fun () ->
         try
           match Command.parse_single cmd with

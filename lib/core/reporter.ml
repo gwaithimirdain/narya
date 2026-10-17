@@ -1433,6 +1433,12 @@ let is_dependent (d : Code.t Asai.Diagnostic.t) =
 let fatalize_with why errs =
   if Bwd.for_all is_dependent errs then fatal (Dependent why) else fatal (Fatalize why)
 
+(* Whether a diagnostic is one of these two kinds of silent error. *)
+let is_silent (d : Code.t Asai.Diagnostic.t) =
+  match d.message with
+  | Dependent _ | Fatalize _ -> true
+  | _ -> false
+
 (* Formatting the message of a diagnostic can raise a fatal dependent error, if it involves printing a term that depends on a part that already failed (see Unparse.printer).  If that happens while formatting the message of a mortal error, we convert the fatal dependent error to a mortal one, replacing the one we were trying to format. *)
 let make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
   Delegate.try_with
@@ -1570,6 +1576,4 @@ module Terminal = Asai.Tty.Make (Code)
 
 let display ?use_ansi ?output (e : Code.t Asai.Diagnostic.t) =
   try_with ~fatal:(fun _ -> ()) @@ fun () ->
-  match e.message with
-  | Dependent _ | Fatalize _ -> ()
-  | _ -> Terminal.display ?use_ansi ?output e
+  if not (is_silent e) then Terminal.display ?use_ansi ?output e
