@@ -224,7 +224,6 @@ module F = struct
           (Modality.to_string (Modality.filter_modality filter))
           (cubeof (dvalue depth))
           v
-    | Ext { env = e; values = `Error _; _ } -> fprintf ppf "%a <: Err" env e
     | Ext { env = e; values = `Lazy v; _ } ->
         fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
     | Act (e, o) ->

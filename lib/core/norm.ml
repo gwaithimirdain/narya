@@ -840,7 +840,7 @@ and field : type src f mode n k nk s.
       match act_value viewed_tm p (Modalcell.id2 src) with
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
       | Neu { head; args; value; ty = (lazy ty) } -> (
-          let newty = lazy (tyof_field fm (Ok tm) ty fld fldins) in
+          let newty = lazy (tyof_field fm tm ty fld fldins) in
           (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
           let (Has_filter filter) = Modality.filter fm n in
           let args = Field (args, filter, fld, fldplus, ins_zero n) in
@@ -914,10 +914,10 @@ and field_term : type src f mode n k nk.
   let (Val v) = field fm x fld fldins in
   v
 
-(* Given a term and its record type, compute the type of a field projection, and the substitution dimension it was evaluated at.  There are two versions of this function, one for when we already know the insertion associated to the field, and one for when we are synthesizing it from the user's integer sequence.  First we define the shared part of both, where we have already found the codatafield from the codata type.  We allow the term to be an error, in case typechecking failed earlier but we are continuing on; this can nevertheless succeed (or fail in more interesting ways) if the type doesn't actually depend on that value. *)
+(* Given a term and its record type, compute the type of a field projection, and the substitution dimension it was evaluated at.  There are two versions of this function, one for when we already know the insertion associated to the field, and one for when we are synthesizing it from the user's integer sequence.  First we define the shared part of both, where we have already found the codatafield from the codata type. *)
 and tyof_codatafield : type src f mode m n mn a s i et.
     (src, f, mode) Modality.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     i Field.t ->
     (i, src * a * D.zero * n * et) Codatafield.t ->
     (src, m, a) env ->
@@ -951,20 +951,17 @@ and tyof_codatafield : type src f mode m n mn a s i et.
 (* Assemble the self value that a codatafield's type is applied to, from the term being projected and the boundary of its type.  The self variable lies behind the locks by the right and then the left adjoint, whereas an ambient value being projected from lives in the ambient context; so, exactly as for the *type* of the self variable when the codatatype is checked, we transport it and its boundary along the adjunction unit 1 ⇒ gf.  For an ordinary field the unit is an identity cell and this is a no-op.  (A caller that already has the self *variable* of a self-extended context, such as readback_codata, has no ambient term to transport, and calls tyof_lower_codatafield or tyof_higher_codatafield directly with that variable instead.) *)
 and self_values : type amode f g gmode mn.
     (amode, f, g, gmode) Modalcell.adjunction ->
-    ((amode, kinetic) value, Code.t) Result.t ->
+    (amode, kinetic) value ->
     (D.zero, mn, mn, amode normal) TubeOf.t ->
-    [ `Ok of (mn, (amode, kinetic) value) CubeOf.t | `Error of Code.t ] =
+    (mn, (amode, kinetic) value) CubeOf.t =
  fun (Adjunction { unit; _ }) tm tyargs ->
-  match tm with
-  | Ok tm ->
-      let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
-      `Ok (CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ])
-  | Error e -> `Error e
+  let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
+  CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ]
 
 (* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.  The ~key flag distinguishes two uses.  `Counit computes the type of a *projection* x .fld, which is keyed by the adjunction counit to put it in the ambient context (rule 3 of modal fields).  `Nokey computes the type at which the *component* of a tuple/comatch is checked or read back, which lives behind the lock by the right adjoint and is not keyed (rule 2).  For ordinary fields the two agree, since the counit is the identity. *)
 and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
-    (* As for a higher field, the self value and its boundary, in the context behind the locks where the field's type lives: an ambient value being projected from is transported there along the adjunction unit (self_values does that), while a caller displaying a codatatype supplies the self variable of its self-extended context, which is already there.  It can be an error, if typechecking of the term whose field this is failed earlier; the type may still not depend on it. *)
-    [ `Ok of (mn, (amode, kinetic) value) CubeOf.t | `Error of Code.t ] ->
+    (* As for a higher field, the self value and its boundary, in the context behind the locks where the field's type lives: an ambient value being projected from is transported there along the adjunction unit (self_values does that), while a caller displaying a codatatype supplies the self variable of its self-extended context, which is already there. *)
+    (mn, (amode, kinetic) value) CubeOf.t ->
     (* The boundary of the self, as its type presents it in the context where it lives: an ambient term's untransported boundary, or the boundary of the self variable's own type.  These are the terms whose field projections instantiate the field type. *)
     (D.zero, mn, mn, amode normal) TubeOf.t ->
     D.zero Field.t ->
@@ -994,7 +991,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
             plus = mn;
             filter = mfilter;
             filtered = Modality.filter_idempotent nfilter;
-            values :> (mn, amode) env_binding;
+            values = `Ok values;
           } in
       (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
       let insttm = eval_term env fldty in
@@ -1010,7 +1007,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
               (fun fa [ arg ] ->
                 let fains = ins_zero (dom_tface fa) in
                 let tm = field_term left arg.tm fldname fains in
-                let ty = lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname fains) in
+                let ty = lazy (tyof_field left arg.tm (Lazy.force arg.ty) fldname fains) in
                 { tm; ty });
           }
           [ fst (TubeOf.split (D.zero_plus m) mn tyargs) ] in
@@ -1018,8 +1015,8 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
 
 (* This function is also called directly from check_higher_field.  In that case, the field is determined by a partial bijection that may *not* be just an insertion, and we have to frobnicate the environment in which we evaluate the type.  Some of that frobnication involves an eval-readback cycle, which requires a callback from here since readback isn't defined yet. *)
 and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
-    (* The self value and its boundary, *already* in the context where this instance of the field lives: transported behind the locks along the adjunction unit if it is an ambient value (self_values does that), or the self variable of a self-extended context if the caller is displaying a codatatype, and degenerated by the remaining dimensions either way.  The value is an (r+n)-cube: for a projection (r=0) that is just the self and its boundary, while for a nonprojectable instance it is their degeneration.  It can be an error, if typechecking of the term whose field this is failed earlier; the type may still not depend on it. *)
-    [ `Ok of (rn, (mode, kinetic) value) CubeOf.t | `Error of Code.t ] ->
+    (* The self value and its boundary, *already* in the context where this instance of the field lives: transported behind the locks along the adjunction unit if it is an ambient value (self_values does that), or the self variable of a self-extended context if the caller is displaying a codatatype, and degenerated by the remaining dimensions either way.  The value is an (r+n)-cube: for a projection (r=0) that is just the self and its boundary, while for a nonprojectable instance it is their degeneration. *)
+    (rn, (mode, kinetic) value) CubeOf.t ->
     (* The boundary faces of the self as its type presents them (see tyof_lower_codatafield), indexed by the faces of n, each degenerated by the remaining dimensions as above (so the face at an n-face of dimension k is (r+k)-dimensional).  These are the terms whose field projections instantiate the field type. *)
     (D.zero, n, n, mode normal) TubeOf.t ->
     (r, n, rn) D.plus ->
@@ -1077,7 +1074,7 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
             plus = D.plus_zero rn;
             filter = rnfilter;
             filtered = Modality.filter_zero left;
-            values :> (rn, mode) env_binding;
+            values = `Ok values;
           } in
       (* Now we act by the inverse of the insertion, in the last n of the r+n dimensions, to get an (r+s+h, agx) env. *)
       let insdeg = plus_deg r r_n r_sh (deg_of_perm (perm_inv (perm_of_ins_plus fldins sh))) in
@@ -1124,15 +1121,14 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
                 match shuf with
                 | Trivial ->
                     let tm = field_term left arg.tm fldname fains in
-                    let ty = lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname fains) in
+                    let ty = lazy (tyof_field left arg.tm (Lazy.force arg.ty) fldname fains) in
                     { tm; ty }
                 | Nontrivial { shuffle; _ } ->
                     (* We use the extra dimensions of the degenerated face to make the pbij into an insertion. *)
                     let (Plus rm) = D.plus (dom_tface faplus) in
                     let arg_ins = ins_plus_of_pbij fains shuffle rm in
                     let tm = field_term left arg.tm fldname arg_ins in
-                    let ty =
-                      lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname arg_ins) in
+                    let ty = lazy (tyof_field left arg.tm (Lazy.force arg.ty) fldname arg_ins) in
                     { tm; ty });
           } in
       inst insttm instargs
@@ -1140,16 +1136,13 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
 (* This version is when we already know the insertion.  In this case, it's a bug if the field name or dimension don't match.  The modality is the left adjoint of the field's adjunction: the term and its type live at its source mode and the resulting field type at its target mode. *)
 and tyof_field : type src f mode m s i.
     (src, f, mode) Modality.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     (src, kinetic) value ->
     i Field.t ->
     (m, s, i) insertion ->
     (mode, kinetic) value =
  fun fm tm ty fld fldins ->
-  let errtm =
-    match tm with
-    | Ok tm -> Dump.Val tm
-    | Error _err -> PString "[ERROR]" in
+  let errtm = Dump.Val tm in
   let errfld = `Ins (fld, fldins) in
   let severity = Asai.Diagnostic.Bug in
   match view_type ty "tyof_field" with
@@ -1175,10 +1168,7 @@ and tyof_field : type src f mode m s i.
       match Fibrancy.FieldsMap.find_opt srcmode !Fibrancy.fields with
       | None -> fatal ~severity err
       | Some fields ->
-          let values =
-            match tm with
-            | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
-            | Error e -> `Error e in
+          let values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) in
           let env =
             Value.Ext
               {
@@ -1189,16 +1179,11 @@ and tyof_field : type src f mode m s i.
                 values;
               } in
           tyof_field_giventype fm tm head Noeta env (D.plus_zero m) fields tyargs fld fldins)
-  | _ ->
-      let p =
-        match tm with
-        | Ok tm -> Dump.Val tm
-        | Error _err -> PString "[ERROR]" in
-      fatal ~severity (No_such_field (`Other p, errfld))
+  | _ -> fatal ~severity (No_such_field (`Other (Dump.Val tm), errfld))
 
 and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
     (src, f, mode) Modality.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     hmode head ->
     (potential, et) eta ->
     (src, m, a) env ->
@@ -1229,7 +1214,7 @@ and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
 and tyof_field_withname : type src f mode a b.
     (src, f, mode) Modality.t ->
     (src, a, b) Ctx.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     (src, kinetic) value ->
     [ `Name of string * int list | `Int of int ] ->
     Field.with_ins * (mode, kinetic) value =
@@ -1238,10 +1223,7 @@ and tyof_field_withname : type src f mode a b.
     match infld with
     | `Name (str, ints) -> `Strings (str, ints)
     | `Int n -> `Int n in
-  let errtm =
-    match tm with
-    | Ok tm -> PVal (ctx, tm)
-    | Error _err -> PString "[ERROR]" in
+  let errtm = PVal (ctx, tm) in
   match view_type ~severity:Asai.Diagnostic.Error ty "tyof_field" with
   | Canonical (head, Codata { env; fields; opacity = _; eta; hints = _ }, codatains, tyargs) -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
@@ -1256,10 +1238,7 @@ and tyof_field_withname : type src f mode a b.
       match Fibrancy.FieldsMap.find_opt srcmode !Fibrancy.fields with
       | None -> fatal err
       | Some fields ->
-          let values =
-            match tm with
-            | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
-            | Error e -> `Error e in
+          let values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) in
           let env =
             Value.Ext
               {
@@ -1277,7 +1256,7 @@ and tyof_field_withname : type src f mode a b.
 and tyof_field_withname_giventype : type src f mode a b m n mn c et.
     (src, f, mode) Modality.t ->
     (src, a, b) Ctx.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     (src, kinetic) value ->
     (potential, et) eta ->
     (src, m, c) env ->
@@ -1699,8 +1678,6 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
           (* The looked-up value lives at the modality's domain mode, where the prekey action starts as an identity. *)
           let pre = Modalcell.id2 (Modality.src mu) in
           match (values, Modality.compare modality mu) with
-          (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
-          | `Error e, _ -> fatal e
           | `Ok entry, Eq -> Looked_up { act = (fun x s c -> act_value x s c); op; entry; pre }
           | `Lazy entry, Eq ->
               Looked_up
