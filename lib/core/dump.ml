@@ -374,7 +374,7 @@ module F = struct
     | Key (tm, parts) -> fprintf ppf "Key(%a, #%s)" synth tm.value (String.concat "." parts.value)
     | Pi (_, _, _, _) -> fprintf ppf "Pi(?)"
     | HigherPi (_, _, _, _) -> fprintf ppf "HigherPi(?)"
-    | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
+    | InstHigherPi (_, _, _, _) -> fprintf ppf "InstHigherPi(?)"
     | App (fn, { value = Some arg; _ }, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg
     | App (fn, { value = None; _ }, _) -> fprintf ppf "App(%a, .)" check fn.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value

@@ -234,3 +234,23 @@ The same goes for higher function-types, both instantiated and not.
     : (U :♭| Type)
       → Type⁽ᵉ⁾ ((x :♭| U) (y :♭| U) → U) ((x :♭| U) (y :♭| U) → U)
   
+
+With arity zero, a cube has no boundary, so an instantiated higher function-type can bind a group of explicit variables sharing a domain, each forming its own one-domain function-type.
+
+  $ narya -arity 0 -parametric -e 'axiom A : Type  axiom B : A → Type  axiom f : (x : A) (y : A) → B x  echo (A y : Id A .) →⁽ᵉ⁾ Id B y .  def q : (x y : Id A .) →⁽ᵉ⁾ Id B x . ≔ refl f  echo q'
+  (A : Id A .) (y : Id A .) →⁽ᵉ⁾ Id B y .
+    : Type
+  
+  ap f
+    : (x : Id A .) (y : Id A .) →⁽ᵉ⁾ Id B x .
+  
+
+Otherwise that isn't allowed, since the later variables would have no boundaries.
+
+  $ narya hp.ny -e 'echo {x₀ x₁ : A} (x₂ y₂ : refl A x₀ x₁) →⁽ᵉ⁾ A'
+   ￫ error[E0706]
+   ￭ command-line exec string
+   1 | echo {x₀ x₁ : A} (x₂ y₂ : refl A x₀ x₁) →⁽ᵉ⁾ A
+     ^ invalid higher function-type: a primary domain with boundaries can't be shared by several variables
+  
+  [1]

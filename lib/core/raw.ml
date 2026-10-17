@@ -42,7 +42,9 @@ module rec Make : functor (I : Indices) -> sig
         * 'a synth located
         * 'ab synth located
         -> 'a synth
-    | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
+    | InstHigherPi :
+        'n D.pos * ('a, 'b, 'ab) tel * ('ab, 'c, 'abc) Namevec.t * 'abc check located
+        -> 'a synth
     | App :
         'a check located * 'a check option located * [ `Implicit | `Explicit ] located
         -> 'a synth
@@ -192,8 +194,10 @@ functor
           * 'a synth located
           * 'ab synth located
           -> 'a synth
-      (* An n-dimensional pi-type, fully instantiated, with all its domains supplied.  The dimension 'n is the outer (unfiltered) dimension; the domains form a telescope whose length must match the number of faces of the *filtered* dimension, which is not known until typechecking (since parsing the modality annotations requires knowing the modes). *)
-      | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
+      (* An n-dimensional pi-type, fully instantiated, with all its domains supplied.  The dimension 'n is the outer (unfiltered) dimension; the domains form a telescope whose length must match the number of faces of the *filtered* dimension, which is not known until typechecking (since parsing the modality annotations requires knowing the modes).  The primary (last) domain can be shared by some further variables, such as y in "(x y : A) →⁽ᵉ⁾ B", each of which forms another such pi-type with that single domain.  This is only possible when the filtered dimension has only one face, i.e. when the arity is zero or the modality filters out the dimension, so that there are no boundary domains. *)
+      | InstHigherPi :
+          'n D.pos * ('a, 'b, 'ab) tel * ('ab, 'c, 'abc) Namevec.t * 'abc check located
+          -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :
           'a check located * 'a check option located * [ `Implicit | `Explicit ] located
@@ -456,10 +460,11 @@ module Resolve (R : Resolver) = struct
       | HigherPi (xs, modality, dom, cod) ->
           let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
           HigherPi (renames ctx xs ab2, modality, synth ctx dom, synth (append ctx xs ab2) cod)
-      | InstHigherPi (n, doms, cod) ->
+      | InstHigherPi (n, doms, xs, cod) ->
           let (Bplus ab) = R.T2.bplus (R.T1.fwn_of_tel doms) in
           let doms2, ctx2 = tel ctx doms ab in
-          InstHigherPi (n, doms2, check ctx2 cod)
+          let (Bplus ac2) = R.T2.bplus (R.T1.Namevec.length xs) in
+          InstHigherPi (n, doms2, renames ctx2 xs ac2, check (append ctx2 xs ac2) cod)
       | App (fn, arg, impl) ->
           let arg =
             match arg.value with
