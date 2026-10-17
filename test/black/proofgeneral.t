@@ -143,6 +143,7 @@ visible.
   
   ^L[errors]^L
   5 6
+  5 6
   ^L[narya]^L
    ￫ ^[[31merror[E0200]^[[m
    ^[[2m2 |^[[m ^[[4;31m‹EOF›^[[m

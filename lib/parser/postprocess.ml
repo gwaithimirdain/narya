@@ -101,11 +101,16 @@ let rec process : type n lt ls rt rs.
       Reporter.try_with
         (fun () -> process_ident ctx loc parts)
         ~fatal:(fun d ->
+          (* Rather than failing on an invalid identifier, we report the error as mortal and replace the identifier by a term that fails silently if the typechecker reaches it, so that it can go on to report errors in other parts of the term that don't depend on it.  We report the error now rather than when the typechecker reaches it, since it might never do so if some other part of the term fails. *)
+          let failed = { value = Synth (Fail (Dependent "invalid identifier")); loc } in
           match d.message with
           | Unbound_variable (p, _) ->
-              (* Rather than failing immediately, we postpone the error until the typechecker reaches the unbound identifier, so that it can go on to report errors in other parts of the term that don't depend on it. *)
               let alt = detect_spaceless_fields ctx loc (Bwd.of_list parts) [] [] in
-              { value = Synth (Fail (Unbound_variable (p, alt))); loc }
+              Reporter.mortal ?loc:d.explanation.loc (Unbound_variable (p, alt));
+              failed
+          | Missing_argument_of_degeneracy _ | Invalid_numeral _ ->
+              Reporter.mortal_diagnostic d;
+              failed
           | _ -> fatal_diagnostic d)
   | Constr (ident, _) -> { value = Raw.Constr ({ value = Constr.intern ident; loc }, []); loc }
   | Field _ ->

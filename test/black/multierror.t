@@ -2157,27 +2157,27 @@ Similarly, if the domain of a pi-type fails to typecheck, its codomain is still 
   
   [1]
 
-An unbound identifier is reported when the typechecker reaches it, so that other errors elsewhere in the term are still reported.
+An unbound identifier, or another invalid one such as a malformed numeral or a degeneracy without an argument, is reported as soon as it is encountered, and replaced by a term that fails silently, so that other errors elsewhere in the term are still reported.  This happens even if the typechecker never reaches it, for instance because it is an argument of a function that fails.
 
-  $ narya let.ny -e 'def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq'
+  $ narya let.ny -e 'def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq'
    ￫ error[E0300]
    ￭ command-line exec string
-   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
      ^ unbound variable: Foo
   
    ￫ error[E0300]
    ￭ command-line exec string
-   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
      ^ unbound variable: Bar
   
    ￫ error[E0300]
    ￭ command-line exec string
-   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
      ^ unbound variable: zz
   
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
      ^ term synthesized type
          B
        but is being checked against type
@@ -2189,7 +2189,43 @@ An unbound identifier is reported when the typechecker reaches it, so that other
   
    ￫ error[E0300]
    ￭ command-line exec string
-   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  echo qq
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
+     ^ unbound variable: zz
+  
+   ￫ error[E0701]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
+     ^ attempt to apply/instantiate
+         b
+       of type
+         B
+       which is not a function-type or universe
+  
+   ￫ error[E0600]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
+     ^ missing argument for degeneracy refl
+  
+   ￫ error[E0205]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
+     ^ invalid numeral: 1.2.3
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | def f (x : Foo) : Bar ≔ x  def g : A ≔ ((y ↦ y) : B → B) zz  def h : A ≔ b zz  def k (x : refl) (y : 1.2.3) : b ≔ a  echo qq
      ^ unbound variable: qq
   
   [1]

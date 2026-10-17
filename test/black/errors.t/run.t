@@ -296,6 +296,9 @@
    1 | echo (x |-> f 0.1.2 x)
      ^ invalid numeral: 0.1.2
   
+   ￫ error[E0400]
+   ￮ non-synthesizing term in synthesizing position (argument of echo)
+  
   [1]
   $ narya -parametric errors.ny -e "echo (let x.y ≔ z in w)"
    ￫ error[E0202]
