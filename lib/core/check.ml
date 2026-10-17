@@ -414,10 +414,10 @@ let check_window_transparency : type dom window mode k a.
 (* Report every constructor of a datatype as missing from an empty match that failed to refute anything, as a non-empty match would report each constructor it lacks. *)
 let missing_constructors : type a b. (Constr.t, a) Abwd.t -> b =
  fun constrs ->
-  match Bwd.to_list constrs with
-  | [] -> fatal (Anomaly "no constructors to report missing")
-  | constrs ->
-      List.iter (fun (c, _) -> mortal (Missing_constructor_in_match c)) constrs;
+  match constrs with
+  | Emp -> fatal (Anomaly "no constructors to report missing")
+  | Snoc _ ->
+      Mbwd.miter (fun [ (c, _) ] -> mortal (Missing_constructor_in_match c)) [ constrs ];
       fatal (Fatalize "missing_constructors")
 
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential). *)
