@@ -231,8 +231,10 @@ module Ordered = struct
             (fun fa [ b; oldb; newb ] ->
               let new_level = (i, !k) in
               k := !k + 1;
-              match Binding.level b with
-              | None -> (
+              match (Binding.error_of b, Binding.level b) with
+              (* An error binding, such as a let-bound variable whose value failed to typecheck, remains an error binding. *)
+              | Some e, _ -> Binding.specify_error newb e
+              | None, None -> (
                   (* If the variable was let-bound in the original context, we readback-eval its (normal) value, which includes its type. *)
                   let oldnf = Binding.value b in
                   match eval_readback_nf ~level ~oldctx ~newctx oldnf with
@@ -241,7 +243,7 @@ module Ordered = struct
                       Binding.force oldb;
                       Binding.specify newb None newnf
                   | None -> raise_notrace Short_circuit)
-              | Some old_level -> (
+              | None, Some old_level -> (
                   (* For variables that were not let-bound in the old context, we first check whether we're newly binding them. *)
                   match bind_var binder old_level (Modality.src modality) with
                   (* `Nonbindable means only that the *top* variable is nonbindable. *)

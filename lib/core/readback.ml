@@ -675,46 +675,52 @@ and readback_ordered_env : type mode n a b c d.
           let mk = D.plus_out m m_k in
           (* We act by a sface_of_filter to reduce the dimension of the environment to m, so that we can get an (m+k)-dimensional cube out of it. *)
           let aenv = act_env env (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
-          (* We get the top entry (Now) from the environment we're reading back.  We can't just match it against Ext or LazyExt because it could have other lazy operations applied to it like Shift, Unshift, Permute, etc. *)
-          (* Since no keys are stripped here, the prekey transport modality is just the entry's annotating modality. *)
-          let (Looked_up { act; op; entry = xs; pre }) =
-            lookup_cube aenv m_k modality modality Now (id_opt_op mk) in
-          (* As usual, the missing endpoints in sface_of_filter should be canceled by degeneracies in the non-unary case. *)
-          let (Op (fc, fd)) =
-            op_of_opt op <|> Anomaly "unexpected missing endpoint in readback_ordered_env" in
           (* We are reading back bindings that were defined under a modality, so they are defined in a locked context. *)
           let (Locked (bplus, lctx)) = Ctx.lock ctx modality in
-          (* We also analogously key the environment we're reading back, for purposes of evaluating types. *)
-          let lenv = key_id_env aenv dplus in
-          (* We apply the accumulated operators, degeneracies, and any prekey action to the entry we found. *)
-          let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
-          (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)
-          let xtytbl = Hashtbl.create 10 in
           let tmxs =
-            CubeOf.mmap
-              {
-                map =
-                  (fun fab [ tm ] ->
-                    let (SFace_of_plus (_, fb, fa)) = sface_of_plus m_k fab in
-                    (* The type to read back at comes from the top entry in the codomain context.  This is a term, so we have to evaluate it to get a value before reading back at it.  We evaluate it in our given environment, so that it can use the terms to the left and also lower-dimensional terms in the current entry.  We have to lock that environment to make those latter entries available. *)
-                    let ty = (CubeOf.find bindings fa).ty in
-                    let ety = eval_term (act_env lenv (opt_op_of_sface fb)) ty in
-                    (* Now we instantiate it at the lower-dimensional normal forms that we already computed. *)
-                    let ty =
-                      inst ety
-                        (TubeOf.build D.zero
-                           (D.zero_plus (dom_sface fb))
-                           {
-                             build =
-                               (fun fc ->
-                                 Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
-                           }) in
-                    (* We use this computed type to make a normal form, and record it in the hashtbl. *)
-                    Hashtbl.add xtytbl (SFace_of fb) { tm; ty = Lazy.from_val ty };
-                    (* Finally, we read back the term in that instantiated type. *)
-                    readback_at Kinetic lctx tm ty);
-              }
-              [ xs ] in
+            match (CubeOf.find_top bindings).ty with
+            (* An error binding is read back as Failed, and its value in the environment can't be accessed, so we read back its entries as Failed too. *)
+            | Failed -> CubeOf.build mk { build = (fun _ -> Term.Failed) }
+            | _ ->
+                (* We get the top entry (Now) from the environment we're reading back.  We can't just match it against Ext or LazyExt because it could have other lazy operations applied to it like Shift, Unshift, Permute, etc. *)
+                (* Since no keys are stripped here, the prekey transport modality is just the entry's annotating modality. *)
+                let (Looked_up { act; op; entry = xs; pre }) =
+                  lookup_cube aenv m_k modality modality Now (id_opt_op mk) in
+                (* As usual, the missing endpoints in sface_of_filter should be canceled by degeneracies in the non-unary case. *)
+                let (Op (fc, fd)) =
+                  op_of_opt op <|> Anomaly "unexpected missing endpoint in readback_ordered_env"
+                in
+                (* We also analogously key the environment we're reading back, for purposes of evaluating types. *)
+                let lenv = key_id_env aenv dplus in
+                (* We apply the accumulated operators, degeneracies, and any prekey action to the entry we found. *)
+                let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
+                (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)
+                let xtytbl = Hashtbl.create 10 in
+                CubeOf.mmap
+                  {
+                    map =
+                      (fun fab [ tm ] ->
+                        let (SFace_of_plus (_, fb, fa)) = sface_of_plus m_k fab in
+                        (* The type to read back at comes from the top entry in the codomain context.  This is a term, so we have to evaluate it to get a value before reading back at it.  We evaluate it in our given environment, so that it can use the terms to the left and also lower-dimensional terms in the current entry.  We have to lock that environment to make those latter entries available. *)
+                        let ty = (CubeOf.find bindings fa).ty in
+                        let ety = eval_term (act_env lenv (opt_op_of_sface fb)) ty in
+                        (* Now we instantiate it at the lower-dimensional normal forms that we already computed. *)
+                        let ty =
+                          inst ety
+                            (TubeOf.build D.zero
+                               (D.zero_plus (dom_sface fb))
+                               {
+                                 build =
+                                   (fun fc ->
+                                     Hashtbl.find xtytbl
+                                       (SFace_of (comp_sface fb (sface_of_tface fc))));
+                               }) in
+                        (* We use this computed type to make a normal form, and record it in the hashtbl. *)
+                        Hashtbl.add xtytbl (SFace_of fb) { tm; ty = Lazy.from_val ty };
+                        (* Finally, we read back the term in that instantiated type. *)
+                        readback_at Kinetic lctx tm ty);
+                  }
+                  [ xs ] in
           (* For the recursive call, we remove the entry we found. *)
           let tmenv = readback_ordered_env ctx (remove_top env) envctx in
           Ext
@@ -764,11 +770,13 @@ and readback_bindings : type mode a b n.
     {
       map =
         (fun _ [ b ] ->
-          match Binding.level b with
-          | Some _ ->
+          match (Binding.error_of b, Binding.level b) with
+          (* An error binding is read back as a failed term and type, which evaluate back to an error binding. *)
+          | Some _, _ -> ({ tm = Some Failed; ty = Failed } : (mode, b) binding)
+          | None, Some _ ->
               ({ tm = None; ty = readback_val ctx (Lazy.force (Binding.value b).ty) }
                 : (mode, b) binding)
-          | None ->
+          | None, None ->
               {
                 tm = Some (readback_nf ctx (Binding.value b));
                 ty = readback_val ctx (Lazy.force (Binding.value b).ty);
@@ -784,7 +792,7 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
       match e with
       | Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus; filter } ->
           let modality = Modality.filter_modality filter in
-          let top = Binding.value (CubeOf.find_top bindings) in
+          let top = lazy (Binding.value (CubeOf.find_top bindings)) in
           (* Fields as illusory variables are only used when typechecking records, which have substitution dimension 0 and can have no higher fields, so as field insertion we can use the identity on zero. *)
           let fins = ins_zero D.zero in
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
@@ -795,7 +803,7 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
                   readback_val lctx
                     (tyof_field
                        (Modality.id (Ctx.mode lctx))
-                       (Ok top.tm) (Lazy.force top.ty) f fins) in
+                       (Ok (Lazy.force top).tm) (Lazy.force (Lazy.force top).ty) f fins) in
                 (f, x, fldty))
               fields in
           let bindings = readback_bindings lctx bindings in

@@ -1147,59 +1147,66 @@ and synth_or_check_let : type mode a b s p.
   | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
       if not (Modality.tangible modality) then fatal (Intangible_modality modality);
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-      (* The bound value is checked in an occurrence-analysis scope, and the resulting verdict is stored as the "dirt" of the new variable's binding, so that references to the variable from datatype constructor types can detect occurrences of currently-being-defined constants hiding in its value. *)
-      let (v, nf), dirt =
+      (* The bound value is checked in an occurrence-analysis scope, and the resulting verdict is stored as the "dirt" of the new variable's binding, so that references to the variable from datatype constructor types can detect occurrences of currently-being-defined constants hiding in its value.  If the bound value (or its ascribed type) fails to typecheck, we record it as Failed and go on to check the body. *)
+      let checked, dirt =
         Positivity.scope @@ fun () ->
-        try
-          (* We first try checking the bound term first as an ordinary kinetic term. *)
-          let sv, svty = synth (Kinetic `Let) lctx v in
-          let ev = eval_term (Ctx.env lctx) sv in
-          (sv, { tm = ev; ty = Lazy.from_val svty })
-        with
-        (* If that encounters case-tree constructs, then we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
-        | Case_tree_construct_in_let ->
-          (* First we make the metavariable. *)
-          let meta =
-            Meta.make_def "let" name (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx) Potential
-          in
-          let termctx = readback_ctx lctx in
-          (* A new status in which to check the value of that metavariable; now it is the "current constant" being defined. *)
-          let tmstatus = Potential (Meta (meta, Ctx.env lctx), Emp, fun x -> x) in
-          let sv, svty =
-            match v.value with
-            | Asc (vtm, rvty) ->
-                (* If the bound term is explicitly ascribed, then we can give the metavariable a type while checking its body.  This is probably mainly only useful with "let rec". *)
-                let vty = check (Kinetic `Nolet) lctx rvty (universe (Ctx.mode lctx) D.zero) in
-                Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
-                let evty = eval_term (Ctx.env lctx) vty in
-                let cv = check tmstatus lctx vtm evty in
-                Global.set_meta meta cv;
-                (cv, evty)
-            | _ ->
-                (* Otherwise, we just synthesize the term.  But first we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
-                Global.add_meta_error meta (Typeless_meta (meta, `Let));
-                (* We pass in a ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
-                let synthed svty =
-                  let vty = readback_val lctx svty in
-                  Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
-                let sv, svty = synth ~synthed tmstatus lctx v in
-                (* Now the type is already installed and we can just set the value. *)
-                Global.set_meta meta sv;
-                (sv, svty) in
-          (* We turn that metavariable into a value. *)
-          let head = Value.Meta { meta; env = Ctx.env lctx; ins = zero_ins D.zero } in
-          let tm =
-            if GluedEval.read () then
-              (* Glued evaluation: we delay evaluating the term until it's needed. *)
-              Neu { head; args = Emp; value = lazy_eval (Ctx.env lctx) sv; ty = Lazy.from_val svty }
-            else
-              match eval (Ctx.env lctx) sv with
-              | Realize x -> x
-              | value -> Neu { head; args = Emp; value = ready value; ty = Lazy.from_val svty }
-          in
-          (Term.Meta (meta, Kinetic), { tm; ty = Lazy.from_val svty }) in
-      (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context. *)
-      let newctx = Ctx.ext_let ~dirt ctx modality name nf in
+        Reporter.accumulate ~fallback:(fun () -> None) @@ fun () ->
+        Option.some
+        @@
+          try
+            (* We first try checking the bound term first as an ordinary kinetic term. *)
+            let sv, svty = synth (Kinetic `Let) lctx v in
+            let ev = eval_term (Ctx.env lctx) sv in
+            (sv, { tm = ev; ty = Lazy.from_val svty })
+          with
+          (* If that encounters case-tree constructs, then we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
+          | Case_tree_construct_in_let ->
+            (* First we make the metavariable. *)
+            let meta =
+              Meta.make_def "let" name (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx)
+                Potential in
+            let termctx = readback_ctx lctx in
+            (* A new status in which to check the value of that metavariable; now it is the "current constant" being defined. *)
+            let tmstatus = Potential (Meta (meta, Ctx.env lctx), Emp, fun x -> x) in
+            let sv, svty =
+              match v.value with
+              | Asc (vtm, rvty) ->
+                  (* If the bound term is explicitly ascribed, then we can give the metavariable a type while checking its body.  This is probably mainly only useful with "let rec". *)
+                  let vty = check (Kinetic `Nolet) lctx rvty (universe (Ctx.mode lctx) D.zero) in
+                  Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
+                  let evty = eval_term (Ctx.env lctx) vty in
+                  let cv = check tmstatus lctx vtm evty in
+                  Global.set_meta meta cv;
+                  (cv, evty)
+              | _ ->
+                  (* Otherwise, we just synthesize the term.  But first we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
+                  Global.add_meta_error meta (Typeless_meta (meta, `Let));
+                  (* We pass in a ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
+                  let synthed svty =
+                    let vty = readback_val lctx svty in
+                    Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
+                  let sv, svty = synth ~synthed tmstatus lctx v in
+                  (* Now the type is already installed and we can just set the value. *)
+                  Global.set_meta meta sv;
+                  (sv, svty) in
+            (* We turn that metavariable into a value. *)
+            let head = Value.Meta { meta; env = Ctx.env lctx; ins = zero_ins D.zero } in
+            let tm =
+              if GluedEval.read () then
+                (* Glued evaluation: we delay evaluating the term until it's needed. *)
+                Neu
+                  { head; args = Emp; value = lazy_eval (Ctx.env lctx) sv; ty = Lazy.from_val svty }
+              else
+                match eval (Ctx.env lctx) sv with
+                | Realize x -> x
+                | value -> Neu { head; args = Emp; value = ready value; ty = Lazy.from_val svty }
+            in
+            (Term.Meta (meta, Kinetic), { tm; ty = Lazy.from_val svty }) in
+      (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context.  If it failed, we instead extend the context by an error binding, so that parts of the body that use the variable fail silently, while those that don't can still be checked. *)
+      let v, newctx =
+        match checked with
+        | Some (v, nf) -> (v, Ctx.ext_let ~dirt ctx modality name nf)
+        | None -> (Term.Failed, Ctx.ext_failed_let ctx modality name) in
       (* Now we update the status of the original constant being checked *)
       let status : (mode, (b, (modality, D.zero) dim_entry) snoc, s) status =
         match status with
