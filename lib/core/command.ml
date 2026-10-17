@@ -77,7 +77,9 @@ let check_term (def : defined_const) : checked_term =
             match synth_mode (locate_opt tm.loc (Synth tm.value)) with
             | Some mode -> mode
             | None -> fatal (Non_mode_synthesizing "synthesizing def")) in
-      let (Checked_tel (cparams, ctx)) = check_tel (Ctx.empty mode) params in
+      (* If some of the parameters fail to typecheck, we go on to check the others.  But we can't check the term in a context where the failed ones are error bindings, since its status abstracts over the parameters, so we fail. *)
+      let (Checked_tel (cparams, ctx)) = check_tel ~accumulate:true (Ctx.empty mode) params in
+      if Telescope.has_failed cparams then fatal (Dependent "failed parameter");
       let ctm, ety =
         synth (Potential (Constant (const, Ctx.mode ctx, D.zero), Ctx.apps ctx, Ctx.lam ctx)) ctx tm
       in
@@ -135,8 +137,10 @@ let check_type_of : type b c. string -> (N.zero, b, c) Raw.tel -> c check locate
         match synth_mode ty with
         | Some mode -> mode
         | None -> fatal (Non_mode_synthesizing which)) in
-  let (Checked_tel (params, ctx)) = check_tel (Ctx.empty mode) params in
+  (* If some of the parameters fail to typecheck, we go on to check the others, and the type in a context where the failed ones are error bindings, so as to report any other errors.  But then the constant has no type, so we fail at the end. *)
+  let (Checked_tel (params, ctx)) = check_tel ~accumulate:true (Ctx.empty mode) params in
   let ty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
+  if Telescope.has_failed params then fatal (Dependent "failed parameter");
   Checked_type { mode; params; ty }
 
 (* Check the parameters and type of one constant in a mutual "def", and define it as an axiom with that type. *)

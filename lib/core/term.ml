@@ -776,6 +776,12 @@ module Telescope = struct
     | Emp -> cod
     | Ext (x, dom, doms) ->
         pi (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
+
+  (* Whether any of the types in a telescope failed to typecheck (see Check.check_tel). *)
+  let rec has_failed : type mode a b ab. (mode, a, b, ab) t -> bool = function
+    | Emp -> false
+    | Ext (_, Modal (_, _, Failed), _) -> true
+    | Ext (_, _, doms) -> has_failed doms
 end
 
 (* Count the number of zero-dimensional pi-types on the front of a term, i.e. the length of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to determine a datatype constructor's arity from its stored function-type.  We peel only zero-dimensional pis: a dimension-killing modality can have a zero-dimensional domain cube on a positive-dimensional pi, which must not be counted, and the codomain of a higher pi is not a constructor argument. *)

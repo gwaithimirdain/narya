@@ -2038,3 +2038,80 @@ A variable whose type fails to typecheck is an error, so its value isn't checked
          A
   
   [1]
+
+If some parameters of a definition or axiom fail to typecheck, the later parameters and the type are still checked, although those that use the failed parameters fail silently.  The constant is still an error.
+
+  $ narya let.ny -e 'def t (x : b) (y : x) (z : a) : b ≔ a  axiom u (x : b) (z : a) : b  echo t'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t (x : b) (y : x) (z : a) : b ≔ a  axiom u (x : b) (z : a) : b  echo t
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t (x : b) (y : x) (z : a) : b ≔ a  axiom u (x : b) (z : a) : b  echo t
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t (x : b) (y : x) (z : a) : b ≔ a  axiom u (x : b) (z : a) : b  echo t
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t (x : b) (y : x) (z : a) : b ≔ a  axiom u (x : b) (z : a) : b  echo t
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t (x : b) (y : x) (z : a) : b ≔ a  axiom u (x : b) (z : a) : b  echo t
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t (x : b) (y : x) (z : a) : b ≔ a  axiom u (x : b) (z : a) : b  echo t
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+  [1]
