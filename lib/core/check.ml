@@ -3390,23 +3390,45 @@ and synth : type mode a b s.
         match Modal.Mode.compare umode mode with
         | Eq -> (realize status (Term.UU (mode, D.zero)), universe mode D.zero)
         | Neq -> fatal (Mode_mismatch (`User, "synthesizing universe", umode, None, mode)))
-    | Pi (x, modality, dom, cod), _ -> (
+    | Pi (xs, modality, dom, cod), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing pi-type" (e :> modality_error)
-        | Ok (Wrap modality) ->
+        | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
             if not (Modality.tangible modality) then fatal (Intangible_modality modality);
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-            (* These user-level pi-types are always dimension zero, so the domain must be a zero-dimensional type. *)
+            (* These user-level pi-types are always dimension zero, so the domain must be a zero-dimensional type.  It is shared by all the variables, so we check and evaluate it only once. *)
             let cdom = check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
             let edom = eval_term (Ctx.env lctx) cdom in
-            let ccod =
-              check (Kinetic `Nolet) (Ctx.ext ctx modality x edom) cod (universe mode D.zero) in
-            ( realize status
-                (pi
-                   (singleton_variables D.zero (View.hinted x edom))
-                   (Modal (modality, plus, cdom))
-                   ccod),
-              universe mode D.zero ))
+            (* Each variable is bound at the same evaluated domain, since values don't change under weakening.  But the domain *term* of each variable after the first must live in the context extended by the earlier ones, locked by the modality.  For the identity modality the lock is trivial, so we can just weaken the domain term.  Otherwise the earlier variables lie behind the lock, where weakening can't reach, so we read back the evaluated domain instead. *)
+            let rec bind : type a b c ac bm.
+                (mode, a, b) Ctx.t ->
+                (b, mode, modality, dom, bm) plus_lock ->
+                (dom, bm, kinetic) term ->
+                (a, c, ac) Raw.Namevec.t ->
+                ac check located ->
+                (mode, b, kinetic) term =
+             fun ctx plus cdom xs cod ->
+              match xs with
+              | [] -> check (Kinetic `Nolet) ctx cod (universe mode D.zero)
+              | x :: xs ->
+                  let newctx = Ctx.ext ctx modality x.value edom in
+                  let (Locked (newplus, newlctx)) = Ctx.lock newctx modality in
+                  let next : type nbm.
+                      ((b, (modality, D.zero) dim_entry) snoc, mode, modality, dom, nbm) plus_lock ->
+                      (dom, a N.suc, nbm) Ctx.t ->
+                      (dom, nbm, kinetic) term =
+                   fun newplus newlctx ->
+                    match Modality.compare_id modality with
+                    | Eq ->
+                        let Eq, Eq = (plus_lock_id plus, plus_lock_id newplus) in
+                        Weaken cdom
+                    | Neq -> readback_val newlctx edom in
+                  let newcdom = next newplus newlctx in
+                  pi
+                    (singleton_variables D.zero (View.hinted x.value edom))
+                    (Modal (modality, plus, cdom))
+                    (bind newctx newplus newcdom xs cod) in
+            (realize status (bind ctx plus cdom xs cod), universe mode D.zero))
     | HigherPi (x, modality, dom, cod), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)

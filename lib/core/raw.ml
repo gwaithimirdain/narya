@@ -31,7 +31,10 @@ module rec Make : functor (I : Indices) -> sig
         -> 'a synth
     | Key : 'a synth located * string list located -> 'a synth
     | Pi :
-        I.name * string located list located * 'a check located * 'a I.suc check located
+        ('a, 'b Fwn.suc, 'ab) Namevec.t
+        * string located list located
+        * 'a check located
+        * 'ab check located
         -> 'a synth
     | HigherPi :
         I.name * string located list located * 'a synth located * 'a I.suc synth located
@@ -171,8 +174,12 @@ functor
           -> 'a synth
       (* A modal key operation applied postfix to a synthesizing term, written "x #a.b.c".  The dot-separated pieces of the key name are stored as strings, to be resolved into a 2-cell at typechecking time. *)
       | Key : 'a synth located * string list located -> 'a synth
+      (* A pi-type binding one or more variables, all with the same domain, such as "(x y : A) → B".  The domain is stored only once, in the outer scope, so it is processed and typechecked only once. *)
       | Pi :
-          I.name * string located list located * 'a check located * 'a I.suc check located
+          ('a, 'b Fwn.suc, 'ab) Namevec.t
+          * string located list located
+          * 'a check located
+          * 'ab check located
           -> 'a synth
       | HigherPi :
           I.name * string located list located * 'a synth located * 'a I.suc synth located
@@ -424,8 +431,9 @@ module Resolve (R : Resolver) = struct
       | Const c -> Const c
       | Field (tm, fld, lock) -> Field (synth ctx tm, fld, lock)
       | Key (tm, parts) -> Key (synth ctx tm, parts)
-      | Pi (x, modality, dom, cod) ->
-          Pi (R.rename ctx x, modality, check ctx dom, check (R.snoc ctx x) cod)
+      | Pi (xs, modality, dom, cod) ->
+          let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
+          Pi (renames ctx xs ab2, modality, check ctx dom, check (append ctx xs ab2) cod)
       | HigherPi (x, modality, dom, cod) ->
           HigherPi (R.rename ctx x, modality, synth ctx dom, synth (R.snoc ctx x) cod)
       | InstHigherPi (n, doms, cod) ->
@@ -608,14 +616,6 @@ let rec namevec_of_vec : type a b ab.
   | Suc ab, x :: xs -> locate_opt None x :: namevec_of_vec ab xs
 
 (* We end with some useful lemmas. *)
-
-let rec dataconstr_of_pi : type a. a check located -> a dataconstr =
- fun ty ->
-  match ty.value with
-  | Synth (Pi (x, modality, dom, cod)) ->
-      let (Dataconstr (tel, out)) = dataconstr_of_pi cod in
-      Dataconstr (Ext (x, modality, dom, tel), out)
-  | _ -> Dataconstr (Emp, Some ty)
 
 (* Produces only explicit lambdas. *)
 let rec lams : type a b ab.

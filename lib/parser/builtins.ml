@@ -913,6 +913,23 @@ let rec get_pi :
       (get_pi_args DblArrow prev_arr doms vars, ws, (locate_opt None "", []), cod)
   | _ -> invalid "arrow 2"
 
+(* The variables bound by a group of domains of a pi-type that share a type, such as "(x y : A)", as a nonempty Namevec, together with the scope extended by them. *)
+type _ pi_vars =
+  | Pi_vars : ('n, 'b Fwn.suc, 'nb) Indexed.Namevec.t * (string option, 'nb) Bwv.t -> 'n pi_vars
+
+let rec pi_vars : type n.
+    (string option, n) Bwv.t ->
+    string option ->
+    (string option * Whitespace.t list) list ->
+    n pi_vars =
+ fun ctx x xs ->
+  let ctx = Bwv.snoc ctx x in
+  match xs with
+  | [] -> Pi_vars ([ locate_opt None x ], ctx)
+  | (y, _) :: ys ->
+      let (Pi_vars (names, ctx)) = pi_vars ctx y ys in
+      Pi_vars (locate_opt None x :: names, ctx)
+
 (* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
 let rec process_pi : type n lt ls rt rs.
     (string option, n) Bwv.t ->
@@ -931,7 +948,7 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (None, modality, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi ([ locate_opt None None ], modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
@@ -944,20 +961,26 @@ let rec process_pi : type n lt ls rt rs.
   | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } as data)
     :: doms -> (
       let cdom = process ctx dom in
-      let ctx = Bwv.snoc ctx x in
-      let cod = process_pi ctx higher (Dep { data with vars = xs } :: doms) cod in
-      let loc = Range.merge_opt loc cod.loc in
-      match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (x, modality, cdom, cod)); loc }
-      | `Higher, Synth sdom, Synth scod ->
-          {
-            value =
-              Synth (HigherPi (x, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
-            loc;
-          }
-      | `Higher, Synth _, _ ->
-          fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
-      | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
+      match higher with
+      | `Lower ->
+          (* An ordinary pi-type binds all the variables of a group at once, so that their shared domain is processed only once, in the scope outside all of them. *)
+          let (Pi_vars (names, ctx)) = pi_vars ctx x xs in
+          let cod = process_pi ctx higher doms cod in
+          let loc = Range.merge_opt loc cod.loc in
+          { value = Synth (Pi (names, modality, cdom, cod)); loc }
+      | `Higher -> (
+          let ctx = Bwv.snoc ctx x in
+          let cod = process_pi ctx higher (Dep { data with vars = xs } :: doms) cod in
+          let loc = Range.merge_opt loc cod.loc in
+          match (cdom.value, cod.value) with
+          | Synth sdom, Synth scod ->
+              {
+                value =
+                  Synth (HigherPi (x, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+                loc;
+              }
+          | Synth _, _ -> fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
+          | _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type")))
   | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx higher doms cod
   | Dep { implicit = `Implicit; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
 
@@ -2796,7 +2819,30 @@ let rec process_dataconstr : type n.
   match (tel_args, ty) with
   | (vars, modality, argty) :: tel_args, _ ->
       process_dataconstr_vars ctx vars modality argty tel_args ty
-  | [], Some (Wrap ty) -> dataconstr_of_pi (process ctx ty)
+  | [], Some (Wrap ty) -> (
+      (* A constructor whose type is an ordinary pi-type takes the domains of that pi-type as its arguments.  We find them in the parse tree, rather than processing the pi-type and taking it apart, so that a group of variables sharing a type, such as "(x y : A) → B", becomes the same telescope as the arguments "(x y : A)" would. *)
+      match ty.value with
+      | Notn ((Parens, _), n) -> (
+          match args n with
+          | [ Token (LParen, _); Term body; Token (RParen, _) ] ->
+              process_dataconstr ctx [] (Some (Wrap body))
+          | _ -> Dataconstr (Emp, Some (process ctx ty)))
+      | Notn ((Arrow, _), n) ->
+          let doms, _, (dim, _), cod = get_pi `First (args n) in
+          if dim.value = "" then
+            let tel_args =
+              List.filter_map
+                (function
+                  | Dep { vars = []; _ } -> None
+                  | Dep { vars; modality; ty; implicit = `Explicit; _ } ->
+                      Some (List.map fst vars, modality, ty)
+                  | Dep { implicit = `Implicit; _ } ->
+                      fatal (Unimplemented "general implicit function-types")
+                  | Nondep { ty; _ } -> Some ([ None ], locate_opt None [], ty))
+                doms in
+            process_dataconstr ctx tel_args (Some cod)
+          else Dataconstr (Emp, Some (process ctx ty))
+      | _ -> Dataconstr (Emp, Some (process ctx ty)))
   | [], None -> Dataconstr (Emp, None)
 
 and process_dataconstr_vars : type n.
