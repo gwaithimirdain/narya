@@ -1794,3 +1794,138 @@ The same goes for constructors.
          A
   
   [1]
+
+A let-binding whose value or type fails to typecheck binds the variable to an error, so that the parts of the body that use it fail silently, while the others can still be checked.
+
+  $ cat >let.ny <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > axiom a : A
+  > axiom b : B
+  > def Bool : Type ≔ data [ true. | false. ]
+  > EOF
+
+  $ narya let.ny -e 'def t : A ≔ let x : A ≔ b in (b : A)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let x : A ≔ b in (b : A)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let x : A ≔ b in (b : A)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+  [1]
+
+  $ narya let.ny -e 'def t : A ≔ let x : b ≔ a in (b : A)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let x : b ≔ a in (b : A)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let x : b ≔ a in (b : A)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+  [1]
+
+  $ narya let.ny -e 'def t : A ≔ let x : A ≔ b in x'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : A ≔ let x : A ≔ b in x
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+  [1]
+
+This also works across a match in the body, and a let-binding of a case tree.
+
+  $ narya let.ny -e 'def t (u : Bool) : A ≔ let x : A ≔ b in match u [ true. ↦ x | false. ↦ (b : A) ]'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t (u : Bool) : A ≔ let x : A ≔ b in match u [ true. ↦ x | false. ↦ (b : A) ]
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t (u : Bool) : A ≔ let x : A ≔ b in match u [ true. ↦ x | false. ↦ (b : A) ]
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+  [1]
+
+  $ narya let.ny -e 'def t : Bool → A ≔ let x : A ≔ b in let f : Bool → A ≔ [ true. ↦ x | false. ↦ (b : A) ] in f'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : Bool → A ≔ let x : A ≔ b in let f : Bool → A ≔ [ true. ↦ x | false. ↦ (b : A) ] in f
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t : Bool → A ≔ let x : A ≔ b in let f : Bool → A ≔ [ true. ↦ x | false. ↦ (b : A) ] in f
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         B
+       does not equal
+         A
+  
+  [1]
