@@ -596,7 +596,15 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | Shift (n, plusmap, tm) ->
       let (Plus mn) = D.plus n in
       eval (Unshift (env, mn, plusmap)) tm
-  | Weaken tm -> eval (remove_top env) tm
+  | Weaken (plus, tm, newplus) -> (
+      (* We strip off the keys corresponding to the lock, composing them into a single key cell and a prekey action, remove the weakened variable, and then put the keys back. *)
+      let (Restrict_keys (env, extra, mu12, cell, pre)) = restrict_keys_plus_lock env newplus in
+      (* Since the context under the lock ends with a variable, and a key can only span locks, the split can never land in the middle of a key, so there is nothing extra. *)
+      match (extra, (Without_lock_dim : (_, (_, _) dim_entry) snoc ends_without_lock)) with
+      | Plus_lock (Suc _, _), _ -> .
+      | Plus_lock (Zero _, Zero), _ ->
+          let Eq = Modality.comp_uniq mu12 (Modality.id_comp (plus_lock_modality newplus)) in
+          eval (prekey_env (key_env (remove_top env) cell plus) pre) tm)
 
 and eval_with_boundary : type mode m a.
     (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =

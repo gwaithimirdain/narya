@@ -185,7 +185,11 @@ module rec Term : sig
         -> ('mode, 'b, 's) term
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
-    | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    | Weaken :
+        ('b, 'tgt, 'mu, 'src, 'bmu) plus_lock
+        * ('src, 'bmu, 's) term
+        * (('b, ('modality, 'n) dim_entry) snoc, 'tgt, 'mu, 'src, 'bnmu) plus_lock
+        -> ('src, 'bnmu, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -512,7 +516,12 @@ end = struct
         -> ('mode, 'b, 's) term
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
-    | Weaken : ('mode, 'b, 's) term -> ('mode, ('b, ('modality, 'n) dim_entry) snoc, 's) term
+    (* Weakening by one variable, which may lie behind a lock: the term lives in a context 'b locked by 'mu, and the result in 'b extended by a variable and then locked by 'mu.  Most often the lock is trivial (see "weaken" below). *)
+    | Weaken :
+        ('b, 'tgt, 'mu, 'src, 'bmu) plus_lock
+        * ('src, 'bmu, 's) term
+        * (('b, ('modality, 'n) dim_entry) snoc, 'tgt, 'mu, 'src, 'bnmu) plus_lock
+        -> ('src, 'bnmu, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -752,6 +761,11 @@ let modal_id : type mode a s.
  fun mode tm -> Modal (Modality.id mode, plus_no_lock mode, tm)
 
 let field mode tm f ins = Field (Kinetic, modal_id mode tm, f, ins)
+
+(* Weakening by one variable with no lock in between. *)
+let weaken : type mode b modality n s.
+    mode Mode.t -> (mode, b, s) term -> (mode, (b, (modality, n) dim_entry) snoc, s) term =
+ fun mode tm -> Weaken (plus_no_lock mode, tm, plus_no_lock mode)
 
 (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
 module Telescope = struct

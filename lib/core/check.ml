@@ -963,7 +963,8 @@ let rec check : type mode a b s.
     | Weaken (body, Eq), _ -> (
         match Ctx.pop ctx with
         | Ok (Pop (ctx, Eq, Eq)) ->
-            Weaken (check (pop_status status) ctx (locate_opt tm.loc body) ty)
+            weaken (Ctx.mode ctx)
+              (check (pop_status (Ctx.mode ctx) status) ctx (locate_opt tm.loc body) ty)
         | Error e -> fatal (Anomaly ("failed to weaken raw term: " ^ e))) in
   with_loc tm.loc @@ fun () ->
   Annotate.ctx status ctx tm;
@@ -3399,7 +3400,7 @@ and synth : type mode a b s.
             (* These user-level pi-types are always dimension zero, so the domain must be a zero-dimensional type.  It is shared by all the variables, so we check and evaluate it only once. *)
             let cdom = check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
             let edom = eval_term (Ctx.env lctx) cdom in
-            (* Each variable is bound at the same evaluated domain, since values don't change under weakening.  But the domain *term* of each variable after the first must live in the context extended by the earlier ones, locked by the modality.  For the identity modality the lock is trivial, so we can just weaken the domain term.  Otherwise the earlier variables lie behind the lock, where weakening can't reach, so we read back the evaluated domain instead. *)
+            (* Each variable is bound at the same evaluated domain, since values don't change under weakening.  The domain *term* of each variable after the first lives in the context extended by the earlier ones and locked by the modality, so it is the weakening of the previous one under that lock. *)
             let rec bind : type a b c ac bm.
                 (mode, a, b) Ctx.t ->
                 (b, mode, modality, dom, bm) plus_lock ->
@@ -3412,18 +3413,8 @@ and synth : type mode a b s.
               | [] -> check (Kinetic `Nolet) ctx cod (universe mode D.zero)
               | x :: xs ->
                   let newctx = Ctx.ext ctx modality x.value edom in
-                  let (Locked (newplus, newlctx)) = Ctx.lock newctx modality in
-                  let next : type nbm.
-                      ((b, (modality, D.zero) dim_entry) snoc, mode, modality, dom, nbm) plus_lock ->
-                      (dom, a N.suc, nbm) Ctx.t ->
-                      (dom, nbm, kinetic) term =
-                   fun newplus newlctx ->
-                    match Modality.compare_id modality with
-                    | Eq ->
-                        let Eq, Eq = (plus_lock_id plus, plus_lock_id newplus) in
-                        Weaken cdom
-                    | Neq -> readback_val newlctx edom in
-                  let newcdom = next newplus newlctx in
+                  let (Locked (newplus, _)) = Ctx.lock newctx modality in
+                  let newcdom : (dom, _, kinetic) term = Weaken (plus, cdom, newplus) in
                   pi
                     (singleton_variables D.zero (View.hinted x.value edom))
                     (Modal (modality, plus, cdom))

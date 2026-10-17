@@ -145,7 +145,10 @@ module Codata = struct
              fun trlift ->
               app
                 (Field
-                   (Kinetic, modal_id mode (Weaken (Shift (Hott.dim, f.plusmap, f.ty))), trlift, ins))
+                   ( Kinetic,
+                     modal_id mode (weaken mode (Shift (Hott.dim, f.plusmap, f.ty))),
+                     trlift,
+                     ins ))
                 idm (plus_no_lock mode) x in
             let trr_x, liftr_x, trl_x, liftl_x = (onx ftrr, onx fliftr, onx ftrl, onx fliftl) in
             (* xrcube and xlcube are 1-dimensional cubes consisting of the index-zero variable 'x' and its transports right or left. *)
@@ -181,7 +184,7 @@ module Codata = struct
                                     modal_id mode
                                       (App
                                          ( Kinetic,
-                                           Weaken sty,
+                                           weaken mode sty,
                                            Hott.dim,
                                            idf,
                                            Modal (idm, plus_no_lock mode, xcube) )),
@@ -331,9 +334,9 @@ module Codata = struct
                                        ( Kinetic,
                                          App
                                            ( Kinetic,
-                                             Weaken
-                                               (Weaken
-                                                  (Weaken
+                                             weaken mode
+                                               (weaken mode
+                                                  (weaken mode
                                                      (Shift
                                                         ( Hott.dim,
                                                           plusmap,
@@ -367,7 +370,9 @@ module Codata = struct
                 Bwd.fold_left folder
                   ( Emp,
                     empty glue dimh hlength00 eta
-                      (Inst (Kinetic, Weaken (Weaken (Shift (Hott.dim, plusmap, ty))), xtube)) )
+                      (Inst
+                         (Kinetic, weaken mode (weaken mode (Shift (Hott.dim, plusmap, ty))), xtube))
+                  )
                   fields in
               let fib = finish mode fields fib in
               plusfam

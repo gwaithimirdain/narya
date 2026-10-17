@@ -101,3 +101,17 @@ A datatype constructor whose type is given as a pi-type takes the domains of tha
   e. a
     : D
   
+
+When the domain is modal, the domains of the later variables are weakenings of the first one behind the lock, so their definitions are displayed as written.
+
+  $ narya -spatial pi.ny -e 'axiom F : Type → Type  def G (X : Type) : Type ≔ F X  def T (U :♭| Type) : Type ≔ (x y :♭| G U) (v w : U) → U  about T  echo T A  echo refl (T A)'
+  U ↦ (x :♭| G U) (y :♭| G U) (v : U) (w : U) → U
+    : (U :♭| Type) → Type
+  
+  (x :♭| F A) (y :♭| F A) (v : A) (w : A) → A
+    : Type
+  
+  (x :♭| Id F (Id A)) (y :♭| Id F (Id A)) (v : Id A) (w : Id A) ⇒ Id A
+    : Type⁽ᵉ⁾ ((x :♭| F A) (y :♭| F A) (v : A) (w : A) → A)
+        ((x :♭| F A) (y :♭| F A) (v : A) (w : A) → A)
+  
