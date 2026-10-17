@@ -188,8 +188,7 @@ module rec Value : sig
 
   and ('mk, 'dom) env_binding =
     [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
-    | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
-    | `Error of Code.t ]
+    | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t ]
 
   and (_, _, _) env =
     | Emp : 'mode Mode.t * 'n D.t -> ('mode, 'n, 'mode emp) env
@@ -445,8 +444,7 @@ end = struct
   (* The binding of one variable in an environment; see Ext below. *)
   and ('mk, 'dom) env_binding =
     [ `Lazy of ('mk, ('dom, kinetic) lazy_eval) CubeOf.t
-    | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t
-    | `Error of Code.t ]
+    | `Ok of ('mk, ('dom, kinetic) value) CubeOf.t ]
 
   (* An "environment" is a context morphism *from* a De Bruijn LEVEL context *to* a (typechecked) De Bruijn INDEX context.  Specifically, an ('n, 'a) env is an 'n-dimensional substitution from a level context to an index context indexed by the hctx 'a.  Since the index context could have some variables that are labeled by integers together with faces, the values also have to allow that.  The environment is NOT parametrized by a mode: the terms in it could belong to many modes, namely the domains of the modality annotations in the codomain context.  We don't enforce the validity of those modes here. *)
   and (_, _, _) env =
