@@ -1991,20 +1991,25 @@ let eval_bindings : type dom modality mode a b n bm.
       {
         it =
           (fun fa [ ({ ty = cty; tm = ctm } : (dom, bm) binding); vb ] ->
-            (* Unlike in dom_vars, we don't need to instantiate the types, since their instantiations should have been preserved by readback and will reappear correctly here. *)
-            let ety = eval_term (Ctx.Ordered.env tempctx) cty in
-            let level = (i, !j) in
-            j := !j + 1;
-            let lvl, v =
-              match ctm with
-              | None ->
-                  ( Some level,
-                    ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal) )
-              | Some ctm ->
-                  (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety })
-            in
-            Hashtbl.add argtbl (SFace_of fa) v;
-            Ctx.Binding.specify vb lvl v);
+            match cty with
+            (* A failed type is the readback of an error binding. *)
+            | Failed -> Ctx.Binding.specify_error vb (Dependent "failed binding")
+            | _ ->
+                (* Unlike in dom_vars, we don't need to instantiate the types, since their instantiations should have been preserved by readback and will reappear correctly here. *)
+                let ety = eval_term (Ctx.Ordered.env tempctx) cty in
+                let level = (i, !j) in
+                j := !j + 1;
+                let lvl, v =
+                  match ctm with
+                  | None ->
+                      ( Some level,
+                        ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal) )
+                  | Some ctm ->
+                      ( None,
+                        { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety } )
+                in
+                Hashtbl.add argtbl (SFace_of fa) v;
+                Ctx.Binding.specify vb lvl v);
       }
       [ cbs; vbs ] in
   vbs
