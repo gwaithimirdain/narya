@@ -952,35 +952,34 @@ let rec process_pi : type n lt ls rt rs.
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
-              Synth (HigherPi (None, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+              Synth
+                (HigherPi
+                   ( [ locate_opt None None ],
+                     modality,
+                     locate_opt cdom.loc sdom,
+                     locate_opt cod.loc scod ));
             loc;
           }
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
-  | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } as data)
-    :: doms -> (
+  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } :: doms -> (
+      (* A pi-type binds all the variables of a group at once, so that their shared domain is processed only once, in the scope outside all of them. *)
       let cdom = process ctx dom in
-      match higher with
-      | `Lower ->
-          (* An ordinary pi-type binds all the variables of a group at once, so that their shared domain is processed only once, in the scope outside all of them. *)
-          let (Pi_vars (names, ctx)) = pi_vars ctx x xs in
-          let cod = process_pi ctx higher doms cod in
-          let loc = Range.merge_opt loc cod.loc in
-          { value = Synth (Pi (names, modality, cdom, cod)); loc }
-      | `Higher -> (
-          let ctx = Bwv.snoc ctx x in
-          let cod = process_pi ctx higher (Dep { data with vars = xs } :: doms) cod in
-          let loc = Range.merge_opt loc cod.loc in
-          match (cdom.value, cod.value) with
-          | Synth sdom, Synth scod ->
-              {
-                value =
-                  Synth (HigherPi (x, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
-                loc;
-              }
-          | Synth _, _ -> fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
-          | _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type")))
+      let (Pi_vars (names, ctx)) = pi_vars ctx x xs in
+      let cod = process_pi ctx higher doms cod in
+      let loc = Range.merge_opt loc cod.loc in
+      match (higher, cdom.value, cod.value) with
+      | `Lower, _, _ -> { value = Synth (Pi (names, modality, cdom, cod)); loc }
+      | `Higher, Synth sdom, Synth scod ->
+          {
+            value =
+              Synth (HigherPi (names, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+            loc;
+          }
+      | `Higher, Synth _, _ ->
+          fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
+      | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
   | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx higher doms cod
   | Dep { implicit = `Implicit; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
 

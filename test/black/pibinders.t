@@ -197,3 +197,40 @@ A match on a parameter refines the types of the parameters that share a type dep
      ----------------------------------------------------------------------
      ℕ
   
+
+The same goes for higher function-types, both instantiated and not.
+
+  $ cat >hp.ny <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom f : (x : A) → B x
+  > axiom g : (x : A) → B x
+  > def AA : Type ≔ A
+  > EOF
+
+  $ narya hp.ny -e 'echo {x₀ x₁ : A} (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)  echo {A x₁ : A} (x₂ : refl AA A x₁) →⁽ᵉ⁾ refl B x₂ (f A) (g x₁)'
+  {x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B x₂ (f x₀) (g x₁)
+    : Type
+  
+  {A : A} {x₁ : A} (x₂ : Id A A x₁) →⁽ᵉ⁾ Id B x₂ (f A) (g x₁)
+    : Type
+  
+
+  $ narya hp.ny -e 'echo (x y : Id A) ⇒ Id B x.2  echo (A y : Id AA) ⇒ Id B y.2  echo refl ((x y : Id A) ⇒ Id B x.2)'
+  (x : Id A) (y : Id A) ⇒ Id B x.2
+    : Type⁽ᵉ⁾ ((x : A) (y : A) → B x) ((x : A) (y : A) → B x)
+  
+  (A : Id A) (y : Id A) ⇒ Id B y.2
+    : Type⁽ᵉ⁾ ((A : A) (y : A) → B y) ((A : A) (y : A) → B y)
+  
+  (x : A⁽ᵉᵉ⁾) (y : A⁽ᵉᵉ⁾) ⇒ B⁽ᵉᵉ⁾ x.22
+    : Type⁽ᵉᵉ⁾ ((x : Id A) (y : Id A) ⇒ Id B x.2)
+        ((x : Id A) (y : Id A) ⇒ Id B x.2) ((x : Id A) (y : Id A) ⇒ Id B x.2)
+        ((x : Id A) (y : Id A) ⇒ Id B x.2)
+  
+
+  $ narya -spatial -e 'def T (U :♭| Type) : Type⁽ᵉ⁾ ((x y :♭| U) → U) ((x y :♭| U) → U) ≔ (x y :♭| Id U) ⇒ Id U  about T'
+  U ↦ (x :♭| Id U) (y :♭| Id U) ⇒ Id U
+    : (U :♭| Type)
+      → Type⁽ᵉ⁾ ((x :♭| U) (y :♭| U) → U) ((x :♭| U) (y :♭| U) → U)
+  

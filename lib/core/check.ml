@@ -3431,7 +3431,7 @@ and synth : type mode a b s.
                     (Modal (modality, plus, cdom))
                     (bind newctx newplus newcdom xs cod) in
             (realize status (bind ctx plus cdom xs cod), universe mode D.zero))
-    | HigherPi (x, modality, dom, cod), _ -> (
+    | HigherPi (xs, modality, dom, cod), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
         | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
@@ -3451,94 +3451,121 @@ and synth : type mode a b s.
                 let (Has_filter kfilter) = Modality.filter modality k in
                 match D.compare (Modality.filtered k kfilter) k with
                 | Neq -> fatal (Invalid_higher_function "domain dimension is not modally filtered")
-                | Eq -> (
+                | Eq ->
                     let cdomt =
                       TubeOf.mmap { map = (fun _ [ x ] -> readback_nf lctx x) } [ edoms ] in
                     let cdoms = TubeOf.plus_cube cdomt (CubeOf.singleton cdom) in
                     let edomt = TubeOf.mmap { map = (fun _ [ x ] -> x.tm) } [ edoms ] in
                     let edoms = TubeOf.plus_cube edomt (CubeOf.singleton edom) in
-                    let _, binds = dom_vars ctx modality edoms in
-                    let newctx = Ctx.cube_vis ctx kfilter x binds in
-                    let ccod, codty = synth (Kinetic `Nolet) newctx cod in
-                    match view_type codty "higher pi codomain" with
-                    | Canonical
-                        (type hmode n2 m2 nm2)
-                        ((_, UU (codmode, n), ins', ecodt) :
-                          hmode head
-                          * (mode, n2, m2) canonical
-                          * (nm2, n2, m2) insertion
-                          * (D.zero, nm2, nm2, mode normal) TubeOf.t) -> (
-                        let Eq = eq_of_ins_zero ins' in
-                        (* The dimension n of the codomain is the outer (unfiltered) dimension of the pi-type: its filtering must be the domain dimension k. *)
-                        let (Has_filter nfilter) = Modality.filter modality n in
-                        match
-                          ( D.compare (Modality.filtered n nfilter) k,
-                            Modal.Mode.compare codmode mode )
-                        with
-                        | Neq, _ ->
-                            fatal (Invalid_higher_function "invalid single codomain dimension")
-                        | _, Neq ->
-                            fatal (Mode_mismatch (`User, "higher pi codomain", codmode, None, mode))
-                        | Eq, Eq ->
-                            let ccods =
-                              let build : type j.
-                                  (j, n2) sface -> (j, dom * modality * mode * b) CodFam.t =
-                               fun s ->
-                                match pface_of_sface s with
-                                | `Id Eq -> Cod (nfilter, ccod)
-                                | `Proper t ->
-                                    let (Filter_sface (fb, sfilter)) =
-                                      Modality.filter_sface nfilter s in
-                                    let sctx =
-                                      Ctx.cube_vis ctx
-                                        (Modality.filter_idempotent sfilter)
-                                        x (CubeOf.subcube fb binds) in
-                                    Cod (sfilter, readback_nf sctx (TubeOf.find ecodt t)) in
-                              CodCube.build n { build } in
-                            let tyargstbl = Hashtbl.create 10 in
-                            let tyargs =
-                              TubeOf.build D.zero (D.zero_plus n)
-                                {
-                                  build =
-                                    (fun t ->
-                                      let j = dom_tface t in
-                                      let t' = sface_of_tface t in
-                                      let (Filter_sface (fb, tfilter)) =
-                                        Modality.filter_sface nfilter t' in
-                                      let ctm =
-                                        Term.Pi
-                                          {
-                                            x =
-                                              singleton_variables (dom_sface fb)
-                                                (View.hinted x (CubeOf.find edoms fb));
-                                            filter = tfilter;
-                                            doms = Modal (modality, plus, CubeOf.subcube fb cdoms);
-                                            cods = CodCube.subcube t' ccods;
-                                          } in
-                                      let tm = eval_term (Ctx.env ctx) ctm in
-                                      let tyargs =
-                                        TubeOf.build D.zero (D.zero_plus j)
-                                          {
-                                            build =
-                                              (fun v ->
-                                                Hashtbl.find tyargstbl
-                                                  (Tface_of (tface_comp_sface t (sface_of_tface v))));
-                                          } in
-                                      let ty = inst (universe mode j) tyargs in
-                                      let arg = { tm; ty = Lazy.from_val ty } in
-                                      Hashtbl.add tyargstbl (Tface_of t) arg;
-                                      arg);
-                                } in
-                            ( realize status
-                                (Pi
-                                   {
-                                     x = singleton_variables k (View.hinted x edom);
-                                     filter = nfilter;
-                                     doms = Modal (modality, plus, cdoms);
-                                     cods = ccods;
-                                   }),
-                              inst (universe mode n) tyargs ))
-                    | _ -> fatal (Invalid_higher_function "invalid single codomain")))
+                    (* The domain is shared by all the variables, so we have checked it only once.  Each variable is bound at the same evaluated cube of domains, while the cube of domain terms of each variable after the first is the weakening of the previous one behind the lock, as for an ordinary pi-type. *)
+                    let rec bind : type a1 b1 c ac bm.
+                        (mode, a1, b1) Ctx.t ->
+                        (b1, mode, modality, dom, bm) plus_lock ->
+                        (k, (dom, bm, kinetic) term) CubeOf.t ->
+                        (a1, c, ac) Raw.Namevec.t ->
+                        ac synth located ->
+                        (mode, b1, kinetic) term * (mode, kinetic) value =
+                     fun ctx plus cdoms xs cod ->
+                      match xs with
+                      | [] -> synth (Kinetic `Nolet) ctx cod
+                      | { value = x; loc = _ } :: xs -> (
+                          let _, binds = dom_vars ctx modality edoms in
+                          let newctx = Ctx.cube_vis ctx kfilter x binds in
+                          let (Locked (newplus, _)) = Ctx.lock newctx modality in
+                          let newcdoms =
+                            CubeOf.mmap
+                              {
+                                map =
+                                  (fun _ [ d ] ->
+                                    (Weaken (plus, d, newplus) : (dom, _, kinetic) term));
+                              }
+                              [ cdoms ] in
+                          let ccod, codty = bind newctx newplus newcdoms xs cod in
+                          match view_type codty "higher pi codomain" with
+                          | Canonical
+                              (type hmode n2 m2 nm2)
+                              ((_, UU (codmode, n), ins', ecodt) :
+                                hmode head
+                                * (mode, n2, m2) canonical
+                                * (nm2, n2, m2) insertion
+                                * (D.zero, nm2, nm2, mode normal) TubeOf.t) -> (
+                              let Eq = eq_of_ins_zero ins' in
+                              (* The dimension n of the codomain is the outer (unfiltered) dimension of the pi-type: its filtering must be the domain dimension k. *)
+                              let (Has_filter nfilter) = Modality.filter modality n in
+                              match
+                                ( D.compare (Modality.filtered n nfilter) k,
+                                  Modal.Mode.compare codmode mode )
+                              with
+                              | Neq, _ ->
+                                  fatal
+                                    (Invalid_higher_function "invalid single codomain dimension")
+                              | _, Neq ->
+                                  fatal
+                                    (Mode_mismatch (`User, "higher pi codomain", codmode, None, mode))
+                              | Eq, Eq ->
+                                  let ccods =
+                                    let build : type j.
+                                        (j, n2) sface -> (j, dom * modality * mode * b1) CodFam.t =
+                                     fun s ->
+                                      match pface_of_sface s with
+                                      | `Id Eq -> Cod (nfilter, ccod)
+                                      | `Proper t ->
+                                          let (Filter_sface (fb, sfilter)) =
+                                            Modality.filter_sface nfilter s in
+                                          let sctx =
+                                            Ctx.cube_vis ctx
+                                              (Modality.filter_idempotent sfilter)
+                                              x (CubeOf.subcube fb binds) in
+                                          Cod (sfilter, readback_nf sctx (TubeOf.find ecodt t))
+                                    in
+                                    CodCube.build n { build } in
+                                  let tyargstbl = Hashtbl.create 10 in
+                                  let tyargs =
+                                    TubeOf.build D.zero (D.zero_plus n)
+                                      {
+                                        build =
+                                          (fun t ->
+                                            let j = dom_tface t in
+                                            let t' = sface_of_tface t in
+                                            let (Filter_sface (fb, tfilter)) =
+                                              Modality.filter_sface nfilter t' in
+                                            let ctm =
+                                              Term.Pi
+                                                {
+                                                  x =
+                                                    singleton_variables (dom_sface fb)
+                                                      (View.hinted x (CubeOf.find edoms fb));
+                                                  filter = tfilter;
+                                                  doms =
+                                                    Modal (modality, plus, CubeOf.subcube fb cdoms);
+                                                  cods = CodCube.subcube t' ccods;
+                                                } in
+                                            let tm = eval_term (Ctx.env ctx) ctm in
+                                            let tyargs =
+                                              TubeOf.build D.zero (D.zero_plus j)
+                                                {
+                                                  build =
+                                                    (fun v ->
+                                                      Hashtbl.find tyargstbl
+                                                        (Tface_of
+                                                           (tface_comp_sface t (sface_of_tface v))));
+                                                } in
+                                            let ty = inst (universe mode j) tyargs in
+                                            let arg = { tm; ty = Lazy.from_val ty } in
+                                            Hashtbl.add tyargstbl (Tface_of t) arg;
+                                            arg);
+                                      } in
+                                  ( Pi
+                                      {
+                                        x = singleton_variables k (View.hinted x edom);
+                                        filter = nfilter;
+                                        doms = Modal (modality, plus, cdoms);
+                                        cods = ccods;
+                                      },
+                                    inst (universe mode n) tyargs ))
+                          | _ -> fatal (Invalid_higher_function "invalid single codomain")) in
+                    let tm, ty = bind ctx plus cdoms xs cod in
+                    (realize status tm, ty))
             | _ -> fatal (Invalid_higher_function "invalid single domain")))
     | ( InstHigherPi
           (type n nb an)

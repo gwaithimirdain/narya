@@ -37,7 +37,10 @@ module rec Make : functor (I : Indices) -> sig
         * 'ab check located
         -> 'a synth
     | HigherPi :
-        I.name * string located list located * 'a synth located * 'a I.suc synth located
+        ('a, 'b Fwn.suc, 'ab) Namevec.t
+        * string located list located
+        * 'a synth located
+        * 'ab synth located
         -> 'a synth
     | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
     | App :
@@ -182,8 +185,12 @@ functor
           * 'a check located
           * 'ab check located
           -> 'a synth
+      (* Similarly, a higher pi-type can bind several variables with the same domain. *)
       | HigherPi :
-          I.name * string located list located * 'a synth located * 'a I.suc synth located
+          ('a, 'b Fwn.suc, 'ab) Namevec.t
+          * string located list located
+          * 'a synth located
+          * 'ab synth located
           -> 'a synth
       (* An n-dimensional pi-type, fully instantiated, with all its domains supplied.  The dimension 'n is the outer (unfiltered) dimension; the domains form a telescope whose length must match the number of faces of the *filtered* dimension, which is not known until typechecking (since parsing the modality annotations requires knowing the modes). *)
       | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
@@ -446,8 +453,9 @@ module Resolve (R : Resolver) = struct
       | Pi (xs, modality, dom, cod) ->
           let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
           Pi (renames ctx xs ab2, modality, check ctx dom, check (append ctx xs ab2) cod)
-      | HigherPi (x, modality, dom, cod) ->
-          HigherPi (R.rename ctx x, modality, synth ctx dom, synth (R.snoc ctx x) cod)
+      | HigherPi (xs, modality, dom, cod) ->
+          let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
+          HigherPi (renames ctx xs ab2, modality, synth ctx dom, synth (append ctx xs ab2) cod)
       | InstHigherPi (n, doms, cod) ->
           let (Bplus ab) = R.T2.bplus (R.T1.fwn_of_tel doms) in
           let doms2, ctx2 = tel ctx doms ab in
