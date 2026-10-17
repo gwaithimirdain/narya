@@ -374,17 +374,13 @@ and batch renderer failed p src cdns ws =
         match d.message with
         | Quit _ -> true
         | _ -> false in
-      let result, ps = Reporter.collect ~delay_emits:false (fun () -> execute_command cmd) in
-      (match result with
-      | Error d when not (is_quit d) -> failed := true
-      | _ -> if not (Bwd.is_empty (Reporter.pending_errors ps)) then failed := true);
-      (* We discard the offset and hole information, since this is not used in interactive mode. *)
+      (* The errors and other diagnostics of the command are passed on immediately, so that they are interleaved correctly with the output of commands like "echo".  If there were any errors, failing_on_errors raises a fatal error at the end, which we turn into a mortal one and record. *)
       Reporter.accumulate
-        ~fallback:(fun () -> ())
+        ~fallback:(fun () -> failed := true)
         ~passthrough:is_quit
         (fun () ->
-          let _ = Reporter.uncollect (result, ps) in
-          ());
+          (* We discard the offset and hole information, since this is not used in interactive mode. *)
+          ignore (Reporter.failing_on_errors ~why:"command" (fun () -> execute_command cmd)));
       let ws =
         match renderer with
         | Some render ->

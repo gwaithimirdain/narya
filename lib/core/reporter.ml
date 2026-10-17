@@ -1443,9 +1443,9 @@ let make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
 let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
   mortal_diagnostic (make_mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg)
 
-(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost.  If [delay_emits] is false, emitted diagnostics are passed through immediately rather than delayed; this is appropriate when nothing is speculative.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost. *)
-let collect ?(delay_emits = true) ?passthrough (f : unit -> 'a) :
-    ('a, Code.t Asai.Diagnostic.t) Result.t * pending Bwd.t =
+(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost. *)
+let collect ?passthrough (f : unit -> 'a) : ('a, Code.t Asai.Diagnostic.t) Result.t * pending Bwd.t
+    =
   let pendings = ref Emp in
   let passes d =
     match passthrough with
@@ -1455,8 +1455,7 @@ let collect ?(delay_emits = true) ?passthrough (f : unit -> 'a) :
     (* The nesting of [try_with] and [try] doesn't matter, since one catches only fatal errors and emits and the other catches only Mortal and Moribund effects.  However, they do have to be nested inside the outer exception handler, since fatal errors are implemented as exceptions. *)
     Delegate.try_with
       ~emit:(fun d ->
-        if passes d || not delay_emits then emit_diagnostic d
-        else pendings := Snoc (!pendings, `Emitted d))
+        if passes d then emit_diagnostic d else pendings := Snoc (!pendings, `Emitted d))
       ~fatal:(fun d ->
         if passes d then (
           release !pendings;
@@ -1465,7 +1464,7 @@ let collect ?(delay_emits = true) ?passthrough (f : unit -> 'a) :
     @@ fun () ->
     try Ok (f ()) with
     | effect Mortal p, k ->
-        if passes p then release_one (`Mortal p) else pendings := Snoc (!pendings, `Mortal p);
+        if passes p then mortal_diagnostic p else pendings := Snoc (!pendings, `Mortal p);
         continue k ()
     | effect Moribund, k -> continue k (pending_errors !pendings)
   with

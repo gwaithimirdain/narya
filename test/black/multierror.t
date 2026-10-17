@@ -1221,11 +1221,6 @@ Diagnostics emitted during a speculative check that is discarded are not display
    ￫ info[I0001]
    ￮ axiom B assumed
   
-   ￫ hint[H0403]
-   ￭ command-line exec string
-   1 | def t (b : Bool) : M A ≔ (c. (match b [ true. ↦ false. | false. ↦ true. ]) : M B)
-     ^ match encountered outside case tree, wrapping in implicit let-binding
-  
    ￫ error[E0401]
    ￭ command-line exec string
    1 | def t (b : Bool) : M A ≔ (c. (match b [ true. ↦ false. | false. ↦ true. ]) : M B)
@@ -1237,6 +1232,11 @@ Diagnostics emitted during a speculative check that is discarded are not display
          B
        does not equal
          A
+  
+   ￫ hint[H0403]
+   ￭ command-line exec string
+   1 | def t (b : Bool) : M A ≔ (c. (match b [ true. ↦ false. | false. ↦ true. ]) : M B)
+     ^ match encountered outside case tree, wrapping in implicit let-binding
   
   [1]
 
