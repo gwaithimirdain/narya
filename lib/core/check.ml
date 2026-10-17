@@ -747,7 +747,7 @@ let rec check : type mode a b s.
         let (Wrap window) = get_window (Ctx.mode ctx) window in
         let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
         let stm, sty = synth (Kinetic `Nolet) lctx tm in
-        check_nondep_match status ctx stm sty window plus_lock branches (Some i) highers ty tm.loc
+        check_nondep_match status ctx stm sty window plus_lock branches i highers ty tm.loc
     (* We don't need to deal with `Explicit matches here, since they can always synthesize a type and hence be caught by the catch-all for checking synthesizing terms, below. *)
     (* Checking [] at a pi-type interprets it as a pattern-matching lambda over some empty datatype. *)
     | Empty_co_match, _ -> (
@@ -3841,7 +3841,7 @@ and synth : type mode a b s.
         emit (Matching_wont_refine ("match in synthesizing position", None));
         synth_nondep_match ?synthed status ctx tm window branches highers None
     | Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }, Potential _ ->
-        synth_nondep_match ?synthed status ctx tm window branches highers (Some i)
+        synth_nondep_match ?synthed status ctx tm window branches highers i
     | Fail e, _ -> fatal e
     (* If we're using the synthesized type of an argument as an implicit first argument: *)
     | ImplicitSApp (fn, apploc, arg), _ -> (
