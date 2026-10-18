@@ -1,5 +1,5 @@
 (tests
- (names lexer parse_arith ambiguity prefixes permute_args)
+ (names lexer parse_arith ambiguity prefixes permute_args command_ranges)
  (libraries parser testutil))
 
 (cram
