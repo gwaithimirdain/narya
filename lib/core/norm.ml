@@ -344,7 +344,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus l_n) = D.plus n in
       let ln = D.plus_out l l_n in
       (* Then we evaluate all the arguments, not just in the (filtered, keyed) environment, but in that environment acted on by all the strict faces of l.  Since the given arguments are indexed by strict faces of n, the result is a collection of values indexed by strict faces of l+n.  *)
-      let lenv = key_id_env env al in
+      let lenv = lock_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_lm)) in
       let eargs = eval_args flenv l_n ln args in
       (* Having evaluated the function and its arguments, we now pass the job off to a helper function. *)
@@ -359,7 +359,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       | Eq ->
           (* An ordinary field (identity adjunction), including all higher fields, does no dimension filtering: the term being projected lives behind a (trivial) lock by the identity, evaluated in the environment keyed by the identity cell. *)
           let Plus m_n, Plus m_l = (D.plus n, D.plus l) in
-          let ltm = eval_term (key_id_env env plus_lock) tm in
+          let ltm = eval_term (lock_env env plus_lock) tm in
           field fm ltm fld (plus_ins m m_n m_l fldins)
       | Neq ->
           (* A genuinely modal field over a (possibly nonparametric) left adjoint fm.  The term being projected lives behind a lock by fm, hence at the dimension m filtered by fm; we evaluate it in the keyed, locked environment cut down to that filtered dimension k by a face.  We then project at dimension k and degenerate the result back up to the outer dimension m.  For a nonparametric fm at a dimension it filters nontrivially, the field "disappears": k < m, so this projection is genuinely a degeneracy of a lower-dimensional one.  (For a lower field, cod_left_ins fldins = 0, so k is the whole result dimension.) *)
@@ -367,7 +367,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
           let k = Modality.filtered m kfilter in
           let (Plus k_n) = D.plus n in
           let (Plus k_l) = D.plus l in
-          let lenv = key_id_env env plus_lock in
+          let lenv = lock_env env plus_lock in
           let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m kfilter)) in
           let ltm = eval_term flenv tm in
           let proj = field fm ltm fld (plus_ins k k_n k_l fldins) in
@@ -392,7 +392,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
             let (Plus k_l) = D.plus (Modality.filtered n lfilter) in
             let kl = D.plus_out k k_l in
             let filter = Modality.filter_plus k_l m_n kfilter lfilter in
-            let lenv = key_id_env env al in
+            let lenv = lock_env env al in
             (* The dimension of the cube of arguments that we want should be filtered by the modality.  Thus, we need to filter the dimension of the environment we evaluate it in as well.  We do this by acting with a face: in the unary case this is the unique such face, in other cases it is a dummy face.  The mode theory used for the non-unary cases (the nonparametric modality is only a comonad) should ensure that the dummy endpoints in the non-unary case never actually get used; they should be canceled out by degeneracies. *)
             let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m kfilter)) in
             Value.Modal (filter, eval_args flenv k_l kl tm))
@@ -415,7 +415,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let mn = D.plus_out m m_n in
       let filter = Modality.filter_plus k_l m_n kfilter lfilter in
       (* The basic thing we do is evaluate the cubes of domains and codomains. *)
-      let lenv = key_id_env env al in
+      let lenv = lock_env env al in
       let doms =
         CubeOf.build kl
           {
@@ -511,7 +511,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let m = dim_env env in
       let (Has_filter fm) = Modality.filter modality m in
       let k = Modality.filtered m fm in
-      let lenv = key_id_env env al in
+      let lenv = lock_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m fm)) in
       eval
         (Ext
@@ -537,16 +537,13 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (To p) = deg_of_ins ins in
       act_evaluation (eval (act_env env (opt_op_of_deg is)) x) p (Modalcell.id2 (mode_env env))
   | Key { tm; cell; plus_src; plus_tgt } ->
-      (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body.  The resulting environment is back at the original mode, so any prekey action stripped along the way is re-applied as a prekey on top. *)
-      let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
-      let (Comp nu12) = Modality.comp (Modalcell.vsrc cell) in
-      let extra_cell = Modalcell.postwhisker nu12 mu12 (plus_lock_modality extra) cell in
-      let env = key_env env (Modalcell.vcomp keys extra_cell) (plus_lock_comp extra plus_src nu12) in
-      let env = prekey_env env pre in
+      (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, lock what remains by the domain of the cell, and apply the cell as a prekey.  The resulting environment is back at the original mode, so any prekey action stripped along the way is re-applied as a prekey on top. *)
+      let (Restrict_keys (env, pre)) = restrict_keys env plus_tgt in
+      let env = prekey_env (prekey_env (lock_env env plus_src) cell) pre in
       eval env tm
   | Match { tm; window; plus_lock; dim = match_dim; branches; motive = _ } -> (
       let env_dim = dim_env env in
-      let kenv = key_id_env env plus_lock in
+      let kenv = lock_env env plus_lock in
       let (Has_filter fw) = Modality.filter window env_dim in
       let akenv = act_env kenv (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
       let (Plus plus_dim) = D.plus match_dim in
@@ -975,8 +972,8 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
  fun values tyargs fldname adj plus_lock fldty env m mn ~key ->
   let n = D.plus_right mn in
   let (Adjunction { left; counit; _ }) = adj in
-  (* The type of a modal field lives behind a lock by the right adjoint, so we first key the environment by its identity cell, and only then extend it by the self variable, which is annotated by the left adjoint. *)
-  let env = key_id_env env plus_lock in
+  (* The type of a modal field lives behind a lock by the right adjoint, so we first lock the environment by it, and only then extend it by the self variable, which is annotated by the left adjoint. *)
+  let env = lock_env env plus_lock in
   (* Since the self variable is annotated by the left adjoint, its dimensions are filtered by it.  But a field whose left adjoint filters the substitution dimension m nontrivially "disappears" at that dimension, so all callers have already discarded it; and we reject at definition time a modal field of a codatatype whose own dimension n is filtered nontrivially.  Thus both filters here are trivial. *)
   let (Has_filter mfilter) = Modality.filter left m in
   let (Has_filter nfilter) = Modality.filter left n in
@@ -1049,8 +1046,8 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
   let (Plus r_sh) = D.plus (D.plus_out s sh) in
   let rs_h = D.plus_assocl rs sh r_sh in
   let (Adjunction { left; counit; _ }) = adj in
-  (* The field type lives behind a lock by the right adjoint, so we key the environment by it (by identity cells, per generator), getting an (n, ag) env.  Note that we do *not* extend it by the self variable yet: the degeneration below must be applied to the parameters alone, so that its eval-readback happens in the ambient context locked by the right adjoint, whether the self is an ambient value or the self variable of a codatatype being displayed. *)
-  let env = key_id_env codataenv plus_lock in
+  (* The field type lives behind a lock by the right adjoint, so we lock the environment by it (one Lock per generator), getting an (n, ag) env.  Note that we do *not* extend it by the self variable yet: the degeneration below must be applied to the parameters alone, so that its eval-readback happens in the ambient context locked by the right adjoint, whether the self is an ambient value or the self variable of a codatatype being displayed. *)
+  let env = lock_env codataenv plus_lock in
   (* Degenerate the parameters by the remaining dimensions, if there are any, getting an (r+n, ag) env. *)
   let (r, env) : r D.t * (gmode, rn, ag) env =
     match shuf with
@@ -1486,7 +1483,7 @@ and eval_env : type mode a q n qn b.
       let (Plus pm_k) = D.plus k in
       let p_mk = D.plus_assocr p_m m_k pm_k in
       let pmk = D.plus_out p p_mk in
-      let lenv = key_id_env env al in
+      let lenv = lock_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter q filt_p_q)) in
       (* We make everything lazy, since we can, and not everything may end up being used. *)
       Value.Ext
@@ -1505,25 +1502,14 @@ and eval_env : type mode a q n qn b.
                        lazy_eval (act_env flenv (opt_op_of_sface fa)) (CubeOf.find xss fb));
                  });
         }
-  | Key { env = tmenv; cell; plus_src; plus_tgt } -> (
-      let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
-      match extra with
-      | Plus_lock (Zero _, Zero) ->
-          let Eq = Modality.comp_uniq mu12 (Modality.id_comp (Modalcell.vtgt cell)) in
-          prekey_env (Key (eval_env env q_n tmenv, Modalcell.vcomp keys cell, plus_src)) pre
-      | Plus_lock (Suc _, _) ->
-          (* The split landed in the middle of a key, so restrict_keys slurped the rest of that key's locks (extra) and folded its whole cell into keys, which therefore lives at a deeper mode than cell and can't be vertically composed with it.  Unlike a term Key, we can't extend plus_src by the extra either, since it lies on the codomain base of the term environment while the extra lies on its domain base.  So we rebuild the extra locks as identity keys to realign the residual environment with the term environment's domain, and apply the composite keys as a prekey action outside the resulting Key, where the accumulated actions compose in the same order as before. *)
-          prekey_env
-            (prekey_env (Key (eval_env (key_id_env env extra) q_n tmenv, cell, plus_src)) keys)
-            pre)
-  (* A term prekey is evaluated just like a key, except that the composite cell mediates the value environment on the domain side, before evaluating the inner term environment, rather than being wrapped around the result on the codomain side. *)
+  (* To evaluate a lock, we strip off the corresponding part of the value environment (which may include variables to the right of the lock, since the domain of a term environment can grow when passing a lock), evaluate the inner term environment in what remains, and re-lock it.  Any prekey action stripped along the way is re-applied on top. *)
+  | Lock { env = tmenv; gen; plus_tgt } ->
+      let (Restrict_keys (env, pre)) = restrict_keys env plus_tgt in
+      prekey_env (Lock (eval_env env q_n tmenv, gen)) pre
+  (* A term prekey mediates the domain context: we strip off the locks of its vertical target, re-lock by its vertical source, and apply its cell as a prekey to the value environment before evaluating the inner term environment in it. *)
   | Prekey { env = tmenv; cell; plus_src; plus_tgt } ->
-      let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
-      (* As in the Key branch of eval, if restrict_keys had to slurp up extra locks from the middle of a key, we postwhisker the cell by their composite modality so that its target matches the source of the composite keys, and extend the source locks of the resulting key by the extra.  (Here, unlike in the Key branch of eval_env, plus_src lies on the same base as plus_tgt, so this is possible.) *)
-      let (Comp nu12) = Modality.comp (Modalcell.vsrc cell) in
-      let extra_cell = Modalcell.postwhisker nu12 mu12 (plus_lock_modality extra) cell in
-      let kenv =
-        key_env env (Modalcell.vcomp keys extra_cell) (plus_lock_comp extra plus_src nu12) in
+      let (Restrict_keys (env, pre)) = restrict_keys env plus_tgt in
+      let kenv = prekey_env (lock_env env plus_src) cell in
       prekey_env (eval_env kenv q_n tmenv) pre
 
 and apply_term : type dom modality mode n m.
@@ -1619,7 +1605,7 @@ and app_eval_apps : type hmode mode s any.
       | Realize tm -> Realize (inst tm args)
       | Unrealized -> Unrealized)
 
-(* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the keys on the end of the environment have already been stripped off, even though the input types don't statically rule out a key with identity domain. *)
+(* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the Locks on the end of the environment have already been stripped off by restrict_keys (which the type of the index ensures, since an insertion only passes dimension entries).  Any Prekeys inside are accumulated into a prekey action. *)
 and lookup_cube : type dom mu munu mode n a b k mk nk.
     (mode, n, b) env ->
     (n, k, nk) D.plus ->
@@ -1640,12 +1626,11 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
       let (Plus lk) = D.plus (D.plus_right nk) in
       let op'k = opt_op_plus op' lk nk in
       lookup_cube env lk mu pretr v (comp_opt_op op'k op)
-  (* Keys are disallowed here, because we've already called restrict_keys that is supposed to strip them all off. *)
-  | Key (env, cell, plus) -> (
-      match (Modalcell.compare_id cell, plus) with
-      | Eq, Plus_lock (Zero _, Zero) -> lookup_cube env nk mu pretr v op
-      | _ -> fatal (Anomaly "nonidentity key in lookup_cube"))
-  (* A prekey doesn't change the codomain context, so it can appear between the values of an environment and thus not be stripped off by restrict_keys.  We accumulate its cell into the returned prekey action.  Since the prekey acts at the environment's mode, but the looked-up value is at its own (deeper) mode, we prewhisker the cell by the transport modality (the vertical target of the composite key returned by restrict_keys), moving its source to the value's mode so that it composes with the accumulated action there. *)
+  (* Since there's an index, which can only pass dimension entries, the environment can't end with a lock: restrict_keys has already stripped them all off. *)
+  | Lock _ -> (
+      match v with
+      | _ -> .)
+  (* A prekey doesn't change the codomain context, so it can appear between the values of an environment and thus not be stripped off by restrict_keys.  We accumulate its cell into the returned prekey action.  Since the prekey acts at the environment's mode, but the looked-up value is at its own (deeper) mode, we prewhisker the cell by the transport modality (the composite modality of the locks stripped by restrict_keys), moving its source to the value's mode so that it composes with the accumulated action there. *)
   | Prekey (env, cell) ->
       let (Looked_up { act; op; entry; pre }) = lookup_cube env nk mu pretr v op in
       let (Wrap cell) = Modalcell.prewhisker_wrapped cell pretr in
@@ -1707,24 +1692,23 @@ and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kineti
  fun env (Index (v, fa, _, (Plus_with_locks (_, locks) as plus))) ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
-  (* We strip off the keys and prekeys corresponding to the locks to the right of the variable, composing them on the way out into a composite key cell (for the variable's own locks) and a prekey action, both to be applied to the looked-up value.  The prekeys encountered inside the environment by lookup_cube are transported to the value's mode by prewhiskering with the vertical target of the composite key. *)
-  let (Restrict_keys (env, extra, _, keys, pre)) = restrict_keys env plus in
-  match (extra, v) with
-  (* The extension of an index includes all the locks to the right of the variable, and a key can only span locks, so the split can never land in the middle of a key here. *)
-  | Plus_lock (Suc _, _), _ -> .
-  | Plus_lock (Zero _, Zero), _ -> (
-      let mu = Locks.cod locks in
-      match lookup_cube env n_k mu (Modalcell.vtgt keys) v (id_opt_op (D.plus_out n n_k)) with
-      | Looked_up { act; op; entry; pre = inner_pre } -> (
-          let (Plus x) = D.plus (dom_sface fa) in
-          match op_of_opt (comp_opt_op op (plus_opt_op n n_k x (opt_op_of_sface fa))) with
-          | Some (Op (f, s)) ->
-              (* We combine, into a single cell applied in one traversal, the composite lock keys (innermost), then the prekey action from inside the environment, then the prekey action from the stripped-off extension (outermost). *)
-              let (Prekey_action c) = prekey_vcomp inner_pre keys in
-              let (Prekey_action c) = prekey_vcomp pre c in
-              act (CubeOf.find entry f) s c
-          (* This means that in the non-unary case, some dummy endpoints in an opt_sface didn't get canceled out by a degeneracy.  I think that could only happen if a non-unary mode theory has a 2-cell from a sharp parametric modality to a sharp non-parametric modality.  In all the models I know, the primary nonparametric modalities are *comonadic*, plus in the unary case *only* a left adjoint monad to it (which is also right adjoint if the parametricity is internal), and in the external non-unary case another non-monadic non-comonadic functor.  In the internal non-unary case there is a *right* adjoint to the nonparametric comonad, but it is not "nonparametric" in this sense: its parametricity is *codiscrete* rather than discrete; I haven't thought about how to enforce that for a tangible modality, although it comes naturally for a negative presentation that is right adjoint to a tangible discrete modality. *)
-          | None -> fatal (Invalid_mode_theory "uncanceled dummy endpoints")))
+  (* We strip off the locks to the right of the variable, composing the prekeys encountered on the way out into a prekey action to be applied to the looked-up value.  The prekeys encountered inside the environment by lookup_cube are transported to the value's mode by prewhiskering with the composite modality of the locks. *)
+  let (Restrict_keys (env, pre)) = restrict_keys env plus in
+  let mu = Locks.cod locks in
+  match lookup_cube env n_k mu mu v (id_opt_op (D.plus_out n n_k)) with
+  | Looked_up { act; op; entry; pre = inner_pre } -> (
+      let (Plus x) = D.plus (dom_sface fa) in
+      match op_of_opt (comp_opt_op op (plus_opt_op n n_k x (opt_op_of_sface fa))) with
+      | Some (Op (f, s)) ->
+          (* We combine, into a single cell applied in one traversal, the identity on the composite of the variable's locks (innermost), then the prekey action from inside the environment, then the prekey action from the stripped-off extension (outermost). *)
+          let (Prekey_action c) =
+            if Modalcell.is_id inner_pre then Prekey_action (Modalcell.id mu)
+            else prekey_vcomp inner_pre (Modalcell.id mu) in
+          let (Prekey_action c) =
+            if Modalcell.is_id pre then Prekey_action c else prekey_vcomp pre c in
+          act (CubeOf.find entry f) s c
+      (* This means that in the non-unary case, some dummy endpoints in an opt_sface didn't get canceled out by a degeneracy.  I think that could only happen if a non-unary mode theory has a 2-cell from a sharp parametric modality to a sharp non-parametric modality.  In all the models I know, the primary nonparametric modalities are *comonadic*, plus in the unary case *only* a left adjoint monad to it (which is also right adjoint if the parametricity is internal), and in the external non-unary case another non-monadic non-comonadic functor.  In the internal non-unary case there is a *right* adjoint to the nonparametric comonad, but it is not "nonparametric" in this sense: its parametricity is *codiscrete* rather than discrete; I haven't thought about how to enforce that for a tangible modality, although it comes naturally for a negative presentation that is right adjoint to a tangible discrete modality. *)
+      | None -> fatal (Invalid_mode_theory "uncanceled dummy endpoints"))
 
 (* Instantiate an arbitrary value, combining tubes. *)
 and inst : type mode m n mn s.

@@ -509,7 +509,7 @@ and equal_ordered_env : type mode a b n c d.
           let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 pre2 in
           (* compare *)
           let (Locked (_, lctx)) = Ctx.lock ctx modality in
-          let lenv = key_id_env aenv1 dplus in
+          let lenv = lock_env aenv1 dplus in
           let env1' = remove_top env1 in
           let env2' = remove_top env2 in
           let* () = equal_ordered_env ctx env1' env2' envctx in
@@ -536,20 +536,13 @@ and equal_ordered_env : type mode a b n c d.
                       check (equal_at lctx tm1 tm2 ty));
                 }
                 [ xs1; xs2 ]))
-  | Lock _ -> (
-      let (Ordered_remove_locks (envctx, locks, no_locks)) = Termctx.ordered_remove_locks envctx in
-      let (Restrict_keys (env1, extra1, _, keys1, pre1)) = restrict_keys_plus_lock env1 locks in
-      let (Restrict_keys (env2, extra2, _, keys2, pre2)) = restrict_keys_plus_lock env2 locks in
-      (* Since we removed a maximal run of locks, and a key can only span locks, the split can never land in the middle of a key here, so there is nothing extra. *)
-      match (extra1, extra2, no_locks) with
-      | Plus_lock (Suc _, _), _, _ | _, Plus_lock (Suc _, _), _ -> .
-      | Plus_lock (Zero _, Zero), Plus_lock (Zero _, Zero), _ -> (
-          match Modalcell.compare keys1 keys2 with
-          | Neq -> Error (Unequal.Cells (keys1, keys2))
-          | Eq ->
-              let* () = guard (prekey_equal pre1 pre2) (Unequal.Cells (pre1, pre2)) in
-              (* The (equal) prekey actions mediate between a context locked by their vertical source and the actual ambient context, locked by their vertical target.  So we remove the prekey's target from the context and re-lock with its source (both no-ops when there was no prekey) before removing the target of the composite key cell as usual. *)
-              let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt pre1) in
-              let (Locked (_, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre1) in
-              let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt keys1) in
-              equal_ordered_env ctx env1 env2 envctx))
+  | Lock (envctx, g) ->
+      let locks = plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g in
+      let (Restrict_keys (env1, pre1)) = restrict_keys env1 locks in
+      let (Restrict_keys (env2, pre2)) = restrict_keys env2 locks in
+      let* () = guard (prekey_equal pre1 pre2) (Unequal.Cells (pre1, pre2)) in
+      (* The (equal) prekey actions mediate between a context locked by their vertical source and the actual ambient context, locked by their vertical target.  So we remove the prekey's target from the context and re-lock with its source (both no-ops when there was no prekey) before removing the lock itself. *)
+      let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modalcell.vtgt pre1) in
+      let (Locked (_, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre1) in
+      let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modality.of_gen g) in
+      equal_ordered_env ctx env1 env2 envctx

@@ -2090,7 +2090,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
            | Arg (rest, filter, xs, ins) ->
                let modality = Modality.filter_modality filter in
                let (Locked (plus, loldctx)) = Ctx.lock oldctx modality in
-               let lnewenv = key_id_env newenv plus in
+               let lnewenv = lock_env newenv plus in
                let erhead, errest = erapps oldctx newenv rest in
                ( erhead,
                  Arg
@@ -2110,7 +2110,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
                (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
                let fm = Modality.filter_modality filter in
                let (Locked (plus, loldctx)) = Ctx.lock oldctx fm in
-               let lnewenv = key_id_env newenv plus in
+               let lnewenv = lock_env newenv plus in
                let erhead, errest = erapps loldctx lnewenv rest in
                (erhead, Field (errest, filter, x, y, z))
            | Inst _ -> fatal (Anomaly "inst in make_match_status") in
@@ -3099,7 +3099,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                    let (Has_filter newfilter) = Modality.filter fm (cod_left_ins newins) in
                    (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
                    let (Locked (plus, lctx)) = Ctx.lock ctx fm in
-                   let ldegenv = key_id_env degenv plus in
+                   let ldegenv = lock_env degenv plus in
                    let head, newapps = erapps lctx ldegenv apps in
                    (head, Value.Field (newapps, newfilter, fldname, rn_k, newins))
                | Arg
@@ -3129,7 +3129,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                              [ readback_nf lctx x; readback_val lctx (Lazy.force x.ty) ]);
                        }
                        [ arg ] (Cons (Cons Nil)) in
-                   let ldegenv = key_id_env degenv plus in
+                   let ldegenv = lock_env degenv plus in
                    (* Now we evaluate them in degenv to increase the dimension.  *)
                    let sldegenv =
                      act_env ldegenv (opt_op_of_opt_sface (Modality.sface_of_filter r filter_sr))
@@ -3210,7 +3210,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
               deg_env =
                 (fun adj tctx r_k e ->
                   let (Locked (plus, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
-                  eval_env (key_id_env degenv plus) r_k (readback_env lctx e tctx));
+                  eval_env (lock_env degenv plus) r_k (readback_env lctx e tctx));
             } in
         (* The shuffleable degenerates the codatatype's parameters; the self value and its boundary we degenerate here, since the field type is applied to them only after that degeneration.  The boundary is used to instantiate the field type, by projecting this field from it, so it stays in the ambient context; but the self value is substituted for the self *variable*, which lies behind the locks by the right and then the left adjoint, so we transport it there along the adjunction unit first and degenerate it in that doubly locked context.  (For an ordinary field the unit is an identity cell and both locks are trivial.) *)
         let dtyargs =
@@ -3222,7 +3222,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
               let (Adjunction { unit; _ }) = adj in
               let (Locked (rplus, ulctx)) = Ctx.lock ctx right in
               let (Locked (lplus, uflctx)) = Ctx.lock ulctx left in
-              let fdegenv = key_id_env (key_id_env degenv rplus) lplus in
+              let fdegenv = lock_env (lock_env degenv rplus) lplus in
               let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
               `Ok
                 (degenerate_value_cube uflctx fdegenv r_m
@@ -3247,8 +3247,8 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
         adj ctx_plus_lock cvals evals pbijs prev_etm fld_plus_lock fldtermctx ic0 fldty
   | None ->
       let plusdim = D.zero_plus m in
-      (* The stored environment and values of a modal higher field live behind the lock by the right adjoint, so we key the ambient environment by it (a no-op for ordinary fields). *)
-      let env = key_id_env (Ctx.env ctx) ctx_plus_lock in
+      (* The stored environment and values of a modal higher field live behind the lock by the right adjoint, so we lock the ambient environment by it (a no-op for ordinary fields). *)
+      let env = lock_env (Ctx.env ctx) ctx_plus_lock in
       let deg = id_deg (D.plus_out (dim_env env) plusdim) in
       let etms =
         Snoc
