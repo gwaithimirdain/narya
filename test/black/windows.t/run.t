@@ -148,6 +148,12 @@ The variable so bound can then be refuted, explicitly or automatically:
 
   $ narya -transparent-functor preserve.ny -e "def B' : CodType ≔ data [ t. | f. ]" -e "def wref (u : ○ ⊥) (b : B') : ⊥' ≔ match u [ circle. w ↦ match b, (w :○| _) [ t., y ↦ . | f., y ↦ match (y :○| _) [ ] ] ]" -e "def wauto (u : ○ ⊥) (b : B') : ⊥' ≔ match u [ circle. w ↦ match b, (w :○| _) [ t., y ↦ match (y :○| _) [ ] ] ]"
 
+A later discriminee with a window that is not a variable, such as one with an
+explicit type, is let-bound modally once outside the whole match, and the
+matches against it use the same window:
+
+  $ narya -transparent-functor preserve.ny -e "def B' : CodType ≔ data [ t. | f. ]" -e "def B : DomType ≔ data [ t. | f. ]" -e "def wtyped (u : ○ ⊥) (b : B') : ⊥' ≔ match u [ circle. w ↦ match b, (w :○| ⊥) [ t., y ↦ . | f., y ↦ match (y :○| _) [ ] ] ]" -e "def wtyped2 (u : ○ B) (b : B') : B' ≔ match u [ circle. w ↦ match b, (w :○| B) [ t., t. ↦ t. | t., f. ↦ f. | f., _ ↦ f. ] ]"
+
 This is the same as a modal let-binding, whose type can be a placeholder to
 indicate that the bound term should synthesize:
 
