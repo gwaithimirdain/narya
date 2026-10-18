@@ -48,7 +48,9 @@ Let-binding
 
 Writing ``let x ≔ M in N`` binds the local variable ``x`` to the value ``M`` while typechecking and evaluating ``N``.  The unicode ≔ is interchangeable with the ASCII ``:=``.  Computationally, ``let x ≔ M in N`` is equivalent to ``(x ↦ N) M``, but it also binds ``x`` to the value ``M`` while typechecking ``N``, which in a dependent type theory is stronger.
 
-The term ``M`` is required to synthesize.  Thus ``let x ≔ M : A in N`` is a common idiom, and can be written alternatively as ``let x : A ≔ M in N``.  The body ``N`` can either check or synthesize, and the let-binding as a whole inherits this from it: if ``N`` synthesizes a type then the let-binding synthesizes the same type, while if ``N`` checks then the let-binding checks against a type that is passed on to ``N`` to check against.  The let-binding notation is right-associative with tightness −ω.
+The term ``M`` is required to synthesize.  Thus ``let x ≔ M : A in N`` is a common idiom, and can be written alternatively as ``let x : A ≔ M in N``.  Conversely, when ``M`` synthesizes, you can also write ``let x : _ ≔ M in N`` to mean ``let x : M in N``; this becomes more useful with :ref:`Modal let-bindings`.
+
+The body ``N`` can either check or synthesize, and the let-binding as a whole inherits this from it: if ``N`` synthesizes a type then the let-binding synthesizes the same type, while if ``N`` checks then the let-binding checks against a type that is passed on to ``N`` to check against.  The let-binding notation is right-associative with tightness −ω.
 
 An ordinary let-binding is not recursive: the variable ``x`` cannot appear in the term ``M``.  This is intentional and enables a common idiom where ``x`` shadows a previously existing variable of the same name in ``N``, while the *previous* variable of that name can appear in ``M``, thereby creating the illusion that the value of that variable has been "changed".  For instance, ``let x ≔ x + 1 in`` has the appearance of incrementing the value of ``x``.
 

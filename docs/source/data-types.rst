@@ -262,7 +262,7 @@ To ensure termination and consistency, the recursive calls should be on structur
 While there is no termination-checking there is coverage-checking.  Thus, all the constructors of a datatype must be present in the match.  So while you can write infinite loops, your programs shouldn't get stuck.
 
 
-Multiple matches and deep matches
+Multiple and deep matches
 ---------------------------------
 
 It is possible to condense a sequence of nested matches into a single one.  For example, the above definition of ``Sum.assoc`` can be condensed into a single "deep match":
@@ -272,46 +272,63 @@ It is possible to condense a sequence of nested matches into a single one.  For 
    def Sum.assoc (A B C : Type) (x : (A ⊔ B) ⊔ C) : A ⊔ (B ⊔ C) ≔ match x [
    | inl. (inl. a) ↦ inl. a
    | inl. (inr. b) ↦ inr. (inl. b)
-   | inr. c        ↦ inr. (inr. c)
-   ]
+   | inr. c        ↦ inr. (inr. c) ]
 
 Similarly, a naive definition of the Boolean conjunction would be:
 
 .. code-block:: none
 
-   def andb (x y : Bool) : Bool ≔ match x [
+   def Bool.and (x y : Bool) : Bool ≔ match x [
    | true.  ↦ match y [
      | true.  ↦ true.
      | false. ↦ false.
      ]
-   | false. ↦ false.
-   ]
+   | false. ↦ false. ]
 
 but this can be condensed to a "multiple match":
 
 .. code-block:: none
 
-   def andb (x y : Bool) : Bool ≔ match x, y [
+   def Bool.and (x y : Bool) : Bool ≔ match x, y [
    | true.  , true.  ↦ true.
    | true.  , false. ↦ false.
-   | false. , _      ↦ false.
-   ]
+   | false. , _      ↦ false. ]
 
 Here the ``_`` indicates that that value can be anything.  It can also be replaced by a variable, which is then bound to the value being matched.
 
-Multiple and deep matches can be combined.  In general, for a multiple match on a comma-separated list of a positive number of discriminees, the left-hand side of each branch must be a comma-separated list of the same number of *patterns*.  Each pattern is either a variable, an underscore, or a constructor applied to some number of other patterns.  Plain variable patterns are equivalent to let-bindings: ``match x [ y ↦ M ]`` is the same as ``let y ≔ x in M``.  Multiple and deep matches are (with one exception, discussed :ref:`below<Empty types and refutation cases>`) a *purely syntactic* abbreviation: the condensed forms are expanded automatically to the nested match forms before even being typechecked.
+Multiple and deep matches can be combined.  In general, for a multiple match on a comma-separated list of a positive number of discriminees, the left-hand side of each branch must be a comma-separated list of the same number of *patterns*.  Each pattern is either a variable, an underscore, or a constructor applied to some number of other patterns.  Plain variable patterns are equivalent to let-bindings: ``match x [ y ↦ M ]`` is the same as ``let y ≔ x in M``.
 
-In a multiple match, the discriminees all belong to the context *outside* the whole match.  In particular, they are typechecked there, and the matches against them refine the context only in the usual ways (see :ref:`Variable matches`).  Thus a discriminee that is a variable, such as ``y`` in ``match x, y [ … ]``, is matched against in each branch of the match against ``x`` as that variable, whose type may have been refined by the match against ``x``, and the match against it can refine it in turn.  But any other discriminee, such as ``f y`` in ``match x, f y [ … ]``, is let-bound to a new variable outside the whole match (which you will see in the contexts of holes), so it must typecheck in the context outside the match, even if it would also make sense in the refined contexts of the branches of the match against ``x``; and since it is not a variable, the matches against it don't refine anything.
+Multiple and deep matches are (with one exception, discussed :ref:`below<Empty types and refutation cases>`) a *purely syntactic* abbreviation: the condensed forms are expanded automatically to the nested match forms before even being typechecked.  That is, when you write the second version of ``Bool.and`` above, the typechecker sees the first version.
 
-Multiple and deep patterns can also be used in pattern-matching abstractions.  In the case of a multiple match, the number of variables abstracted over is determined by the number of patterns in the branches.  Thus, for instance, ``andb`` can also be defined by:
+If a discriminee after the first in a multiple match is not a simple variable, then the syntactic expansion let-binds it to a variable outside the match.  Thus, for instance, 
 
 .. code-block:: none
 
-   def andb : Bool → Bool → Bool ≔ [
+   def andf (x : Bool) (f : Bool → Bool) : Bool ≔ match x, f x [
    | true.  , true.  ↦ true.
    | true.  , false. ↦ false.
-   | false. , _      ↦ false.
-   ]
+   | false. , _      ↦ false. ]
+
+expands to
+
+.. code-block:: none
+
+   def andf (x : Bool) (f : Bool → Bool) : Bool ≔ 
+     let y ≔ f x in
+     match x [
+     | false. ↦ false.
+     | true. ↦ match y [ false. ↦ false. | true. ↦ true. ]]
+
+This has two important consequences.  First, the discriminee term (such as ``f x``) is typechecked only once, rather than once in each match (and so in particular any errors in it are only reported once).  Second, that term is typechecked *outside the match*, and therefore it cannot depend for its correctness on the match against a previous variable.  If it does so depend, you have to write the nested match explicitly rather than as a multiple match.
+
+Multiple and deep patterns can also be used in pattern-matching abstractions.  In the case of a multiple match, the number of variables abstracted over is determined by the number of patterns in the branches.  Thus, for instance, ``Bool.and`` can also be defined by:
+
+.. code-block:: none
+
+   def Bool.and : Bool → Bool → Bool ≔ [
+   | true.  , true.  ↦ true.
+   | true.  , false. ↦ false.
+   | false. , _      ↦ false. ]
 
 All the pattern variables of each branch must be distinct: they cannot shadow each other.  Allowing them to shadow each other would be a recipe for confusion, because replacing a match by its expanded version alters the order in which variables appear.  For instance, the nested match
 
@@ -320,8 +337,7 @@ All the pattern variables of each branch must be distinct: they cannot shadow ea
    def prod' (A B : Type) : Type ≔ data [ pair. (_:A) (_:B) ]
 
    def proj31 (A B C : Type) (u : prod' (prod' A B) C) : A ≔ match u [
-   | pair. (pair. x y) z ↦ x
-   ]
+   | pair. (pair. x y) z ↦ x ]
 
 would expand to
 
@@ -329,9 +345,7 @@ would expand to
 
    def proj31 (A B C : Type) (u : prod' (prod' A B) C) : A ≔ match u [
    | pair. H z ↦ match H [
-     | (pair. x y) ↦ x
-     ]
-   ]
+     | (pair. x y) ↦ x ] ]
 
 in which ``z`` is bound first instead of last.  (The intermediate variable ``H`` is inserted automatically in the process of expansion, and you will see it in the contexts of holes.)
 
@@ -339,7 +353,7 @@ Matching always proceeds from left to right, so that the matches corresponding t
 
 .. code-block:: none
 
-   def andb2 (x : prod' Bool Bool) : Bool ≔ match x [
+   def Bool.and2 (x : prod' Bool Bool) : Bool ≔ match x [
    | pair. true. true.   ↦ true.
    | pair. true. false.  ↦ false.
    | pair. false. true.  ↦ false.
@@ -350,7 +364,7 @@ Here the first argument of ``pair.`` is matched before the second, producing the
 
 .. code-block:: none
 
-   def andb2 (x : prod' Bool Bool) : Bool ≔ match x [
+   def Bool.and2 (x : prod' Bool Bool) : Bool ≔ match x [
    | pair. a b ↦ match a [
      | true. ↦ match b [
        | true. ↦ true.
@@ -367,7 +381,7 @@ To match on the second argument first, you would have to use a nested match expl
 
 .. code-block:: none
 
-   def andb2' (x : prod' Bool Bool) : Bool ≔ match x [
+   def Bool.and2' (x : prod' Bool Bool) : Bool ≔ match x [
    | pair. a b ↦ match b, a [
      | true.  , true.  ↦ true.
      | false. , true.  ↦ false.
@@ -604,7 +618,7 @@ It is also possible to match against a term that is not a free variable, or whos
    
    def efq (A C : Type) (a : A) (na : A → ⊥) : C ≔ match na a [ ]
 
-Note that matching against a let-bound variable is equivalent to matching against its value, so it falls under this category.
+Note that matching against a let-bound variable is equivalent to matching against its value, so it falls under this category.  This is the case even if the *value* of a let-bound variable is a free variable: to automatically refine the context, the discriminee must be *syntactically* a free variable.
 
 The fact that this kind of match uses the same syntax as the previous one means that if you intend to do a variable match, as above, but the conditions on the match variable and its indices are not satisfied, then Narya will fall back to trying this kind of match.  You will then probably get an error message due to the fact that the goal type didn't get refined in the branches the way you were expecting it to.  Narya tries to help you find bugs of this sort by emitting a hint when that sort of fallback happens.  If you really did mean to write a non-dependent match, you can silence the hint by writing ``match M return _ ↦ _`` (see :ref:`Explicitly dependent matches`).
 
