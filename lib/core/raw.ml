@@ -135,7 +135,9 @@ module rec Make : functor (I : Indices) -> sig
         -> 'a codatafield
 
   and 'a refutables = {
-    refutables : 'b 'ab. ('a, 'b, 'ab) Namevec.P.bplus -> 'ab synth located list;
+    refutables :
+      'b 'ab.
+      ('a, 'b, 'ab) Namevec.P.bplus -> ('ab synth located * string located list located option) list;
   }
 
   and (_, _, _) tel =
@@ -311,8 +313,11 @@ functor
           * 'a I.suc check located
           -> 'a codatafield
 
-    (* A raw match stores the information about the pattern variables available from previous matches that could be used to refute missing cases.  But it can't store them as raw terms, since they have to be in the correct context extended by the new pattern variables generated in any such case.  So it stores them as a callback that puts them in any such extended context. *)
-    and 'a refutables = { refutables : 'b 'ab. ('a, 'b, 'ab) bplus -> 'ab synth located list }
+    (* A raw match stores the information about the pattern variables available from previous matches that could be used to refute missing cases.  But it can't store them as raw terms, since they have to be in the correct context extended by the new pattern variables generated in any such case.  So it stores them as a callback that puts them in any such extended context.  Like the arguments of a Refute, each carries an optional window modality. *)
+    and 'a refutables = {
+      refutables :
+        'b 'ab. ('a, 'b, 'ab) bplus -> ('ab synth located * string located list located option) list;
+    }
 
     (* An ('a, 'b, 'ab) tel is a raw telescope of length 'b in context 'a, with 'ab = 'a+'b the extended context. *)
     and (_, _, _) tel =
@@ -571,11 +576,13 @@ module Resolve (R : Resolver) = struct
 
   and refutables : type a1 a2. (a1, a2) R.scope -> a1 R.T1.refutables -> a2 R.T2.refutables =
    fun ctx { refutables } ->
-    let refutables : type b ab2. (a2, b, ab2) R.T2.bplus -> ab2 R.T2.synth located list =
+    let refutables : type b ab2.
+        (a2, b, ab2) R.T2.bplus ->
+        (ab2 R.T2.synth located * string located list located option) list =
      fun ab2 ->
       let (Bplus ab1) = R.T1.bplus (R.T2.bplus_right ab2) in
       let ctx2 = append ctx (R.T1.Namevec.none ab1) ab2 in
-      List.map (synth ctx2) (refutables ab1) in
+      List.map (fun (tm, window) -> (synth ctx2 tm, window)) (refutables ab1) in
     { refutables }
 
   and tel : type b a1 ab1 a2 ab2.

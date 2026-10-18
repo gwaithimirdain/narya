@@ -118,15 +118,40 @@ own (possibly nontrivial) modality as the window:
 
   $ narya -parametric -transparent-functor preserve-higher.ny
 
-Refuting a modal variable requires a window modality:
+Refuting a modal variable with no explicit window uses the variable's own
+modality as the window, just as any other match against it does.  This
+includes refuting it explicitly in a multiple match, and refuting it
+automatically in a missing branch:
 
-  $ narya -transparent-functor preserve.ny -e "def zfwd2 (u : ○ ⊥) : ⊥' ≔ match u [ circle. x ↦ match x [ ] ]"
-   ￫ error[E1705]
-   ￭ command-line exec string
-   1 | def zfwd2 (u : ○ ⊥) : ⊥' ≔ match u [ circle. x ↦ match x [ ] ]
-     ^ use of ○ variable behind id lock requires a key
+  $ narya -transparent-functor preserve.ny -e "def B' : CodType ≔ data [ t. | f. ]" -e "def zfwd2 (u : ○ ⊥) : ⊥' ≔ match u [ circle. x ↦ match x [ ] ]" -e "def zfwd4 (u : ○ ⊥) (b : B') : ⊥' ≔ match u, b [ circle. x, t. ↦ . | circle. x, f. ↦ match x, b [ ] ]" -e "def zfwd5 (u : ○ ⊥) (b : B') : B' ≔ match u, b [ circle. x, t. ↦ t. ]"
+
+A window discriminee can also be matched against a variable pattern, which
+let-binds that variable modally to it.  This doesn't match against anything,
+so it doesn't require any transparency of the window:
+
+  $ narya -v -transparent-functor preserve.ny -e "def wvar (u : ○ ℕ) : ○ ℕ ≔ match u [ circle. w ↦ match (w :○| _) [ y ↦ circle. y ] ]" -e "def B' : CodType ≔ data [ t. | f. ]" -e "def wlater (u : ○ ℕ) (b : B') : ○ ℕ ≔ match u [ circle. w ↦ match b, (w :○| _) [ t., y ↦ ? | f., _ ↦ u ] ]" 2>&1 | tail -13
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     b ≔ t. : B'
+     w :○| ℕ
+     u ≔ circle. w : ○ ℕ
+     y ≔ w :○| ℕ
+     ----------------------------------------------------------------------
+     ○ ℕ
   
-  [1]
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+
+The variable so bound can then be refuted, explicitly or automatically:
+
+  $ narya -transparent-functor preserve.ny -e "def B' : CodType ≔ data [ t. | f. ]" -e "def wref (u : ○ ⊥) (b : B') : ⊥' ≔ match u [ circle. w ↦ match b, (w :○| _) [ t., y ↦ . | f., y ↦ match (y :○| _) [ ] ] ]" -e "def wauto (u : ○ ⊥) (b : B') : ⊥' ≔ match u [ circle. w ↦ match b, (w :○| _) [ t., y ↦ match (y :○| _) [ ] ] ]"
+
+This is the same as a modal let-binding, whose type can be a placeholder to
+indicate that the bound term should synthesize:
+
+  $ narya -transparent-functor preserve.ny -e "def wlet (u : ○ ℕ) : ○ ℕ ≔ match u [ circle. w ↦ let y :○| _ ≔ w in circle. y ]" -e "def nlet (n : ℕ) : ℕ ≔ let m : _ ≔ n in m"
 
 Since ○ is transparent but not pellucid, it cannot be used as a window for
 recursive datatypes, even ones with a single constructor, or datatypes that

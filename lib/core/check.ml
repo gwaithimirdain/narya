@@ -382,6 +382,28 @@ let get_window mode = function
       | Ok w -> w)
   | None -> Wrap (Modality.id mode)
 
+(* The window modality with which to synthesize a discriminee being refuted.  This is the one supplied, if any.  Otherwise, an unlocked variable is synthesized under its own modality, just as a variable match against it would be, so that a modal variable (such as a pattern variable bound to a modal constructor argument, or a variable let-bound to a discriminee with a window) can be refuted without a key. *)
+let refutation_window : type mode a b.
+    (mode, a, b) Ctx.t ->
+    a synth located ->
+    string located list located option ->
+    mode Modality.src_wrapped =
+ fun ctx tm window_name ->
+  match (window_name, tm.value) with
+  | None, Var ix -> (
+      let (Lookup { modality; plus = Plus_with_locks (comp, locks); _ }) = Ctx.lookup ctx ix in
+      match (comp, locks) with
+      | Zero, Zero _ -> Wrap modality
+      | _ -> get_window (Ctx.mode ctx) None)
+  | _ -> get_window (Ctx.mode ctx) window_name
+
+(* Refuting a discriminee is matching against it with no branches, so the window it is refuted under must be one that a match against an empty datatype could use.  The datatype, being empty, is nonrecursive and not single-constructor, so check_window_transparency's condition comes down to this. *)
+let refuting_window : type dom window mode. (dom, window, mode) Modality.t -> bool =
+ fun mu ->
+  match Modality.compare_id mu with
+  | Eq -> true
+  | Neq -> Modality.pellucid mu || Modality.transparent mu
+
 (* Resolve the recursion verdict of a datatype by chasing the recorded verdicts of any blocking metavariables through Global, just as evaluation of a term containing metavariables consults their definitions.  A hole that has been solved has the verdict of its solution recorded; a still-unsolved hole remains unknown (and is treated conservatively as recursive by the window check, but nothing is cached, so a later check after solving it can succeed). *)
 let rec chase_recursion : Positivity.recursion -> [ `Nonrecursive | `Recursive | `Unknown ] =
   function
@@ -1996,23 +2018,31 @@ and check_var_match : type dom modality mode a b bm.
                                     (fun x ->
                                       match !s with
                                       | Ok _ -> ()
-                                      | Error _ -> (
-                                          let stm, sty = synth (Kinetic `Nolet) newctx x in
+                                      | Error errs -> (
+                                          let x, window_name = x in
+                                          let (Wrap window) =
+                                            refutation_window newctx x window_name in
+                                          let (Locked (plus_lock, wctx)) = Ctx.lock newctx window in
+                                          let stm, sty = synth (Kinetic `Nolet) wctx x in
                                           match is_empty sty with
                                           | None -> ()
                                           | Some (Wrap dim) ->
-                                              (* A refutable is synthesized in the ambient context, so its refutation needs no window. *)
-                                              s :=
-                                                Ok
-                                                  (Term.Match
-                                                     {
-                                                       window = Modality.id (Ctx.mode newctx);
-                                                       plus_lock = plus_no_lock (Ctx.mode newctx);
-                                                       tm = stm;
-                                                       dim;
-                                                       motive = None;
-                                                       branches = Constr.Map.empty;
-                                                     })))
+                                              if refuting_window window then
+                                                s :=
+                                                  Ok
+                                                    (Term.Match
+                                                       {
+                                                         window;
+                                                         plus_lock;
+                                                         tm = stm;
+                                                         dim;
+                                                         motive = None;
+                                                         branches = Constr.Map.empty;
+                                                       })
+                                              else
+                                                s :=
+                                                  Error
+                                                    (errs @ [ Nonrefutable_modal_variable window ])))
                                     (Option.fold
                                        ~some:(fun r ->
                                          let (Bplus_to bp) = Patternvars.bplus xs in
@@ -2136,7 +2166,7 @@ and check_refute : type mode a b.
         | `Implicit, Some (`Error err) -> fatal err
         | `Implicit, None -> fatal (Anomaly "no discriminees to refute"))
     | (tm, window_name) :: tms -> (
-        let (Wrap window) = get_window (Ctx.mode ctx) window_name in
+        let (Wrap window) = refutation_window ctx tm window_name in
         let (Locked (plus_lock, wctx)) = Ctx.lock ctx window in
         let stm, sty = synth (Kinetic `Nolet) wctx tm in
         (* The error to report if nothing can be refuted comes from the first term. *)
@@ -2300,12 +2330,8 @@ and empty_witness_cube : type mode dom modality k n a c.
   | None -> Error []
   | Some (nf, Wrap dim) ->
       let mu = Modality.filter_modality modality in
-      (* Refuting a variable is matching against it with no branches, so its modality must be one a match could use as a window.  The datatype is empty, hence nonrecursive and not single-constructor, so check_window_transparency's condition comes down to this. *)
-      let usable =
-        match Modality.compare_id mu with
-        | Eq -> true
-        | Neq -> Modality.pellucid mu || Modality.transparent mu in
-      if not usable then Error [ Nonrefutable_modal_variable mu ]
+      (* Refuting a variable is matching against it with no branches, so its modality must be one a match could use as a window. *)
+      if not (refuting_window mu) then Error [ Nonrefutable_modal_variable mu ]
       else
         (* The variable is annotated by mu, so it is nameable in the context locked by mu, which is exactly the context a match through mu as its window reads its discriminee in. *)
         let (Locked (plus_lock, lctx)) = Ctx.lock ctx mu in

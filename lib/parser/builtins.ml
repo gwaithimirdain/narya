@@ -398,6 +398,18 @@ type (_, _, _) identity +=
 let letin : (closed, No.minus_omega_plus_one, No.nonstrict opn) notation =
   (Let, Prefixr No.minus_omega_plus_one)
 
+(* The value of a let-binding with a type, which becomes an ascription.  The type can also be a placeholder, meaning that the value must synthesize; this is the same as omitting the type in a non-modal let-binding, but a modal one has to have a type in order to write the modality. *)
+let process_let_value : type n.
+    (string option, n) Bwv.t -> observation -> observation -> n synth located =
+ fun ctx ty tm ->
+  match (ty, tm) with
+  | Term { value = Placeholder _; _ }, Term tm -> process_synth ctx tm "value of let"
+  | Term ty, Term tm ->
+      let ty = process ctx ty in
+      let tm = process ctx tm in
+      { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc }
+  | _ -> invalid "let"
+
 let process_let : type n.
     (string option, n) Bwv.t -> observation list -> Asai.Range.t option -> n check located =
  fun ctx obs loc ->
@@ -406,17 +418,15 @@ let process_let : type n.
    Token (Let, _);
    Term x;
    Token (Colon, _);
-   Term ty;
+   (Term _ as ty);
    Token (Coloneq, _);
-   Term tm;
+   (Term _ as tm);
    Token (In, _);
    Term body;
   ] ->
       let x = get_var x in
-      let ty = process ctx ty in
-      let tm = process ctx tm in
+      let v = process_let_value ctx ty tm in
       let body = process (Bwv.snoc ctx x) body in
-      let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
       { value = Synth (Let (x, locate_opt None [], v, body)); loc }
   | [ Token (Let, _); Term x; Token (Coloneq, _); Term tm; Token (In, _); Term body ] ->
       let x = get_var x in
@@ -429,18 +439,16 @@ let process_let : type n.
    Token (Colon, _);
    Term modality;
    Token (Op "|", _);
-   Term ty;
+   (Term _ as ty);
    Token (Coloneq, _);
-   Term tm;
+   (Term _ as tm);
    Token (In, _);
    Term body;
   ] ->
       let x = get_var x in
-      let ty = process ctx ty in
-      let tm = process ctx tm in
+      let v = process_let_value ctx ty tm in
       let body = process (Bwv.snoc ctx x) body in
       let modality = get_modality fst modality in
-      let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
       { value = Synth (Let (x, modality, v, body)); loc }
   | _ -> invalid "let"
 
@@ -1722,8 +1730,8 @@ let rec process_branches : type a n.
   | (xctx, Var name :: _, _, _) :: _ as branches -> (
       (* The variable is assigned to the value of the first discriminee. *)
       let (x :: xs) = xs in
-      (* In general, we have to let-bind it to the discriminee term, adding it as a new variable to the scope. *)
-      let let_bind stm =
+      (* In general, we have to let-bind it to the discriminee term, adding it as a new variable to the scope.  A discriminee with a window modality is let-bound modally, so that it is synthesized in the context locked by the window, as it would be if it were matched against. *)
+      let let_bind ?(window = locate_opt None []) stm =
         let branches =
           List.map
             (function
@@ -1736,7 +1744,7 @@ let rec process_branches : type a n.
             let xctx = Matchscope.ext xctx None in
             let seen = Snoc (seen, disc_var (Matchscope.last_num xctx)) in
             let mtch, any_constrs = process_branches xctx xs seen branches loc sort in
-            (locate (Synth (Let (name.value, locate_opt None [], stm, mtch))) loc, any_constrs))
+            (locate (Synth (Let (name.value, window, stm, mtch))) loc, any_constrs))
           ~fatal:(fun d ->
             if
               Reporter.accumulates
@@ -1759,10 +1767,8 @@ let rec process_branches : type a n.
           let seen = Snoc (seen, v) in
           process_branches xctx xs seen branches loc sort
       | Right v -> let_bind (process_ix xctx v)
-      | Left { value = { window = Some _; _ }; loc } ->
-          fatal ?loc
-            (Parse_error
-               "window modality requires the discriminee to be matched against a constructor pattern")
+      | Left { value = { window = Some window; _ }; _ } as x ->
+          let_bind ~window (fst (process_obs_or_ix xctx x))
       | Left { value = { tm = Wrap tm; window = None; ty = _ }; loc = _ } ->
           let_bind (process_synth (Matchscope.names xctx) tm "discriminee of match"))
   (* If the first pattern of the first branch is a constructor, the same must be true of all the other branches, and we can sort them by constructor.  We require that each constructor always appear with the same number of arguments. *)
@@ -1830,8 +1836,10 @@ let rec process_branches : type a n.
             refutables =
               (fun plus_args ->
                 let xctx, _ = Matchscope.exts plus_args xctx in
-                Bwd_extra.prepend_map (process_ix xctx) seen
-                  (Vec.to_list_map (fun x -> fst (process_obs_or_ix xctx x)) xs));
+                Bwd_extra.prepend_map
+                  (fun v -> (process_ix xctx v, None))
+                  seen
+                  (Vec.to_list_map (process_obs_or_ix xctx) xs));
           } in
       let sort =
         match (x, sort) with
