@@ -395,6 +395,37 @@ let unparse_field_decl : type a f g b.
           unlocated (App { fn; arg; left_ok; right_ok })
       | _ -> fatal (Anomaly "impossible interval in unparse_field_decl"))
 
+(* A constant is displayed by name, so a variable with the same name in scope would capture it.  We regard the constants as bound at the very beginning of the context.  Thus, a variable bound in the term being displayed that would capture a constant is renamed, as it would be if it would capture another variable.  But we only rename it if the term actually mentions that constant, which we notice when displaying the constant; we then display the whole term again with the captured names reserved, so that those variables get other names.  The variables of the context in which the term is displayed, by contrast, can't be renamed, since the user knows them by their names.  So instead we display a constant with the same name as one of them with the prefix "_root_", which skips past the local variables when resolving a name.  We do this even where that variable is not in scope, such as in the type of an earlier variable of the context, just as a variable shadowed by a later one is renamed everywhere, so that the meaning of a displayed term doesn't depend on the order of the variables in the context.  This data records the names of the variables of that context (those used before we start displaying the term), and the names captured by variables of the term. *)
+module Captures = struct
+  type t = { context : string -> bool; mutable captured : string list }
+
+  module R = Algaeff.Reader.Make (struct
+    type nonrec t = t
+  end)
+end
+
+let () =
+  Captures.R.register_printer (function `Read -> Some "unhandled Unparse.Captures.read effect")
+
+(* The name with which to display a constant whose name in scope is "name". *)
+let constant_name : type n. n Names.t -> string list -> string list =
+ fun vars name ->
+  (* An identifier that could be a local variable, perhaps with a face, would be resolved as one, so it is captured if that variable is in scope. *)
+  let captor =
+    match name with
+    | [ x ] -> Some x
+    | [ x; face ] when Option.is_some (sface_of_string face) -> Some x
+    | _ -> None in
+  match captor with
+  | Some x ->
+      let captures = Captures.R.read () in
+      if captures.context x then "_root_" :: name
+      else if Names.bound vars x then (
+        captures.captured <- x :: captures.captured;
+        name)
+      else name
+  | None -> name
+
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type mode n lt ls rt rs s.
     n Names.t ->
@@ -409,7 +440,7 @@ let rec unparse : type mode n lt ls rt rs s.
       match Scope.Situation.unparse (`Constant c) with
       | Some { keys = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
           unparse_notation notn [] inner_symbols li ri
-      | _ -> unlocated (Ident (Scope.name_of c, [])))
+      | _ -> unlocated (Ident (constant_name vars (Scope.name_of c), [])))
   | Meta (v, _) ->
       unlocated (Ident ([ (if Display.metas () == `Numbered then Meta.name v else "?") ], []))
   (* NB: We don't currently print the arguments of a metavariable. *)
@@ -1646,6 +1677,23 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
       (* When it's time to finish, we unparse the eventual codomain and instantiate it at the unparsed bodies of all the lambda tyargs. *)
       let tm = { unparse = (fun li ri -> unparse_named_inst newvars cod tyargs li ri) } in
       unparse_pis_final (`Arrow (Some (CodCube.dim cods))) arrow vars accum tm li ri
+
+(* The exported unparsing function, which displays a term again with some names reserved if any of its bound variables would capture a constant (see Captures above). *)
+let unparse : type mode n lt ls rt rs s.
+    n Names.t ->
+    (mode, n, s) term ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars tm li ri ->
+  let context = Names.is_used vars in
+  let rec go vars =
+    let captures = { Captures.context; captured = [] } in
+    let result = Captures.R.run ~env:captures @@ fun () -> unparse vars tm li ri in
+    match captures.captured with
+    | [] -> result
+    | captured -> go (Names.reserve captured vars) in
+  go vars
 
 (* Unparse a term context, given a vector of variable names obtained by pre-uniquifying a variable list, and a list of names for the empty context that nevertheless remembers the variables in that vector, as produced by Names.uniquify_vars.  Yields not only the list of unparsed terms/types, but a corresponding list of names that can be used to unparse further objects in that context. *)
 let rec unparse_ctx : type dom modality mode a b.
