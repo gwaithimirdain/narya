@@ -267,13 +267,12 @@ module rec Term : sig
         values : ('mk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
       }
         -> ('mode, 'a, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
-    | Key : {
+    | Lock : {
         env : ('cod, 'a, 'n, 'b) env;
-        cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
-        plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
-        plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
+        gen : ('mode, 'g, 'cod) Modality.gen;
+        plus_tgt : ('a, 'cod, ('cod Modality.id, 'g) snoc, 'mode, 'ac) plus_with_locks;
       }
-        -> ('mode, 'ac, 'n, 'bmu) env
+        -> ('mode, 'ac, 'n, ('b, 'g lock_entry) snoc) env
     | Prekey : {
         env : ('mode, 'asrc, 'n, 'b) env;
         cell : ('mode, 'pmu, 'pnu, 'pcod) Modalcell.t;
@@ -621,14 +620,13 @@ end = struct
         values : ('mk, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
       }
         -> ('mode, 'a, 'n, ('b, ('modality, 'k) dim_entry) snoc) env
-    (* There is a decision to be made here about how to deal with keys in a term environment.  The problem is that the part of the environment to the left of a key must be defined in a context that has the locks corresponding to the codomain of that key removed, along with everything interspersed with them and to their right.  But simply removing variables from the context fubars the De Bruijn indices.  We could replace the removed indices in the context by a placeholder that extends out its length while containing no data.  Instead, we choose to allow the domain length of a term environment to increase when we pass a key.  This means when working with such environments we must shrink the domain context when we pass a key. *)
-    | Key : {
+    (* A Lock lifts a term environment to a context extended by a lock for one generating modality, paralleling Value.Lock and Ctx.Ordered.Lock; a more general key is represented by a Prekey on top of Locks.  There is a decision to be made here about how to deal with locks in a term environment.  The problem is that the part of the environment to the left of a lock must be defined in a context that has that lock removed, along with everything to its right.  But simply removing variables from the context fubars the De Bruijn indices.  We could replace the removed indices in the context by a placeholder that extends out its length while containing no data.  Instead, we choose to allow the domain length of a term environment to increase when we pass a lock.  This means when working with such environments we must shrink the domain context when we pass a lock. *)
+    | Lock : {
         env : ('cod, 'a, 'n, 'b) env;
-        cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
-        plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
-        plus_src : ('b, 'cod, 'mu, 'mode, 'bmu) plus_lock;
+        gen : ('mode, 'g, 'cod) Modality.gen;
+        plus_tgt : ('a, 'cod, ('cod Modality.id, 'g) snoc, 'mode, 'ac) plus_with_locks;
       }
-        -> ('mode, 'ac, 'n, 'bmu) env
+        -> ('mode, 'ac, 'n, ('b, 'g lock_entry) snoc) env
     (* A prekey acts by a key cell on all the values of a term environment (the term-level analogue of Value.Prekey).  It doesn't change the mode or the codomain context, but unlike its value-level analogue it does mediate the domain context: the environment inside is valid in a context locked by the cell's vertical source, while the whole is valid in a context locked by its vertical target (over a common base), as when a parametric locker's counit has discharged the locks that a metavariable was created behind. *)
     | Prekey : {
         env : ('mode, 'asrc, 'n, 'b) env;
@@ -814,7 +812,7 @@ let rec pi_names : type mode a. (mode, a, kinetic) term -> string option list = 
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Emp (_, n) -> n
   | Ext { env; _ } -> dim_term_env env
-  | Key { env; _ } -> dim_term_env env
+  | Lock { env; _ } -> dim_term_env env
   | Prekey { env; _ } -> dim_term_env env
 
 let dim_entry : type dom modality mode b f n bm. (dom, modality, mode, b, bm, f, n) entry -> n D.t =

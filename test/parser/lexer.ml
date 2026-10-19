@@ -192,4 +192,16 @@ let () =
   (* A # not immediately followed by an identifier falls back to (Op "#"). *)
   assert (lex "# a" = [ (Op "#", []); (Ident [ "a" ], []) ]);
   assert (lex "#(a)" = [ (Op "#", []); (LParen, []); (Ident [ "a" ], []); (RParen, []) ]);
-  assert (lex "#= a" = [ (Op "#=", []); (Ident [ "a" ], []) ])
+  assert (lex "#= a" = [ (Op "#=", []); (Ident [ "a" ], []) ]);
+
+  (* Without digit_vars, an identifier or field can't start with a digit, but a field can be all digits. *)
+  let names = [ "a"; "a1"; "ab"; "1"; "10"; "1a"; "_a"; "" ] in
+  let check digit_vars =
+    Parser.Lexer.Specials.run ~digit_vars @@ fun () ->
+    ( List.filter Parser.Lexer.atomic_ident names,
+      List.filter Parser.Lexer.valid_field names,
+      List.filter Parser.Lexer.valid_var names ) in
+  assert (
+    check true
+    = ([ "a"; "a1"; "ab"; "1a" ], [ "a"; "a1"; "ab"; "1"; "10"; "1a" ], [ "a"; "a1"; "ab"; "1a" ]));
+  assert (check false = ([ "a"; "a1"; "ab" ], [ "a"; "a1"; "ab"; "1"; "10" ], [ "a"; "a1"; "ab" ]))

@@ -8,7 +8,7 @@ A group of variables in a pi-type sharing a domain, such as "(x y : A)", binds a
   > EOF
 
   $ narya pi.ny -e 'echo (A y : A) → Type  echo (x y : A) (z : B) → A → B'
-  (A : A) (y : A) → Type
+  (A′ : A) (y : A) → Type
     : Type
   
   (x : A) (y : A) (z : B) → A → B
@@ -120,10 +120,10 @@ The same goes for the parameters of a definition or axiom, and the arguments of 
 
   $ narya pi.ny -e 'def t (A y : A) : Type ≔ Type  echo t  axiom u (A y : A) : Type  echo u  def D : Type ≔ data [ c. (A y : A) ]  echo (c. a a : D)'
   t
-    : (A : A) (y : A) → Type
+    : (A′ : A) (y : A) → Type
   
   u
-    : (A : A) (y : A) → Type
+    : (A′ : A) (y : A) → Type
   
   c. a a
     : D
@@ -220,8 +220,8 @@ The same goes for higher function-types, both instantiated and not.
   (x : Id A) (y : Id A) ⇒ Id B x.2
     : Type⁽ᵉ⁾ ((x : A) (y : A) → B x) ((x : A) (y : A) → B x)
   
-  (A : Id A) (y : Id A) ⇒ Id B y.2
-    : Type⁽ᵉ⁾ ((A : A) (y : A) → B y) ((A : A) (y : A) → B y)
+  (A′ : Id A) (y : Id A) ⇒ Id B y.2
+    : Type⁽ᵉ⁾ ((A′ : A) (y : A) → B y) ((A′ : A) (y : A) → B y)
   
   (x : A⁽ᵉᵉ⁾) (y : A⁽ᵉᵉ⁾) ⇒ B⁽ᵉᵉ⁾ x.22
     : Type⁽ᵉᵉ⁾ ((x : Id A) (y : Id A) ⇒ Id B x.2)
@@ -238,7 +238,7 @@ The same goes for higher function-types, both instantiated and not.
 With arity zero, a cube has no boundary, so an instantiated higher function-type can bind a group of explicit variables sharing a domain, each forming its own one-domain function-type.
 
   $ narya -arity 0 -parametric -e 'axiom A : Type  axiom B : A → Type  axiom f : (x : A) (y : A) → B x  echo (A y : Id A .) →⁽ᵉ⁾ Id B y .  def q : (x y : Id A .) →⁽ᵉ⁾ Id B x . ≔ refl f  echo q'
-  (A : Id A .) (y : Id A .) →⁽ᵉ⁾ Id B y .
+  (A′ : Id A .) (y : Id A .) →⁽ᵉ⁾ Id B y .
     : Type
   
   ap f

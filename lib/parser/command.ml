@@ -154,7 +154,12 @@ include Command
 
 module Parse = struct
   open Parse
-  module C = Combinators (Command)
+
+  (* The final result of parsing a command is the command together with its range: from the start of its first token to the end of its last one.  Since the whitespace and comments following a token are not part of its range, the range of a command doesn't include any comments after it, nor the token following it that the parser had to look at to know that the command was over.  Eof consumes no tokens, so it has no range. *)
+  module C = Combinators (struct
+    type t = Asai.Range.t option * Command.t
+  end)
+
   open C.Basic
 
   let token x = step "" (fun state _ (tok, w) -> if tok = x then Some (w, state) else None)
@@ -214,6 +219,7 @@ module Parse = struct
     let* nonparam = attribute (StringsMap.of_list [ ([ "nonparametric" ], ()) ]) in
     let* nameloc, (name, wsname) = located ident in
     let loc = Some (Range.convert nameloc) in
+    if not (Lexer.valid_ident name) then fatal ?loc (Invalid_constant_name (name, None));
     let* parameters = zero_or_more parameter in
     let* wscolon = token Colon in
     (* Axioms live at a mode and are always available.  MODALTODO: "Postulates" live under a modality, like variables at the beginning of the context.  *)
@@ -708,7 +714,9 @@ module Parse = struct
 
   let section =
     let* wssection = token Section in
-    let* prefix, wsprefix = ident in
+    let* prefixloc, (prefix, wsprefix) = located ident in
+    if not (Lexer.valid_ident prefix) then
+      fatal ~loc:(Range.convert prefixloc) (Invalid_section_name prefix);
     let* wscoloneq = token Coloneq in
     return (Command.Section { wssection; prefix; wsprefix; wscoloneq })
 
@@ -763,6 +771,12 @@ module Parse = struct
         return
           (Command.Echo { wsecho = []; number = None; wsin = []; wsnumber = []; tm; mode = `Echo })
 
+  let located_command or_echo =
+    let* rng, cmd = located (if or_echo then command_or_echo () else command ()) in
+    match cmd with
+    | Eof -> return (None, cmd)
+    | _ -> return (Some (Range.convert_extent rng), cmd)
+
   type open_source = Range.Data.t * [ `String of int * string | `File of In_channel.t ]
 
   let start_parse ?(or_echo = false) source : C.Lex_and_parse.t * open_source =
@@ -782,8 +796,7 @@ module Parse = struct
     Range.run ~env @@ fun () ->
     let p =
       C.Lex_and_parse.make Lexer.Parser.start
-        (C.Basic.make_partial (Origin.current ())
-           (if or_echo then command_or_echo () else command ())) in
+        (C.Basic.make_partial (Origin.current ()) (located_command or_echo)) in
     let out, p = run p in
     (C.ensure_success p, (env, out))
 
@@ -799,12 +812,13 @@ module Parse = struct
     Range.run ~env @@ fun () ->
     let p =
       C.Lex_and_parse.make_next p
-        (C.Basic.make_partial (Origin.current ())
-           (if or_echo then command_or_echo () else command ())) in
+        (C.Basic.make_partial (Origin.current ()) (located_command or_echo)) in
     let out, p = run p in
     (C.ensure_success p, (env, out))
 
-  let final p = C.Lex_and_parse.final p
+  (* The command that was parsed, and its range (see above).  The range of Bof is empty, and at the first token of the source. *)
+  let final_located p = C.Lex_and_parse.final p
+  let final p = snd (final_located p)
   let has_consumed_end p = C.Lex_and_parse.has_consumed_end p
 end
 

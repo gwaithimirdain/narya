@@ -522,9 +522,7 @@ module Ordered = struct
             filter = Modality.filter_zero (Modality.filter_modality filter);
             values = `Lazy (env_entry (Modality.src (Modality.filter_modality filter)) bindings);
           }
-    | Lock (ctx, lock) ->
-        let modality = Modality.of_gen lock in
-        key_env (env ctx) (Modalcell.id modality) (plus_lock_suc (plus_no_lock (mode ctx)) lock)
+    | Lock (ctx, lock) -> Lock (env ctx, lock)
     | Weaken (ctx, _) -> env ctx
 
   (* Extend a context by one new variable, without a value but with an assigned type. *)
@@ -789,7 +787,7 @@ let lock : type dom modality cod a b.
     (cod, a, b) t -> (dom, modality, cod) Modality.t -> (cod, a, b, modality, dom) locked =
  fun (Permute { perm; env; level; ctx }) lock ->
   let (Locked (al, ctx)) = Ordered.lock ctx lock in
-  let env = key_id_env env al in
+  let env = lock_env env al in
   Locked (al, Permute { env; perm; level; ctx })
 
 let lock_to : type dom modality cod a b bm.
@@ -799,7 +797,7 @@ let lock_to : type dom modality cod a b bm.
     (dom, a, bm) t =
  fun (Permute { perm; env; level; ctx }) lock al ->
   let ctx = Ordered.lock_to ctx lock al in
-  let env = key_id_env env al in
+  let env = lock_env env al in
   Permute { env; perm; level; ctx }
 
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom perm (Ordered.raw_length ctx)
@@ -888,7 +886,6 @@ let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
       Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
   | Some (Pop (_, Eq, Eq)), _, Permute _ -> Error "env is permuted"
   | Some (Pop (_, Eq, Eq)), _, Act _ -> Error "env is acted"
-  | Some (Pop (_, Eq, Eq)), _, Key _ -> Error "env is keyed"
   | Some (Pop (_, Eq, Eq)), _, Prekey _ -> Error "env is prekeyed"
   | Some (Pop (_, Eq, Eq)), _, Shift _ -> Error "env is shifted"
   | Some (Pop (_, Eq, Eq)), _, Unshift _ -> Error "env is unshifted"

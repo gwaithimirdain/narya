@@ -391,6 +391,28 @@ let get_window mode = function
       | Ok w -> w)
   | None -> Wrap (Modality.id mode)
 
+(* The window modality with which to synthesize a discriminee being refuted.  This is the one supplied, if any.  Otherwise, an unlocked variable is synthesized under its own modality, just as a variable match against it would be, so that a modal variable (such as a pattern variable bound to a modal constructor argument, or a variable let-bound to a discriminee with a window) can be refuted without a key. *)
+let refutation_window : type mode a b.
+    (mode, a, b) Ctx.t ->
+    a synth located ->
+    string located list located option ->
+    mode Modality.src_wrapped =
+ fun ctx tm window_name ->
+  match (window_name, tm.value) with
+  | None, Var ix -> (
+      let (Lookup { modality; plus = Plus_with_locks (comp, locks); _ }) = Ctx.lookup ctx ix in
+      match (comp, locks) with
+      | Zero, Zero _ -> Wrap modality
+      | _ -> get_window (Ctx.mode ctx) None)
+  | _ -> get_window (Ctx.mode ctx) window_name
+
+(* Refuting a discriminee is matching against it with no branches, so the window it is refuted under must be one that a match against an empty datatype could use.  The datatype, being empty, is nonrecursive and not single-constructor, so check_window_transparency's condition comes down to this. *)
+let refuting_window : type dom window mode. (dom, window, mode) Modality.t -> bool =
+ fun mu ->
+  match Modality.compare_id mu with
+  | Eq -> true
+  | Neq -> Modality.pellucid mu || Modality.transparent mu
+
 (* Resolve the recursion verdict of a datatype by chasing the recorded verdicts of any blocking metavariables through Global, just as evaluation of a term containing metavariables consults their definitions.  A hole that has been solved has the verdict of its solution recorded; a still-unsolved hole remains unknown (and is treated conservatively as recursive by the window check, but nothing is cached, so a later check after solving it can succeed). *)
 let rec chase_recursion : Positivity.recursion -> [ `Nonrecursive | `Recursive | `Unknown ] =
   function
@@ -756,7 +778,7 @@ let rec check : type mode a b s.
         let (Wrap window) = get_window (Ctx.mode ctx) window in
         let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
         let stm, sty = synth (Kinetic `Nolet) lctx tm in
-        check_nondep_match status ctx stm sty window plus_lock branches (Some i) highers ty tm.loc
+        check_nondep_match status ctx stm sty window plus_lock branches i highers ty tm.loc
     (* We don't need to deal with `Explicit matches here, since they can always synthesize a type and hence be caught by the catch-all for checking synthesizing terms, below. *)
     (* Checking [] at a pi-type interprets it as a pattern-matching lambda over some empty datatype. *)
     | Empty_co_match, _ -> (
@@ -2006,23 +2028,31 @@ and check_var_match : type dom modality mode a b bm.
                                     (fun x ->
                                       match !s with
                                       | Ok _ -> ()
-                                      | Error _ -> (
-                                          let stm, sty = synth (Kinetic `Nolet) newctx x in
+                                      | Error errs -> (
+                                          let x, window_name = x in
+                                          let (Wrap window) =
+                                            refutation_window newctx x window_name in
+                                          let (Locked (plus_lock, wctx)) = Ctx.lock newctx window in
+                                          let stm, sty = synth (Kinetic `Nolet) wctx x in
                                           match is_empty sty with
                                           | None -> ()
                                           | Some (Wrap dim) ->
-                                              (* A refutable is synthesized in the ambient context, so its refutation needs no window. *)
-                                              s :=
-                                                Ok
-                                                  (Term.Match
-                                                     {
-                                                       window = Modality.id (Ctx.mode newctx);
-                                                       plus_lock = plus_no_lock (Ctx.mode newctx);
-                                                       tm = stm;
-                                                       dim;
-                                                       motive = None;
-                                                       branches = Constr.Map.empty;
-                                                     })))
+                                              if refuting_window window then
+                                                s :=
+                                                  Ok
+                                                    (Term.Match
+                                                       {
+                                                         window;
+                                                         plus_lock;
+                                                         tm = stm;
+                                                         dim;
+                                                         motive = None;
+                                                         branches = Constr.Map.empty;
+                                                       })
+                                              else
+                                                s :=
+                                                  Error
+                                                    (errs @ [ Nonrefutable_modal_variable window ])))
                                     (Option.fold
                                        ~some:(fun r ->
                                          let (Bplus_to bp) = Patternvars.bplus xs in
@@ -2100,7 +2130,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
            | Arg (rest, filter, xs, ins) ->
                let modality = Modality.filter_modality filter in
                let (Locked (plus, loldctx)) = Ctx.lock oldctx modality in
-               let lnewenv = key_id_env newenv plus in
+               let lnewenv = lock_env newenv plus in
                let erhead, errest = erapps oldctx newenv rest in
                ( erhead,
                  Arg
@@ -2120,7 +2150,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
                (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
                let fm = Modality.filter_modality filter in
                let (Locked (plus, loldctx)) = Ctx.lock oldctx fm in
-               let lnewenv = key_id_env newenv plus in
+               let lnewenv = lock_env newenv plus in
                let erhead, errest = erapps loldctx lnewenv rest in
                (erhead, Field (errest, filter, x, y, z))
            | Inst _ -> fatal (Anomaly "inst in make_match_status") in
@@ -2146,7 +2176,7 @@ and check_refute : type mode a b.
         | `Implicit, Some (`Error err) -> fatal err
         | `Implicit, None -> fatal (Anomaly "no discriminees to refute"))
     | (tm, window_name) :: tms -> (
-        let (Wrap window) = get_window (Ctx.mode ctx) window_name in
+        let (Wrap window) = refutation_window ctx tm window_name in
         let (Locked (plus_lock, wctx)) = Ctx.lock ctx window in
         let stm, sty = synth (Kinetic `Nolet) wctx tm in
         (* The error to report if nothing can be refuted comes from the first term. *)
@@ -2310,12 +2340,8 @@ and empty_witness_cube : type mode dom modality k n a c.
   | None -> Error []
   | Some (nf, Wrap dim) ->
       let mu = Modality.filter_modality modality in
-      (* Refuting a variable is matching against it with no branches, so its modality must be one a match could use as a window.  The datatype is empty, hence nonrecursive and not single-constructor, so check_window_transparency's condition comes down to this. *)
-      let usable =
-        match Modality.compare_id mu with
-        | Eq -> true
-        | Neq -> Modality.pellucid mu || Modality.transparent mu in
-      if not usable then Error [ Nonrefutable_modal_variable mu ]
+      (* Refuting a variable is matching against it with no branches, so its modality must be one a match could use as a window. *)
+      if not (refuting_window mu) then Error [ Nonrefutable_modal_variable mu ]
       else
         (* The variable is annotated by mu, so it is nameable in the context locked by mu, which is exactly the context a match through mu as its window reads its discriminee in. *)
         let (Locked (plus_lock, lctx)) = Ctx.lock ctx mu in
@@ -3111,7 +3137,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                    let (Has_filter newfilter) = Modality.filter fm (cod_left_ins newins) in
                    (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
                    let (Locked (plus, lctx)) = Ctx.lock ctx fm in
-                   let ldegenv = key_id_env degenv plus in
+                   let ldegenv = lock_env degenv plus in
                    let head, newapps = erapps lctx ldegenv apps in
                    (head, Value.Field (newapps, newfilter, fldname, rn_k, newins))
                | Arg
@@ -3141,7 +3167,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                              [ readback_nf lctx x; readback_val lctx (Lazy.force x.ty) ]);
                        }
                        [ arg ] (Cons (Cons Nil)) in
-                   let ldegenv = key_id_env degenv plus in
+                   let ldegenv = lock_env degenv plus in
                    (* Now we evaluate them in degenv to increase the dimension.  *)
                    let sldegenv =
                      act_env ldegenv (opt_op_of_opt_sface (Modality.sface_of_filter r filter_sr))
@@ -3222,7 +3248,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
               deg_env =
                 (fun adj tctx r_k e ->
                   let (Locked (plus, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
-                  eval_env (key_id_env degenv plus) r_k (readback_env lctx e tctx));
+                  eval_env (lock_env degenv plus) r_k (readback_env lctx e tctx));
             } in
         (* The shuffleable degenerates the codatatype's parameters; the self value and its boundary we degenerate here, since the field type is applied to them only after that degeneration.  The boundary is used to instantiate the field type, by projecting this field from it, so it stays in the ambient context; but the self value is substituted for the self *variable*, which lies behind the locks by the right and then the left adjoint, so we transport it there along the adjunction unit first and degenerate it in that doubly locked context.  (For an ordinary field the unit is an identity cell and both locks are trivial.) *)
         let dtyargs =
@@ -3234,7 +3260,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
               let (Adjunction { unit; _ }) = adj in
               let (Locked (rplus, ulctx)) = Ctx.lock ctx right in
               let (Locked (lplus, uflctx)) = Ctx.lock ulctx left in
-              let fdegenv = key_id_env (key_id_env degenv rplus) lplus in
+              let fdegenv = lock_env (lock_env degenv rplus) lplus in
               let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
               `Ok
                 (degenerate_value_cube uflctx fdegenv r_m
@@ -3259,8 +3285,8 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
         adj ctx_plus_lock cvals evals pbijs prev_etm fld_plus_lock fldtermctx ic0 fldty
   | None ->
       let plusdim = D.zero_plus m in
-      (* The stored environment and values of a modal higher field live behind the lock by the right adjoint, so we key the ambient environment by it (a no-op for ordinary fields). *)
-      let env = key_id_env (Ctx.env ctx) ctx_plus_lock in
+      (* The stored environment and values of a modal higher field live behind the lock by the right adjoint, so we lock the ambient environment by it (a no-op for ordinary fields). *)
+      let env = lock_env (Ctx.env ctx) ctx_plus_lock in
       let deg = id_deg (D.plus_out (dim_env env) plusdim) in
       let etms =
         Snoc
@@ -3935,7 +3961,7 @@ and synth : type mode a b s.
         emit (Matching_wont_refine ("match in synthesizing position", None));
         synth_nondep_match ?synthed status ctx tm window branches highers None
     | Match { tm; window; sort = `Nondep i; branches; refutables = _; highers }, Potential _ ->
-        synth_nondep_match ?synthed status ctx tm window branches highers (Some i)
+        synth_nondep_match ?synthed status ctx tm window branches highers i
     | Fail e, _ -> fatal e
     (* If we're using the synthesized type of an argument as an implicit first argument: *)
     | ImplicitSApp (fn, apploc, arg), _ -> (

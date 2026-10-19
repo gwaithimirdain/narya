@@ -133,6 +133,36 @@ let rec primes n =
   else if n = 3 then "‴"
   else "⁗" ^ primes (n - 4)
 
+(* Whether a name is currently that of a variable in scope (perhaps behind a lock), including a field variable.  This is what a raw identifier consisting of that name (perhaps with a face) would resolve to, so a constant displayed with that name would be captured by it. *)
+let bound : type b. b t -> string -> bool =
+ fun { ctx; used = _ } x ->
+  let in_cube : type n. (n, string) gvariables -> bool =
+   fun (Variables (_, _, xs)) ->
+    let found = ref false in
+    let _ =
+      NICubeOf.map
+        {
+          map =
+            (fun _ (NFamOf y) ->
+              if y = x then found := true;
+              NFamOf y);
+        }
+        xs in
+    !found in
+  let rec go : type b. b ctx -> bool = function
+    | Emp -> false
+    | Snoc (ctx, vars, fields) ->
+        in_cube vars || Abwd.fold (fun _ y found -> found || y = x) fields false || go ctx
+    | Lock ctx -> go ctx in
+  go ctx
+
+(* Whether a name has been used, so that it won't be given to a new bound variable. *)
+let is_used : type b. b t -> string -> bool = fun { ctx = _; used } x -> StringSet.mem x used
+
+(* Reserve some names, so that they won't be given to new bound variables. *)
+let reserve : type b. string list -> b t -> b t =
+ fun xs { ctx; used } -> { ctx; used = List.fold_right StringSet.add xs used }
+
 (* Make a variable name unique, adding the new one to the list of used variables and returning it. *)
 let uniquify : string -> StringSet.t -> string * [ `Original | `Renamed ] * StringSet.t =
  fun name used ->

@@ -398,6 +398,18 @@ type (_, _, _) identity +=
 let letin : (closed, No.minus_omega_plus_one, No.nonstrict opn) notation =
   (Let, Prefixr No.minus_omega_plus_one)
 
+(* The value of a let-binding with a type, which becomes an ascription.  The type can also be a placeholder, meaning that the value must synthesize; this is the same as omitting the type in a non-modal let-binding, but a modal one has to have a type in order to write the modality. *)
+let process_let_value : type n.
+    (string option, n) Bwv.t -> observation -> observation -> n synth located =
+ fun ctx ty tm ->
+  match (ty, tm) with
+  | Term { value = Placeholder _; _ }, Term tm -> process_synth ctx tm "value of let"
+  | Term ty, Term tm ->
+      let ty = process ctx ty in
+      let tm = process ctx tm in
+      { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc }
+  | _ -> invalid "let"
+
 let process_let : type n.
     (string option, n) Bwv.t -> observation list -> Asai.Range.t option -> n check located =
  fun ctx obs loc ->
@@ -406,17 +418,15 @@ let process_let : type n.
    Token (Let, _);
    Term x;
    Token (Colon, _);
-   Term ty;
+   (Term _ as ty);
    Token (Coloneq, _);
-   Term tm;
+   (Term _ as tm);
    Token (In, _);
    Term body;
   ] ->
       let x = get_var x in
-      let ty = process ctx ty in
-      let tm = process ctx tm in
+      let v = process_let_value ctx ty tm in
       let body = process (Bwv.snoc ctx x) body in
-      let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
       { value = Synth (Let (x, locate_opt None [], v, body)); loc }
   | [ Token (Let, _); Term x; Token (Coloneq, _); Term tm; Token (In, _); Term body ] ->
       let x = get_var x in
@@ -429,18 +439,16 @@ let process_let : type n.
    Token (Colon, _);
    Term modality;
    Token (Op "|", _);
-   Term ty;
+   (Term _ as ty);
    Token (Coloneq, _);
-   Term tm;
+   (Term _ as tm);
    Token (In, _);
    Term body;
   ] ->
       let x = get_var x in
-      let ty = process ctx ty in
-      let tm = process ctx tm in
+      let v = process_let_value ctx ty tm in
       let body = process (Bwv.snoc ctx x) body in
       let modality = get_modality fst modality in
-      let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
       { value = Synth (Let (x, modality, v, body)); loc }
   | _ -> invalid "let"
 
@@ -1468,17 +1476,19 @@ let rec discriminees () =
 
 type pattern = Matchpattern.t
 
-(* For parsing matches, we use a special kind of scope that labels all the variables with integers (De Bruijn levels) in addition to possible strings. *)
+(* For parsing matches, we use a special kind of scope that labels all the variables with integers (De Bruijn levels) in addition to possible strings.  Only the variables added while processing the match can be named or renamed, but all of them can be looked up by level, including those in the base scope outside the match. *)
 module Matchscope : sig
   type 'a t
 
   val lookup_num : int -> 'a t -> 'a N.index option
+  val num_of_index : 'a t -> 'a N.index -> int
   val ext : 'a t -> string option -> 'a N.suc t
   val last_num : 'a t -> int
   val exts : ('a, 'm, 'am) Raw.Indexed.bplus -> 'a t -> 'am t * (int, 'm) Vec.t
   val make : (string option, 'a) Bwv.t -> 'a t
   val names : 'a t -> (string option, 'a) Bwv.t
   val give_name : int -> string option -> 'a t -> 'a t
+  val renameable : int -> 'a t -> bool
 end = struct
   type _ t =
     | Matchscope :
@@ -1487,7 +1497,8 @@ end = struct
 
   let rec lookup_num : type a. int -> a t -> a N.index option =
    fun i -> function
-    | Matchscope (_, Zero, Emp, _) -> None
+    (* At this point, the counter is the length of the base scope. *)
+    | Matchscope (base, Zero, Emp, n) -> N.index_of_int (Bwv.length base) (n - 1 - i)
     | Matchscope (base, Suc ab, Snoc (scope, (_, j)), n) -> (
         if i = j then Some Top
         else
@@ -1512,6 +1523,10 @@ end = struct
 
   let last_num : type a. a t -> int = fun (Matchscope (_, _, _, i)) -> i - 1
 
+  (* Since the counter is the total length of the scope, the level of a variable is computed from its index by counting down from there. *)
+  let num_of_index : type a. a t -> a N.index -> int =
+   fun (Matchscope (_, _, _, n)) k -> n - 1 - N.int_of_index k
+
   (* Extend by a list of unnamed variables *)
   let rec exts : type a m am. (a, m, am) Raw.Indexed.bplus -> a t -> am t * (int, m) Vec.t =
    fun am scope ->
@@ -1521,10 +1536,16 @@ end = struct
         let newscope, levels = exts am (Matchscope (base, Suc ab, Snoc (scope, (None, i)), i + 1)) in
         (newscope, i :: levels)
 
-  let make : type a. (string option, a) Bwv.t -> a t = fun base -> Matchscope (base, Zero, Emp, 0)
+  let make : type a. (string option, a) Bwv.t -> a t =
+   fun base -> Matchscope (base, Zero, Emp, N.to_int (Bwv.length base))
 
   let names : type a. a t -> (string option, a) Bwv.t =
    fun (Matchscope (base, ab, scope, _)) -> Bwv.bappend ab base (Bwv.map fst scope)
+
+  (* Whether a variable was added while processing the match and is still unnamed, so that it can be given a name. *)
+  let renameable : type a. int -> a t -> bool =
+   fun i (Matchscope (_, _, scope, _)) ->
+    Option.is_some (Bwv.find_opt (fun (y, j) -> i = j && Option.is_none y) scope)
 
   (* Give a name to a previously added unnamed variable *)
   let give_name : type a. int -> string option -> a t -> a t =
@@ -1563,10 +1584,20 @@ type ('a, 'm, 'n) cbranch =
 type (_, _) cbranches =
   | CBranches : Constr.t located * ('a, 'm, 'n) cbranch Bwd.t -> ('a, 'n) cbranches
 
-let process_ix : type a. a Matchscope.t -> int -> a synth located =
- fun ctx i ->
-  match Matchscope.lookup_num i ctx with
-  | Some k -> unlocated (Raw.Var (k, None))
+(* A discriminee of a match that is already a variable in the match scope, identified by its level (see Matchscope), possibly with a face.  This includes the pattern variables, which become discriminees for deep matching, and also the later discriminees of a match with several of them, which we process only once (see bind_discriminees).  It is "generated" if it is a variable let-bound by the parser to a discriminee that is not a variable, so that matching against it is explicitly non-dependent.  It also remembers the window modality of the discriminee, if any, which is also the modality with which a generated variable is let-bound. *)
+type disc_var = {
+  num : int;
+  face : any_sface option;
+  generated : bool;
+  window : string located list located option;
+}
+
+let disc_var num = { num; face = None; generated = false; window = None }
+
+let process_ix : type a. a Matchscope.t -> disc_var -> a synth located =
+ fun ctx { num; face; generated = _; window = _ } ->
+  match Matchscope.lookup_num num ctx with
+  | Some k -> unlocated (Raw.Var (k, face))
   | None -> fatal (Anomaly "invalid parse-level in processing match")
 
 (* A discriminee of a match, along with an optional window modality with which to lock the discriminee.  A window modality is written by ascribing the discriminee with a modality and a placeholder type, as in "match (x :m| _) [...". *)
@@ -1601,7 +1632,7 @@ let get_discriminee_window (w : wrapped_parse) : discriminee located =
 
 let process_obs_or_ix : type a.
     a Matchscope.t ->
-    (discriminee located, int) Either.t ->
+    (discriminee located, disc_var) Either.t ->
     a synth located * string located list located option =
  fun ctx -> function
   | Left { value = { tm = Wrap x; window; ty = None }; loc = _ } ->
@@ -1609,10 +1640,7 @@ let process_obs_or_ix : type a.
   | Left { value = { tm = Wrap x; window; ty = Some (Wrap ty) }; loc } ->
       let ctx = Matchscope.names ctx in
       (locate (Raw.Asc (process ctx x, process ctx ty)) loc, window)
-  | Right i -> (
-      match Matchscope.lookup_num i ctx with
-      | Some k -> (unlocated (Raw.Var (k, None)), None)
-      | None -> fatal (Anomaly "invalid parse-level in processing match"))
+  | Right v -> (process_ix ctx v, v.window)
 
 (* The name that a pattern gives to the variable it matches: only a variable pattern names it, while a constructor pattern (which will be matched against further) leaves it anonymous. *)
 let name_of_pattern : pattern -> string option = function
@@ -1711,11 +1739,11 @@ let rec flatten_args : type a m am k.
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.
     a Matchscope.t ->
-    ((discriminee located, int) Either.t, n) Vec.t ->
-    int Bwd.t ->
+    ((discriminee located, disc_var) Either.t, n) Vec.t ->
+    disc_var Bwd.t ->
     (a, n) branch list ->
     Asai.Range.t option ->
-    [ `Implicit | `Explicit of wrapped_parse | `Nondep of int located ] ->
+    [ `Implicit | `Explicit of wrapped_parse | `Nondep of int located option ] ->
     a check located * bool ref located list =
  fun xctx xs seen branches loc sort ->
   match branches with
@@ -1747,7 +1775,7 @@ let rec process_branches : type a n.
   (* If that one remaining branch is a refutation, we refute all the "seen" terms or variables. *)
   | [ (_, [], _, Wrap { value = Notn ((Dot, _), _); loc }) ] ->
       let [] = xs in
-      let tms = Bwd_extra.to_list_map (fun i -> (process_ix xctx i, None)) seen in
+      let tms = Bwd_extra.to_list_map (fun i -> process_obs_or_ix xctx (Right i)) seen in
       (locate (Refute (tms, `Explicit)) loc, [])
   (* Otherwise, the result is just the body of that branch. *)
   | [ (bodyctx, [], cube, Wrap body) ] ->
@@ -1761,47 +1789,48 @@ let rec process_branches : type a n.
   | (xctx, Var name :: _, _, _) :: _ as branches -> (
       (* The variable is assigned to the value of the first discriminee. *)
       let (x :: xs) = xs in
+      (* In general, we have to let-bind it to the discriminee term, adding it as a new variable to the scope.  A discriminee with a window modality is let-bound modally, so that it is synthesized in the context locked by the window, as it would be if it were matched against. *)
+      let let_bind ?window stm =
+        let branches =
+          List.map
+            (function
+              | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
+                  (Matchscope.ext bodyctx y.value, patterns, cube, body)
+              | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
+            branches in
+        Reporter.try_with
+          (fun () ->
+            let xctx = Matchscope.ext xctx None in
+            let seen = Snoc (seen, { (disc_var (Matchscope.last_num xctx)) with window }) in
+            let mtch, any_constrs = process_branches xctx xs seen branches loc sort in
+            let modality = Option.value window ~default:(locate_opt None []) in
+            (locate (Synth (Let (name.value, modality, stm, mtch))) loc, any_constrs))
+          ~fatal:(fun d ->
+            if
+              Reporter.accumulates
+                (function
+                  | No_remaining_patterns -> true
+                  | _ -> false)
+                d
+            then fatal ?loc:name.loc Overlapping_patterns
+            else fatal_diagnostic d) in
       match x with
-      | Right i ->
-          (* If that discriminee is a pattern variable that was introduced earlier, then we just alias the current variable name to it. *)
+      | Right ({ face = None; _ } as v) when Matchscope.renameable v.num xctx ->
+          (* If that discriminee is an unnamed variable that was introduced earlier, such as a pattern variable, then we just alias the current variable name to it. *)
           let branches =
             List.map
               (function
                 | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
-                    (Matchscope.give_name i y.value bodyctx, patterns, cube, body)
+                    (Matchscope.give_name v.num y.value bodyctx, patterns, cube, body)
                 | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
               branches in
-          let seen = Snoc (seen, i) in
+          let seen = Snoc (seen, v) in
           process_branches xctx xs seen branches loc sort
-      | Left { value = { window = Some _; _ }; loc } ->
-          fatal ?loc
-            (Parse_error
-               "window modality requires the discriminee to be matched against a constructor pattern")
+      | Right v -> let_bind ?window:v.window (process_ix xctx v)
+      | Left { value = { window = Some window; _ }; _ } as x ->
+          let_bind ~window (fst (process_obs_or_ix xctx x))
       | Left { value = { tm = Wrap tm; window = None; ty = _ }; loc = _ } ->
-          (* Otherwise, we have to let-bind it to the discriminee term, adding it as a new variable to the scope. *)
-          let branches =
-            List.map
-              (function
-                | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
-                    (Matchscope.ext bodyctx y.value, patterns, cube, body)
-                | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
-              branches in
-          let stm = process_synth (Matchscope.names xctx) tm "discriminee of match" in
-          Reporter.try_with
-            (fun () ->
-              let xctx = Matchscope.ext xctx None in
-              let seen = Snoc (seen, Matchscope.last_num xctx) in
-              let mtch, any_constrs = process_branches xctx xs seen branches loc sort in
-              (locate (Synth (Let (name.value, locate_opt None [], stm, mtch))) loc, any_constrs))
-            ~fatal:(fun d ->
-              if
-                Reporter.accumulates
-                  (function
-                    | No_remaining_patterns -> true
-                    | _ -> false)
-                  d
-              then fatal ?loc:name.loc Overlapping_patterns
-              else fatal_diagnostic d))
+          let_bind (process_synth (Matchscope.names xctx) tm "discriminee of match"))
   (* If the first pattern of the first branch is a constructor, the same must be true of all the other branches, and we can sort them by constructor.  We require that each constructor always appear with the same number of arguments. *)
   | (xctx, Constr _ :: _, _, _) :: _ as branches ->
       let cbranches =
@@ -1837,7 +1866,8 @@ let rec process_branches : type a n.
                 let (Plus bn) = Fwn.plus (Raw.Indexed.bplus_right ab) in
                 (* We add all the variables to the ambient scope (the one used for the discriminees) as unnamed.  This is fine because none of the names bound by the patterns are visible to the discriminees. *)
                 let newxctx, newnums = Matchscope.exts ab xctx in
-                let newxs = Vec.append bn (Vec.map (fun n -> Either.Right n) newnums) xs in
+                let newxs =
+                  Vec.append bn (Vec.map (fun n -> Either.Right (disc_var n)) newnums) xs in
                 (* Now we add all those patterns and variables to each branch.  These are also added as unnamed for now although they may have names in each branch; we add those names with [give_name] when we encounter them as patterns in the [Var] case above. *)
                 let newbrs =
                   Vec.mmap
@@ -1866,19 +1896,71 @@ let rec process_branches : type a n.
             refutables =
               (fun plus_args ->
                 let xctx, _ = Matchscope.exts plus_args xctx in
-                Bwd_extra.prepend_map (process_ix xctx) seen
-                  (Vec.to_list_map (fun x -> fst (process_obs_or_ix xctx x)) xs));
+                Bwd_extra.prepend_map
+                  (fun v -> process_obs_or_ix xctx (Right v))
+                  seen
+                  (Vec.to_list_map (process_obs_or_ix xctx) xs));
           } in
       let sort =
-        match sort with
-        | `Implicit -> `Implicit
-        | `Nondep i -> `Nondep i
-        | `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
+        match (x, sort) with
+        (* A match against a variable let-bound by the parser to a discriminee that is not a variable can't refine anything, so we make it explicitly non-dependent, to silence the hint about falling back from a dependent match. *)
+        | Right { generated = true; _ }, `Implicit -> `Nondep None
+        | _, `Implicit -> `Implicit
+        | _, `Nondep i -> `Nondep i
+        | _, `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
       ( locate (Synth (Match { tm; window; sort; branches; refutables; highers = [] })) loc,
         List.flatten (Bwd.to_list highers) )
 
+(* In a match with several discriminees, the later ones are matched against in every branch of the matches against the earlier ones.  Rather than processing them separately in each branch, we process each of them once, in the scope outside the whole match (which is the only scope they can refer to anyway).  A discriminee that is a variable (possibly with a face) is then referred to by its level in every branch, so that matching against it can still refine it.  Any other discriminee is let-bound outside the whole match to a new unnamed variable, so that it is also typechecked only once, in the context outside the match, which is where it makes sense; matching against that variable is non-dependent, as matching against a term would be anyway.  A discriminee with a window modality is treated likewise, except that if it is not a variable it is let-bound modally with that window, so that it is synthesized in the context locked by the window; either way the variable remembers the window, to match against it with.  We return the scope extended by the let-bound variables, the processed discriminees, the branches with their scopes extended likewise, and a function that wraps the let-bindings around the match. *)
+type (_, _, _) bound_discriminees =
+  | Bound :
+      'b Matchscope.t
+      * ((discriminee located, disc_var) Either.t, 'n) Vec.t
+      * ('b, 'm) branch list
+      * ('b check located -> 'a check located)
+      -> ('a, 'n, 'm) bound_discriminees
+
+let rec bind_discriminees : type a n m.
+    a Matchscope.t ->
+    ((discriminee located, disc_var) Either.t, n) Vec.t ->
+    (a, m) branch list ->
+    (a, n, m) bound_discriminees =
+ fun xctx xs branches ->
+  match xs with
+  | [] -> Bound (xctx, [], branches, Fun.id)
+  | (Left _ as x) :: xs -> (
+      let stm, window = process_obs_or_ix xctx x in
+      match stm.value with
+      | Var (k, face) ->
+          let v =
+            Either.Right { num = Matchscope.num_of_index xctx k; face; generated = false; window }
+          in
+          let (Bound (xctx, xs, branches, wrap)) = bind_discriminees xctx xs branches in
+          Bound (xctx, v :: xs, branches, wrap)
+      | _ ->
+          let xctx = Matchscope.ext xctx None in
+          let v =
+            Either.Right { num = Matchscope.last_num xctx; face = None; generated = true; window }
+          in
+          let branches =
+            List.map
+              (fun (bodyctx, pats, cube, body) -> (Matchscope.ext bodyctx None, pats, cube, body))
+              branches in
+          let (Bound (xctx, xs, branches, wrap)) = bind_discriminees xctx xs branches in
+          Bound
+            ( xctx,
+              v :: xs,
+              branches,
+              fun tm ->
+                let tm = wrap tm in
+                let modality = Option.value window ~default:(locate_opt None []) in
+                locate (Synth (Let (None, modality, stm, tm))) tm.loc ))
+  | (Right _ as x) :: xs ->
+      let (Bound (xctx, xs, branches, wrap)) = bind_discriminees xctx xs branches in
+      Bound (xctx, x :: xs, branches, wrap)
+
 let rec get_discriminees :
-    observation list -> (discriminee located, int) Either.t Vec.wrapped * observation list =
+    observation list -> (discriminee located, disc_var) Either.t Vec.wrapped * observation list =
  fun obs ->
   match obs with
   | Term tm :: Token (Op ",", _) :: obs ->
@@ -2070,11 +2152,18 @@ let () =
                 | Token (LBracket, _) :: obs ->
                     get_branches ctx (Vec.length xs) (must_start_with (Op "|") obs)
                 | _ -> invalid "implicit_match" in
-              let mtch, highers = process_branches ctx xs Emp branches loc `Implicit in
-              match (mtch.value, highers) with
-              | Synth (Match data), _ -> locate_opt mtch.loc (Synth (Match { data with highers }))
-              | _, [] -> mtch
-              | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match"))
+              (* The first discriminee is matched against only once, but the later ones we process once outside the whole match. *)
+              match xs with
+              | [] -> invalid "implicit_match"
+              | x :: xs ->
+                  let (Bound (ctx, xs, branches, wrap)) = bind_discriminees ctx xs branches in
+                  let mtch, highers = process_branches ctx (x :: xs) Emp branches loc `Implicit in
+                  wrap
+                    (match (mtch.value, highers) with
+                    | Synth (Match data), _ ->
+                        locate_opt mtch.loc (Synth (Match { data with highers }))
+                    | _, [] -> mtch
+                    | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match")))
           | _ -> invalid "implicit_match");
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "match"));
       print_term = None;
@@ -2116,7 +2205,8 @@ let () =
                 | [ Term vars; Token (Mapsto, _); Term { value = Placeholder _; _ } ] ->
                     (* TODO: Should not be ascribed, and especially not modal *)
                     let (Extctx (mn, _, _, _)) = get_vars (Matchscope.names ctx) vars in
-                    `Nondep ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located)
+                    `Nondep
+                      (Some ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located))
                 | _ -> `Explicit (Wrap motive) in
               let mtch, highers =
                 process_branches ctx
@@ -2154,7 +2244,7 @@ let () =
                   let branches = get_branches ctx n obs in
                   let mtch, highers =
                     process_branches ctx
-                      (Vec.mmap (fun [ i ] -> Either.Right i) [ xs ])
+                      (Vec.mmap (fun [ i ] -> Either.Right (disc_var i)) [ xs ])
                       Emp
                       ((ctx, pats, cube, Wrap body) :: branches)
                       loc `Implicit in

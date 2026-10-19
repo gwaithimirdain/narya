@@ -64,7 +64,7 @@ module Ordered = struct
                                 fatal (Anomaly "variable out of scope in degenerate_binding")));
                   } in
               let env = Ext { env; plus = k_n; values = `Lazy prev_vals; filter; filtered } in
-              let lenv = Key (env, Modalcell.id modality, plus) in
+              let lenv = lock_env env plus in
               let (SFace_of_plus (_, fa, fb)) = sface_of_plus k_n fab in
               let alenv =
                 act_env lenv
@@ -217,15 +217,7 @@ module Ordered = struct
         Degctx
           ( Suc (kb, Inject (Plus_lock lock), Suc (Zero, Lock lock)),
             Lock (newctx, lock),
-            Key
-              ( env,
-                Modalcell.id (Modality.of_gen lock),
-                Plus_lock
-                  ( Suc
-                      ( Zero (Eq (Ctx.Ordered.mode ctx)),
-                        Inject (Lock_lock lock),
-                        Suc (Zero, Lock lock) ),
-                    Suc (Zero, Lock lock) ) ) )
+            Lock (env, lock) )
 end
 
 (* The degctx type and its forward-reference hook live in Readback (opened above), because the display code that consumes a degenerated context lives there. *)
