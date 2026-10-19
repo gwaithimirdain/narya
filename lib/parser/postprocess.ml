@@ -54,6 +54,8 @@ let process_ident ctx loc parts =
   else
     match
       match parts with
+      (* The prefix "_root_" skips past the local variables, so that an identifier can refer to a constant that a local variable shadows.  It can't be the name of anything itself, since atomic identifiers can't begin with an underscore. *)
+      | "_root_" :: _ :: _ -> None
       | [ x ] ->
           let* _, n = Bwv.find_opt (fun y -> y = Some x) ctx in
           return (Synth (Var (n, None)))
@@ -65,7 +67,11 @@ let process_ident ctx loc parts =
     with
     | Some tm -> { value = tm; loc }
     | None -> (
-        match Scope.lookup parts with
+        let scope_parts =
+          match parts with
+          | "_root_" :: (_ :: _ as parts) -> parts
+          | _ -> parts in
+        match Scope.lookup scope_parts with
         | Some c -> { value = Synth (Const c); loc }
         | None -> (
             match parts with

@@ -25,6 +25,9 @@ val add_match_vars :
   'ab t * pattern_var list
 
 val lookup : 'n t -> ('mode, 'n) index -> string list
+val bound : 'n t -> string -> bool
+val is_used : 'n t -> string -> bool
+val reserve : string list -> 'n t -> 'n t
 val lookup_field : 'n t -> ('mode, 'n) index -> string -> string list option
 val add_cube : 'n D.t -> 'b t -> binder_name -> string * ('b, ('m, 'n) dim_entry) snoc t
 

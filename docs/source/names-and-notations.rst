@@ -119,6 +119,46 @@ At present, the available attributes are the following:
 
 2. ``variables``, which specifies default variable names for a type (see :ref:`Default names`).
 
+Shadowing and renaming
+----------------------
+
+When a local variable is bound, such as inside an abstraction ``x ↦ …``, it hides or "shadows" any previously defined variable of the same name.  A variable that is shadowed is "out of scope" and cannot be referred to in the region where it is shadowed.  For instance, inside ``x ↦ x ↦ …`` the outer ``x`` is shadowed and cannot be referred to.
+
+A local variable also shadows any defined constant with the same name.  In this case, it is possible to refer to the constant anyway by prefixing it with ``_root_.``  In general, an identifier ``_root_.A`` skips past all local variables, and refers to whatever the identifier ``A`` would refer to if there were no local variables in scope.  (This can't conflict with any other name, since atomic identifiers can't start with an underscore.)
+
+A shadowed variable still exists, however, and reduction can cause it to appear in the region where it was shadowed even though it couldn't originally have been referred to there.  For instance, in evaluating the redex
+
+.. code-block:: none
+
+   (x ↦ ((y x ↦ y) : A → B → A) x)
+
+the shadowed outer variable ``x`` is substituted for the variable ``y``, and therefore must appear in the body of the abstraction over the inner ``x`` which shadows it.  Thus, one or the other of these variables must be renamed in order to print this result.
+
+The first rule is that when printing a *term*, the *shadowing* variable is renamed, along with all of its uses, by adding primes to make it unique.  Thus the above term prints as
+
+.. code-block:: none
+
+   x x′ ↦ x
+
+with the inner ``x`` renamed to ``x′`` so that it no longer shadows the outer ``x``.  This is also the case if a variable shadows a defined constant that appears in the term.  For instance, if ``x`` is an axiom of type ``A``, then ``((y x ↦ y) : A → B → A) x`` prints as ``x′ ↦ x``.
+
+On the other hand, when printing a *context* such as the context of a :ref:`hole <Interactive proof>`, it is important not to rename variables that are still in scope in the hole, since you will need to use them when filling the hole.  In this case, it is the *shadowed* variable that is renamed for printing.  The new name for that variable is still not in scope and can't be referred to in the term, but it's used for printing the types and values of other terms or of the hole itself.  For instance, the context of the hole in 
+
+.. code-block:: none
+
+   (x ↦ ((y x ↦ ?) : A → B → A) x)
+
+is printed as
+
+.. code-block:: none
+
+   x′ : A (not in scope)
+   y : A
+   x : A
+
+with the inner ``x`` retaining its name and the outer shadowed one being renamed.  A shadowed *constant* is "renamed" by prefixing it with ``_root_``, which as noted above skips past all local variables to the global context of constants (so in this case the renamed version can be referred to in the scope).
+
+
 Default names
 -------------
 
