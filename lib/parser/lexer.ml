@@ -281,7 +281,6 @@ let other_char : string t =
 
 let all_digits = String.for_all is_digit
 let is_numeral = List.for_all all_digits
-let valid_var x = not (all_digits x)
 
 (* Whether a string is valid as a dot-separated piece of an identifier name, or equivalently as a local variable name.  We don't test for absence of the delimited symbols, since they will automatically be lexed separately; this is for testing validity after the lexer has split things into potential tokens.  We also don't test for absence of dots, since identifiers will be split on dots automatically. *)
 let atomic_ident s =
@@ -289,6 +288,8 @@ let atomic_ident s =
   && s.[0] <> '_'
   && (Specials.digit_vars () || String.length s < 2 || s.[0] < '0' || s.[1] > '9')
   && not (all_digits s)
+
+let valid_var = atomic_ident
 
 (* A field name is like an identifier, but it could be all numeric for positional projections. *)
 let valid_field s =

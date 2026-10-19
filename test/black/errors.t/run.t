@@ -342,6 +342,62 @@
      ^ invalid local variable name: x.y
   
   [1]
+  $ narya -parametric errors.ny -e "echo (_x ↦ Type)"
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | echo (_x ↦ Type)
+     ^ invalid local variable name: _x
+  
+  [1]
+  $ narya -parametric errors.ny -e "echo (let _x ≔ Type in _x)"
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | echo (let _x ≔ Type in _x)
+     ^ invalid local variable name: _x
+  
+  [1]
+  $ narya -parametric errors.ny -e "echo (_x : Type) → Type"
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | echo (_x : Type) → Type
+     ^ invalid local variable name: _x
+  
+  [1]
+  $ narya -parametric errors.ny -e "echo (X ↦ match X [ _y ↦ _y ]) : Type → Type"
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | echo (X ↦ match X [ _y ↦ _y ]) : Type → Type
+     ^ invalid local variable name: _y
+  
+  [1]
+  $ narya -parametric errors.ny -e "def f (_x : Type) : Type ≔ _x"
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | def f (_x : Type) : Type ≔ _x
+     ^ invalid local variable name: _x
+  
+  [1]
+  $ narya -parametric errors.ny -e "axiom _x : Type"
+   ￫ error[E2101]
+   ￭ command-line exec string
+   1 | axiom _x : Type
+     ^ invalid constant name: _x
+  
+  [1]
+  $ narya -parametric errors.ny -e "axiom a._b : Type"
+   ￫ error[E2101]
+   ￭ command-line exec string
+   1 | axiom a._b : Type
+     ^ invalid constant name: a._b
+  
+  [1]
+  $ narya -parametric errors.ny -e "section _s ≔"
+   ￫ error[E2601]
+   ￭ command-line exec string
+   1 | section _s ≔
+     ^ invalid section name: _s
+  
+  [1]
   $ narya -parametric errors.ny -e "echo (↦ z)"
    ￫ error[E0200]
    ￭ command-line exec string
