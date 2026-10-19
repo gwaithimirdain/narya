@@ -219,6 +219,7 @@ module Parse = struct
     let* nonparam = attribute (StringsMap.of_list [ ([ "nonparametric" ], ()) ]) in
     let* nameloc, (name, wsname) = located ident in
     let loc = Some (Range.convert nameloc) in
+    if not (Lexer.valid_ident name) then fatal ?loc (Invalid_constant_name (name, None));
     let* parameters = zero_or_more parameter in
     let* wscolon = token Colon in
     (* Axioms live at a mode and are always available.  MODALTODO: "Postulates" live under a modality, like variables at the beginning of the context.  *)
@@ -713,7 +714,9 @@ module Parse = struct
 
   let section =
     let* wssection = token Section in
-    let* prefix, wsprefix = ident in
+    let* prefixloc, (prefix, wsprefix) = located ident in
+    if not (Lexer.valid_ident prefix) then
+      fatal ~loc:(Range.convert prefixloc) (Invalid_section_name prefix);
     let* wscoloneq = token Coloneq in
     return (Command.Section { wssection; prefix; wsprefix; wscoloneq })
 
