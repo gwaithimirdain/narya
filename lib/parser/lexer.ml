@@ -286,7 +286,7 @@ let is_numeral = List.for_all all_digits
 let atomic_ident s =
   String.length s > 0
   && s.[0] <> '_'
-  && (Specials.digit_vars () || String.length s < 2 || s.[0] < '0' || s.[1] > '9')
+  && (Specials.digit_vars () || not (is_digit s.[0]))
   && not (all_digits s)
 
 let valid_var = atomic_ident
@@ -295,7 +295,7 @@ let valid_var = atomic_ident
 let valid_field s =
   String.length s > 0
   && s.[0] <> '_'
-  && ((Specials.digit_vars () || String.length s < 2 || s.[0] < '0' || s.[1] > '9') || all_digits s)
+  && (Specials.digit_vars () || (not (is_digit s.[0])) || all_digits s)
 
 let valid_ident = List.for_all atomic_ident
 
