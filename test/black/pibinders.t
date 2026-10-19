@@ -212,7 +212,7 @@ The same goes for higher function-types, both instantiated and not.
   {x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ Id B x₂ (f x₀) (g x₁)
     : Type
   
-  {A : A} {x₁ : A} (x₂ : Id A A x₁) →⁽ᵉ⁾ Id B x₂ (f A) (g x₁)
+  {A′ : A} {x₁ : A} (x₂ : Id A A′ x₁) →⁽ᵉ⁾ Id B x₂ (f A′) (g x₁)
     : Type
   
 

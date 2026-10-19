@@ -13,6 +13,9 @@ Constants are displayed by name, so they must not be captured by local variables
   (A′ : A) → A
     : Type
   
+  {A′ : A} {x₁ : A} (x₂ : Id A A′ x₁) →⁽ᵉ⁾ Id C x₂ (f A′) (f x₁)
+    : Type
+  
 
   $ narya -v holes.ny
    ￫ info[I0001]
