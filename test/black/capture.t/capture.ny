@@ -14,3 +14,9 @@ echo H A
 
 ` The prefix _root_ refers to a constant shadowed by a local variable.
 echo (A : A) → _root_.A
+
+` The same goes for the variables of an instantiated higher function-type, even when the constant appears in the domain of one of them, which doesn't depend on the variables.
+axiom C : A → Type
+axiom f : (x : A) → C x
+def AA : Type ≔ A
+echo {A : A} {x₁ : _root_.A} (x₂ : Id AA A x₁) →⁽ᵉ⁾ Id C x₂ (f A) (f x₁)
