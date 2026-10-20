@@ -296,10 +296,17 @@ With arity zero, a cube has no boundary, so an instantiated higher function-type
 
 Otherwise that isn't allowed, since the later variables would have no boundaries.
 
-  $ narya hp.ny -e 'echo {x₀ x₁ : A} (x₂ y₂ : refl A x₀ x₁) →⁽ᵉ⁾ A'
+  $ cat >shared.ny <<EOF
+  > axiom A : Type
+  > echo {x₀ x₁ : A} (x₂
+  >   y₂
+  >   : refl A x₀ x₁) →⁽ᵉ⁾ A
+  > EOF
+
+  $ narya -no-reformat shared.ny
    ￫ error[E0706]
-   ￭ command-line exec string
-   1 | echo {x₀ x₁ : A} (x₂ y₂ : refl A x₀ x₁) →⁽ᵉ⁾ A
+   ￭ $TESTCASE_ROOT/shared.ny
+   3 |   y₂
      ^ invalid higher function-type: a primary domain with boundaries can't be shared by several variables
   
   [1]

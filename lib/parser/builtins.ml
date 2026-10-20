@@ -786,22 +786,27 @@ let () =
 
 (* These functions inspect and process multiple-variable type declarations like "x y z : A", such as appear (in paretheses) in the domain of a Π-type. *)
 
-(* Inspect 'xs', expecting it to be a spine of valid bindable local variables or underscores, and produce a list of those variables, consing it onto the accumulator argument 'vars'. *)
+(* Inspect 'xs', expecting it to be a spine of valid bindable local variables or underscores, and produce a list of those variables with their locations, consing it onto the accumulator argument 'vars'. *)
 let rec process_var_list : type lt ls rt rs.
     (lt, ls, rt, rs) parse located ->
-    (string option * Whitespace.t list) list ->
-    (string option * Whitespace.t list) list option =
+    (string option located * Whitespace.t list) list ->
+    (string option located * Whitespace.t list) list option =
  fun { value; loc } vars ->
   match value with
-  | Ident ([ x ], w) when Lexer.valid_var x -> Some ((Some x, w) :: vars)
-  | Placeholder w -> Some ((None, w) :: vars)
-  | App { fn; arg = { value = Ident ([ x ], w); _ }; _ } when Lexer.valid_var x ->
-      process_var_list fn ((Some x, w) :: vars)
-  | App { fn; arg = { value = Placeholder w; _ }; _ } -> process_var_list fn ((None, w) :: vars)
+  | Ident ([ x ], w) when Lexer.valid_var x -> Some ((locate_opt loc (Some x), w) :: vars)
+  | Placeholder w -> Some ((locate_opt loc None, w) :: vars)
+  | App { fn; arg = { value = Ident ([ x ], w); loc }; _ } when Lexer.valid_var x ->
+      process_var_list fn ((locate_opt loc (Some x), w) :: vars)
+  | App { fn; arg = { value = Placeholder w; loc }; _ } ->
+      process_var_list fn ((locate_opt loc None, w) :: vars)
   (* There's a choice here: an invalid variable name could still be a valid term, so we could allow for instance (x.y : A) → B to be parsed as a non-dependent function type.  But that seems a recipe for confusion. *)
   | Ident (name, _) -> fatal ?loc (Invalid_variable name)
   | App { arg = { value = Ident (xs, _); loc }; _ } -> fatal ?loc (Invalid_variable xs)
   | _ -> None
+
+(* The names of a list of variables produced by process_var_list. *)
+let var_names : (string option located * Whitespace.t list) list -> string option list =
+ fun vars -> List.map (fun ((x : string option located), _) -> x.value) vars
 
 (* ****************************************
    Function types (dependent and non)
@@ -819,7 +824,7 @@ type arrow_opt = [ `Arrow of Whitespace.t list | `Noarrow | `First ]
 type pi_dom =
   | Dep of {
       wsarrow : arrow_opt;
-      vars : (string option * Whitespace.t list) list;
+      vars : (string option located * Whitespace.t list) list;
       tok : Token.t;
       modality : string located list located;
       ty : wrapped_parse;
@@ -927,16 +932,16 @@ type _ pi_vars =
 
 let rec pi_vars : type n.
     (string option, n) Bwv.t ->
-    string option ->
-    (string option * Whitespace.t list) list ->
+    string option located ->
+    (string option located * Whitespace.t list) list ->
     n pi_vars =
  fun ctx x xs ->
-  let ctx = Bwv.snoc ctx x in
+  let ctx = Bwv.snoc ctx x.value in
   match xs with
-  | [] -> Pi_vars ([ locate_opt None x ], ctx)
+  | [] -> Pi_vars ([ x ], ctx)
   | (y, _) :: ys ->
       let (Pi_vars (names, ctx)) = pi_vars ctx y ys in
-      Pi_vars (locate_opt None x :: names, ctx)
+      Pi_vars (x :: names, ctx)
 
 (* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
 let rec process_pi : type n lt ls rt rs.
@@ -1007,13 +1012,13 @@ type _ some_vars =
   | Some_vars : ('n, 'c, 'nc) Indexed.Namevec.t * (string option, 'nc) Bwv.t -> 'n some_vars
 
 let rec some_vars : type n.
-    (string option, n) Bwv.t -> (string option * Whitespace.t list) list -> n some_vars =
+    (string option, n) Bwv.t -> (string option located * Whitespace.t list) list -> n some_vars =
  fun ctx xs ->
   match xs with
   | [] -> Some_vars ([], ctx)
   | (x, _) :: xs ->
-      let (Some_vars (names, ctx)) = some_vars (Bwv.snoc ctx x) xs in
-      Some_vars (locate_opt None x :: names, ctx)
+      let (Some_vars (names, ctx)) = some_vars (Bwv.snoc ctx x.value) xs in
+      Some_vars (x :: names, ctx)
 
 let rec process_higher_dom_group : type n.
     (string option, n) Bwv.t -> pi_dom list -> Asai.Range.t option -> n higher_dom_group =
@@ -1033,17 +1038,17 @@ let rec process_higher_dom_group : type n.
       match implicit with
       | `Explicit ->
           (* The primary domain ends the group, so any other variables sharing its type become further pi-types with only a primary domain. *)
-          let (Some_vars (names, newctx)) = some_vars (Bwv.snoc ctx x) xs in
-          Higher_dom_group (Ext (x, modality, cdom, Emp), names, newctx, rest, loc)
+          let (Some_vars (names, newctx)) = some_vars (Bwv.snoc ctx x.value) xs in
+          Higher_dom_group (Ext (x.value, modality, cdom, Emp), names, newctx, rest, loc)
       | `Implicit ->
           let (Higher_dom_group (tele, names, newctx, rest2, loc2)) =
-            process_higher_dom_same (Bwv.snoc ctx x) xs rest loc in
-          Higher_dom_group (Ext (x, modality, cdom, tele), names, newctx, rest2, loc2))
+            process_higher_dom_same (Bwv.snoc ctx x.value) xs rest loc in
+          Higher_dom_group (Ext (x.value, modality, cdom, tele), names, newctx, rest2, loc2))
   | _ -> invalid "higher pi"
 
 and process_higher_dom_same : type n.
     (string option, n) Bwv.t ->
-    (string option * Whitespace.t list) list ->
+    (string option located * Whitespace.t list) list ->
     pi_dom list ->
     Asai.Range.t option ->
     n higher_dom_group =
@@ -1052,8 +1057,8 @@ and process_higher_dom_same : type n.
   | [] -> process_higher_dom_group ctx doms loc
   | (x, _) :: xs ->
       let (Higher_dom_group (tele, names, newctx, rest, loc)) =
-        process_higher_dom_same (Bwv.snoc ctx x) xs doms loc in
-      Higher_dom_group (Same (x, tele), names, newctx, rest, loc)
+        process_higher_dom_same (Bwv.snoc ctx x.value) xs doms loc in
+      Higher_dom_group (Same (x.value, tele), names, newctx, rest, loc)
 
 let rec process_inst_higher_pi : type n lt ls rt rs m.
     (string option, n) Bwv.t ->
@@ -1097,11 +1102,11 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
               } ->
               let pvars, wvars =
                 List.fold_left
-                  (fun (acc, prews) (x, wx) ->
+                  (fun (acc, prews) ((x : string option located), wx) ->
                     ( acc
                       ^^ group
                            (optional (pp_ws `Break) prews
-                           ^^ Option.fold ~some:utf8string ~none:(Token.pp Underscore) x),
+                           ^^ Option.fold ~some:utf8string ~none:(Token.pp Underscore) x.value),
                       Some wx ))
                   (empty, None) vars in
               let pty, wty = pp_term ty in
@@ -2797,9 +2802,9 @@ let process_record ctx obs loc =
       emit ?loc:mapstoloc (Deprecated "'sig … ↦' for higher records: use self variables");
       with_loc x.loc @@ fun () ->
       let vars =
-        process_var_list x [ (None, []) ] <|> Parse_error "invalid higher record specification"
-      in
-      let (Wrap vars) = Vec.of_list (List.map fst vars) in
+        process_var_list x [ (locate_opt None None, []) ]
+        <|> Parse_error "invalid higher record specification" in
+      let (Wrap vars) = Vec.of_list (var_names vars) in
       let (Bplus ac) = Fwn.bplus (Vec.length vars) in
       let ctx = Bwv.append ac ctx vars in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
@@ -2944,7 +2949,7 @@ let rec constr_tel :
       | [ Token (LParen, _); Term xs; Token (Colon, _); Term ty; Token (RParen, _) ] -> (
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((List.map fst vars, locate_opt None [], Wrap ty) :: accum)
+              constr_tel (Term fn) ((var_names vars, locate_opt None [], Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | [
        Token (LParen, _);
@@ -2957,7 +2962,7 @@ let rec constr_tel :
       ] -> (
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((List.map fst vars, get_modality fst modality, Wrap ty) :: accum)
+              constr_tel (Term fn) ((var_names vars, get_modality fst modality, Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | _ -> invalid "tel")
   | Term { loc; _ } -> fatal ?loc (Parse_error "invalid constructor")
@@ -2990,7 +2995,7 @@ let rec process_dataconstr : type n.
                 (function
                   | Dep { vars = []; _ } -> None
                   | Dep { vars; modality; ty; implicit = `Explicit; _ } ->
-                      Some (List.map fst vars, modality, ty)
+                      Some (var_names vars, modality, ty)
                   | Dep { implicit = `Implicit; _ } ->
                       fatal (Unimplemented "general implicit function-types")
                   | Nondep { ty; _ } -> Some ([ None ], locate_opt None [], ty))
