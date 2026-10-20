@@ -198,6 +198,55 @@ A match on a parameter refines the types of the parameters that share a type dep
      ℕ
   
 
+The same goes for the fields of a record type.  Here too the shared type is processed outside the scope of all the fields, so it refers to the constant A rather than the field A.
+
+  $ narya pi.ny -e 'def S : Type ≔ sig (A y : A, z w : B)  def s : S ≔ (a, a, b, b)  echo s .y  echo s .w'
+  a
+    : A
+  
+  b
+    : B
+  
+
+A group of fields can't contain the same field twice.
+
+  $ narya pi.ny -e 'def S : Type ≔ sig (x y : A, z y : B)'
+   ￫ error[E1501]
+   ￭ command-line exec string
+   1 | def S : Type ≔ sig (x y : A, z y : B)
+     ^ duplicate field in record type: y
+  
+  [1]
+
+If the shared type fails to typecheck, the error is reported only once.
+
+  $ narya pi.ny -e 'def S : Type ≔ sig (x y : a, z : b)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def S : Type ≔ sig (x y : a, z : b)
+     ^ term synthesized type
+         A
+       but is being checked against type
+         Type
+       unequal head terms:
+         A
+       does not equal
+         Type
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def S : Type ≔ sig (x y : a, z : b)
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+  [1]
+
 The same goes for higher function-types, both instantiated and not.
 
   $ cat >hp.ny <<EOF
