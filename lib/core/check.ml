@@ -3787,11 +3787,11 @@ and synth : type mode a b s.
                     (* We likewise check the codomain against universe 0. *)
                     | [] -> check (Kinetic `Nolet) newctx cod (universe mode D.zero)
                     (* If there are more variables sharing the primary domain, the codomain is the pi-type whose only domain is that shared one.  There can't have been any boundary domains, since then those variables would need their own. *)
-                    | { value = y; loc = _ } :: extras -> (
+                    | { value = y; loc = yloc } :: extras -> (
                         match Raw.fwn_of_tel doms with
                         | Suc Zero -> group newctx (Same (y, Emp)) last extras cod
                         | _ ->
-                            fatal ?loc:(Option.bind last snd)
+                            fatal ?loc:yloc
                               (Invalid_higher_function
                                  "a primary domain with boundaries can't be shared by several variables")
                         ) in
