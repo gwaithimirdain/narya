@@ -2718,24 +2718,55 @@ let rec record_fields () =
 
 type _ any_tel = Any_tel : ('a, 'c, 'ac) Raw.tel -> 'a any_tel
 
+(* The names of a group of record fields sharing a type, such as "fst snd" in "sig (fst snd : A)", with their locations. *)
+let rec record_field_names : type lt ls rt rs.
+    (lt, ls, rt, rs) parse located ->
+    (string * Asai.Range.t option) list ->
+    (string * Asai.Range.t option) list option =
+ fun tm accum ->
+  match tm.value with
+  | Ident ([ name ], _) -> Some ((name, tm.loc) :: accum)
+  | App { fn; arg = { value = Ident ([ name ], _); loc }; _ } ->
+      record_field_names fn ((name, loc) :: accum)
+  | _ -> None
+
 let rec process_tel : type a.
     (string option, a) Bwv.t -> StringSet.t -> observation list -> a any_tel =
  fun ctx seen obs ->
   match obs with
   | [ Token (RParen, _) ] -> Any_tel Emp
   | Token (Op ",", _) :: obs -> process_tel ctx seen obs
-  | Term { value = Ident ([ name ], _); loc } :: Token (Colon, _) :: Term ty :: obs ->
-      if Lexer.valid_field name then (
-        if StringSet.mem name seen then
-          fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
-        let ty = process ctx ty in
-        let ctx = Bwv.snoc ctx (Some name) in
-        let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
-        Any_tel (Ext (Some name, locate_opt None [], ty, tel)))
-      else fatal ?loc (Invalid_field name)
-  | Term { loc; _ } :: Token (Colon, _) :: Term _ :: _ ->
-      fatal ?loc (Parse_error "invalid record field name")
+  | Term tm :: Token (Colon, _) :: Term ty :: obs -> (
+      match record_field_names tm [] with
+      | Some ((name, _) :: names as all_names) ->
+          let seen =
+            List.fold_left
+              (fun seen (name, loc) ->
+                if not (Lexer.valid_field name) then fatal ?loc (Invalid_field name);
+                if StringSet.mem name seen then
+                  fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
+                StringSet.add name seen)
+              seen all_names in
+          (* The type is shared by all the fields in the group, so we process it only once, in the scope outside all of them. *)
+          let ty = process ctx ty in
+          let (Any_tel tel) = process_tel_same (Bwv.snoc ctx (Some name)) seen names obs in
+          Any_tel (Ext (Some name, locate_opt None [], ty, tel))
+      | _ -> fatal ?loc:tm.loc (Parse_error "invalid record field name"))
   | _ -> invalid "record"
+
+(* The remaining fields that share the type of the previous one. *)
+and process_tel_same : type a.
+    (string option, a) Bwv.t ->
+    StringSet.t ->
+    (string * Asai.Range.t option) list ->
+    observation list ->
+    a any_tel =
+ fun ctx seen names obs ->
+  match names with
+  | [] -> process_tel ctx seen obs
+  | (name, _) :: names ->
+      let (Any_tel tel) = process_tel_same (Bwv.snoc ctx (Some name)) seen names obs in
+      Any_tel (Same (Some name, tel))
 
 let rec process_self_record : type n.
     opacity ->
@@ -2773,8 +2804,9 @@ let process_record ctx obs loc =
       let ctx = Bwv.append ac ctx vars in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
       Range.locate (Raw.Record (locate_opt x.loc (namevec_of_vec ac vars), tel, opacity, hints)) loc
-  | Token (LParen, _) :: (Term { value = App _; _ } :: _ as obs) ->
-      process_self_record opacity hints Emp ctx obs loc
+  (* A field of a self-record, such as "x .fst", is an application of a self variable to a field; an application of identifiers, such as "fst snd", is instead a group of fields sharing a type. *)
+  | Token (LParen, _) :: (Term { value = App { arg = { value = Field _; _ }; _ }; _ } :: _ as obs)
+    -> process_self_record opacity hints Emp ctx obs loc
   | Token (LParen, _) :: obs ->
       let ctx = Bwv.snoc ctx None in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in

@@ -840,7 +840,7 @@ let rec check : type mode a b s.
                 check_record status dim ctx opacity hints tyargs vars Emp Zero af Emp
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                      (readback_neu ctx (head_of_potential head) apps))
-                  fields Emp)
+                  None fields Emp)
         | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
     | Data (constrs, hints), Potential (head, apps, _) ->
         (* For a datatype, the type to check against might not be a universe, it could include indices. *)
@@ -2744,11 +2744,13 @@ and check_record : type mode a f1 f2 f af d acd b n.
     (a, f, af) N.plus ->
     (mode * b * D.zero * n * has_eta) Term.CodatafieldAbwd.t ->
     (mode, n, n, b, has_eta) Fibrancy.Codata.t ->
+    (* The checked type of the previous field, if it typechecked, for a next field that shares it. *)
+    (mode, (b, (mode id, n) dim_entry) snoc, kinetic) term option ->
     (af, d, acd) Raw.tel ->
     Code.t Asai.Diagnostic.t Bwd.t ->
     (mode, b, potential) term =
- fun status dim ctx opacity hints tyargs vars ctx_fields fplus af checked_fields fibrancy raw_fields
-     errs ->
+ fun status dim ctx opacity hints tyargs vars ctx_fields fplus af checked_fields fibrancy prev
+     raw_fields errs ->
   match raw_fields with
   | Emp -> (
       match errs with
@@ -2768,40 +2770,73 @@ and check_record : type mode a f1 f2 f af d acd b n.
                  fibrancy = Some fibrancy;
                  is_glue = None;
                }))
-  | Ext (None, _, _, _) -> fatal (Anomaly "unnamed field in check_record")
-  (* The fields of a record type are never grouped to share a type. *)
-  | Same _ -> fatal (Anomaly "shared type in check_record")
+  | Ext (None, _, _, _) | Same (None, _) -> fatal (Anomaly "unnamed field in check_record")
   | Ext (Some name, modality, rty, raw_fields) ->
-      with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy errs
-      @@ fun (Self_vars { self }) _ ->
-      let fld = Field.intern name D.zero in
-      let checked_fields, fibrancy, ctx_fields, errs =
-        Reporter.try_with ~fatal:(fun e ->
-            (checked_fields, fibrancy, Bwv.Snoc (ctx_fields, (fld, name)), Snoc (errs, e)))
-        @@ fun () ->
-        match Modality.of_name_tgt (Ctx.mode ctx) modality.value with
-        | Error e -> modality_fatal "field annotation" (e :> modality_error)
-        | Ok (Wrap modality) -> (
-            match Modality.compare_id modality with
-            | Neq -> fatal (Unimplemented "modal record fields in telescope syntax")
-            | Eq ->
-                let selfvars = self (Modalcell.id_adjunction (Ctx.mode ctx)) in
-                let newctx = Ctx.vis_fields ctx vars selfvars ctx_fields fplus af in
-                let cty = check (Kinetic `Nolet) newctx rty (universe (Ctx.mode ctx) D.zero) in
-                let entry =
-                  CodatafieldAbwd.Entry
-                    ( fld,
-                      Codatafield
-                        ( None,
-                          Modalcell.id_adjunction (Ctx.mode ctx),
-                          plus_no_lock (Ctx.mode ctx),
-                          Lower cty ) ) in
-                ( Snoc (checked_fields, entry),
-                  Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
-                  Bwv.Snoc (ctx_fields, (fld, name)),
-                  errs )) in
-      check_record status dim ctx opacity hints tyargs vars ctx_fields (Suc fplus) (Suc af)
-        checked_fields fibrancy raw_fields errs
+      check_record_field status dim ctx opacity hints tyargs vars ctx_fields fplus af checked_fields
+        fibrancy name
+        (fun newctx ->
+          match Modality.of_name_tgt (Ctx.mode ctx) modality.value with
+          | Error e -> modality_fatal "field annotation" (e :> modality_error)
+          | Ok (Wrap modality) -> (
+              match Modality.compare_id modality with
+              | Neq -> fatal (Unimplemented "modal record fields in telescope syntax")
+              | Eq -> Some (check (Kinetic `Nolet) newctx rty (universe (Ctx.mode ctx) D.zero))))
+        raw_fields errs
+  (* A field sharing the type of the previous one, such as snd in "sig (fst snd : A)".  The field variables are projections of the self variable, so all the fields are checked in the same context, and we can reuse the checked type of the previous field.  If that failed to typecheck, its error has already been reported. *)
+  | Same (Some name, raw_fields) ->
+      check_record_field status dim ctx opacity hints tyargs vars ctx_fields fplus af checked_fields
+        fibrancy name
+        (fun _ -> prev)
+        raw_fields errs
+
+(* Add one field to a record type, whose type is computed from the context in which it is checked, or None if its type already failed to typecheck. *)
+and check_record_field : type mode a f1 f2 f af d acd b n.
+    (mode, b, potential) status ->
+    n D.t ->
+    (mode, a, b) Ctx.t ->
+    opacity ->
+    hints ->
+    (D.zero, n, n, mode normal) TubeOf.t ->
+    (N.zero, n, binder_name, f1) NICubeOf.t ->
+    (D.zero Field.t * string, f2) Bwv.t ->
+    (f1, f2, f) N.plus ->
+    (a, f, af) N.plus ->
+    (mode * b * D.zero * n * has_eta) Term.CodatafieldAbwd.t ->
+    (mode, n, n, b, has_eta) Fibrancy.Codata.t ->
+    string ->
+    ((mode, af, (b, (mode id, n) dim_entry) snoc) Ctx.t ->
+    (mode, (b, (mode id, n) dim_entry) snoc, kinetic) term option) ->
+    (af N.suc, d, acd) Raw.tel ->
+    Code.t Asai.Diagnostic.t Bwd.t ->
+    (mode, b, potential) term =
+ fun status dim ctx opacity hints tyargs vars ctx_fields fplus af checked_fields fibrancy name
+     field_ty raw_fields errs ->
+  with_codata_so_far status Eta ctx opacity hints dim tyargs checked_fields fibrancy errs
+  @@ fun (Self_vars { self }) _ ->
+  let fld = Field.intern name D.zero in
+  let cty, checked_fields, fibrancy, errs =
+    Reporter.try_with ~fatal:(fun e -> (None, checked_fields, fibrancy, Snoc (errs, e)))
+    @@ fun () ->
+    let selfvars = self (Modalcell.id_adjunction (Ctx.mode ctx)) in
+    let newctx = Ctx.vis_fields ctx vars selfvars ctx_fields fplus af in
+    match field_ty newctx with
+    | None -> (None, checked_fields, fibrancy, errs)
+    | Some cty ->
+        let entry =
+          CodatafieldAbwd.Entry
+            ( fld,
+              Codatafield
+                ( None,
+                  Modalcell.id_adjunction (Ctx.mode ctx),
+                  plus_no_lock (Ctx.mode ctx),
+                  Lower cty ) ) in
+        ( Some cty,
+          Snoc (checked_fields, entry),
+          Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry,
+          errs ) in
+  check_record status dim ctx opacity hints tyargs vars
+    (Bwv.Snoc (ctx_fields, (fld, name)))
+    (Suc fplus) (Suc af) checked_fields fibrancy cty raw_fields errs
 
 and check_struct : type mode a b c s m n mn et.
     (mode, b, s) status ->
