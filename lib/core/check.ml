@@ -4667,18 +4667,13 @@ and check_at_pi : type mode n a c e.
         (Wrong_number_of_arguments_to_constructor
            (c, List.length tms - Fwn.to_int (Vec.length tyargs)))
 
-(* Given a context and a raw telescope, we can check it to produce a checked telescope, a new context extended by that telescope, and a function for extending other contexts by that telescope. *)
+(* Given a context and a raw telescope, we can check it to produce a checked telescope, a new context extended by that telescope, and a function for extending other contexts by that telescope.  The previous entry is given in case the first one shares its type. *)
 and check_tel : type mode a b c ac.
-    (mode, a, b) Ctx.t -> (a, c, ac) Raw.tel -> (mode, a, b, c, ac) checked_tel =
- fun ctx tel -> check_tel_after ctx None tel
-
-(* Check a telescope, given the previous entry in case the first one shares its type. *)
-and check_tel_after : type mode a b c ac.
     (mode, a, b) Ctx.t ->
-    (mode, b) tel_prev option ->
+    ?prev:(mode, b) tel_prev ->
     (a, c, ac) Raw.tel ->
     (mode, a, b, c, ac) checked_tel =
- fun ctx prev tel ->
+ fun ctx ?prev tel ->
   match tel with
   | Emp -> Checked_tel (Emp, ctx)
   | Ext (x, modality, ty, tys) -> (
@@ -4711,7 +4706,7 @@ and check_tel_ext : type mode a b c ac.
         let (Locked (newplus, _)) = Ctx.lock newctx modality in
         Some (Tel_prev (modality, newplus, Weaken (plus, cty, newplus), ety))
     | _ -> None in
-  let (Checked_tel (ctys, ctx)) = check_tel_after newctx next tys in
+  let (Checked_tel (ctys, ctx)) = check_tel newctx ?prev:next tys in
   Checked_tel (Ext (x, Modal (modality, plus, cty), ctys), ctx)
 
 (* We also need to be able to synthesize a mode for a definition.  In theory we could incorporate this into 'synth' to avoid multiple traversals, but the attempt proved very complicated, and not much of the term should need to be traversed to find its mode.  You might think we should do this in a "context" of raw variables with possibly-known modes so we can look up the modes of variables, but in practice that's not useful: whenever a variable is introduced, if we *know* its mode, then we can immediately deduce the mode of the whole term anyway. *)
