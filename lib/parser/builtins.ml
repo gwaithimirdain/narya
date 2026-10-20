@@ -2939,7 +2939,7 @@ let rec process_dataconstr : type n.
  fun ctx tel_args ty ->
   match (tel_args, ty) with
   | (vars, modality, argty) :: tel_args, _ ->
-      process_dataconstr_vars ctx vars modality argty tel_args ty
+      process_dataconstr_vars ctx vars (Some (modality, argty)) tel_args ty
   | [], Some (Wrap ty) -> (
       (* A constructor whose type is an ordinary pi-type takes the domains of that pi-type as its arguments.  We find them in the parse tree, rather than processing the pi-type and taking it apart, so that a group of variables sharing a type, such as "(x y : A) → B", becomes the same telescope as the arguments "(x y : A)" would. *)
       match ty.value with
@@ -2947,7 +2947,9 @@ let rec process_dataconstr : type n.
           match args n with
           | [ Token (LParen, _); Term body; Token (RParen, _) ] ->
               process_dataconstr ctx [] (Some (Wrap body))
-          | _ -> Dataconstr (Emp, Some (process ctx ty)))
+          | _ ->
+              (* This will be a typechecking error, since a tuple can't be the output of a dataconstr, but we leave it to the typechecker to report. *)
+              Dataconstr (Emp, Some (process ctx ty)))
       | Notn ((Arrow, _), n) ->
           let doms, _, (dim, _), cod = get_pi `First (args n) in
           if dim.value = "" then
@@ -2962,40 +2964,36 @@ let rec process_dataconstr : type n.
                   | Nondep { ty; _ } -> Some ([ None ], locate_opt None [], ty))
                 doms in
             process_dataconstr ctx tel_args (Some cod)
-          else Dataconstr (Emp, Some (process ctx ty))
+          else
+            (* This will be a typechecking error, since a dataconstr can't have a higher function-type, but we leave it to the typechecker to report. *)
+            Dataconstr (Emp, Some (process ctx ty))
       | _ -> Dataconstr (Emp, Some (process ctx ty)))
   | [], None -> Dataconstr (Emp, None)
 
 and process_dataconstr_vars : type n.
     (string option, n) Bwv.t ->
     string option list ->
-    string located list located ->
-    wrapped_parse ->
+    (* We only carry the modality and type if we are at the first variable in the list. *)
+    (string located list located * wrapped_parse) option ->
     (string option list * string located list located * wrapped_parse) list ->
     wrapped_parse option ->
     n Raw.dataconstr =
- fun ctx vars modality (Wrap argty) tel_args ty ->
+ fun ctx vars argty tel_args ty ->
   match vars with
   | [] -> process_dataconstr ctx tel_args ty
-  | x :: xs ->
-      (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
-      let arg = process ctx argty in
-      let (Dataconstr (args, body)) = process_dataconstr_same (Bwv.snoc ctx x) xs tel_args ty in
-      Dataconstr (Ext (x, modality, arg, args), body)
-
-(* The remaining variables that share the type of the previous one. *)
-and process_dataconstr_same : type n.
-    (string option, n) Bwv.t ->
-    string option list ->
-    (string option list * string located list located * wrapped_parse) list ->
-    wrapped_parse option ->
-    n Raw.dataconstr =
- fun ctx vars tel_args ty ->
-  match vars with
-  | [] -> process_dataconstr ctx tel_args ty
-  | x :: xs ->
-      let (Dataconstr (args, body)) = process_dataconstr_same (Bwv.snoc ctx x) xs tel_args ty in
-      Dataconstr (Same (x, args), body)
+  | x :: xs -> (
+      match argty with
+      | Some (modality, Wrap argty) ->
+          (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
+          let arg = process ctx argty in
+          let (Dataconstr (args, body)) =
+            process_dataconstr_vars (Bwv.snoc ctx x) xs None tel_args ty in
+          Dataconstr (Ext (x, modality, arg, args), body)
+      | None ->
+          (* The remaining variables that share the type of the previous one. *)
+          let (Dataconstr (args, body)) =
+            process_dataconstr_vars (Bwv.snoc ctx x) xs None tel_args ty in
+          Dataconstr (Same (x, args), body))
 
 let rec process_data : type n.
     Variables.hints ->
