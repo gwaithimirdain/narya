@@ -61,7 +61,7 @@ let rec sort_of_ty : type mode a z.
 let sort_of_val : type mode. mode Mode.t -> (mode, kinetic) value -> [ `Type | `Function | `Other ]
     =
  fun mode ty ->
-  Reporter.backtrack ~fatal:(fun _ -> `Other) @@ fun () ->
+  Reporter.discard_errors ~fallback:(fun () -> `Other) @@ fun () ->
   sort_of_ty (Ctx.empty mode) (view_type ty "sort_of_val")
 
 (* Whether a constant is defined to be a canonical type, possibly a family of them.  Such a constant is displayed with a superscript degeneracy rather than a name like "Id", even if the term in which it appears is not itself a type (e.g. a field projection out of a degenerated record type). *)
@@ -72,7 +72,7 @@ let rec is_canonical_def : type mode a. (mode, a, potential) term -> bool = func
 
 let is_canonical_const : Constant.t -> [ `Canonical | `Other ] =
  fun c ->
-  Reporter.backtrack ~fatal:(fun _ -> `Other) @@ fun () ->
+  Reporter.discard_errors ~fallback:(fun () -> `Other) @@ fun () ->
   let (Definition { tm; _ }) = Global.find_const c in
   match tm with
   | `Defined tm when is_canonical_def tm -> `Canonical
@@ -141,8 +141,23 @@ and readback_eval : type mode a z s.
   (* A stuck case tree is displayed as the application spine of the neutral that the status carries.  Only a potential readback can meet an Unrealized, so that neutral is always available. *)
   | Unrealized, Potential neutral -> Realize (readback_val ctx neutral)
 
-(* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value for display (reading back the forced value of a neutral); in particular, that's the only way a comatch (a no-eta struct) reaches the readback-at-Codata branch.  All other callers read back only kinetic values, with neutral resulting in application spines. *)
+(* A failed term is read back as Failed, whatever its type.  And a term whose type is failed can't be eta-expanded, so we read it back without its type if possible. *)
 and readback_at : type mode a z s.
+    ?eta:bool ->
+    (mode, s) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (mode, s) value ->
+    (mode, kinetic) value ->
+    (mode, a, s) term =
+ fun ?eta status ctx tm ty ->
+  match (tm, ty) with
+  | Neu { head = Failed _; _ }, _ -> Failed Kinetic
+  | Neu { head = Live _; _ }, Neu { head = Failed _; _ } -> readback_val ctx tm
+  | _, Neu { head = Failed _; _ } -> fatal (Dependent "reading back at a failed type")
+  | _ -> readback_at_type ?eta status ctx tm ty
+
+(* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value for display (reading back the forced value of a neutral); in particular, that's the only way a comatch (a no-eta struct) reaches the readback-at-Codata branch.  All other callers read back only kinetic values, with neutral resulting in application spines. *)
+and readback_at_type : type mode a z s.
     ?eta:bool ->
     (mode, s) readback_status ->
     (mode, z, a) Ctx.t ->
@@ -280,7 +295,7 @@ and readback_at : type mode a z s.
                         let rtm =
                           readback_eval status lctx
                             (field left sxu fld (ins_zero dim))
-                            (tyof_field left (Ok xu) tyu fld (ins_zero evaldim)) in
+                            (tyof_field left xu tyu fld (ins_zero evaldim)) in
                         let l =
                           match sf with
                           | Lower (_, _, l) -> l
@@ -319,8 +334,8 @@ and readback_at : type mode a z s.
                                       let (Plus rm) = D.plus dim in
                                       let newins = ins_plus_of_pbij fldins fldshuf rm in
                                       let ety =
-                                        tyof_field left (Ok dself.tm) (Lazy.force dself.ty) fld
-                                          newins in
+                                        tyof_field left dself.tm (Lazy.force dself.ty) fld newins
+                                      in
                                       let rtm =
                                         readback_at Kinetic dlctx
                                           (field_term left dself.tm fld newins)
@@ -376,7 +391,7 @@ and readback_at : type mode a z s.
                                   (Potential fneu, act_value tm (id_deg D.zero) unit) in
                             let rtm =
                               readback_eval status lctx (field left sxu fld fldins)
-                                (tyof_field left (Ok xu) tyu fld fldins) in
+                                (tyof_field left xu tyu fld fldins) in
                             Term.StructfieldAbwd.Entry
                               (fld, Term.Structfield.Lower (adj, plus_lock, rtm, l)))
                           codata_fields in
@@ -451,7 +466,9 @@ and readback_at : type mode a z s.
 and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
  fun ctx x ->
   match x with
-  | Neu { head; args; value; ty } -> (
+  (* A failed term is read back as Failed, without forcing its value (which would fail). *)
+  | Neu { head = Failed _; _ } -> Failed Kinetic
+  | Neu { head = Live head; args; value; ty } -> (
       match (force_eval value, Displaying.read ()) with
       | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
       | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
@@ -465,7 +482,7 @@ and readback_neu : type hmode mode a z any.
     ?canonical:[ `Canonical | `Other ] ->
     (mode, z, a) Ctx.t ->
     hmode head ->
-    (hmode, mode, any) apps ->
+    (hmode, mode, any, live) apps ->
     (mode, a, kinetic) term =
  fun ?(canonical = `Other) ctx head apps ->
   (* The degeneracies appearing on the spine of a neutral are all *permutations*, which are never displayed with a name like "refl" or "Id" that depends on the sort of their argument.  Thus the only place the sort matters is at the head, where it is computed from the type of the head itself (see readback_head).  Here we only pass along whether the whole neutral is a canonical type, which determines whether a reflexivity at the head is displayed as a superscript. *)
@@ -561,7 +578,7 @@ and readback_head : type mode c z.
       | None ->
           (* Likewise, a degeneracy acting on a constant is displayed according to the sort of the constant's own type, and according to whether that constant is (a family of) canonical types. *)
           let sort =
-            Reporter.backtrack ~fatal:(fun _ -> `Other) @@ fun () ->
+            Reporter.discard_errors ~fallback:(fun () -> `Other) @@ fun () ->
             let (Definition { mode; ty; _ }) = Global.find_const name in
             sort_of_val mode (eval_term (Emp (mode, D.zero)) ty) in
           let canonical =
@@ -784,9 +801,8 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
               (fun (f, x) ->
                 let fldty =
                   readback_val lctx
-                    (tyof_field
-                       (Modality.id (Ctx.mode lctx))
-                       (Ok top.tm) (Lazy.force top.ty) f fins) in
+                    (tyof_field (Modality.id (Ctx.mode lctx)) top.tm (Lazy.force top.ty) f fins)
+                in
                 (f, x, fldty))
               fields in
           let bindings = readback_bindings lctx bindings in
@@ -796,9 +812,9 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
               af )
       | Invis { filter; bindings; _ } ->
           let modality = Modality.filter_modality filter in
-          (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
+          (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type we just skip the hints (though internal errors are still reported). *)
           let hints =
-            Reporter.backtrack ~fatal:(fun _ -> no_hints) @@ fun () ->
+            Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
             View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
           Ext
@@ -1046,10 +1062,8 @@ and readback_codatafield : type mode a b cm cn ca cet iu ii iout.
          (* We display the type as it was *declared*: evaluated over the codatatype's own environment, keyed behind the right-adjoint lock and left there un-keyed (~key:`Nokey), exactly as check_codata checked it.  Hence we call tyof_lower_codatafield directly, supplying that environment and the self cube, rather than going through tyof_field, which recovers both from the *type* of an ambient term being projected; here there is no ambient term, only the self variable of the context we are displaying in. *)
          | Lower fldty ->
              let ety =
-               tyof_lower_codatafield
-                 (`Ok (val_of_norm_cube selfnfs))
-                 (TubeOf.boundary selfnfs) fld adj fld_plus_lock fldty codataenv evaldim cm_cn
-                 ~key:`Nokey in
+               tyof_lower_codatafield (val_of_norm_cube selfnfs) (TubeOf.boundary selfnfs) fld adj
+                 fld_plus_lock fldty codataenv evaldim cm_cn ~key:`Nokey in
              let ty = readback_val sctx ety in
              Entry (fld, Codatafield (self, adj, plus_lock, Lower ty))
          | Higher (fldtermctx, fldtys) ->
@@ -1090,10 +1104,9 @@ and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.
               (* Projectable instance: read back in the locked, self-extended context, as for a lower field, with a trivial degeneration and hence no remaining dimensions for the self cube to be degenerated by.  As there, we display the type as it was *declared*, computed from the codatatype's own environment and left un-keyed (~key:`Nokey). *)
               let Eq = eq_of_zero_shuffle fldshuf in
               let ety =
-                tyof_higher_codatafield
-                  (`Ok (val_of_norm_cube selfnfs))
-                  (TubeOf.boundary selfnfs) (D.zero_plus m) fld adj codataenv fldins ~shuf:Trivial
-                  plus_lock fldtermctx ic0 fldty ~key:`Nokey in
+                tyof_higher_codatafield (val_of_norm_cube selfnfs) (TubeOf.boundary selfnfs)
+                  (D.zero_plus m) fld adj codataenv fldins ~shuf:Trivial plus_lock fldtermctx ic0
+                  fldty ~key:`Nokey in
               Fieldtype (Plusmap.zerol (Ctx.tctx sctx), readback_val sctx ety)
           | Pos _ ->
               (* Non-projectable instance: degenerate by the remaining dimensions and compute the field type there, recording the degeneration plus-map.  The codatatype's parameters are degenerated by the shuffleable, in the ambient context; the self variable and its boundary we degenerate here, in the self-extended context locked by the left adjoint, which is where a variable annotated by that adjoint is accessible.  Both degenerations assign the same levels to the ambient variables, since degctx assigns levels by position. *)
@@ -1113,9 +1126,8 @@ and readback_higher_codatafield : type mode a b ca m i f g gmode ag bg d raw.
               let fdegenv = lock_env sdegenv fplus in
               let (Plus r_m) = D.plus m in
               let values =
-                `Ok
-                  (degenerate_value_cube flctx fdegenv r_m
-                     (CubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ selfnfs ])) in
+                degenerate_value_cube flctx fdegenv r_m
+                  (CubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ selfnfs ]) in
               let tyargs =
                 TubeOf.mmap
                   { map = (fun _ [ nf ] -> degenerate_normal flctx fdegenv r nf) }

@@ -42,15 +42,11 @@ module Binding : sig
   (* A known but not-yet-available value is created by delaying it, and can be made available by forcing it. *)
   val delay : 'mode t -> 'mode t
   val force : 'mode t -> unit
-
-  (* An error value raises an exception when accessed. *)
-  val error : Reporter.Code.t -> 'mode t
 end = struct
   type 'mode state =
     | Known of level option * 'mode normal
     | Unknown
     | Delayed of level option * 'mode normal
-    | Error of Reporter.Code.t
 
   type 'mode t = { state : 'mode state ref; mutable dirt : Positivity.recursion }
 
@@ -60,26 +56,22 @@ end = struct
     match !(b.state) with
     | Known (i, _) -> i
     | Unknown | Delayed _ -> None
-    | Error e -> fatal e
 
   let value b =
     match !(b.state) with
     | Known (_, x) -> x
     | Unknown | Delayed _ -> fatal (Anomaly "Undetermined context variable")
-    | Error e -> fatal e
 
   let dirt b = b.dirt
   let set_dirt b d = b.dirt <- d
   let unknown () = { state = ref Unknown; dirt = `Nonrecursive }
   let specify b i x = b.state := Known (i, x)
   let delay b = { state = ref (Delayed (level b, value b)); dirt = b.dirt }
-  let error e = { state = ref (Error e); dirt = `Nonrecursive }
 
   let force b =
     match !(b.state) with
     | Known _ | Unknown -> ()
     | Delayed (i, x) -> b.state := Known (i, x)
-    | Error e -> fatal e
 end
 
 (* Test whether all the variables in a cube of bindings are free (none are let-bound). *)
@@ -145,15 +137,17 @@ let variables_entry : type dom modality mode f n. (dom, modality, mode, f, n) en
   function
   | Vis { dim; plusdim; vars; _ } -> Variables (dim, plusdim, vars)
   | Invis { bindings; _ } ->
-      (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
+      (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
       let hints =
-        Reporter.backtrack ~fatal:(fun _ -> no_hints) @@ fun () ->
+        Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
         View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
       singleton_variables (CubeOf.dim bindings) (`Anon hints)
 
 (* Given an entry containing no let-bound variables, produce an "app" that says how to apply a function to its cube of (free) variables. *)
 let app_entry : type hmode dom modality mode f n any.
-    (hmode, mode, any) apps -> (dom, modality, mode, f, n) entry -> (hmode, mode, noninst) apps =
+    (hmode, mode, any, live) apps ->
+    (dom, modality, mode, f, n) entry ->
+    (hmode, mode, noninst, live) apps =
  fun apps e ->
   match e with
   | Vis { bindings; filter; _ } | Invis { filter; bindings; _ } ->
@@ -310,7 +304,7 @@ module Ordered = struct
         let newctx = lock_to ctx (Path (modality, mode)) (Plus_lock (l, al)) in
         Lock (newctx, mu)
 
-  let rec apps : type mode a b. (mode, a, b) t -> (mode, mode, noninst) apps = function
+  let rec apps : type mode a b. (mode, a, b) t -> (mode, mode, noninst, live) apps = function
     | Emp _ -> Emp
     | Snoc (ctx, e, _) -> app_entry (apps ctx) e
     | Weaken (ctx, _) -> apps ctx
@@ -573,9 +567,9 @@ module Ordered = struct
       when all_free bindings ->
         lam ctx (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, tree))
     | Snoc (ctx, Invis { bindings; filter; _ }, _) when all_free bindings ->
-        (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
+        (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
         let hints =
-          Reporter.backtrack ~fatal:(fun _ -> no_hints) @@ fun () ->
+          Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
           View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
         lam ctx
           (Lam
@@ -870,6 +864,12 @@ let ext_let ?dirt (Permute { perm; env; level; ctx }) modality xs tm =
       level = level + 1;
       ctx;
     }
+
+(* Extend a context by a let-bound variable whose value failed to typecheck, so that it is bound to a failed value, of a failed type since we don't know its type.  Anything that needs to inspect it then fails silently. *)
+let ext_failed_let ctx modality xs =
+  let ty = failed_type (Modality.src modality) in
+  ext_let ctx modality xs
+    { tm = failed (Modality.src modality) (Lazy.from_val ty); ty = Lazy.from_val ty }
 
 (* Remove the last cube entry in a context.  This only works if it is a pure cube variable with no fields and the context has not been permuted after its addition. *)
 type (_, _, _) pop =

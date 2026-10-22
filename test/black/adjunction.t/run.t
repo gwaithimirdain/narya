@@ -68,6 +68,11 @@ The reflector □△ is not invertible: there is no 2-cell □△ ⇒ 1.
    1 | def bad (A :□△| Disc) (x :□△| A) : A ≔ x
      ^ use of □△ variable behind id lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def bad (A :□△| Disc) (x :□△| A) : A ≔ x
+     ^ use of □△ variable behind id lock requires a key
+  
   [1]
 
 Nor is there a 2-cell 1 ⇒ △□.
@@ -110,6 +115,11 @@ after composing with the outer counit.
 The modality □ (or △) alone admits no 2-cell to the identity.
 
   $ narya -adjunction adjunction.ny -e "def bad3 (A :□| Type) (x :□| A) : A ≔ x"
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def bad3 (A :□| Type) (x :□| A) : A ≔ x
+     ^ use of □ variable behind id lock requires a key
+  
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def bad3 (A :□| Type) (x :□| A) : A ≔ x
