@@ -31,12 +31,20 @@ module rec Make : functor (I : Indices) -> sig
         -> 'a synth
     | Key : 'a synth located * string list located -> 'a synth
     | Pi :
-        I.name * string located list located * 'a check located * 'a I.suc check located
+        ('a, 'b Fwn.suc, 'ab) Namevec.t
+        * string located list located
+        * 'a check located
+        * 'ab check located
         -> 'a synth
     | HigherPi :
-        I.name * string located list located * 'a synth located * 'a I.suc synth located
+        ('a, 'b Fwn.suc, 'ab) Namevec.t
+        * string located list located
+        * 'a synth located
+        * 'ab synth located
         -> 'a synth
-    | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
+    | InstHigherPi :
+        'n D.pos * ('a, 'b, 'ab) tel * ('ab, 'c, 'abc) Namevec.t * 'abc check located
+        -> 'a synth
     | App :
         'a check located * 'a check option located * [ `Implicit | `Explicit ] located
         -> 'a synth
@@ -145,6 +153,7 @@ module rec Make : functor (I : Indices) -> sig
     | Ext :
         I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
         -> ('a, 'b Fwn.suc, 'ab) tel
+    | Same : I.name * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
 
   val fwn_of_tel : ('a, 'b, 'c) tel -> 'b Fwn.t
   val mods_of_tel : ('a, 'b, 'c) tel -> string located list located list
@@ -173,14 +182,24 @@ functor
           -> 'a synth
       (* A modal key operation applied postfix to a synthesizing term, written "x #a.b.c".  The dot-separated pieces of the key name are stored as strings, to be resolved into a 2-cell at typechecking time. *)
       | Key : 'a synth located * string list located -> 'a synth
+      (* A pi-type binding one or more variables, all with the same domain, such as "(x y : A) → B".  The domain is stored only once, in the outer scope, so it is processed and typechecked only once. *)
       | Pi :
-          I.name * string located list located * 'a check located * 'a I.suc check located
+          ('a, 'b Fwn.suc, 'ab) Namevec.t
+          * string located list located
+          * 'a check located
+          * 'ab check located
           -> 'a synth
+      (* Similarly, a higher pi-type can bind several variables with the same domain. *)
       | HigherPi :
-          I.name * string located list located * 'a synth located * 'a I.suc synth located
+          ('a, 'b Fwn.suc, 'ab) Namevec.t
+          * string located list located
+          * 'a synth located
+          * 'ab synth located
           -> 'a synth
-      (* An n-dimensional pi-type, fully instantiated, with all its domains supplied.  The dimension 'n is the outer (unfiltered) dimension; the domains form a telescope whose length must match the number of faces of the *filtered* dimension, which is not known until typechecking (since parsing the modality annotations requires knowing the modes). *)
-      | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
+      (* An n-dimensional pi-type, fully instantiated, with all its domains supplied.  The dimension 'n is the outer (unfiltered) dimension; the domains form a telescope whose length must match the number of faces of the *filtered* dimension, which is not known until typechecking (since parsing the modality annotations requires knowing the modes).  The primary (last) domain can be shared by some further variables, such as y in "(x y : A) →⁽ᵉ⁾ B", each of which forms another such pi-type with that single domain.  This is only possible when the filtered dimension has only one face, i.e. when the arity is zero or the modality filters out the dimension, so that there are no boundary domains. *)
+      | InstHigherPi :
+          'n D.pos * ('a, 'b, 'ab) tel * ('ab, 'c, 'abc) Namevec.t * 'abc check located
+          -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :
           'a check located * 'a check option located * [ `Implicit | `Explicit ] located
@@ -325,16 +344,27 @@ functor
       | Ext :
           I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
           -> ('a, 'b Fwn.suc, 'ab) tel
+      (* Another variable with the same modality and type as the previous entry, such as y in "(x y : A)".  The type is stored only once, in the scope outside all the variables that share it, so it is processed and typechecked only once.  This can only follow an Ext or another Same. *)
+      | Same : I.name * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
 
     (* The length of a telescope is a forwards nat. *)
     let rec fwn_of_tel : type a b c. (a, b, c) tel -> b Fwn.t = function
       | Emp -> Zero
       | Ext (_, _, _, tel) -> Suc (fwn_of_tel tel)
+      | Same (_, tel) -> Suc (fwn_of_tel tel)
 
     (* The modality annotations of the entries of a telescope. *)
-    let rec mods_of_tel : type a b c. (a, b, c) tel -> string located list located list = function
-      | Emp -> []
-      | Ext (_, modality, _, tel) -> modality :: mods_of_tel tel
+    let mods_of_tel : type a b c. (a, b, c) tel -> string located list located list =
+      let rec go : type a b c.
+          string located list located option -> (a, b, c) tel -> string located list located list =
+       fun prev -> function
+         | Emp -> []
+         | Ext (_, modality, _, tel) -> modality :: go (Some modality) tel
+         | Same (_, tel) -> (
+             match prev with
+             | Some modality -> modality :: go prev tel
+             | None -> Reporter.fatal (Anomaly "Same at the start of a telescope")) in
+      fun tel -> go None tel
   end
 
 module Indexed = Make (DeBruijnIndices)
@@ -429,14 +459,17 @@ module Resolve (R : Resolver) = struct
       | Const c -> Const c
       | Field (tm, fld, lock) -> Field (synth ctx tm, fld, lock)
       | Key (tm, parts) -> Key (synth ctx tm, parts)
-      | Pi (x, modality, dom, cod) ->
-          Pi (R.rename ctx x, modality, check ctx dom, check (R.snoc ctx x) cod)
-      | HigherPi (x, modality, dom, cod) ->
-          HigherPi (R.rename ctx x, modality, synth ctx dom, synth (R.snoc ctx x) cod)
-      | InstHigherPi (n, doms, cod) ->
+      | Pi (xs, modality, dom, cod) ->
+          let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
+          Pi (renames ctx xs ab2, modality, check ctx dom, check (append ctx xs ab2) cod)
+      | HigherPi (xs, modality, dom, cod) ->
+          let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
+          HigherPi (renames ctx xs ab2, modality, synth ctx dom, synth (append ctx xs ab2) cod)
+      | InstHigherPi (n, doms, xs, cod) ->
           let (Bplus ab) = R.T2.bplus (R.T1.fwn_of_tel doms) in
           let doms2, ctx2 = tel ctx doms ab in
-          InstHigherPi (n, doms2, check ctx2 cod)
+          let (Bplus ac2) = R.T2.bplus (R.T1.Namevec.length xs) in
+          InstHigherPi (n, doms2, renames ctx2 xs ac2, check (append ctx2 xs ac2) cod)
       | App (fn, arg, impl) ->
           let arg =
             match arg.value with
@@ -600,6 +633,11 @@ module Resolve (R : Resolver) = struct
         let ab = R.T2.bplus_suc ab in
         let rest3, ctx3 = tel ctx2 rest ab in
         (Ext (R.rename ctx x, modality, check ctx ty, rest3), ctx3)
+    | Same (x, rest) ->
+        let ctx2 = R.snoc ctx x in
+        let ab = R.T2.bplus_suc ab in
+        let rest3, ctx3 = tel ctx2 rest ab in
+        (Same (R.rename ctx x, rest3), ctx3)
 end
 
 (* Since the De Bruijn index version is the standard one, we include that here. *)
@@ -615,14 +653,6 @@ let rec namevec_of_vec : type a b ab.
   | Suc ab, x :: xs -> locate_opt None x :: namevec_of_vec ab xs
 
 (* We end with some useful lemmas. *)
-
-let rec dataconstr_of_pi : type a. a check located -> a dataconstr =
- fun ty ->
-  match ty.value with
-  | Synth (Pi (x, modality, dom, cod)) ->
-      let (Dataconstr (tel, out)) = dataconstr_of_pi cod in
-      Dataconstr (Ext (x, modality, dom, tel), out)
-  | _ -> Dataconstr (Emp, Some ty)
 
 (* Produces only explicit lambdas. *)
 let rec lams : type a b ab.
@@ -651,3 +681,4 @@ let rec lams : type a b ab.
 let rec bplus_of_tel : type a b c. (a, b, c) tel -> (a, b, c) Fwn.bplus = function
   | Emp -> Zero
   | Ext (_, _, _, tel) -> Suc (bplus_of_tel tel)
+  | Same (_, tel) -> Suc (bplus_of_tel tel)

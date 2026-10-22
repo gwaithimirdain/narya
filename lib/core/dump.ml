@@ -284,7 +284,7 @@ module F = struct
     | Unshift (n, _, tm) -> fprintf ppf "Unshift (%s, %a)" (string_of_dim n) term tm
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
-    | Weaken tm -> fprintf ppf "Weaken (%a)" term tm
+    | Weaken (_, tm, _) -> fprintf ppf "Weaken (%a)" term tm
 
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->
@@ -374,7 +374,7 @@ module F = struct
     | Key (tm, parts) -> fprintf ppf "Key(%a, #%s)" synth tm.value (String.concat "." parts.value)
     | Pi (_, _, _, _) -> fprintf ppf "Pi(?)"
     | HigherPi (_, _, _, _) -> fprintf ppf "HigherPi(?)"
-    | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
+    | InstHigherPi (_, _, _, _) -> fprintf ppf "InstHigherPi(?)"
     | App (fn, { value = Some arg; _ }, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg
     | App (fn, { value = None; _ }, _) -> fprintf ppf "App(%a, .)" check fn.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value

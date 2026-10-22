@@ -786,22 +786,27 @@ let () =
 
 (* These functions inspect and process multiple-variable type declarations like "x y z : A", such as appear (in paretheses) in the domain of a Π-type. *)
 
-(* Inspect 'xs', expecting it to be a spine of valid bindable local variables or underscores, and produce a list of those variables, consing it onto the accumulator argument 'vars'. *)
+(* Inspect 'xs', expecting it to be a spine of valid bindable local variables or underscores, and produce a list of those variables with their locations, consing it onto the accumulator argument 'vars'. *)
 let rec process_var_list : type lt ls rt rs.
     (lt, ls, rt, rs) parse located ->
-    (string option * Whitespace.t list) list ->
-    (string option * Whitespace.t list) list option =
+    (string option located * Whitespace.t list) list ->
+    (string option located * Whitespace.t list) list option =
  fun { value; loc } vars ->
   match value with
-  | Ident ([ x ], w) when Lexer.valid_var x -> Some ((Some x, w) :: vars)
-  | Placeholder w -> Some ((None, w) :: vars)
-  | App { fn; arg = { value = Ident ([ x ], w); _ }; _ } when Lexer.valid_var x ->
-      process_var_list fn ((Some x, w) :: vars)
-  | App { fn; arg = { value = Placeholder w; _ }; _ } -> process_var_list fn ((None, w) :: vars)
+  | Ident ([ x ], w) when Lexer.valid_var x -> Some ((locate_opt loc (Some x), w) :: vars)
+  | Placeholder w -> Some ((locate_opt loc None, w) :: vars)
+  | App { fn; arg = { value = Ident ([ x ], w); loc }; _ } when Lexer.valid_var x ->
+      process_var_list fn ((locate_opt loc (Some x), w) :: vars)
+  | App { fn; arg = { value = Placeholder w; loc }; _ } ->
+      process_var_list fn ((locate_opt loc None, w) :: vars)
   (* There's a choice here: an invalid variable name could still be a valid term, so we could allow for instance (x.y : A) → B to be parsed as a non-dependent function type.  But that seems a recipe for confusion. *)
   | Ident (name, _) -> fatal ?loc (Invalid_variable name)
   | App { arg = { value = Ident (xs, _); loc }; _ } -> fatal ?loc (Invalid_variable xs)
   | _ -> None
+
+(* The names of a list of variables produced by process_var_list. *)
+let var_names : (string option located * Whitespace.t list) list -> string option list =
+ fun vars -> List.map (fun ((x : string option located), _) -> x.value) vars
 
 (* ****************************************
    Function types (dependent and non)
@@ -819,7 +824,7 @@ type arrow_opt = [ `Arrow of Whitespace.t list | `Noarrow | `First ]
 type pi_dom =
   | Dep of {
       wsarrow : arrow_opt;
-      vars : (string option * Whitespace.t list) list;
+      vars : (string option located * Whitespace.t list) list;
       tok : Token.t;
       modality : string located list located;
       ty : wrapped_parse;
@@ -921,6 +926,23 @@ let rec get_pi :
       (get_pi_args DblArrow prev_arr doms vars, ws, (locate_opt None "", []), cod)
   | _ -> invalid "arrow 2"
 
+(* The variables bound by a group of domains of a pi-type that share a type, such as "(x y : A)", as a nonempty Namevec, together with the scope extended by them. *)
+type _ pi_vars =
+  | Pi_vars : ('n, 'b Fwn.suc, 'nb) Indexed.Namevec.t * (string option, 'nb) Bwv.t -> 'n pi_vars
+
+let rec pi_vars : type n.
+    (string option, n) Bwv.t ->
+    string option located ->
+    (string option located * Whitespace.t list) list ->
+    n pi_vars =
+ fun ctx x xs ->
+  let ctx = Bwv.snoc ctx x.value in
+  match xs with
+  | [] -> Pi_vars ([ x ], ctx)
+  | (y, _) :: ys ->
+      let (Pi_vars (names, ctx)) = pi_vars ctx y ys in
+      Pi_vars (x :: names, ctx)
+
 (* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
 let rec process_pi : type n lt ls rt rs.
     (string option, n) Bwv.t ->
@@ -939,28 +961,33 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (None, modality, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi ([ locate_opt None None ], modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
-              Synth (HigherPi (None, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+              Synth
+                (HigherPi
+                   ( [ locate_opt None None ],
+                     modality,
+                     locate_opt cdom.loc sdom,
+                     locate_opt cod.loc scod ));
             loc;
           }
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
-  | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } as data)
-    :: doms -> (
+  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } :: doms -> (
+      (* A pi-type binds all the variables of a group at once, so that their shared domain is processed only once, in the scope outside all of them. *)
       let cdom = process ctx dom in
-      let ctx = Bwv.snoc ctx x in
-      let cod = process_pi ctx higher (Dep { data with vars = xs } :: doms) cod in
+      let (Pi_vars (names, ctx)) = pi_vars ctx x xs in
+      let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (x, modality, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi (names, modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
-              Synth (HigherPi (x, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+              Synth (HigherPi (names, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
             loc;
           }
       | `Higher, Synth _, _ ->
@@ -972,8 +999,26 @@ let rec process_pi : type n lt ls rt rs.
 (* One group of domains for an instantiated higher pi-type: a telescope consisting of the implicit boundary domains and ending with the (first) explicit primary domain.  The number of domains needed is not known until typechecking time (it is determined by the modality, which can't be parsed until the modes are known), so we just collect them all in a telescope; but the *grouping* into successive higher pi-types is visible at parse time, since each group consists of implicit domains followed by a single explicit one. *)
 type _ higher_dom_group =
   | Higher_dom_group :
-      ('n, 'b, 'nb) tel * (string option, 'nb) Bwv.t * pi_dom list * Asai.Range.t option
+      ('n, 'b, 'nb) tel
+      (* Other variables sharing the type of the primary domain (see Raw.InstHigherPi). *)
+      * ('nb, 'c, 'nbc) Indexed.Namevec.t
+      * (string option, 'nbc) Bwv.t
+      * pi_dom list
+      * Asai.Range.t option
       -> 'n higher_dom_group
+
+(* A possibly-empty list of variables, as a Namevec, together with the scope extended by them. *)
+type _ some_vars =
+  | Some_vars : ('n, 'c, 'nc) Indexed.Namevec.t * (string option, 'nc) Bwv.t -> 'n some_vars
+
+let rec some_vars : type n.
+    (string option, n) Bwv.t -> (string option located * Whitespace.t list) list -> n some_vars =
+ fun ctx xs ->
+  match xs with
+  | [] -> Some_vars ([], ctx)
+  | (x, _) :: xs ->
+      let (Some_vars (names, ctx)) = some_vars (Bwv.snoc ctx x.value) xs in
+      Some_vars (x :: names, ctx)
 
 let rec process_higher_dom_group : type n.
     (string option, n) Bwv.t -> pi_dom list -> Asai.Range.t option -> n higher_dom_group =
@@ -983,24 +1028,37 @@ let rec process_higher_dom_group : type n.
       fatal
         (Unexpected_implicitness
            (`Implicit, "domain", "the primary domain of a higher function-type must be explicit"))
-  | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } as data) :: rest
-    -> (
+  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } :: rest -> (
+      (* The other variables of a group share its type, which we process only once, in the scope outside all of them. *)
       let cdom = process ctx dom in
-      let newdoms =
-        match xs with
-        | [] -> rest
-        | _ :: _ -> Dep { data with vars = xs } :: rest in
       let loc =
         match loc with
         | Some loc -> Some loc
         | None -> xloc in
       match implicit with
-      | `Explicit -> Higher_dom_group (Ext (x, modality, cdom, Emp), Bwv.snoc ctx x, newdoms, loc)
+      | `Explicit ->
+          (* The primary domain ends the group, so any other variables sharing its type become further pi-types with only a primary domain. *)
+          let (Some_vars (names, newctx)) = some_vars (Bwv.snoc ctx x.value) xs in
+          Higher_dom_group (Ext (x.value, modality, cdom, Emp), names, newctx, rest, loc)
       | `Implicit ->
-          let (Higher_dom_group (tele, newctx, rest2, loc2)) =
-            process_higher_dom_group (Bwv.snoc ctx x) newdoms loc in
-          Higher_dom_group (Ext (x, modality, cdom, tele), newctx, rest2, loc2))
+          let (Higher_dom_group (tele, names, newctx, rest2, loc2)) =
+            process_higher_dom_same (Bwv.snoc ctx x.value) xs rest loc in
+          Higher_dom_group (Ext (x.value, modality, cdom, tele), names, newctx, rest2, loc2))
   | _ -> invalid "higher pi"
+
+and process_higher_dom_same : type n.
+    (string option, n) Bwv.t ->
+    (string option located * Whitespace.t list) list ->
+    pi_dom list ->
+    Asai.Range.t option ->
+    n higher_dom_group =
+ fun ctx xs doms loc ->
+  match xs with
+  | [] -> process_higher_dom_group ctx doms loc
+  | (x, _) :: xs ->
+      let (Higher_dom_group (tele, names, newctx, rest, loc)) =
+        process_higher_dom_same (Bwv.snoc ctx x.value) xs doms loc in
+      Higher_dom_group (Same (x.value, tele), names, newctx, rest, loc)
 
 let rec process_inst_higher_pi : type n lt ls rt rs m.
     (string option, n) Bwv.t ->
@@ -1012,10 +1070,11 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
   match doms with
   | [] -> process ctx cod
   | _ :: _ ->
-      let (Higher_dom_group (tele, newctx, doms, loc)) = process_higher_dom_group ctx doms None in
+      let (Higher_dom_group (tele, names, newctx, doms, loc)) =
+        process_higher_dom_group ctx doms None in
       let cod = process_inst_higher_pi newctx dim doms cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (InstHigherPi (dim, tele, cod)); loc }
+      { value = Synth (InstHigherPi (dim, tele, names, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
@@ -1043,11 +1102,11 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
               } ->
               let pvars, wvars =
                 List.fold_left
-                  (fun (acc, prews) (x, wx) ->
+                  (fun (acc, prews) ((x : string option located), wx) ->
                     ( acc
                       ^^ group
                            (optional (pp_ws `Break) prews
-                           ^^ Option.fold ~some:utf8string ~none:(Token.pp Underscore) x),
+                           ^^ Option.fold ~some:utf8string ~none:(Token.pp Underscore) x.value),
                       Some wx ))
                   (empty, None) vars in
               let pty, wty = pp_term ty in
@@ -2664,24 +2723,55 @@ let rec record_fields () =
 
 type _ any_tel = Any_tel : ('a, 'c, 'ac) Raw.tel -> 'a any_tel
 
+(* The names of a group of record fields sharing a type, such as "fst snd" in "sig (fst snd : A)", with their locations. *)
+let rec record_field_names : type lt ls rt rs.
+    (lt, ls, rt, rs) parse located ->
+    (string * Asai.Range.t option) list ->
+    (string * Asai.Range.t option) list option =
+ fun tm accum ->
+  match tm.value with
+  | Ident ([ name ], _) -> Some ((name, tm.loc) :: accum)
+  | App { fn; arg = { value = Ident ([ name ], _); loc }; _ } ->
+      record_field_names fn ((name, loc) :: accum)
+  | _ -> None
+
 let rec process_tel : type a.
     (string option, a) Bwv.t -> StringSet.t -> observation list -> a any_tel =
  fun ctx seen obs ->
   match obs with
   | [ Token (RParen, _) ] -> Any_tel Emp
   | Token (Op ",", _) :: obs -> process_tel ctx seen obs
-  | Term { value = Ident ([ name ], _); loc } :: Token (Colon, _) :: Term ty :: obs ->
-      if Lexer.valid_field name then (
-        if StringSet.mem name seen then
-          fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
-        let ty = process ctx ty in
-        let ctx = Bwv.snoc ctx (Some name) in
-        let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
-        Any_tel (Ext (Some name, locate_opt None [], ty, tel)))
-      else fatal ?loc (Invalid_field name)
-  | Term { loc; _ } :: Token (Colon, _) :: Term _ :: _ ->
-      fatal ?loc (Parse_error "invalid record field name")
+  | Term tm :: Token (Colon, _) :: Term ty :: obs -> (
+      match record_field_names tm [] with
+      | Some ((name, _) :: names as all_names) ->
+          let seen =
+            List.fold_left
+              (fun seen (name, loc) ->
+                if not (Lexer.valid_field name) then fatal ?loc (Invalid_field name);
+                if StringSet.mem name seen then
+                  fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
+                StringSet.add name seen)
+              seen all_names in
+          (* The type is shared by all the fields in the group, so we process it only once, in the scope outside all of them. *)
+          let ty = process ctx ty in
+          let (Any_tel tel) = process_tel_same (Bwv.snoc ctx (Some name)) seen names obs in
+          Any_tel (Ext (Some name, locate_opt None [], ty, tel))
+      | _ -> fatal ?loc:tm.loc (Parse_error "invalid record field name"))
   | _ -> invalid "record"
+
+(* The remaining fields that share the type of the previous one. *)
+and process_tel_same : type a.
+    (string option, a) Bwv.t ->
+    StringSet.t ->
+    (string * Asai.Range.t option) list ->
+    observation list ->
+    a any_tel =
+ fun ctx seen names obs ->
+  match names with
+  | [] -> process_tel ctx seen obs
+  | (name, _) :: names ->
+      let (Any_tel tel) = process_tel_same (Bwv.snoc ctx (Some name)) seen names obs in
+      Any_tel (Same (Some name, tel))
 
 let rec process_self_record : type n.
     opacity ->
@@ -2712,15 +2802,16 @@ let process_record ctx obs loc =
       emit ?loc:mapstoloc (Deprecated "'sig … ↦' for higher records: use self variables");
       with_loc x.loc @@ fun () ->
       let vars =
-        process_var_list x [ (None, []) ] <|> Parse_error "invalid higher record specification"
-      in
-      let (Wrap vars) = Vec.of_list (List.map fst vars) in
+        process_var_list x [ (locate_opt None None, []) ]
+        <|> Parse_error "invalid higher record specification" in
+      let (Wrap vars) = Vec.of_list (var_names vars) in
       let (Bplus ac) = Fwn.bplus (Vec.length vars) in
       let ctx = Bwv.append ac ctx vars in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
       Range.locate (Raw.Record (locate_opt x.loc (namevec_of_vec ac vars), tel, opacity, hints)) loc
-  | Token (LParen, _) :: (Term { value = App _; _ } :: _ as obs) ->
-      process_self_record opacity hints Emp ctx obs loc
+  (* A field of a self-record, such as "x .fst", is an application of a self variable to a field; an application of identifiers, such as "fst snd", is instead a group of fields sharing a type. *)
+  | Token (LParen, _) :: (Term { value = App { arg = { value = Field _; _ }; _ }; _ } :: _ as obs)
+    -> process_self_record opacity hints Emp ctx obs loc
   | Token (LParen, _) :: obs ->
       let ctx = Bwv.snoc ctx None in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
@@ -2858,7 +2949,7 @@ let rec constr_tel :
       | [ Token (LParen, _); Term xs; Token (Colon, _); Term ty; Token (RParen, _) ] -> (
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((List.map fst vars, locate_opt None [], Wrap ty) :: accum)
+              constr_tel (Term fn) ((var_names vars, locate_opt None [], Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | [
        Token (LParen, _);
@@ -2871,7 +2962,7 @@ let rec constr_tel :
       ] -> (
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((List.map fst vars, get_modality fst modality, Wrap ty) :: accum)
+              constr_tel (Term fn) ((var_names vars, get_modality fst modality, Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | _ -> invalid "tel")
   | Term { loc; _ } -> fatal ?loc (Parse_error "invalid constructor")
@@ -2885,27 +2976,61 @@ let rec process_dataconstr : type n.
  fun ctx tel_args ty ->
   match (tel_args, ty) with
   | (vars, modality, argty) :: tel_args, _ ->
-      process_dataconstr_vars ctx vars modality argty tel_args ty
-  | [], Some (Wrap ty) -> dataconstr_of_pi (process ctx ty)
+      process_dataconstr_vars ctx vars (Some (modality, argty)) tel_args ty
+  | [], Some (Wrap ty) -> (
+      (* A constructor whose type is an ordinary pi-type takes the domains of that pi-type as its arguments.  We find them in the parse tree, rather than processing the pi-type and taking it apart, so that a group of variables sharing a type, such as "(x y : A) → B", becomes the same telescope as the arguments "(x y : A)" would. *)
+      match ty.value with
+      | Notn ((Parens, _), n) -> (
+          match args n with
+          | [ Token (LParen, _); Term body; Token (RParen, _) ] ->
+              process_dataconstr ctx [] (Some (Wrap body))
+          | _ ->
+              (* This will be a typechecking error, since a tuple can't be the output of a dataconstr, but we leave it to the typechecker to report. *)
+              Dataconstr (Emp, Some (process ctx ty)))
+      | Notn ((Arrow, _), n) ->
+          let doms, _, (dim, _), cod = get_pi `First (args n) in
+          if dim.value = "" then
+            let tel_args =
+              List.filter_map
+                (function
+                  | Dep { vars = []; _ } -> None
+                  | Dep { vars; modality; ty; implicit = `Explicit; _ } ->
+                      Some (var_names vars, modality, ty)
+                  | Dep { implicit = `Implicit; _ } ->
+                      fatal (Unimplemented "general implicit function-types")
+                  | Nondep { ty; _ } -> Some ([ None ], locate_opt None [], ty))
+                doms in
+            process_dataconstr ctx tel_args (Some cod)
+          else
+            (* This will be a typechecking error, since a dataconstr can't have a higher function-type, but we leave it to the typechecker to report. *)
+            Dataconstr (Emp, Some (process ctx ty))
+      | _ -> Dataconstr (Emp, Some (process ctx ty)))
   | [], None -> Dataconstr (Emp, None)
 
 and process_dataconstr_vars : type n.
     (string option, n) Bwv.t ->
     string option list ->
-    string located list located ->
-    wrapped_parse ->
+    (* We only carry the modality and type if we are at the first variable in the list. *)
+    (string located list located * wrapped_parse) option ->
     (string option list * string located list located * wrapped_parse) list ->
     wrapped_parse option ->
     n Raw.dataconstr =
- fun ctx vars modality (Wrap argty) tel_args ty ->
+ fun ctx vars argty tel_args ty ->
   match vars with
   | [] -> process_dataconstr ctx tel_args ty
-  | x :: xs ->
-      let newctx = Bwv.snoc ctx x in
-      let (Dataconstr (args, body)) =
-        process_dataconstr_vars newctx xs modality (Wrap argty) tel_args ty in
-      let arg = process ctx argty in
-      Dataconstr (Ext (x, modality, arg, args), body)
+  | x :: xs -> (
+      match argty with
+      | Some (modality, Wrap argty) ->
+          (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
+          let arg = process ctx argty in
+          let (Dataconstr (args, body)) =
+            process_dataconstr_vars (Bwv.snoc ctx x) xs None tel_args ty in
+          Dataconstr (Ext (x, modality, arg, args), body)
+      | None ->
+          (* The remaining variables that share the type of the previous one. *)
+          let (Dataconstr (args, body)) =
+            process_dataconstr_vars (Bwv.snoc ctx x) xs None tel_args ty in
+          Dataconstr (Same (x, args), body))
 
 let rec process_data : type n.
     Variables.hints ->

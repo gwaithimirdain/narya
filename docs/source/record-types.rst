@@ -17,6 +17,8 @@ A record type is defined by a number of *fields*, each with a declared type.  A 
 
 The trailing comma after the last field is optional.  (By the lexing rules for :ref:`tokens`, no space is required around the commas, unless they follow a type that is expressed using a notation that ends with another special ASCII character.)  Note that later fields can depend on the values of previous fields, by name.  The names of fields must be valid local variable names, i.e. identifiers not containing periods.
 
+Several consecutive fields with the same type can be combined, as in ``sig (fst snd : A)``.  This means the same as ``sig (fst : A, snd : A)``, except that the type ``A`` is processed and typechecked only once, outside the scope of all the fields that share it: thus it can refer to earlier fields, but not to any of the fields in its own group.
+
 Although this command may look like it is defining ``Magma`` to equal a pre-existing type denoted ``sig (t:Type, op:t→t→t)``, in fact it declares ``Magma`` to be a *new* type that didn't previously exist and doesn't reduce to anything else.  We say that the syntax form ``sig`` is *generative*, or that record types are *nominal*.  In particular, therefore, declaring another identical-looking type:
 
 .. code-block:: none

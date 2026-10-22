@@ -593,7 +593,10 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | Shift (n, plusmap, tm) ->
       let (Plus mn) = D.plus n in
       eval (Unshift (env, mn, plusmap)) tm
-  | Weaken tm -> eval (remove_top env) tm
+  | Weaken (plus, tm, newplus) ->
+      (* We strip off the locks, remove the weakened variable, put the locks back, and re-apply any prekey action stripped along the way. *)
+      let (Restrict_keys (env, pre)) = restrict_keys env (plus_with_locks_of_plus_lock newplus) in
+      eval (prekey_env (lock_env (remove_top env) plus) pre) tm
 
 and eval_with_boundary : type mode m a.
     (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =

@@ -248,7 +248,7 @@ let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   | Unshift (_, _, tm) -> synths tm
   | Unact (_, tm) -> synths tm
   | Shift (_, _, tm) -> synths tm
-  | Weaken tm -> synths tm
+  | Weaken (_, tm, _) -> synths tm
 
 (* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
 let show_ins : type nk n k. (nk, n, k) insertion -> int list =
@@ -618,7 +618,9 @@ let rec unparse : type mode n lt ls rt rs s.
   (* An Unact only changes the dimension/action, not which variables are in scope, so for display we can simply unparse its body. *)
   | Unact (_, tm) -> unparse vars tm li ri
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
-  | Weaken tm -> unparse (Names.remove vars Now) tm li ri
+  | Weaken (plus_lock, tm, Plus_lock (_, comp)) ->
+      (* We remove the names of the locks, then the weakened variable, and then put back the locks. *)
+      unparse (Names.add_lock (Names.remove (Names.split vars comp) Now) plus_lock) tm li ri
 
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
@@ -1634,8 +1636,11 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
               Named
                 ( lamvars,
                   App
-                    (Kinetic, Weaken nonlam, dom_tface s, sfilter, Modal (modality, plusm, lamargs))
-                )) in
+                    ( Kinetic,
+                      weaken (Modality.tgt modality) nonlam,
+                      dom_tface s,
+                      sfilter,
+                      Modal (modality, plusm, lamargs) ) )) in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
   (* We only need the top codomain. *)
   match cod_top filter cods with
