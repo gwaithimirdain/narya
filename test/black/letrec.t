@@ -114,3 +114,57 @@ Local mutually recursive definitions
   _letrec.F2.1.even{…} n
     : bool
   
+
+Local indexed datatypes, and local datatypes with explicit constructor outputs
+
+  $ cat >letrec-vec.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > def vecs (A : Type) : sig (V : ℕ → Type, len : (n : ℕ) → V n → ℕ) ≔
+  >   let rec Vec : ℕ → Type ≔ data [
+  >   | nil. : Vec zero.
+  >   | cons. (n : ℕ) (x : A) (xs : Vec n) : Vec (suc. n) ] in
+  >   let rec len : (n : ℕ) → Vec n → ℕ ≔ n v ↦ match v [
+  >   | nil. ↦ zero.
+  >   | cons. n _ xs ↦ suc. (len n xs) ] in
+  >   (Vec, len)
+  > def bools : Type ≔ let rec B : Type ≔ data [ tt. : B | ff. : B ] in B
+  > EOF
+
+  $ narya -v letrec-vec.ny -e "echo vecs ℕ .len (suc. (suc. zero.)) (cons. (suc. zero.) zero. (cons. zero. zero. nil.))" -e "def b : bools ≔ ff."
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ hint[H0403]
+   ￭ $TESTCASE_ROOT/letrec-vec.ny
+   2 | def vecs (A : Type) : sig (V : ℕ → Type, len : (n : ℕ) → V n → ℕ) ≔
+     ^ sig encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant vecs defined
+  
+   ￫ info[I0000]
+   ￮ constant bools defined
+  
+  2
+    : ℕ
+  
+   ￫ info[I0000]
+   ￮ constant b defined
+  
+
+The output of a constructor of a local datatype must be that datatype
+
+  $ cat >letrec-bad-output.ny <<EOF
+  > def bad : Type ≔
+  >   let rec P : Type ≔ data [ p. : Q ]
+  >   and Q : Type ≔ data [ q. : Q ] in
+  >   P
+  > EOF
+
+  $ narya -v letrec-bad-output.ny
+   ￫ error[E1505]
+   ￭ $TESTCASE_ROOT/letrec-bad-output.ny
+   2 |   let rec P : Type ≔ data [ p. : Q ]
+     ^ invalid output type for constructor p: head must be current datatype
+  
+  [1]
