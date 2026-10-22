@@ -22,7 +22,7 @@ type printable +=
   | Env : ('mode, 'n, 'b) Value.env -> printable
   | DeepEnv : ('mode, 'n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
-  | Apps : ('hmode, 'mode, 'any) apps -> printable
+  | Apps : ('hmode, 'mode, 'any, 'fail) apps -> printable
   | Entry : ('dom, 'modality, 'mode, 'x, 'n) Ctx.entry -> printable
   | OrderedCtx : ('mode, 'a, 'b) Ctx.Ordered.t -> printable
   | Ctx : ('mode, 'a, 'b) Ctx.t -> printable
@@ -68,8 +68,8 @@ module F = struct
     match v with
     | Neu { head = h; args = a; value = _; ty } ->
         if depth > 0 then
-          fprintf ppf "Neu (%a, %a, %a)" head h apps a (dvalue (depth - 1)) (Lazy.force ty)
-        else fprintf ppf "Neu (%a, %a, ?)" head h apps a
+          fprintf ppf "Neu (%a, %a, %a)" neu_head h apps a (dvalue (depth - 1)) (Lazy.force ty)
+        else fprintf ppf "Neu (%a, %a, ?)" neu_head h apps a
     | Lam (x, _, body) -> fprintf ppf "Lam (?^%s, %a)" (string_of_dim (dim_variables x)) binder body
     | Struct { fields = f; ins; _ } ->
         let n = cod_left_ins ins in
@@ -148,7 +148,7 @@ module F = struct
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 
   (* TODO: display the outer insertion *)
-  and apps : type hmode mode any. formatter -> (hmode, mode, any) apps -> unit =
+  and apps : type hmode mode any fail. formatter -> (hmode, mode, any, fail) apps -> unit =
    fun ppf args ->
     match args with
     | Emp -> fprintf ppf "Emp"
@@ -176,6 +176,12 @@ module F = struct
 
   and level : type a b m n. formatter -> level -> (a, m, n, b) Modalcell.t -> unit =
    fun ppf l key -> fprintf ppf "LVar (%d,%d,%s)" (fst l) (snd l) (Modalcell.to_string key)
+
+  and neu_head : type mode fail. formatter -> (mode, fail) neu_head -> unit =
+   fun ppf h ->
+    match h with
+    | Failed _ -> fprintf ppf "Failed"
+    | Live h -> head ppf h
 
   and head : type mode. formatter -> mode head -> unit =
    fun ppf h ->
@@ -224,7 +230,6 @@ module F = struct
           (Modality.to_string (Modality.filter_modality filter))
           (cubeof (dvalue depth))
           v
-    | Ext { env = e; values = `Error _; _ } -> fprintf ppf "%a <: Err" env e
     | Ext { env = e; values = `Lazy v; _ } ->
         fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
     | Act (e, o) ->
@@ -285,6 +290,7 @@ module F = struct
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
     | Weaken (_, tm, _) -> fprintf ppf "Weaken (%a)" term tm
+    | Failed _ -> fprintf ppf "Failed"
 
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->
