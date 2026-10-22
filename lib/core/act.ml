@@ -677,7 +677,7 @@ module Act = struct
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
         let (Wrap newkey) = key_vcomp c key in
         ref (Deferred (tm, fa, newkey, Emp))
-    (* When the deferral carries a pending argument spine (which happens only in glued evaluation), we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
+    (* When the deferral carries a pending argument spine, we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
     | Deferred_eval (_, _, _, _, (Arg _ | Field _ | Inst _))
     | Deferred (_, _, _, (Arg _ | Field _ | Inst _)) ->
         ref (Deferred ((fun () -> force_eval lev), s, c, Emp))
