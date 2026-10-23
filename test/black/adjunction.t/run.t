@@ -88,10 +88,10 @@ Nor is there a 2-cell 1 ⇒ △□.
 There are two distinct 2-cells □△ ⇒ □△□△ (whiskering the unit on either
 side), so an implicit key cannot be inserted.
 
-  $ narya -adjunction adjunction.ny -e "def amb (A : Disc) (x :□△| A) : □△□△ A ≔ t2. x"
+  $ narya -adjunction adjunction.ny -e "def amb (A : Disc) (x :□△| A) : □△□△ A ≔ □△□△. x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def amb (A : Disc) (x :□△| A) : □△□△ A ≔ t2. x
+   1 | def amb (A : Disc) (x :□△| A) : □△□△ A ≔ □△□△. x
      ^ use of □△ variable behind □△□△ lock requires a key
   
   [1]
@@ -99,10 +99,10 @@ side), so an implicit key cannot be inserted.
 Likewise there are two distinct 2-cells △□△□ ⇒ △□ (whiskering the counit on
 either side).
 
-  $ narya -adjunction adjunction.ny -e "def amb2 (A :△□| Type) (x :△□△□| A) : △□ A ≔ s. x"
+  $ narya -adjunction adjunction.ny -e "def amb2 (A :△□| Type) (x :△□△□| A) : △□ A ≔ △□. x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def amb2 (A :△□| Type) (x :△□△□| A) : △□ A ≔ s. x
+   1 | def amb2 (A :△□| Type) (x :△□△□| A) : △□ A ≔ △□. x
      ^ use of △□△□ variable behind △□ lock requires a key
   
   [1]
@@ -134,9 +134,9 @@ Different keys are different.
    ￭ command-line exec string
    1 | def needs_key_12 (A : Disc) (x :□△| A) : Id (□△□△ A) (needs_key1 A x) (needs_key2 A x) ≔ refl _
      ^ term synthesized type
-         □△□△⁽ᵉ⁾ (Id A) (t2. (x #η)) (t2. (x #η))
+         □△□△⁽ᵉ⁾ (Id A) (□△□△. (x #η)) (□△□△. (x #η))
        but is being checked against type
-         □△□△⁽ᵉ⁾ (Id A) (t2. (x #η.□△)) (t2. (x #η))
+         □△□△⁽ᵉ⁾ (Id A) (□△□△. (x #η.□△)) (□△□△. (x #η))
        unequal head terms:
          x #η
        does not equal

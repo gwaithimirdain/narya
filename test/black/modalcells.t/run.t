@@ -8,7 +8,7 @@ The old default name "η" is no longer recognized once the cell has been renamed
   $ narya -adjunction -modalcells 'myeta,myeps' oldname.ny
    ￫ error[E1706]
    ￭ $TESTCASE_ROOT/oldname.ny
-   5 | def needs_key (A : Disc) (x :□△| A) : □△□△ A ≔ t2. (x #η)
+   5 | def needs_key (A : Disc) (x :□△| A) : □△□△ A ≔ □△□△. (x #η)
      ^ unknown modal cell η
   
   [1]
