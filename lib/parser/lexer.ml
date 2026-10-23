@@ -340,6 +340,7 @@ let dot_separated_token : [ `Dots of int | `Atom of string ] list t =
 let get_reserved_word = function
   | "let" -> Some Let
   | "rec" -> Some Rec
+  | "only" -> Some Only
   | "in" -> Some In
   | "axiom" -> Some Axiom
   | "def" -> Some Def

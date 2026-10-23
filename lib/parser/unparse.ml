@@ -238,12 +238,16 @@ let rec get_bwd : type mode n.
 
 (* Whether we expect a given term to synthesize, after being unparsed. *)
 let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
-  | Var _ | Const _ | Meta _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ | Key _ -> true
+  | Var _ | Const _ | Meta _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ -> true
+  (* A let-only always synthesizes, since its body is ascribed if necessary. *)
+  | Letonly _ -> true
   | Constr _ | Lam _ | Struct _ -> false
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
   | App (_, fn, _, _, _) -> synths fn
   | Act (_, tm, _, _) -> synths tm
   | Let (_, _, body) -> synths body
+  (* A key is either omitted from the display, or applied to its body as a postfix that requires the body to synthesize. *)
+  | Key { tm; _ } -> synths tm
   (* These are just context-manipulating wrappers. *)
   | Unshift (_, _, tm) -> synths tm
   | Unact (_, tm) -> synths tm
@@ -426,6 +430,27 @@ let constant_name : type n. n Names.t -> string list -> string list =
       else name
   | None -> name
 
+(* The name of a modality, as a spine of identifiers, or a placeholder for the identity. *)
+let unparse_modality_name : type dom modality mode. (dom, modality, mode) Modality.t -> observation
+    =
+ fun modality ->
+  Term
+    (match Modality.name modality with
+    | [] -> unlocated (Placeholder [])
+    | m :: ms ->
+        List.fold_left
+          (fun fn m ->
+            unlocated
+              (App
+                 {
+                   fn;
+                   arg = unlocated (Ident ([ m ], []));
+                   left_ok = No.le_refl No.plus_omega;
+                   right_ok = No.le_refl No.plus_omega;
+                 }))
+          (unlocated (Ident ([ m ], [])))
+          ms)
+
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type mode n lt ls rt rs s.
     n Names.t ->
@@ -490,26 +515,10 @@ let rec unparse : type mode n lt ls rt rs s.
             (* A modal let-binding "let x : modality | _ := tm in body" prints the modality
                that was used to lock the value, with the type left as a placeholder since
                it isn't stored in the core syntax. *)
-            let modality_tm =
-              match Modality.name modality with
-              | [] -> unlocated (Placeholder [])
-              | m :: ms ->
-                  List.fold_left
-                    (fun fn m ->
-                      unlocated
-                        (App
-                           {
-                             fn;
-                             arg = unlocated (Ident ([ m ], []));
-                             left_ok = No.le_refl No.plus_omega;
-                             right_ok = No.le_refl No.plus_omega;
-                           }))
-                    (unlocated (Ident ([ m ], [])))
-                    ms in
             Emp
             <: Term (unparse_var x)
             <: mktok Colon
-            <: Term modality_tm
+            <: unparse_modality_name modality
             <: mktok (Op "|")
             <: Term (unlocated (Placeholder []))
             <: mktok Coloneq
@@ -527,6 +536,37 @@ let rec unparse : type mode n lt ls rt rs s.
           parenthesize
             (unlocated
                (prefix ~notn:letin
+                  ~inner:(Multiple (wstok Let, binding, wstok In))
+                  ~last:body ~right_ok)))
+  | Letonly (Permute (_, ctx), tmenv, body, ty) -> (
+      (* The bound terms are unparsed in the ambient context, while the types and the body are unparsed in the context of only the bound variables. *)
+      let binding, bodyvars = unparse_letonly_clauses vars ctx tmenv in
+      (* The body must synthesize, so if it wouldn't after unparsing, we ascribe it with its stored type. *)
+      let unparse_body : type rt rs. (rt, rs) No.iinterval -> (_, _, rt, rs) parse located =
+       fun ri ->
+        if synths body then unparse bodyvars body (interval_right letonly) ri
+        else
+          let first = unparse bodyvars body No.Interval.entire (interval_left asc) in
+          let last = unparse bodyvars ty (interval_right asc) No.Interval.entire in
+          parenthesize
+            (unlocated
+               (infix ~notn:asc ~first
+                  ~inner:(Single (wstok Colon))
+                  ~last ~left_ok:(No.le_refl No.minus_omega) ~right_ok:(No.le_refl No.minus_omega)))
+      in
+      match No.Interval.contains ri No.minus_omega_plus_one with
+      | Some right_ok ->
+          let body = unparse_body ri in
+          unlocated
+            (prefix ~notn:letonly
+               ~inner:(Multiple (wstok Let, binding, wstok In))
+               ~last:body ~right_ok)
+      | None ->
+          let body = unparse_body No.Interval.entire in
+          let right_ok = No.minusomega_lt_minusomegaplusone in
+          parenthesize
+            (unlocated
+               (prefix ~notn:letonly
                   ~inner:(Multiple (wstok Let, binding, wstok In))
                   ~last:body ~right_ok)))
   | Lam (Variables (m, _, _), _, _, _) ->
@@ -625,6 +665,43 @@ let rec unparse : type mode n lt ls rt rs s.
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
  fun vars tm -> { unparse = (fun li ri -> unparse vars tm li ri) }
+
+(* Unparse the clauses of a let-only, walking its body context and its environment of bound terms together, and returning also the names of the body context.  The bound terms are unparsed in the ambient context, while each type is unparsed in the body context up to its variable. *)
+and unparse_letonly_clauses : type mode n i b.
+    n Names.t ->
+    (mode, i, b) ordered_termctx ->
+    (mode, n, D.zero, b) env ->
+    observation Bwd.t * b Names.t =
+ fun vars ctx tmenv ->
+  match (ctx, tmenv) with
+  | Emp _, Emp _ -> (Emp, Names.empty)
+  | ( Ext (ctx, Vis { vars = xs; plus_lock; bindings; _ }, _),
+      Ext { env; values = Modal (modality, plus, tms); _ } ) -> (
+      match D.compare (CubeOf.dim bindings) D.zero with
+      | Neq -> fatal (Unimplemented "unparsing higher-dimensional let-only variables")
+      | Eq ->
+          let acc, names = unparse_letonly_clauses vars ctx env in
+          let x, names = Names.add_cube D.zero names (NICubeOf.find_top xs) in
+          let ty =
+            unparse (Names.add_lock names plus_lock) (CubeOf.find_top bindings).ty
+              No.Interval.entire No.Interval.entire in
+          let tm =
+            unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
+              No.Interval.entire in
+          (* The first clause is preceded by "only", and the rest by "and". *)
+          let tok =
+            match acc with
+            | Emp -> Token.Only
+            | Snoc _ -> Token.And in
+          let acc = acc <: mktok tok <: Term (unparse_var x) <: mktok Colon in
+          let acc =
+            match Modality.compare_id modality with
+            | Eq -> acc
+            | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
+          (acc <: Term ty <: mktok Coloneq <: Term tm, names))
+  | Lock _, _ | _, Lock _ | _, Prekey _ -> fatal (Unimplemented "unparsing locks in let-only")
+  | Ext (_, Invis _, _), _ | Weaken _, _ ->
+      fatal (Anomaly "invisible or weakened variable in let-only")
 
 (* A version that wraps implicit arguments in braces. *)
 and make_unparser_implicit : type n. n Names.t -> (n, kinetic) spine_arg -> unparser =

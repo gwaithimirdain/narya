@@ -277,6 +277,7 @@ module F = struct
     | Act (_, tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Key { tm; cell; _ } -> fprintf ppf "Key (%a, %s)" term tm (Modalcell.to_string cell)
     | Let (_, _, _) -> fprintf ppf "Let ?"
+    | Letonly (_, _, body, ty) -> fprintf ppf "Letonly (?, ?, %a, %a)" term body term ty
     | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"
     | Realize tm -> fprintf ppf "Realize (%a)" term tm
@@ -384,6 +385,7 @@ module F = struct
           check dom.value synth body.value
     | Let (_, _, _, _) -> fprintf ppf "Let(?)"
     | Letrec (_, _, _) -> fprintf ppf "LetRec(?)"
+    | Letonly (_, _, _) -> fprintf ppf "LetOnly(?)"
     | Act (_, _, _) -> fprintf ppf "Act(?)"
     | Match { tm; window = _; sort = _; branches = br; refutables = _; highers = _ } ->
         fprintf ppf "Match (%a, (%a))" synth tm.value branches br

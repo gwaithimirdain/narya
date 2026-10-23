@@ -394,6 +394,7 @@ let process_abs cube ctx obs _loc =
 type (_, _, _) identity +=
   | Let : (closed, No.minus_omega_plus_one, No.nonstrict opn) identity
   | Letrec : (closed, No.minus_omega_plus_one, No.nonstrict opn) identity
+  | Letonly : (closed, No.minus_omega_plus_one, No.nonstrict opn) identity
 
 let letin : (closed, No.minus_omega_plus_one, No.nonstrict opn) notation =
   (Let, Prefixr No.minus_omega_plus_one)
@@ -518,6 +519,53 @@ let rec letrec_terms () =
 
 let letrec_tree = Closed_entry (eop Let (op Rec (letrec_terms ())))
 
+(* ********************
+   Let only
+ ******************** *)
+
+let letonly : (closed, No.minus_omega_plus_one, No.nonstrict opn) notation =
+  (Letonly, Prefixr No.minus_omega_plus_one)
+
+type (_, _) letonly_terms =
+  | Letonly_terms :
+      ('e, 'c, 'ec) tel * ('a check located, 'c) Vec.t * 'ec synth located
+      -> ('e, 'a) letonly_terms
+
+(* The types of a let-only, and its body, are processed in the context of only the variables it binds, while its bound terms are processed in the ambient context.  As for let-rec, we replace the initial "let only" by an "and" so that all the clauses can be treated equally. *)
+let rec process_letonly_terms : type a e.
+    (string option, a) Bwv.t -> (string option, e) Bwv.t -> observation list -> (e, a) letonly_terms
+    =
+ fun ctx bodyctx obs ->
+  match obs with
+  | Token (And, _) :: Term x :: Token (Colon, _) :: rest ->
+      let x = get_var x in
+      let modality, ty, tm, rest =
+        match rest with
+        | Term modality :: Token (Op "|", _) :: Term ty :: Token (Coloneq, _) :: Term tm :: rest ->
+            (get_modality fst modality, process bodyctx ty, process ctx tm, rest)
+        | Term ty :: Token (Coloneq, _) :: Term tm :: rest ->
+            (locate_opt None [], process bodyctx ty, process ctx tm, rest)
+        | _ -> invalid "let-only" in
+      let (Letonly_terms (tel, tms, body)) = process_letonly_terms ctx (Snoc (bodyctx, x)) rest in
+      Letonly_terms (Ext (x, modality, ty, tel), tm :: tms, body)
+  | [ Token (In, _); Term body ] ->
+      Letonly_terms (Emp, [], process_synth bodyctx body "body of let-only")
+  | _ -> invalid "let-only"
+
+let process_letonly ctx obs loc =
+  match obs with
+  | Token (Let, _) :: Token (Only, _) :: obs ->
+      let (Letonly_terms (tys, tms, body)) =
+        process_letonly_terms ctx Emp (Token (And, ([], None)) :: obs) in
+      locate (Synth (Letonly (tys, tms, body))) loc
+  | _ -> invalid "let-only"
+
+let rec letonly_terms () =
+  let rest = terms [ (And, Lazy (lazy (letonly_terms ()))); (In, Done_closed letonly) ] in
+  term Colon (terms [ (Coloneq, rest); (Op "|", term Coloneq rest) ])
+
+let letonly_tree = Closed_entry (eop Let (op Only (letonly_terms ())))
+
 (* ****************************************
    Printing abstractions and let-bindings
    **************************************** *)
@@ -537,6 +585,8 @@ let rec get_abslets heads obs =
         match obs with
         | Token (Let, (wslet, _)) :: Token (Rec, (wsrec, _)) :: Term x :: rest ->
             ([ (Token.Let, wslet); (Rec, wsrec) ], Wrap x, rest)
+        | Token (Let, (wslet, _)) :: Token (Only, (wsonly, _)) :: Term x :: rest ->
+            ([ (Token.Let, wslet); (Only, wsonly) ], Wrap x, rest)
         | Token (Let, (wslet, _)) :: Term x :: rest -> ([ (Token.Let, wslet) ], Wrap x, rest)
         | Token (And, (wsand, _)) :: Term x :: rest -> ([ (Token.And, wsand) ], Wrap x, rest)
         | _ -> invalid "let" in
@@ -570,6 +620,7 @@ and get_abslets_of_parse heads (Wrap body) =
   | Notn ((Cubeabs, _), d) -> get_abslets heads (args d)
   | Notn ((Let, _), d) -> get_abslets heads (args d)
   | Notn ((Letrec, _), d) -> get_abslets heads (args d)
+  | Notn ((Letonly, _), d) -> get_abslets heads (args d)
   | _ -> (heads, Wrap body)
 
 (* Given the argument list of an abstraction or let-binding, convert all the prefixes to PPrint documents and arrange them for printing.  Specifically, we convert the heterogeneous list of data returned by get_abslets into a list of PPrint documents.  In addition, we split off the first few abstractions and also the last few, so that the first few can be the intro, and all the trailing abstractions and the body can be flowed together on one line if they fit, and retain the preceding whitespace of each trailing abstraction so we can decide later whether it should be breaking.  We also return the trailing whitespace and the body (as yet unprinted). *)
@@ -775,6 +826,16 @@ let () =
       tree = letrec_tree;
       processor = process_letrec;
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "let rec"));
+      print_term = Some pp_abslet_term;
+      print_case = Some pp_abslet_case;
+      is_case = (fun _ -> true);
+    };
+  make letonly
+    {
+      name = "letonly";
+      tree = letonly_tree;
+      processor = process_letonly;
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "let only"));
       print_term = Some pp_abslet_term;
       print_case = Some pp_abslet_case;
       is_case = (fun _ -> true);
@@ -3330,6 +3391,7 @@ let install () =
     Situation.add Postprocess.braces;
     Situation.add letin;
     Situation.add letrec;
+    Situation.add letonly;
     Situation.add asc;
     Situation.add ascvar;
     Situation.add abs;

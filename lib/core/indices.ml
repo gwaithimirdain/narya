@@ -10,7 +10,8 @@ module type Indices = sig
   (* There must be unnamed variables. *)
   val none : name
 
-  (* These are how the parametrizing type changes with each bound variable. *)
+  (* The parametrizing type of the empty context, and how it changes with each bound variable. *)
+  type emp
   type 'a suc
 
   (* An 'index' is what labels a variable at the point of *use*. *)
@@ -30,6 +31,7 @@ module DeBruijnIndices = struct
   let none : name = None
 
   type 'a index = 'a N.index
+  type emp = N.zero
   type 'a suc = 'a N.suc
   type 'a scope = (name, 'a) Bwv.t
   type 'a embed = |

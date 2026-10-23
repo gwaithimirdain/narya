@@ -656,6 +656,30 @@ def xy2 : ℕ ≔
     ≔ 0 in
   x
 
+def xo (n : ℕ) : ℕ ≔ let only x : ℕ ≔ n and y : ℕ ≔ 0 in x
+
+def xo1 (n : ℕ) : ℕ ≔
+  let only x : ℕ ≔ n `line comment
+  {` block comment `}
+  and y : ℕ ≔ 0 in
+  x
+
+def xo2 (n : ℕ) : ℕ ≔
+  let only x `line comment
+    : ℕ
+    ≔ n
+  and y : ℕ ≔ 0 in
+  x
+
+def xo3 (n : ℕ) : ℕ ≔
+  let only x : ℕ ≔ n
+  and y : ℕ ≔ 0
+  and z : ℕ ≔ 0
+  and w : ℕ ≔ 0
+  and v : ℕ ≔ 0
+  and u : ℕ ≔ 0 in
+  x
+
 import "importable"
 
 import "importable" | all

@@ -50,6 +50,7 @@ type t =
   | Option
   | Quit
   | Rec
+  | Only
   | Return
   | Section
   | Fmt
@@ -210,6 +211,7 @@ let to_string = function
   | End -> "end"
   | Let -> "let"
   | Rec -> "rec"
+  | Only -> "only"
   | In -> "in"
   | Op s -> s
   | Ident s -> String.concat "." s

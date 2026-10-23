@@ -526,6 +526,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     { build = (fun fa -> lazy_eval (act_env flenv (opt_op_of_sface fa)) v) });
            })
         body
+  | Letonly (_, tmenv, body, _) ->
+      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  If the ambient environment is higher-dimensional, so is the result. *)
+      eval (eval_env env (D.plus_zero (dim_env env)) tmenv) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
   | Act (_, x, s, _) ->
       let k = dim_env env in

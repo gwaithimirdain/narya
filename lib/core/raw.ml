@@ -57,6 +57,7 @@ module rec Make : functor (I : Indices) -> sig
         I.name * string located list located * 'a synth located * 'a I.suc check located
         -> 'a synth
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
+    | Letonly : (I.emp, 'b, 'eb) tel * ('a check located, 'b) Vec.t * 'eb synth located -> 'a synth
     | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
     | Match : {
         tm : 'a synth located;
@@ -217,6 +218,10 @@ functor
           -> 'a synth
       (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
       | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
+      (* Letonly has a telescope of types in the *empty* context, an equal-length vector of bound terms in the ambient context, and a body in the context of only the bound variables.  The body must synthesize, since the type of the whole let-only is obtained by substituting the bound terms into its type. *)
+      | Letonly :
+          (I.emp, 'b, 'eb) tel * ('a check located, 'b) Vec.t * 'eb synth located
+          -> 'a synth
       (* An Act can also often check, but can also synthesizes if its body does.  *)
       | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
       (* A Match can also sometimes check, but synthesizes if it has an explicit return type or if it is nondependent and its first branch synthesizes. *)
@@ -392,6 +397,9 @@ module type Resolver = sig
   (* We also need to be able to translate the 'scopes' that appear in Holes. *)
   val rescope : ('a1, 'a2) scope -> 'a1 I1.scope -> 'a2 I2.scope
 
+  (* This is how we pass to the empty scope, for the types and body of a let-only. *)
+  val empty : ('a1, 'a2) scope -> (I1.emp, I2.emp) scope
+
   (* This is how we extend a scope when passing under a binder. *)
   val snoc : ('a1, 'a2) scope -> I1.name -> ('a1 I1.suc, 'a2 I2.suc) scope
 
@@ -490,6 +498,10 @@ module Resolve (R : Resolver) = struct
           let tys2, ctx2 = tel ctx tys ab in
           let tms2 = Vec.map (check ctx2) tms in
           Letrec (tys2, tms2, check ctx2 body)
+      | Letonly (tys, tms, body) ->
+          let (Bplus ab) = R.T2.bplus (Vec.length tms) in
+          let tys2, ctx2 = tel (R.empty ctx) tys ab in
+          Letonly (tys2, Vec.map (check ctx) tms, synth ctx2 body)
       | Act (s, fa, tm) -> Act (s, fa, Option.map (check ctx) tm)
       | Match { tm; window; sort; branches; refutables = r; highers } ->
           let tm = synth ctx tm in
