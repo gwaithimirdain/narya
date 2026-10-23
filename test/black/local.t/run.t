@@ -48,7 +48,7 @@
    ￮ constant trinab2 defined
   
    ￫ info[I0000]
-   ￮ constant □′ defined
+   ￮ constant □ defined
   
    ￫ info[I0000]
    ￮ constant box defined
@@ -60,7 +60,7 @@
    ￮ constant unbox_box defined
   
    ￫ info[I0000]
-   ￮ constant ∇′ defined
+   ￮ constant ∇ defined
   
    ￫ info[I0000]
    ￮ constant nab defined
@@ -72,7 +72,7 @@
    ￮ constant unnab_nab defined
   
    ￫ info[I0000]
-   ￮ constant ∇″ defined
+   ￮ constant ∇′ defined
   
    ￫ info[I0000]
    ￮ constant nab_unnab defined
@@ -116,7 +116,7 @@
    ￮ constant isos defined
   
    ￫ info[I0000]
-   ￮ constant □′ defined
+   ￮ constant □ defined
   
    ￫ info[I0000]
    ￮ constant box defined
@@ -128,7 +128,7 @@
    ￮ constant unbox_box defined
   
    ￫ info[I0000]
-   ￮ constant ∇′ defined
+   ￮ constant ∇ defined
   
    ￫ info[I0000]
    ￮ constant nab defined
@@ -137,7 +137,7 @@
    ￮ constant unnab defined
   
    ￫ info[I0000]
-   ￮ constant ∇″ defined
+   ￮ constant ∇′ defined
   
    ￫ info[I0000]
    ￮ constant nab_unnab defined
@@ -146,7 +146,7 @@
    ￮ constant nab_eta defined
   
    ￫ info[I0000]
-   ￮ constant ∇□′ defined
+   ￮ constant ∇□ defined
   
    ￫ info[I0000]
    ￮ constant mk defined

@@ -1811,14 +1811,9 @@ let rec process_branches : type a n.
             let modality = Option.value window ~default:(locate_opt None []) in
             (locate (Synth (Let (name.value, modality, stm, mtch))) loc, any_constrs))
           ~fatal:(fun d ->
-            if
-              Reporter.accumulates
-                (function
-                  | No_remaining_patterns -> true
-                  | _ -> false)
-                d
-            then fatal ?loc:name.loc Overlapping_patterns
-            else fatal_diagnostic d) in
+            match d.message with
+            | No_remaining_patterns -> fatal ?loc:name.loc Overlapping_patterns
+            | _ -> fatal_diagnostic d) in
       match x with
       | Right ({ face = None; _ } as v) when Matchscope.renameable v.num xctx ->
           (* If that discriminee is an unnamed variable that was introduced earlier, such as a pattern variable, then we just alias the current variable name to it. *)
@@ -1881,18 +1876,15 @@ let rec process_branches : type a n.
                     [ brs; newpats ]
                   |> Vec.to_list in
                 Reporter.try_with ~fatal:(fun d ->
-                    if
-                      Reporter.accumulates
-                        (function
-                          | No_remaining_patterns -> true
-                          | _ -> false)
-                        d
-                    then fatal ?loc:c.loc (Duplicate_constructor_in_match c.value)
-                    else fatal_diagnostic d)
+                    match d.message with
+                    | No_remaining_patterns ->
+                        fatal ?loc:c.loc (Duplicate_constructor_in_match c.value)
+                    | _ -> fatal_diagnostic d)
                 @@ fun () ->
                 (* Now we recurse, looking for the next pattern.  After the first outer match, we always switch to implicit matches. *)
                 let rest, bs = process_branches newxctx newxs seen newbrs loc `Implicit in
-                Hlist.Hlist.cons (x, Raw.Branch (locate names loc, cube, rest)) [ bs ])
+                (* Errors about the constructor of these branches as a whole, such as having the wrong number of arguments, are located at its first occurrence. *)
+                Hlist.Hlist.cons (x, Raw.Branch (locate names c.loc, cube, rest)) [ bs ])
           [ cbranches ] (Cons (Cons Nil)) in
       let tm, window = process_obs_or_ix xctx x in
       let refutables =

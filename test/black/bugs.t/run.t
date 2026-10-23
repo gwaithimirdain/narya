@@ -635,6 +635,21 @@ being defined used to produce an anomaly when checking the constructor outputs.
    8 | | suc. m ↦ data [ w1. : W n (suc. m) ]
      ^ invalid output type for constructor w1: wrong number of index arguments
   
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/data_in_match_motive.ny
+   6 | def W (n : N) : N → Type ≔ match n return _ ↦ Type [
+   7 | | zero. ↦ data [ w0. : W n zero. ]
+   8 | | suc. m ↦ data [ w1. : W n (suc. m) ]
+   9 | ]
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         N → Type
+       unequal head terms:
+         Type
+       does not equal
+         N → Type
+  
   [1]
 
   $ narya data_in_match_motive2.ny
@@ -647,6 +662,21 @@ being defined used to produce an anomaly when checking the constructor outputs.
    ￭ $TESTCASE_ROOT/data_in_match_motive2.ny
    7 | | suc. m ↦ data [ v1. : V n ]
      ^ invalid output type for constructor v1: wrong number of index arguments
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/data_in_match_motive2.ny
+   5 | def V (n : N) : Type ≔ match n return _ ↦ N → Type [
+   6 | | zero. ↦ data [ v0. : V n ]
+   7 | | suc. m ↦ data [ v1. : V n ]
+   8 | ]
+     ^ term synthesized type
+         N → Type
+       but is being checked against type
+         Type
+       unequal head terms:
+         N → Type
+       does not equal
+         Type
   
   [1]
 
