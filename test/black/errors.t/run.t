@@ -232,32 +232,8 @@
        does not equal
          Type
   
-   ￫ error[E0401]
-   ￭ command-line exec string
-   1 | echo (a : Id A)
-     ^ term synthesized type
-         Type⁽ᵉ⁾ A A
-       but is being checked against type
-         Type
-       unequal head terms:
-         Type⁽ᵉ⁾
-       does not equal
-         Type
-  
   [1]
   $ narya -parametric errors.ny -e "echo (a : Id (Id A) (refl a) (refl a))"
-   ￫ error[E0401]
-   ￭ command-line exec string
-   1 | echo (a : Id (Id A) (refl a) (refl a))
-     ^ term synthesized type
-         Type⁽ᵉ⁾ (Id A a a) (Id A a a)
-       but is being checked against type
-         Type
-       unequal head terms:
-         Type⁽ᵉ⁾
-       does not equal
-         Type
-  
    ￫ error[E0401]
    ￭ command-line exec string
    1 | echo (a : Id (Id A) (refl a) (refl a))
@@ -319,6 +295,9 @@
    ￭ command-line exec string
    1 | echo (x |-> f 0.1.2 x)
      ^ invalid numeral: 0.1.2
+  
+   ￫ error[E0400]
+   ￮ non-synthesizing term in synthesizing position (argument of echo)
   
   [1]
   $ narya -parametric errors.ny -e "echo (let x.y ≔ z in w)"
@@ -546,6 +525,12 @@
    ￭ command-line exec string
    1 | echo ((a x ⤇ refl f {x.0} {x.1} x.2) : A → Id (A→A) f f)
      ^ cube abstraction not allowed for zero-dimensional function
+  
+   ￫ error[E0509]
+   ￭ command-line exec string
+   1 | echo ((a x ⤇ refl f {x.0} {x.1} x.2) : A → Id (A→A) f f)
+     ^ previous variable
+     ^ can't combine cube abstractions of different dimensions: 0 ≠ e
   
   [1]
   $ narya -parametric errors.ny -e "echo ((x ↦ x ⤇ x) : A → Id (A→A) f f)"

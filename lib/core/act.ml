@@ -175,7 +175,7 @@ module Act = struct
     | Neu { head; args; value; ty } ->
         (* We act on the applications from the outside (last) to the inside, since the degeneracy has to be factored and may leave neutral insertions behind.  The resulting inner degeneracy then acts on the head. *)
         let Any_deg s', Wrap hc, args = act_apps args s c in
-        let head = act_head head s' hc in
+        let head = act_neu_head head s' hc in
         (* We act on the value separately with the original s, since it is a "value" of the entire application spine, not just the head. *)
         let value = act_lazy_eval value s c in
         (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine.  We are careful not to force the original type until the acted type is itself demanded, since computing types of acted terms can cascade (the type's own spine contains normals whose types are acted in turn) and the acted type is frequently never inspected. *)
@@ -416,8 +416,10 @@ module Act = struct
     (* We have to normalize the type in order to be sure of exposing the instantiations.  But we can't use view_type, because that discards information and we need to reconstruct the acted type. *)
     match view_term tmty with
     | Lam _ | Struct _ | Constr _ -> fatal (Anomaly "invalid term: not a type to act on")
+    (* If the type is failed, so is the type of the acted term. *)
+    | Neu { head = Failed mode; args = Emp; _ } -> failed_type mode
     (* The type must be UU 0, since this IS a TYPE (that has elements).  But we don't bother checking that it is. *)
-    | Neu { head; args; value; ty } ->
+    | Neu { head = Live head; args; value; ty } ->
         (* Pull off the instantiation, perhaps empty, from the end of the arguments. *)
         let base_args, Full_tube inst_args =
           match args with
@@ -470,7 +472,7 @@ module Act = struct
                        })
               | Pos _ -> fatal (Anomaly "non fully instantiated type in act_ty"))
           | Val _ -> fatal (Anomaly "non-canonical potential value in act_ty") in
-        Neu { head; args; value; ty }
+        Neu { head = Live head; args; value; ty }
 
   (* Subroutine of gact_ty that acts on the instantiation arguments of a type, keeping them a full tube. *)
   and gact_ty_instargs : type mode mu1 mu2 cod a b n.
@@ -512,6 +514,17 @@ module Act = struct
       (mode, mu1, mu2, cod) Modalcell.t ->
       (mode, kinetic) value =
    fun ?err tm tmty s c -> gact_ty ?err (Some tm) tmty s c
+
+  and act_neu_head : type mode fail mu1 mu2 cod a b.
+      (mode, fail) neu_head ->
+      (a, b) deg ->
+      (mode, mu1, mu2, cod) Modalcell.t ->
+      (mode, fail) neu_head =
+   fun ne s c ->
+    match ne with
+    (* A failed term remains failed.  Its value, which raises an error when forced, is acted on separately (see act_value). *)
+    | Failed mode -> Failed mode
+    | Live head -> Live (act_head head s c)
 
   (* Action on a head *)
   and act_head : type mode mu1 mu2 cod a b.
@@ -579,11 +592,11 @@ module Act = struct
     Act_pi (fa', filter', doms', cods')
 
   (* Action on a Bwd of applications (each of which is just the argument and its boundary).  Pushes the degeneracy past the stored insertions, factoring it each time and leaving an appropriate insertion on the outside.  Also returns the innermost degeneracy and key cell, for acting on the head with: the cell gets prewhiskered by the left adjoint each time it crosses a modal field projection. *)
-  and act_apps : type hmode mode mu1 mu2 cod a b any.
-      (hmode, mode, any) apps ->
+  and act_apps : type hmode mode mu1 mu2 cod a b any fail.
+      (hmode, mode, any, fail) apps ->
       (a, b) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
-      any_deg * hmode Modalcell.cod2_wrapped * (hmode, mode, any) apps =
+      any_deg * hmode Modalcell.cod2_wrapped * (hmode, mode, any, fail) apps =
    fun apps s c ->
     match apps with
     | Emp -> (Any_deg s, Wrap c, Emp)
@@ -664,7 +677,7 @@ module Act = struct
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
         let (Wrap newkey) = key_vcomp c key in
         ref (Deferred (tm, fa, newkey, Emp))
-    (* When the deferral carries a pending argument spine (which happens only in glued evaluation), we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
+    (* When the deferral carries a pending argument spine, we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
     | Deferred_eval (_, _, _, _, (Arg _ | Field _ | Inst _))
     | Deferred (_, _, _, (Arg _ | Field _ | Inst _)) ->
         ref (Deferred ((fun () -> force_eval lev), s, c, Emp))

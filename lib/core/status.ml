@@ -30,7 +30,7 @@ type (_, _, _) status =
   (* The head (the constant or metavariable being defined) lives at its own mode, which differs from the current checking mode when the spine of arguments crosses a modal field projection (i.e. when we are checking the component of a modal field in a comatch or tuple).  The hypothesizing callback takes a term in the current context to a definition of the head in its own context. *)
   | Potential :
       ('hmode, 'a) potential_head
-      * ('hmode, 'mode, 'any) apps
+      * ('hmode, 'mode, 'any, live) apps
       * (('mode, 'b, potential) term -> ('hmode, 'a, potential) term)
       -> ('mode, 'b, potential) status
 

@@ -49,6 +49,11 @@ Using a ♭-locked variable without a key requires the counit key.
    1 | def g (A : Type) (x : A) : A ≔ f A x
      ^ use of id variable behind ♭ lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def g (A : Type) (x : A) : A ≔ f A x
+     ^ use of id variable behind ♭ lock requires a key
+  
   [1]
 
 The reflexivity of the *modal* family ♭ has a *filtered* domain: instead of the

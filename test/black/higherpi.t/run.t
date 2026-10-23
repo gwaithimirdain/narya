@@ -63,6 +63,26 @@
    1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
      ^ unbound variable: x₀
   
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+     ^ unbound variable: x₁
+  
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+     ^ unbound variable: x₀
+  
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+     ^ unbound variable: x₁
+  
+   ￫ error[E0705]
+   ￭ command-line exec string
+   1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+     ^ not enough domains for an e-dimensional function type
+  
   [1]
 
   $ narya higherpi.ny -e "echo {x₀ x₁ : A} (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)"

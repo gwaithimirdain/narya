@@ -114,6 +114,11 @@ Nor are there 2-cells □△ ⇒ 1 or 1 ⇒ △□ (the adjunction △ ⊣ □ i
    1 | def bad2 (A : □△ | Disc) (x : □△ | A) : A ≔ x
      ^ use of □△ variable behind id lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def bad2 (A : □△ | Disc) (x : □△ | A) : A ≔ x
+     ^ use of □△ variable behind id lock requires a key
+  
   [1]
 
   $ narya -gwpt gwpt.ny -e "def bad3 (A : Type) : Type ≔ data [ bad3. (_ : △□ | A) ]"
