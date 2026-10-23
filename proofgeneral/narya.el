@@ -882,7 +882,11 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                   (setq shift 1))
               (insert term)))
           (let ((insert-end (point-marker))
-                (new-holes 0))
+                ;; The numbers of the new holes created by the term.
+                ;; We read these off before reformatting the command,
+                ;; since that overwrites narya-pending-hole-positions.
+                (new-holes (mapcar (lambda (pos) (nth 2 pos))
+                                   narya-pending-hole-positions)))
             (delete-region (point) (overlay-end hole-overlay))
             ;; Delete the overlay for the solved hole and update the hole list.
             (narya-delete-hole-overlay hole-overlay)
@@ -890,29 +894,27 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
             ;; Create new overlays from holes in the new term.
             (if narya-reformat-commands
                 ;; If the new term was reformatted, then its holes
-                ;; were printed using the ⁇0? syntax, so we can use
-                ;; narya-create-marked-hole-overlays.
-                ;; (narya-create-marked-hole-overlays insert-start insert-end)
-                (narya-reformat-command cmd-span)
+                ;; were printed using the ⁇0? syntax, so they will be
+                ;; found when we reformat the whole command, which
+                ;; also places the cursor for us.
+                (narya-reformat-command cmd-span (copy-marker insert-start) new-holes)
               ;; Otherwise, we get the hole position information
               ;; from the [data] block.
-              (let ((new-holes (narya-create-hole-overlays (+ byte-insert-start shift)
-                                                           narya-pending-hole-positions)))
-                (setq narya-pending-hole-positions nil)
-                ;; The rest is done by narya-reformat-command when we
-                ;; call that, but here we have to do it ourselves.
-                ;;
-                ;; First we add an Emacs undo action so that if the
-                ;; "solve" command is undone in Emacs, PG will rewind
-                ;; past the command containing the hole.  This is the
-                ;; only sensible course of action, since the Narya
-                ;; "solve" command can't be undone.
-                (narya-add-command-undo cmd-span)
-                ;; Then if any new holes were created, we position the
-                ;; cursor in the first of them.
-                (when (> new-holes 0)
-                  (goto-char insert-start)
-                  (narya-next-hole))))
+              (narya-create-hole-overlays (+ byte-insert-start shift)
+                                          narya-pending-hole-positions)
+              (setq narya-pending-hole-positions nil)
+              ;; The rest is done by narya-reformat-command when we
+              ;; call that, but here we have to do it ourselves.
+              ;;
+              ;; First we add an Emacs undo action so that if the
+              ;; "solve" command is undone in Emacs, PG will rewind
+              ;; past the command containing the hole.  This is the
+              ;; only sensible course of action, since the Narya
+              ;; "solve" command can't be undone.
+              (narya-add-command-undo cmd-span)
+              ;; Then we position the cursor in the first new hole,
+              ;; or at the start of the new term if there are none.
+              (narya-goto-new-hole insert-start insert-end new-holes))
             (message "Hole solved.")))))))
 
 (defun narya-split-hole ()
@@ -971,9 +973,25 @@ If cursor is over a hole, the term is interpreted in the context of that hole."
           (goto-char (overlay-start ovl))
           (insert "⁇" (number-to-string n)))))))
 
-(defun narya-reformat-command (&optional ovl)
+(defun narya-goto-new-hole (start end new-holes)
+  "Move point into the first hole from START to END numbered in NEW-HOLES.
+If there is no such hole, move point to START instead."
+  (let ((pos (cl-loop for ovl in (overlays-in start end)
+                      for n = (overlay-get ovl 'narya-hole)
+                      when (and n (memq n new-holes))
+                      minimize (overlay-start ovl))))
+    ;; Go to the beginning of that hole's interior.
+    (goto-char (if pos (1+ pos) start))))
+
+(defun narya-reformat-command (&optional ovl focus focus-holes)
   "Reformat the command with overlay OVL in the processed region.
-Defaults to the command containing point."
+Defaults to the command containing point.
+
+If FOCUS is a position in the command, then afterwards point is
+placed in the first hole after the reformatted location of FOCUS
+whose number is in FOCUS-HOLES, or if there is no such hole,
+at the reformatted location of FOCUS itself.  Otherwise, point is placed in the
+first hole of the command, if any."
   (interactive)
   ;; Find the current PG 'cmd overlay
   (let ((ovl (or ovl
@@ -996,6 +1014,15 @@ Defaults to the command containing point."
                           (insert "\n\n"))
                         (point-marker)))
                (end (copy-marker (overlay-end ovl) t))
+               ;; Reformatting only changes whitespace (outside of
+               ;; the hole numbers, which are inserted below and
+               ;; removed again afterwards), so we can locate FOCUS
+               ;; afterwards by counting non-whitespace characters.
+               ;; (The exception is ASCII versus Unicode spellings of
+               ;; tokens like → if "display chars" was changed since
+               ;; the command was processed, in which case FOCUS may
+               ;; end up slightly misplaced.)
+               (focus-count (and focus (how-many "[^ \t\n\r\f]" start focus)))
                (cmd (progn
                       (narya-insert-hole-numbers start end)
                       (buffer-substring-no-properties start end)))
@@ -1004,7 +1031,10 @@ Defaults to the command containing point."
           (proof-shell-invisible-command
            (format "fmt %d := %s" (overlay-get ovl 'instant) cmd) t)
           (if (eq proof-shell-last-output-kind 'error)
-              (message "Reformatter failed!")
+              (progn
+                (message "Reformatter failed!")
+                (when focus
+                  (narya-goto-new-hole focus end focus-holes)))
             ;; Delete the existing hole overlays in the region
             (atomic-change-group
               (dolist (h (overlays-in start end))
@@ -1023,8 +1053,14 @@ Defaults to the command containing point."
               ;; Add an undo action to retract to here
               (narya-add-command-undo ovl)
               (goto-char start)
-              (when (> new-holes 0)
-                (narya-next-hole)))))
+              (if focus
+                  (progn
+                    (when (> focus-count 0)
+                      (re-search-forward "[^ \t\n\r\f]" end t focus-count))
+                    (skip-chars-forward " \t\n\r\f" end)
+                    (narya-goto-new-hole (point) end focus-holes))
+                (when (> new-holes 0)
+                  (narya-next-hole))))))
       (message "No current processed command found."))))
 
 (defun narya-display-chars (arg)
