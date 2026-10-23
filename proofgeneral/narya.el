@@ -610,7 +610,7 @@ handling in Proof General."
                                         ;proof-shell-end-goals-regexp          ""
 
  ;; Settings for generic user-level commands
- proof-assistant-home-page             "https://github.com/mikeshulman/narya/"
+ proof-assistant-home-page             "https://github.com/gwaithimirdain/narya/"
  )
 
 ;; The Emacs comment functions are a bit weird and inconsistent.
