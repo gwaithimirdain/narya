@@ -1279,7 +1279,7 @@ let rec process_tuple : type n.
   (* Comma ending the previous field *)
   | Token (Op ",", _) :: obs -> process_tuple flds found ctx obs loc
   (* Labeled field *)
-  | Term { value = Notn ((Coloneq, _), n); loc } :: obs -> (
+  | Term { value = Notn ((Coloneq, _), n); _ } :: obs -> (
       match args n with
       | [ Term { value = Ident ([ fld ], _); loc = xloc }; Token (Coloneq, _); Term tm ]
         when Lexer.valid_field fld ->
