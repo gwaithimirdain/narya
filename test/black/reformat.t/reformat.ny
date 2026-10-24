@@ -741,3 +741,11 @@ def commented_field : prod A A ≔ (
   blahblah (blahblah2 blahblah3) (blahblah2 (blahblah2 blahblah3))
     (blahblah blahblah3 blahblah3 blahblah3),
   snd ≔ blahblah3)
+
+{` parenthesized case trees `}
+
+def parenthesized_implicit_match_with_long_name : ℕ → ℕ ≔ ([ zero. ↦ zero. | suc. n ↦ n ])
+
+def parenthesized_tuple : prod ℕ ℕ ≔ ((fst ≔ plus (plus 0 0) (plus 0 0), snd ≔ plus (plus 0 0) (plus 0 0)))
+
+def parenthesized_comatch_with_a_long_name : stream ℕ ≔ ([ .head ↦ 0 | .tail ↦ parenthesized_comatch_with_a_long_name ])
