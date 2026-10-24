@@ -151,3 +151,41 @@ Variables bound to local definitions from other blocks, such as enclosing ones, 
     : ℕ → bool)) k
     : bool
   
+
+An ascribed definition displayed as the value of a let-only clause doesn't leave its opening parenthesis alone on a line.
+
+  $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  axiom z : ℕ  axiom f : ℕ → ℕ → ℕ' -e 'display let ≔ definitions' -e 'def t (x : ℕ) : ℕ → ℕ ≔ let a : ℕ → ℕ ≔ let c ≔ f x x in let d : ℕ → ℕ ≔ (let e ≔ f (f x x) (f x c) in [ zero. ↦ f (f e e) (f e e) | suc. _ ↦ f (f z z) (f z z) ]) in [ zero. ↦ f (f (d z) (d z)) (d z) | suc. _ ↦ f (f z z) (f z z) ] in let b : ℕ → ℕ ≔ [ zero. ↦ a z | suc. _ ↦ z ] in b' -e 'echo t z'
+  let only x : ℕ ≔ z
+  and a : ℕ → ℕ ≔
+    let only x : ℕ ≔ z in
+    (let c ≔ f x x in
+     let d ≔
+       let e ≔ f (f x x) (f x c) in
+       𝑥 ↦ match 𝑥 [ suc. 𝑦 ↦ f (f z z) (f z z) | zero. ↦ f (f e e) (f e e) ]
+     in
+     𝑥 ↦
+     match 𝑥 [ suc. 𝑦 ↦ f (f z z) (f z z) | zero. ↦ f (f (d z) (d z)) (d z) ]
+     : ℕ → ℕ) in
+  (𝑥 ↦ match 𝑥 [ suc. 𝑦 ↦ z | zero. ↦ a z ] : ℕ → ℕ)
+    : ℕ → ℕ
+  
+
+The body of a let-only around a displayed definition is ascribed unless it synthesizes.  An implicitly dependent match (on a variable, refining the goal) doesn't synthesize, since its branches may have different types; but a non-dependent match synthesizes if one of its branches does, and a match with an explicit motive always synthesizes.
+
+  $ narya -e 'def B : Type ≔ data [ true. | false. ]  def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  def T (x : B) : Type ≔ match x [ true. ↦ B | false. ↦ ℕ ]  axiom u : B  axiom b0 : B  axiom n0 : ℕ  axiom not : B → B' -e 'def g (x : B) (b : B) (n : ℕ) : T x ≔ ((y ↦ y) : T x → T x) (match x [ true. ↦ b | false. ↦ n ])' -e 'echo g u b0 n0' -e 'def g2 (x : B) (b : B) : B ≔ ((y ↦ y) : B → B) (match not x [ true. ↦ b | false. ↦ true. ])' -e 'echo g2 u b0' -e 'def g3 (x : B) (b : B) : B ≔ ((y ↦ y) : B → B) (match x return _ ↦ B [ true. ↦ b | false. ↦ true. ])' -e 'echo g3 u b0'
+  let only x : B ≔ u
+  and b : B ≔ b0
+  and n : ℕ ≔ n0 in
+  (match x [ false. ↦ n | true. ↦ b ] : T x)
+    : T u
+  
+  let only x : B ≔ u
+  and b : B ≔ b0 in
+  match not x [ false. ↦ true. | true. ↦ b ]
+    : B
+  
+  let only x : B ≔ u
+  and b : B ≔ b0 in
+  match x return 𝑥 ↦ B [ false. ↦ true. | true. ↦ b ]
+    : B
+  

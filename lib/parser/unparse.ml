@@ -314,26 +314,48 @@ let letonly_all_hidden : type mode i b s. (mode, i, b) ordered_termctx -> (mode,
     | Lock _ -> false in
   Option.is_some sib && go ctx
 
-(* Whether we expect a given term to synthesize, after being unparsed. *)
-let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
-  (* A metavariable displayed as its definition might not synthesize, as a case tree construct.  Since this is only for display, we conservatively assume it doesn't. *)
-  | Meta (v, _) -> Option.is_none (displayed_definition v)
+(* Whether we expect a given term to synthesize, after being unparsed.  This applies to potential terms as well as kinetic ones, since a metavariable can be displayed as its definition, which is a potential term.  The set ~visiting contains the metavariables whose definitions we are inside of, whose occurrences are displayed by name. *)
+let rec synths : type mode n s. ?visiting:Meta.WrapSet.t -> (mode, n, s) term -> bool =
+ fun ?(visiting = Meta.WrapSet.empty) tm ->
+  let go tm = synths ~visiting tm in
+  match tm with
+  (* A metavariable displayed as its definition synthesizes if that definition does, while one displayed as its name synthesizes. *)
+  | Meta (v, _) -> (
+      match displayed_definition v with
+      | Some { tm = `Defined def; _ } when not (Meta.WrapSet.mem (Wrap v) visiting) ->
+          synths ~visiting:(Meta.WrapSet.add (Wrap v) visiting) def
+      | _ -> true)
   | Var _ | Const _ | Field _ | UU _ | Inst _ | Pi _ -> true
   (* A let-only always synthesizes, since its body is ascribed if necessary. *)
   | Letonly _ -> true
   | Constr _ | Lam _ | Struct _ -> false
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
-  | App (_, fn, _, _, _) -> synths fn
-  | Act (_, tm, _, _) -> synths tm
-  | Let (_, _, body) -> synths body
+  | App (_, fn, _, _, _) -> go fn
+  | Act (_, tm, _, _) -> go tm
+  | Let (_, _, body) -> go body
   (* A key is either omitted from the display, or applied to its body as a postfix that requires the body to synthesize. *)
-  | Key { tm; _ } -> synths tm
+  | Key { tm; _ } -> go tm
   (* These are just context-manipulating wrappers. *)
-  | Unshift (_, _, tm) -> synths tm
-  | Unact (_, tm) -> synths tm
-  | Shift (_, _, tm) -> synths tm
-  | Weaken (_, tm, _) -> synths tm
+  | Unshift (_, _, tm) -> go tm
+  | Unact (_, tm) -> go tm
+  | Shift (_, _, tm) -> go tm
+  | Weaken (_, tm, _) -> go tm
   | Failed _ -> false
+  (* Of the potential terms, a leaf synthesizes if its term does, while canonical types don't synthesize.  A match synthesizes if its discriminee does, and either it has an explicit motive or it is non-dependent and one of its branches synthesizes (giving the type of the match).  An implicitly dependent match doesn't synthesize, since its branches may have different types. *)
+  | Realize tm -> go tm
+  | Canonical _ -> false
+  | Match { tm; motive; branches; _ } -> (
+      go tm
+      &&
+      match motive with
+      | `Explicit _ -> true
+      | `Nondep ->
+          Constr.Map.exists
+            (fun _ -> function
+              | Branch { tm; _ } -> go tm
+              | Failed_branch -> false)
+            branches
+      | `Implicit -> false)
 
 (* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
 let show_ins : type nk n k. (nk, n, k) insertion -> int list =
@@ -1159,7 +1181,7 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
     (n, mode, window, dom, aw) plus_lock ->
     (dom, aw, kinetic) term ->
     m D.t ->
-    (mode, n, kinetic) term option ->
+    (mode, n) match_motive ->
     (mode, n, m) Term.branch Constr.Map.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -1175,10 +1197,10 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
   (* An explicit motive is displayed in a "return" clause, which is the explicit match notation; it is an abstraction over the datatype's indices, the boundary of the discriminee, and the discriminee itself, so it unparses in the ambient context.  A match without one is displayed as an implicit match. *)
   let notn, start =
     match motive with
-    | Some motive ->
+    | `Explicit motive ->
         let umotive = unparse vars motive No.Interval.entire No.Interval.entire in
         (explicit_mtch, Snoc (Emp, Term disc) <: mktok Return <: Term umotive <: mktok LBracket)
-    | None -> (implicit_mtch, Snoc (Emp, Term disc) <: mktok LBracket) in
+    | `Implicit | `Nondep -> (implicit_mtch, Snoc (Emp, Term disc) <: mktok LBracket) in
   let ubranches =
     Constr.Map.fold
       (fun c br acc ->
