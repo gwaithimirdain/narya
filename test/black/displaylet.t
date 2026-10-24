@@ -189,3 +189,20 @@ The body of a let-only around a displayed definition is ascribed unless it synth
   match x return 𝑥 ↦ B [ false. ↦ true. | true. ↦ b ]
     : B
   
+
+The elided form can't be re-entered, but gives a helpful error message.
+
+  $ narya dl.ny -e 'echo let only … in z'
+   ￫ error[E0209]
+   ￭ command-line exec string
+   1 | echo let only … in z
+     ^ display-only syntax can't be parsed: 'let only … in' indicates a substitution whose bindings were elided when displaying a term; to display them together with definitions instead of names, use 'display let := definitions'
+  
+  [1]
+  $ narya dl.ny -e 'echo sq (let only ... in sq) z'
+   ￫ error[E0209]
+   ￭ command-line exec string
+   1 | echo sq (let only ... in sq) z
+     ^ display-only syntax can't be parsed: 'let only … in' indicates a substitution whose bindings were elided when displaying a term; to display them together with definitions instead of names, use 'display let := definitions'
+  
+  [1]
