@@ -253,7 +253,6 @@ module F = struct
         fprintf ppf "IVar %d.%s" (Tctx.int_of_insert x) (string_of_sface fa)
     | Const c -> fprintf ppf "Const %s" (print_to_string (PConstant c))
     | Meta (v, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
-    | MetaEnv (v, _) -> fprintf ppf "MetaEnv (%s,?)" (print_to_string (PMeta v))
     | Field (_, Modal (_, _, tm), fld, ins) ->
         fprintf ppf "Field (%a, %s%s(%s))" term tm (Field.to_string fld) (string_of_ins ins)
           (string_of_dim (dom_ins ins))
