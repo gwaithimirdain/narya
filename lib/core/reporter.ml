@@ -296,6 +296,7 @@ module Code = struct
     | Invalid_synthesized_type : string * printable -> t
     | Unrecognized_attribute : t
     | Display_only_syntax : string -> t
+    | Generative_copy : t
     | Invalid_degeneracy_action : string * 'nk D.t * 'n D.t -> t
     | Wrong_number_of_patterns : t
     | Inconsistent_patterns : t
@@ -484,6 +485,7 @@ module Code = struct
     | Invalid_synthesized_type _ -> Error
     | Unrecognized_attribute -> Error
     | Display_only_syntax _ -> Error
+    | Generative_copy -> Warning
     | Invalid_degeneracy_action _ -> Bug
     | Wrong_number_of_patterns -> Error
     | Inconsistent_patterns -> Error
@@ -553,6 +555,7 @@ module Code = struct
     | No_relative_precedence _ -> "E0207"
     | Unrecognized_attribute -> "E0208"
     | Display_only_syntax _ -> "E0209"
+    | Generative_copy -> "W0210"
     | Comment_end_in_string -> "E0250"
     | Encoding_error -> "E0299"
     (* Scope errors *)
@@ -1217,6 +1220,9 @@ module Code = struct
           textf "type %a synthesized by %s is invalid for entire term" pp_printed (print ty) str
       | Unrecognized_attribute -> textf "unrecognized attribute"
       | Display_only_syntax str -> textf "display-only syntax can't be parsed: %s" str
+      | Generative_copy ->
+          textf
+            "the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors"
       | Invalid_degeneracy_action (str, nk, n) ->
           textf
             "invalid degeneracy action on %s: dimension '%s' doesn't factor through codomain '%s'"

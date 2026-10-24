@@ -161,7 +161,7 @@ of type Type⁽ᵉ⁾ A.0 A.1, which is not a Type.
                (x0, x1, x2, u0, u1) rfl.
                (id_√_iso Γ A B x0 x1 x2 u0 u1
                 .fro (id_√_iso Γ A B x0 x1 x2 u0 u1 .to a)) a
-               [ .fst.p ↦ rfl. | .snd ↦ rfl. ]))
+               [ #(gen) .fst.p ↦ rfl. | .snd ↦ rfl. ]))
          (id_√_iso Γ A B x0 x1 x2 u0 u1
           .to_fro (id_√_iso Γ A B x0 x1 x2 u0 u1 .to a))
   
