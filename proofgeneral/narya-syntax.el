@@ -1,4 +1,6 @@
-;; narya-syntax.el --- Proof General instance for Narya - syntax file
+;;; narya-syntax.el --- Proof General instance for Narya - syntax file
+
+;;; Code:
 
 (require 'subr-x)
 
@@ -289,6 +291,8 @@ always be correct."
       term)))
 
 (provide 'narya-syntax)
+
+;;; narya-syntax.el ends here
 
 ;; Local Variables:
 ;; indent-tabs-mode: nil
