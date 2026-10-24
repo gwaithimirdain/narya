@@ -199,13 +199,44 @@ let rec is_identity_ordered_env : type mode a b c d.
       | _ -> None)
   | _ -> None
 
-(* Test whether the environment of a metavariable is the identity environment of the context we are reading back in.  Since this is only an optimization of display, any errors encountered just mean that the test fails. *)
+(* A weakening of a context by some variables (but no locks) on the end. *)
+type (_, _) weakening =
+  | Id : ('b, 'b) weakening
+  | Weak : ('d, 'b) weakening -> ('d, ('b, ('modality, 'n) dim_entry) snoc) weakening
+
+let rec weaken_by : type mode d b s.
+    mode Mode.t -> (d, b) weakening -> (mode, d, s) term -> (mode, b, s) term =
+ fun mode w tm ->
+  match w with
+  | Id -> tm
+  | Weak w -> weaken mode (weaken_by mode w tm)
+
+(* Test whether a zero-dimensional environment for a metavariable's context is the identity environment of an ordered context weakened by some variables on the end.  We first test whether it is the identity environment of the whole context, and if not we remove the last variable of the context and try again.  Once the test for the identity has begun to succeed, there can be no more weakening, since a weakening that is not on the end of the context could not be represented by Weaken. *)
+let rec is_weakened_identity_ordered_env : type mode a b c d.
+    (mode, a, b) Ctx.Ordered.t ->
+    (mode, D.zero, d) env ->
+    (mode, c, d) ordered_termctx ->
+    (d, b) weakening option =
+ fun ctx env envctx ->
+  match is_identity_ordered_env ctx env envctx with
+  | Some Eq -> Some Id
+  | None -> (
+      match ctx with
+      | Snoc (ctx, _, _) -> (
+          match is_weakened_identity_ordered_env ctx env envctx with
+          | Some w -> Some (Weak w)
+          | None -> None)
+      | Weaken (ctx, _) -> is_weakened_identity_ordered_env ctx env envctx
+      | _ -> None)
+
+(* Test whether the environment of a metavariable is the identity environment of the context we are reading back in, possibly weakened by some variables on the end.  Since this is only an optimization of display, any errors encountered just mean that the test fails. *)
 let is_identity_env : type mode a b n c d.
-    (mode, a, b) Ctx.t -> (mode, n, d) env -> (mode, c, d) termctx -> (b, d) Eq.t option =
+    (mode, a, b) Ctx.t -> (mode, n, d) env -> (mode, c, d) termctx -> (d, b) weakening option =
  fun (Permute { ctx; _ }) env (Permute (_, envctx)) ->
   match D.compare (dim_env env) D.zero with
   | Eq ->
-      Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () -> is_identity_ordered_env ctx env envctx
+      Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
+      is_weakened_identity_ordered_env ctx env envctx
   | Neq -> None
 
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
@@ -687,10 +718,10 @@ and readback_head : type mode c z.
           Act (Kinetic, Const name, deg, (sort, canonical)))
   | Meta { meta; env; ins } -> (
       let termctx = (Global.find_meta meta).termctx in
-      (* If the environment is the identity, we can omit it. *)
+      (* If the environment is the identity, possibly weakened, we can omit it. *)
       let tm : (mode, c, kinetic) term =
         match is_identity_env ctx env termctx with
-        | Some Eq -> Meta (meta, Kinetic)
+        | Some w -> weaken_by (Ctx.mode ctx) w (Meta (meta, Kinetic))
         | None -> MetaEnv (meta, readback_env ctx env termctx) in
       match is_id_ins ins with
       | Some _ -> tm

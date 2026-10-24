@@ -43,7 +43,7 @@ A hole in the shared domain is created only once, and is shared by all the varia
    ￮ hole ?1:
      
      ----------------------------------------------------------------------
-     (x : ?0) (y : ?0{…}) → Type
+     (x : ?0) (y : ?0) → Type
   
    ￫ info[I0005]
    ￮ hole solved
