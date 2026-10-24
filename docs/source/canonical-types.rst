@@ -69,7 +69,7 @@ Similarly, we can do a deep match against particular finite types:
 
 Here we also see another advantage of the recursive approach: the index ``n`` is not an argument of the constructors, so the syntax is much simpler.  In the inductive approach we would have to write ``suc. 3 (suc. 2 (zero. 1))`` for "2" in ``Fin 4``, and there are not yet any implicit arguments or unification.
 
-Like ``match`` and ``comatch``, the constructs ``sig``, ``data``, and ``codata`` can technically only occur in case trees, so if they appear outside a top-level case tree or ``let`` binding they are automatically lifted to a top-level case tree.  Also like ``match`` and ``comatch``, they are generative, and when they occur outside a top-level case tree they are not printed comprehensibly.  For example:
+Like ``match`` and ``comatch``, the constructs ``sig``, ``data``, and ``codata`` can technically only occur in case trees, so if they appear outside a top-level case tree or ``let`` binding they are automatically lifted to a top-level case tree.  Also like ``match`` and ``comatch``, they are generative, so that textually identical such types defined in two different places are unequal.  For example:
 
 .. code-block:: none
 
@@ -82,8 +82,12 @@ Like ``match`` and ``comatch``, the constructs ``sig``, ``data``, and ``codata``
     ￫ error[E0401]
     4 |   let f : A → B ≔ x ↦ x in
       ^ term synthesized type
-          _let.0.A
+          A
         but is being checked against type
+          B
+        unequal head metavariables:
+          _let.0.A
+        does not equal
           _let.1.B
 
-Thus, it is probably ill-advised to use such "on-the-fly" definitions of canonical types very much.  However, it may sometimes be convenient to, for example, pass a custom type like ``data [ red. | green. | blue. ]`` directly as an argument to some other function.  Types defined directly on the fly like this cannot be recursive, so in practice their usefulness is mostly restricted to record types and enumerated types (which could, in theory, also be printed more comprehensibly, and even treated non-generatively).  However, local recursive types can be defined with ``let rec``, e.g. ``let rec ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ] in ...``.
+Thus, it is probably ill-advised to use such "on-the-fly" definitions of canonical types very much.  However, it may sometimes be convenient to, for example, pass a custom type like ``data [ red. | green. | blue. ]`` directly as an argument to some other function.  Such a type passed directly as an argument is printed as its definition, e.g. ``f (data [ red. | green. | blue. ])``.  Types defined directly on the fly like this cannot be recursive, so in practice their usefulness is mostly restricted to record types and enumerated types (which could, in theory, also be treated non-generatively).  However, local recursive types can be defined with ``let rec``, e.g. ``let rec ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ] in ...``.

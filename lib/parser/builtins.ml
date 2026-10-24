@@ -642,6 +642,10 @@ let rec get_abslets heads obs =
               :: Term arg
               :: rest ->
                 (`Op ([ (plet, wslet); (Token.pp Only, wsonly) ], tok, wstok, Wrap arg), rest)
+            (* For display only, the clauses of a let-only can be elided entirely by an ellipsis. *)
+            | Token (Only, (wsonly, _)) :: Token (Ellipsis, (wsellipsis, _)) :: rest ->
+                ( `Elided [ (plet, wslet); (Token.pp Only, wsonly); (Token.pp Ellipsis, wsellipsis) ],
+                  rest )
             | Term x :: rest -> (`Var ([ (plet, wslet) ], Wrap x), rest)
             | _ -> invalid "let")
         | None, Token (And, (wsand, _)) :: Term x :: rest ->
@@ -653,6 +657,11 @@ let rec get_abslets heads obs =
             :: rest ) -> (`Op ([ (Token.pp And, wsand) ], tok, wstok, Wrap arg), rest)
         | _ -> invalid "let" in
       match toks with
+      | `Elided toks -> (
+          match obs with
+          | [ Token (In, (wsin, _)); Term body ] ->
+              get_abslets_of_parse (Snoc (heads, `Elided (toks, wsin))) (Wrap body)
+          | _ -> invalid "let-only")
       (* A lock or key clause of a let-only goes on its own line. *)
       | `Op (toks, tok, wstok, arg) -> (
           let toks = toks @ [ (Token.pp tok, wstok) ] in
@@ -727,6 +736,15 @@ let pp_abslets obs :
                   optional (pp_ws `Break) prews ^^ group (hang 2 (kws ^^ parg) ^^ nest 2 pin) ),
               Emp,
               Some ws )
+        | `Elided (toks, wsin) ->
+            let kws = concat_map (fun (tok, ws) -> tok ^^ pp_ws `Nobreak ws) toks in
+            ( introabs,
+              Snoc
+                ( Bwd_extra.append heads
+                    (Bwd.map (fun (ws, x) -> optional (pp_ws `Break) ws ^^ x) trailabs),
+                  optional (pp_ws `Break) prews ^^ group (kws ^^ Token.pp In) ),
+              Emp,
+              Some wsin )
         | `Let (toks, Wrap x, ty, wscoloneq, Wrap tm, wsin) ->
             let kws = concat_map (fun (tok, ws) -> tok ^^ pp_ws `Nobreak ws) toks in
             let px, wx = pp_term x in
