@@ -1167,7 +1167,8 @@ and kinetic_of_potential : type mode a b.
       emit (Bare_case_tree_construct sort);
       (* We create a metavariable to store the potential value. *)
       let meta =
-        Meta.make_def sort None (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential in
+        Meta.make_def (`Bare sort) None (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential
+      in
       (* We first define the metavariable without a value, as an "axiom", just as we do for global constants.  This isn't necessary for recursion, since this metavariable can't refer to itself, but so that with_meta_definition will be able to find it for consistency. *)
       let termctx = readback_ctx ctx in
       let vty = readback_val ctx ty in
@@ -1213,7 +1214,7 @@ and synth_or_check_let : type mode a b s p.
           | Case_tree_construct_in_let ->
             (* First we make the metavariable. *)
             let meta =
-              Meta.make_def "let" name (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx)
+              Meta.make_def `Let name (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx)
                 Potential in
             let termctx = readback_ctx lctx in
             (* A new status in which to check the value of that metavariable; now it is the "current constant" being defined. *)
@@ -1367,7 +1368,7 @@ and make_letrec_metas : type mode x a b ab.
       | Eq, Plus_lock (Zero _, Zero) ->
           (* Create the metavariable. *)
           let meta =
-            Meta.make_def "letrec" x (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential
+            Meta.make_def `Letrec x (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential
           in
           (* Assign it the correct type. *)
           let termctx = readback_ctx ctx in
@@ -4228,7 +4229,7 @@ and synth : type mode a b s.
             emit (Bare_case_tree_construct "match");
             (* A match in a kinetic synthesizing position, we can treat like a let-binding that returns the bound (metavariable) value.  Of course we can shortcut the binding by just inserting the metavariable as the result.  This code is copied and modified from synth_or_check_let.  Note that in this case there is no evident way to give the metavariable a type before defining it, which means that with_meta_definition won't be able to set it to anything; but this shouldn't be a problem since there is also no name for this metavariable and hence no way for the user to refer to it in the body, so it doesn't need to have a type or a value. *)
             let meta =
-              Meta.make_def "match" None (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx)
+              Meta.make_def (`Bare "match") None (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx)
                 Potential in
             let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun x -> x) in
             (* First we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
