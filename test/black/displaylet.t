@@ -151,3 +151,21 @@ Variables bound to local definitions from other blocks, such as enclosing ones, 
     : ℕ → bool)) k
     : bool
   
+
+An ascribed definition displayed as the value of a let-only clause doesn't leave its opening parenthesis alone on a line.
+
+  $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  axiom z : ℕ  axiom f : ℕ → ℕ → ℕ' -e 'display let ≔ definitions' -e 'def t (x : ℕ) : ℕ → ℕ ≔ let a : ℕ → ℕ ≔ let c ≔ f x x in let d : ℕ → ℕ ≔ (let e ≔ f (f x x) (f x c) in [ zero. ↦ f (f e e) (f e e) | suc. _ ↦ f (f z z) (f z z) ]) in [ zero. ↦ f (f (d z) (d z)) (d z) | suc. _ ↦ f (f z z) (f z z) ] in let b : ℕ → ℕ ≔ [ zero. ↦ a z | suc. _ ↦ z ] in b' -e 'echo t z'
+  let only x : ℕ ≔ z
+  and a : ℕ → ℕ ≔
+    let only x : ℕ ≔ z in
+    (let c ≔ f x x in
+     let d ≔
+       let e ≔ f (f x x) (f x c) in
+       𝑥 ↦ match 𝑥 [ suc. 𝑦 ↦ f (f z z) (f z z) | zero. ↦ f (f e e) (f e e) ]
+     in
+     𝑥 ↦
+     match 𝑥 [ suc. 𝑦 ↦ f (f z z) (f z z) | zero. ↦ f (f (d z) (d z)) (d z) ]
+     : ℕ → ℕ) in
+  (𝑥 ↦ match 𝑥 [ suc. 𝑦 ↦ z | zero. ↦ a z ] : ℕ → ℕ)
+    : ℕ → ℕ
+  
