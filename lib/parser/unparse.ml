@@ -761,11 +761,15 @@ and unparse_letonly_clauses_pending : type mode n i k b.
  fun vars ctx tmenv ->
   match (ctx, tmenv) with
   | Emp _, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty)
-  | ( Ext (ctx, Vis { vars = xs; plus_lock; bindings; _ }, _),
-      Ext { env; values = Modal (modality, plus, tms); _ } ) ->
+  | Ext (ctx, entry, _), Ext { env; values = Modal (modality, plus, tms); _ } ->
       let acc, names = unparse_letonly_clauses vars ctx env in
+      (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
+      let bindings, plus_lock, name =
+        match entry with
+        | Vis { vars = xs; plus_lock; bindings; _ } -> (bindings, plus_lock, NICubeOf.find_top xs)
+        | Invis { plus_lock; bindings; hints; _ } -> (bindings, plus_lock, `Anon hints) in
       let n = CubeOf.dim bindings in
-      let x, names = Names.add_cube n names (NICubeOf.find_top xs) in
+      let x, names = Names.add_cube n names name in
       let ty =
         unparse (Names.add_lock names plus_lock)
           (uninst_letonly_type n (CubeOf.find_top bindings).ty)
@@ -779,6 +783,8 @@ and unparse_letonly_clauses_pending : type mode n i k b.
         | Eq -> acc
         | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
       (acc <: Term ty <: mktok Coloneq <: Term tm, No_letonly_lock, names)
+  (* A weakening entry, which can occur in the context of a metavariable, contributes nothing. *)
+  | Weaken (ctx, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
   | Lock (ctx, cgen), Lock { env; gen; plus_tgt = Plus_with_locks (comp, _) } ->
       let Eq = Modality.Gen.tgt_uniq cgen gen in
       let acc, pending, names = unparse_letonly_clauses_pending (Names.split vars comp) ctx env in
@@ -797,9 +803,6 @@ and unparse_letonly_clauses_pending : type mode n i k b.
           acc (Modalcell.name cell),
         No_letonly_lock,
         names )
-  | Lock _, _ | _, Lock _ -> fatal (Anomaly "mismatched lock in let-only")
-  | Ext (_, Invis _, _), _ | Weaken _, _ ->
-      fatal (Anomaly "invisible or weakened variable in let-only")
 
 and flush_letonly_lock : type mode. observation Bwd.t -> mode letonly_lock -> observation Bwd.t =
  fun acc pending ->
