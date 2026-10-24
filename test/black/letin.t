@@ -391,7 +391,8 @@ Matches outside case trees can be implicitly wrapped in a let-binding:
   true.
     : bool
   
-  _match.F3.0{…}
+  let only b : bool ≔ u in
+  (match b [ false. ↦ true. | true. ↦ false. ] : bool)
     : bool
   
 
@@ -429,7 +430,10 @@ Pattern-matching lambdas can be used in arbitrary places:
    ￫ info[I0001]
    ￮ axiom n assumed
   
-  _match.F2.0{…}
+  let only 𝑥 : ℕ ≔
+    let only 𝑥 : ℕ ≔ n in
+    (match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ) in
+  (match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ)
     : ℕ
   
 
