@@ -527,3 +527,31 @@ In a hole, a let-bound variable whose value is its metavariable is displayed as 
    ￮ command-line exec string contains open holes
   
   [1]
+
+This also works for a modal let-bound variable used with a key.
+
+  $ narya -v -spatial letcase.ny -e 'def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]' -e 'def t (b : bool) : bool ≔ let not :♭| bool → bool ≔ [ true. ↦ false. | false. ↦ true. ] in ((p ↦ true.) : J bool (not b) b → bool) ?'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ info[I0001]
+   ￮ axiom u assumed
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ info[I0000]
+   ￮ constant t defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     b : bool
+     not ≔ _let.F4.0.not :♭| bool → bool
+     ----------------------------------------------------------------------
+     J bool (not b) b
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
