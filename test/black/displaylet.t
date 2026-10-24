@@ -21,9 +21,10 @@ By default, they are displayed by name, with the substitution elided.
     : ℕ
   
   $ narya dl.ny -e 'display let ≔ definitions' -e 'echo sqdec z'
-  (let only x : ℕ ≔ z in (𝑥 ↦ match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ))
-    ((let only x : ℕ ≔ z in (𝑥 ↦ match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ))
-       z)
+  (let only x : ℕ ≔ z in
+   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ))
+    ((let only x : ℕ ≔ z in
+      (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ)) z)
     : ℕ
   
   $ narya dl.ny -ascii -e 'echo sqdec z'
@@ -77,8 +78,8 @@ A recursive local definition refers to itself by name.
 
   $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  def bool : Type ≔ data [ true. | false. ]' -e 'display let ≔ definitions' -e 'def ev (m : ℕ) : bool ≔ let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ even n ] in even m' -e 'axiom k : ℕ' -e 'echo ev (suc. k)'
   (let only m : ℕ ≔ suc. k in
-   (𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F4.0.even n | zero. ↦ true. ] : ℕ → bool))
-    k
+   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ _letrec.F4.0.even n | zero. ↦ true. ]
+    : ℕ → bool)) k
     : bool
   
 
@@ -114,11 +115,11 @@ In a mutual block, the variables bound to the other local definitions are not di
   
   $ narya eo.ny -e 'display let ≔ definitions' -e 'echo eo (suc. k)' -e 'echo eo2'
   (let only m : ℕ ≔ suc. k in
-   (𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F2.0.even n | zero. ↦ false. ] : ℕ → bool))
-    k
+   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ _letrec.F2.0.even n | zero. ↦ false. ]
+    : ℕ → bool)) k
     : bool
   
-  𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F2.2.even n | zero. ↦ false. ]
+  𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ _letrec.F2.2.even n | zero. ↦ false. ]
     : ℕ → bool
   
 
@@ -145,9 +146,10 @@ Variables bound to local definitions from other blocks, such as enclosing ones, 
   (let only m : ℕ ≔ k
    and f : ℕ → bool ≔
      let only m : ℕ ≔ k in
-     (𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F2.0.f n | zero. ↦ true. ] : ℕ → bool)
-   in
-   (𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F2.2.g2 n | zero. ↦ _letrec.F2.1.g m ]
+     (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ _letrec.F2.0.f n | zero. ↦ true. ]
+      : ℕ → bool) in
+   (𝑥 ↦
+    match #(gen) 𝑥 [ suc. n ↦ _letrec.F2.2.g2 n | zero. ↦ _letrec.F2.1.g m ]
     : ℕ → bool)) k
     : bool
   
@@ -161,12 +163,15 @@ An ascribed definition displayed as the value of a let-only clause doesn't leave
     (let c ≔ f x x in
      let d ≔
        let e ≔ f (f x x) (f x c) in
-       𝑥 ↦ match 𝑥 [ suc. 𝑦 ↦ f (f z z) (f z z) | zero. ↦ f (f e e) (f e e) ]
-     in
+       𝑥 ↦ match #(gen) 𝑥 [
+       | suc. 𝑦 ↦ f (f z z) (f z z)
+       | zero. ↦ f (f e e) (f e e)] in
      𝑥 ↦
-     match 𝑥 [ suc. 𝑦 ↦ f (f z z) (f z z) | zero. ↦ f (f (d z) (d z)) (d z) ]
+     match #(gen) 𝑥 [
+     | suc. 𝑦 ↦ f (f z z) (f z z)
+     | zero. ↦ f (f (d z) (d z)) (d z)]
      : ℕ → ℕ) in
-  (𝑥 ↦ match 𝑥 [ suc. 𝑦 ↦ z | zero. ↦ a z ] : ℕ → ℕ)
+  (𝑥 ↦ match #(gen) 𝑥 [ suc. 𝑦 ↦ z | zero. ↦ a z ] : ℕ → ℕ)
     : ℕ → ℕ
   
 
@@ -176,17 +181,17 @@ The body of a let-only around a displayed definition is ascribed unless it synth
   let only x : B ≔ u
   and b : B ≔ b0
   and n : ℕ ≔ n0 in
-  (match x [ false. ↦ n | true. ↦ b ] : T x)
+  (match #(gen) x [ false. ↦ n | true. ↦ b ] : T x)
     : T u
   
   let only x : B ≔ u
   and b : B ≔ b0 in
-  match not x [ false. ↦ true. | true. ↦ b ]
+  match #(gen) not x [ false. ↦ true. | true. ↦ b ]
     : B
   
   let only x : B ≔ u
   and b : B ≔ b0 in
-  match x return 𝑥 ↦ B [ false. ↦ true. | true. ↦ b ]
+  match #(gen) x return 𝑥 ↦ B [ false. ↦ true. | true. ↦ b ]
     : B
   
 
@@ -204,5 +209,72 @@ The elided form can't be re-entered, but gives a helpful error message.
    ￭ command-line exec string
    1 | echo sq (let only ... in sq) z
      ^ display-only syntax can't be parsed: 'let only … in' indicates a substitution whose bindings were elided when displaying a term; to display them together with definitions instead of names, use 'display let := definitions'
+  
+  [1]
+
+The first case-tree-only construct in a displayed definition is marked with the attribute #(gen).  When entered, it is accepted on any case tree construct, with a warning that the construct is generative.
+
+  $ cat >gen.ny <<EOF
+  > def B : Type ≔ data [ true. | false. ]
+  > def f (x : B) : B ≔ match #(gen) x [ true. ↦ false. | false. ↦ true. ]
+  > def f2 (x : B) : B ≔ match #(gen) x return _ ↦ B [ true. ↦ false. | false. ↦ true. ]
+  > def g : B → B ≔ [ #(gen) true. ↦ false. | false. ↦ true. ]
+  > def S : Type ≔ codata [ x .h : B ]
+  > def s : S ≔ [ #(gen) .h ↦ true. ]
+  > def E : Type ≔ data #(gen) [ ]
+  > def e : E → B ≔ [ #(gen) ]
+  > def R : Type ≔ sig #(gen) (a : B)
+  > def C : Type ≔ codata #(gen) [ x .h : B ]
+  > EOF
+
+  $ narya -no-reformat gen.ny
+   ￫ warning[W0210]
+   ￭ $TESTCASE_ROOT/gen.ny
+   2 | def f (x : B) : B ≔ match #(gen) x [ true. ↦ false. | false. ↦ true. ]
+     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+  
+   ￫ warning[W0210]
+   ￭ $TESTCASE_ROOT/gen.ny
+   3 | def f2 (x : B) : B ≔ match #(gen) x return _ ↦ B [ true. ↦ false. | false. ↦ true. ]
+     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+  
+   ￫ warning[W0210]
+   ￭ $TESTCASE_ROOT/gen.ny
+   4 | def g : B → B ≔ [ #(gen) true. ↦ false. | false. ↦ true. ]
+     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+  
+   ￫ warning[W0210]
+   ￭ $TESTCASE_ROOT/gen.ny
+   6 | def s : S ≔ [ #(gen) .h ↦ true. ]
+     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+  
+   ￫ warning[W0210]
+   ￭ $TESTCASE_ROOT/gen.ny
+   7 | def E : Type ≔ data #(gen) [ ]
+     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+  
+   ￫ warning[W0210]
+   ￭ $TESTCASE_ROOT/gen.ny
+   8 | def e : E → B ≔ [ #(gen) ]
+     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+  
+   ￫ warning[W0210]
+   ￭ $TESTCASE_ROOT/gen.ny
+   9 | def R : Type ≔ sig #(gen) (a : B)
+     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+  
+   ￫ warning[W0210]
+   ￭ $TESTCASE_ROOT/gen.ny
+   10 | def C : Type ≔ codata #(gen) [ x .h : B ]
+      ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+  
+
+Other attributes aren't allowed on matches and comatches.
+
+  $ narya -e 'def B : Type ≔ data [ true. | false. ]' -e 'def f (x : B) : B ≔ match #(foo) x [ true. ↦ false. | false. ↦ true. ]'
+   ￫ error[E0208]
+   ￭ command-line exec string
+   1 | def f (x : B) : B ≔ match #(foo) x [ true. ↦ false. | false. ↦ true. ]
+     ^ unrecognized attribute
   
   [1]

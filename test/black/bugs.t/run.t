@@ -580,7 +580,7 @@
      
      m : ⊤
      ----------------------------------------------------------------------
-     match m [ star. ↦ sig () ]
+     match #(gen) m [ star. ↦ sig () ]
   
    ￫ error[E3002]
    ￮ file match_in_type.ny contains open holes

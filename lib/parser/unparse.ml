@@ -269,6 +269,20 @@ let rec get_bwd : type mode n.
 (* The metavariables whose definitions we are currently unparsing. *)
 let unparsing_metas : Meta.WrapSet.t ref = ref Meta.WrapSet.empty
 
+(* Whether we are unparsing the definition of a metavariable and haven't yet reached its first case-tree-only construct.  We mark that construct with the attribute #(gen), so that if the user copies and re-enters it they will be warned that it is generative, and hence won't be equal to the original metavariable. *)
+let pending_gen : bool ref = ref false
+
+(* Add the attribute #(gen) to the observations of a case-tree-only construct, if it is the first one in the definition of a metavariable.  This must be called before unparsing the subterms of the construct, which might contain other such constructs. *)
+let gen_attribute (acc : observation Bwd.t) : observation Bwd.t =
+  if !pending_gen then (
+    pending_gen := false;
+    acc
+    <: mktok (Op "#")
+    <: mktok LParen
+    <: Term (unlocated (Ident ([ "gen" ], [])))
+    <: mktok RParen)
+  else acc
+
 (* A metavariable inserted automatically to hold a bare case tree construct is displayed as its definition, which lives in the context of the metavariable.  So are other metavariables (such as those bound by let-bindings), if the user asks for it with "display let ≔ definitions".  If it has no definition (e.g. a hole, or because we are displaying an error that occurred while checking it), we fall back to its name.  We also use its name for occurrences inside its own definition, as in the constructor types of a datatype or a recursive let-binding. *)
 let displayed_definition : type mode x b s.
     (mode, x, b, s) Meta.t -> (mode, x, b, s) Metadef.t option =
@@ -584,9 +598,13 @@ let rec unparse : type mode n lt ls rt rs s.
       match displayed_definition v with
       | Some { tm = `Defined def; _ } ->
           let outer = !unparsing_metas in
+          let outer_gen = !pending_gen in
           unparsing_metas := Meta.WrapSet.add (Wrap v) outer;
+          pending_gen := true;
           Fun.protect
-            ~finally:(fun () -> unparsing_metas := outer)
+            ~finally:(fun () ->
+              unparsing_metas := outer;
+              pending_gen := outer_gen)
             (fun () -> unparse_meta_definition ~sib:(Wrap v) vars def li ri)
       | _ -> unparse_meta_name v)
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
@@ -1047,7 +1065,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
             match tok with
             | [] -> [ mktok (Op ",") ]
             | _ :: _ -> tok ))
-        ( Snoc (Emp, ldelim),
+        ( gen_attribute Emp <: ldelim,
           match eta with
           | Noeta -> [ mktok (Op "|") ]
           | Eta -> [] )
@@ -1088,7 +1106,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
                   <: Term (ty self),
                   false,
                   var_names ))
-              (Snoc (Emp, mktok LParen), true, var_names)
+              (gen_attribute Emp <: mktok LParen, true, var_names)
               instances in
           unlocated
             (outfix ~notn:record ~inner:(Multiple (dimtok Sig evaldim, inner, wstok RParen))))
@@ -1129,7 +1147,7 @@ and unparse_data : type mode a m lt ls rt rs.
         let cterm =
           unparse_dataconstr vars c ty ~output:outputs No.Interval.entire No.Interval.entire in
         acc <: mktok (Op "|") <: Term cterm)
-      (Snoc (Emp, mktok LBracket))
+      (gen_attribute Emp <: mktok LBracket)
       constrs in
   unlocated (outfix ~notn:data ~inner:(Multiple (dimtok Data evaldim, inner, wstok RBracket)))
 
@@ -1200,8 +1218,9 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
     match motive with
     | `Explicit motive ->
         let umotive = unparse vars motive No.Interval.entire No.Interval.entire in
-        (explicit_mtch, Snoc (Emp, Term disc) <: mktok Return <: Term umotive <: mktok LBracket)
-    | `Implicit | `Nondep -> (implicit_mtch, Snoc (Emp, Term disc) <: mktok LBracket) in
+        ( explicit_mtch,
+          gen_attribute Emp <: Term disc <: mktok Return <: Term umotive <: mktok LBracket )
+    | `Implicit | `Nondep -> (implicit_mtch, gen_attribute Emp <: Term disc <: mktok LBracket) in
   let ubranches =
     Constr.Map.fold
       (fun c br acc ->
@@ -1286,10 +1305,11 @@ and unparse_comatch : type mode n a s et lt ls rt rs.
             acc <: mktok (Op "|") <: Term pat <: mktok Mapsto <: Term ubody)
       acc
       (all_pbij_between dim (Field.dim fld)) in
+  let attr = gen_attribute Emp in
   match fields with
   | Emp ->
       unlocated
-        (outfix ~notn:empty_co_match ~inner:(Multiple (wstok LBracket, Emp, wstok RBracket)))
+        (outfix ~notn:empty_co_match ~inner:(Multiple (wstok LBracket, attr, wstok RBracket)))
   | _ ->
       let inner =
         Bwd.fold_left
@@ -1308,7 +1328,7 @@ and unparse_comatch : type mode n a s et lt ls rt rs.
                 higher_fields acc fld plus_lock pbijmap
             | Term.Structfield.LazyHigher (_, plus_lock, pbijmap) ->
                 higher_fields acc fld plus_lock (Lazy.force pbijmap))
-          Emp fields in
+          attr fields in
       unlocated (outfix ~notn:comatch ~inner:(Multiple (wstok LBracket, inner, wstok RBracket)))
 
 (* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing.  The flag ~more indicates that the spine will be applied to more arguments, so that its right edge faces a juxtaposition (see word_like_notation). *)

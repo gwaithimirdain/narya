@@ -1613,6 +1613,138 @@ let () =
     }
 
 (* ********************
+   Attributes
+   ******************** *)
+
+(* Several "case" notations (sig, codata, data) admit attributes written #(...) after the keyword.  Each attribute group contains either a multiword string attribute like #(transparent labeled), or a valued attribute like #(variables ≔ x,y,z).  This tree combinator allows any number of attribute groups before continuing with the given branch. *)
+let rec attributes rest () =
+  let r = rest () in
+  {
+    r with
+    ops =
+      TokMap.add (Op "#")
+        ( op LParen
+            (terms
+               [
+                 (RParen, Lazy (lazy (Inner (attributes rest ()))));
+                 (Coloneq, Lazy (lazy (attribute_values rest ())));
+                 (Pluseq, Lazy (lazy (attribute_values rest ())));
+               ]),
+          `Noss )
+        r.ops;
+  }
+
+and attribute_values rest () =
+  terms
+    [
+      (Op ",", Lazy (lazy (attribute_values rest ())));
+      (RParen, Lazy (lazy (Inner (attributes rest ()))));
+    ]
+
+(* Extract the attribute groups from the beginning of an observation list, as a list of multiword names with optional value lists.  A valued attribute records whether its values were given with ≔ (replacing any global defaults, [`Replace]) or with ⩲ (prepended to the global defaults, [`Prepend]). *)
+let rec get_attributes :
+    observation list ->
+    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list
+    * observation list =
+ fun obs ->
+  match obs with
+  | Token (Op "#", _) :: Token (LParen, _) :: Term attr :: rest -> (
+      let strs = fst (Postprocess.strings_of_term attr.value) in
+      match rest with
+      | Token (RParen, _) :: rest ->
+          let attrs, rest = get_attributes rest in
+          ((strs, None, attr.loc) :: attrs, rest)
+      | Token (((Coloneq | Pluseq) as sep), _) :: rest ->
+          let mode = if sep = Pluseq then `Prepend else `Replace in
+          let vals, rest = get_attribute_values rest in
+          let attrs, rest = get_attributes rest in
+          ((strs, Some (vals, mode), attr.loc) :: attrs, rest)
+      | _ -> invalid "attribute")
+  | _ -> ([], obs)
+
+and get_attribute_values : observation list -> wrapped_parse list * observation list =
+ fun obs ->
+  match obs with
+  | Term v :: Token (Op ",", _) :: rest ->
+      let vals, rest = get_attribute_values rest in
+      (Wrap v :: vals, rest)
+  | Term v :: Token (RParen, _) :: rest -> ([ Wrap v ], rest)
+  | _ -> invalid "attribute"
+
+(* Allow a single attribute group without values, like #(gen), at the beginning of a tree.  Unlike "attributes" above, this is finite, so it can be used for notations that share their initial token and hence have their trees merged, since merging forces all the lazy subtrees. *)
+let rec with_attribute : type t s. (t, s) tree -> (t, s) tree = function
+  | Inner b ->
+      Inner { b with ops = TokMap.add (Op "#") (op LParen (term RParen (Inner b)), `Noss) b.ops }
+  | Lazy t -> Lazy (lazy (with_attribute (Lazy.force t)))
+  | t -> t
+
+(* When the unparser displays the definition of a metavariable, it marks the first case-tree-only construct (such as a match, comatch, or canonical type) with the attribute #(gen), since if the user copies and re-enters it, it will be generative and won't be equal to the original.  The only effect of this attribute when parsing is a warning. *)
+let process_gen_attribute (strs : string list) vals loc : bool =
+  match (strs, vals) with
+  | [ "gen" ], None ->
+      emit ?loc Generative_copy;
+      true
+  | _ -> false
+
+(* Process the attributes of a case tree construct that has no other attributes. *)
+let process_gen_attributes attrs =
+  List.iter
+    (fun (strs, vals, loc) ->
+      if not (process_gen_attribute strs vals loc) then fatal ?loc Unrecognized_attribute)
+    attrs
+
+(* Strip and process the attributes following the initial token of the observations of a case tree construct that has no other attributes. *)
+let strip_gen_attributes : observation list -> observation list = function
+  | first :: obs ->
+      let attrs, obs = get_attributes obs in
+      process_gen_attributes attrs;
+      first :: obs
+  | [] -> []
+
+(* Print the attribute groups at the beginning of an observation list, appended to the given document with the given whitespace pending before them.  Returns the extended document, the pending whitespace after it, and the remaining observations. *)
+let rec pp_attributes (accum : document) (prews : Whitespace.t list) (obs : observation list) :
+    document * Whitespace.t list * observation list =
+  match obs with
+  | Token (Op "#", (wshash, _)) :: Token (LParen, (wslattr, _)) :: Term attr :: rest -> (
+      let pattr, wattr = pp_term attr in
+      let start =
+        Token.pp (Op "#") ^^ pp_ws `None wshash ^^ Token.pp LParen ^^ pp_ws `None wslattr ^^ pattr
+      in
+      match rest with
+      | Token (RParen, (wsrattr, _)) :: rest ->
+          pp_attributes
+            (accum ^^ group (pp_ws `Break prews ^^ start ^^ pp_ws `None wattr ^^ Token.pp RParen))
+            wsrattr rest
+      | Token (((Coloneq | Pluseq) as sep), (wssep, _)) :: rest ->
+          let vals, wsrattr, rest = pp_attribute_values empty rest in
+          pp_attributes
+            (accum
+            ^^ group
+                 (pp_ws `Break prews
+                 ^^ start
+                 ^^ pp_ws `Nobreak wattr
+                 ^^ Token.pp sep
+                 ^^ pp_ws `Nobreak wssep
+                 ^^ vals
+                 ^^ Token.pp RParen))
+            wsrattr rest
+      | _ -> invalid "attribute")
+  | _ -> (accum, prews, obs)
+
+and pp_attribute_values (accum : document) (obs : observation list) :
+    document * Whitespace.t list * observation list =
+  match obs with
+  | Term v :: Token (Op ",", (wscomma, _)) :: rest ->
+      let pv, wv = pp_term v in
+      pp_attribute_values
+        (accum ^^ pv ^^ pp_ws `None wv ^^ Token.pp (Op ",") ^^ pp_ws `Nobreak wscomma)
+        rest
+  | Term v :: Token (RParen, (wsrparen, _)) :: rest ->
+      let pv, wv = pp_term v in
+      (accum ^^ pv ^^ pp_ws `None wv, wsrparen, rest)
+  | _ -> invalid "attribute"
+
+(* ********************
    Matches
  ******************** *)
 
@@ -2287,7 +2419,8 @@ let rec pp_discriminees accum prews obs : document * Whitespace.t list * observa
 (* Print an implicit match, explicit match, matching lambda, or comatch, with possible multiple discriminees and possible 'return'.  We can combine comatches with matches because a "field" is just a term that can be printed like a pattern.  Always nontrivial. *)
 let pp_match triv = function
   | Token (Match, (wsmatch, _)) :: obs -> (
-      let pdisc, wdisc, obs = pp_discriminees (Token.pp Match) wsmatch obs in
+      let pmatch, wsmatch, obs = pp_attributes (Token.pp Match) wsmatch obs in
+      let pdisc, wdisc, obs = pp_discriminees pmatch wsmatch obs in
       let pret, wret, obs =
         match obs with
         (* The motive is parsed as an abstraction sub-notation *)
@@ -2318,8 +2451,9 @@ let pp_match triv = function
             pp_branches true `Nontrivial empty None (must_start_with (Op "|") obs) in
           (align (group (hang 2 pdisc) ^^ pret), group (pp_ws `Break wret ^^ pbranches), wbranches))
   | Token (LBracket, (wslbrack, _)) :: obs ->
+      let plbrack, wslbrack, obs = pp_attributes (Token.pp LBracket) wslbrack obs in
       let pbranches, wbranches = pp_branches true triv empty None (must_start_with (Op "|") obs) in
-      ( Token.pp LBracket,
+      ( plbrack,
         group (pp_ws (if triv = `Trivial then `Nobreak else `Break) wslbrack ^^ pbranches),
         wbranches )
   | _ -> invalid "(co)match 6"
@@ -2329,11 +2463,11 @@ let () =
   make implicit_mtch
     {
       name = "implicit match";
-      tree = Closed_entry (eop Match (discriminees ()));
+      tree = Closed_entry (eop Match (with_attribute (discriminees ())));
       processor =
         (fun ctx obs loc ->
           let ctx = Matchscope.make ctx in
-          match obs with
+          match strip_gen_attributes obs with
           | Token (Match, _) :: obs -> (
               let Wrap xs, obs = get_discriminees obs in
               let branches =
@@ -2367,19 +2501,20 @@ let () =
       tree =
         Closed_entry
           (eop Match
-             (Inner
-                {
-                  empty_branch with
-                  term =
-                    Some
-                      (singleton Return
-                         (* The motive is parsed as an abstraction sub-notation *)
-                         (term LBracket (mtch_branches explicit_mtch true true false)));
-                }));
+             (with_attribute
+                (Inner
+                   {
+                     empty_branch with
+                     term =
+                       Some
+                         (singleton Return
+                            (* The motive is parsed as an abstraction sub-notation *)
+                            (term LBracket (mtch_branches explicit_mtch true true false)));
+                   })));
       processor =
         (fun ctx obs loc ->
           let ctx = Matchscope.make ctx in
-          match obs with
+          match strip_gen_attributes obs with
           | Token (Match, _)
             :: Term tm
             :: Token (Return, _) (* The motive is parsed as an abstraction sub-notation *)
@@ -2418,11 +2553,11 @@ let () =
   make mtchlam
     {
       name = "matchlam";
-      tree = Closed_entry (eop LBracket (mtch_branches mtchlam true false true));
+      tree = Closed_entry (eop LBracket (with_attribute (mtch_branches mtchlam true false true)));
       processor =
         (fun ctx obs loc ->
           (* Empty matching lambdas are a different notation, empty_co_match, so here there must be at least one branch. *)
-          match obs with
+          match strip_gen_attributes obs with
           | Token (LBracket, _) :: Token (Op "|", _) :: obs | Token (LBracket, _) :: obs -> (
               (* We get the *number* of patterns from the first branch. *)
               let Wrap pats, cube, obs = get_any_patterns obs in
@@ -2503,21 +2638,23 @@ let () =
       tree =
         Closed_entry
           (eop LBracket
-             (Inner
-                {
-                  empty_branch with
-                  ops = singleton (Op "|") (comatch_fields ());
-                  field =
-                    (let rest =
-                       terms
-                         [
-                           (Op "|", Lazy (lazy (comatch_fields ()))); (RBracket, Done_closed comatch);
-                         ] in
-                     Some (ops [ (Mapsto, rest); (DblMapsto, rest) ]));
-                }));
+             (with_attribute
+                (Inner
+                   {
+                     empty_branch with
+                     ops = singleton (Op "|") (comatch_fields ());
+                     field =
+                       (let rest =
+                          terms
+                            [
+                              (Op "|", Lazy (lazy (comatch_fields ())));
+                              (RBracket, Done_closed comatch);
+                            ] in
+                        Some (ops [ (Mapsto, rest); (DblMapsto, rest) ]));
+                   })));
       processor =
         (fun ctx obs loc ->
-          match obs with
+          match strip_gen_attributes obs with
           (* We strip off the starting bracket and make sure there is an initial bar, so that process_comatch can treat each clause uniformly. *)
           | Token (LBracket, _) :: obs ->
               let obs = must_start_with (Op "|") obs in
@@ -2541,15 +2678,22 @@ let () =
   make empty_co_match
     {
       name = "empty_co_match";
-      tree = Closed_entry (eop LBracket (op RBracket (Done_closed empty_co_match)));
-      processor = (fun _ _ loc -> { value = Empty_co_match; loc });
+      tree = Closed_entry (eop LBracket (with_attribute (op RBracket (Done_closed empty_co_match))));
+      processor =
+        (fun _ obs loc ->
+          let _ = strip_gen_attributes obs in
+          { value = Empty_co_match; loc });
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "empty (co)match"));
       print_term = None;
       print_case =
         Some
           (fun _triv -> function
-            | [ Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ] ->
-                (Token.pp LBracket ^^ pp_ws `Nobreak wslbrack ^^ Token.pp RBracket, empty, wsrbrack)
+            | Token (LBracket, (wslbrack, _)) :: obs -> (
+                let plbrack, wslbrack, obs = pp_attributes (Token.pp LBracket) wslbrack obs in
+                match obs with
+                | [ Token (RBracket, (wsrbrack, _)) ] ->
+                    (plbrack ^^ pp_ws `Nobreak wslbrack ^^ Token.pp RBracket, empty, wsrbrack)
+                | _ -> invalid "empty_co_match")
             | _ -> invalid "empty_co_match");
       is_case = (fun _ -> true);
     }
@@ -2576,65 +2720,6 @@ let rec codata_fields bar_ok =
              (terms [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]));
     }
 
-(* ********************
-   Attributes
-   ******************** *)
-
-(* Several "case" notations (sig, codata, data) admit attributes written #(...) after the keyword.  Each attribute group contains either a multiword string attribute like #(transparent labeled), or a valued attribute like #(variables ≔ x,y,z).  This tree combinator allows any number of attribute groups before continuing with the given branch. *)
-let rec attributes rest () =
-  let r = rest () in
-  {
-    r with
-    ops =
-      TokMap.add (Op "#")
-        ( op LParen
-            (terms
-               [
-                 (RParen, Lazy (lazy (Inner (attributes rest ()))));
-                 (Coloneq, Lazy (lazy (attribute_values rest ())));
-                 (Pluseq, Lazy (lazy (attribute_values rest ())));
-               ]),
-          `Noss )
-        r.ops;
-  }
-
-and attribute_values rest () =
-  terms
-    [
-      (Op ",", Lazy (lazy (attribute_values rest ())));
-      (RParen, Lazy (lazy (Inner (attributes rest ()))));
-    ]
-
-(* Extract the attribute groups from the beginning of an observation list, as a list of multiword names with optional value lists.  A valued attribute records whether its values were given with ≔ (replacing any global defaults, [`Replace]) or with ⩲ (prepended to the global defaults, [`Prepend]). *)
-let rec get_attributes :
-    observation list ->
-    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list
-    * observation list =
- fun obs ->
-  match obs with
-  | Token (Op "#", _) :: Token (LParen, _) :: Term attr :: rest -> (
-      let strs = fst (Postprocess.strings_of_term attr.value) in
-      match rest with
-      | Token (RParen, _) :: rest ->
-          let attrs, rest = get_attributes rest in
-          ((strs, None, attr.loc) :: attrs, rest)
-      | Token (((Coloneq | Pluseq) as sep), _) :: rest ->
-          let mode = if sep = Pluseq then `Prepend else `Replace in
-          let vals, rest = get_attribute_values rest in
-          let attrs, rest = get_attributes rest in
-          ((strs, Some (vals, mode), attr.loc) :: attrs, rest)
-      | _ -> invalid "attribute")
-  | _ -> ([], obs)
-
-and get_attribute_values : observation list -> wrapped_parse list * observation list =
- fun obs ->
-  match obs with
-  | Term v :: Token (Op ",", _) :: rest ->
-      let vals, rest = get_attribute_values rest in
-      (Wrap v :: vals, rest)
-  | Term v :: Token (RParen, _) :: rest -> ([ Wrap v ], rest)
-  | _ -> invalid "attribute"
-
 (* Require an attribute value to be a valid local variable name. *)
 let var_of_attribute_value : wrapped_parse -> string =
  fun (Wrap x) ->
@@ -2655,10 +2740,11 @@ let process_data_attributes :
     Variables.hints =
  fun attrs ->
   List.fold_left
-    (fun _hints (strs, vals, loc) ->
+    (fun hints (strs, vals, loc) ->
       match (strs, vals) with
       | [ "variables" ], Some (vals, mode) -> hints_of_attribute vals mode
-      | _ -> fatal ?loc Unrecognized_attribute)
+      | _ ->
+          if process_gen_attribute strs vals loc then hints else fatal ?loc Unrecognized_attribute)
     Variables.no_hints attrs
 
 (* Interpret the attributes of a record type declaration: opacity attributes and "variables". *)
@@ -2677,7 +2763,9 @@ let process_record_attributes :
       | [ "transparent"; "positional" ], None -> (`Transparent `Unlabeled, hints)
       | [ "translucent"; "labeled" ], None -> (`Translucent `Labeled, hints)
       | [ "translucent"; "positional" ], None -> (`Translucent `Unlabeled, hints)
-      | _ -> fatal ?loc Unrecognized_attribute)
+      | _ ->
+          if process_gen_attribute strs vals loc then (opacity, hints)
+          else fatal ?loc Unrecognized_attribute)
     (`Opaque, Variables.no_hints) attrs
 
 (* Print the keyword introducing a "case" notation ("sig", "codata", or "data"), which begins its observation list.  Returns the printed keyword, the whitespace pending after it, and the remaining observations, or None if the observations don't start with that keyword.
@@ -2699,49 +2787,6 @@ let pp_case_keyword (tok : Token.t) (obs : observation list) :
               obs )
       | _ -> None)
   | _ -> None
-
-(* Print the attribute groups at the beginning of an observation list, appended to the given document with the given whitespace pending before them.  Returns the extended document, the pending whitespace after it, and the remaining observations. *)
-let rec pp_attributes (accum : document) (prews : Whitespace.t list) (obs : observation list) :
-    document * Whitespace.t list * observation list =
-  match obs with
-  | Token (Op "#", (wshash, _)) :: Token (LParen, (wslattr, _)) :: Term attr :: rest -> (
-      let pattr, wattr = pp_term attr in
-      let start =
-        Token.pp (Op "#") ^^ pp_ws `None wshash ^^ Token.pp LParen ^^ pp_ws `None wslattr ^^ pattr
-      in
-      match rest with
-      | Token (RParen, (wsrattr, _)) :: rest ->
-          pp_attributes
-            (accum ^^ group (pp_ws `Break prews ^^ start ^^ pp_ws `None wattr ^^ Token.pp RParen))
-            wsrattr rest
-      | Token (((Coloneq | Pluseq) as sep), (wssep, _)) :: rest ->
-          let vals, wsrattr, rest = pp_attribute_values empty rest in
-          pp_attributes
-            (accum
-            ^^ group
-                 (pp_ws `Break prews
-                 ^^ start
-                 ^^ pp_ws `Nobreak wattr
-                 ^^ Token.pp sep
-                 ^^ pp_ws `Nobreak wssep
-                 ^^ vals
-                 ^^ Token.pp RParen))
-            wsrattr rest
-      | _ -> invalid "attribute")
-  | _ -> (accum, prews, obs)
-
-and pp_attribute_values (accum : document) (obs : observation list) :
-    document * Whitespace.t list * observation list =
-  match obs with
-  | Term v :: Token (Op ",", (wscomma, _)) :: rest ->
-      let pv, wv = pp_term v in
-      pp_attribute_values
-        (accum ^^ pv ^^ pp_ws `None wv ^^ Token.pp (Op ",") ^^ pp_ws `Nobreak wscomma)
-        rest
-  | Term v :: Token (RParen, (wsrparen, _)) :: rest ->
-      let pv, wv = pp_term v in
-      (accum ^^ pv ^^ pp_ws `None wv, wsrparen, rest)
-  | _ -> invalid "attribute"
 
 let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
     (potential, et) eta ->
