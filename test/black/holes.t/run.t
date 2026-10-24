@@ -505,7 +505,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      X : Type
      ----------------------------------------------------------------------
-     J Type data [ a. : _data.6.0 | b. (𝑥 : X) : _data.6.0 ] X
+     J Type data [ a. | b. (𝑥 : X) ] X
   
    ￫ hint[H0403]
    ￭ command line fake-interact
