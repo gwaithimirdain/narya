@@ -575,6 +575,10 @@ let rec process_letonly_terms : type a e.
 
 let process_letonly ctx obs loc =
   match split_let obs with
+  | Some (_, _, Token (Only, _) :: Token (Ellipsis, _) :: _) ->
+      fatal ?loc
+        (Display_only_syntax
+           "'let only … in' indicates a substitution whose bindings were elided when displaying a term; to display them together with definitions instead of names, use 'display let := definitions'")
   | Some (_, sup, Token (Only, _) :: obs) -> (
       let (Letonly_terms (clauses, body)) =
         process_letonly_terms ctx No_clauses Emp (Token (And, ([], None)) :: obs) in
@@ -602,7 +606,22 @@ and letonly_clause () =
 
 and letonly_terms () = Inner (letonly_clause ())
 
-let letonly_tree = Closed_entry (eop_ss Let (op Only (letonly_terms ())))
+(* The first clause can also be an ellipsis "…", which is how a let-only is displayed with its clauses elided.  This is parsed only so that we can give a helpful error message about it. *)
+let letonly_first_clause () =
+  let clause = letonly_clause () in
+  Inner
+    {
+      clause with
+      ops =
+        eops
+          [
+            (Lock, letonly_rest ());
+            (Keyword_key, letonly_rest ());
+            (Ellipsis, op In (Done_closed letonly));
+          ];
+    }
+
+let letonly_tree = Closed_entry (eop_ss Let (op Only (letonly_first_clause ())))
 
 (* ****************************************
    Printing abstractions and let-bindings
