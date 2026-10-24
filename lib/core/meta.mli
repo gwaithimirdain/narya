@@ -8,7 +8,12 @@ open Tctx
 type ('mode, 'a, 'b, 's) t
 
 (* A defined metavariable is either bound by a let or let rec, or else inserted automatically to hold the value of a case tree construct appearing bare in a kinetic position, in which case we record what sort of construct it was. *)
-type sort = [ `Let | `Letrec | `Bare of string ]
+type sort = [ `Let | `Letrec of letrec_block | `Bare of string ]
+
+(* The metavariables bound by the same "let rec … and …" block share a block identifier. *)
+and letrec_block
+
+val new_letrec_block : unit -> letrec_block
 
 val make_def :
   sort ->
@@ -25,6 +30,7 @@ val mode : ('mode, 'a, 'b, 's) t -> 'mode Mode.t
 val name : ('mode, 'a, 'b, 's) t -> string
 val sort_of : ('mode, 'a, 'b, 's) t -> sort option
 val is_bare : ('mode, 'a, 'b, 's) t -> bool
+val letrec_siblings : ('m1, 'a1, 'b1, 's1) t -> ('m2, 'a2, 'b2, 's2) t -> bool
 val origin : ('mode, 'a, 'b, 's) t -> Origin.t
 
 val compare :

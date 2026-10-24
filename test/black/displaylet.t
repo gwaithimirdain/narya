@@ -121,3 +121,33 @@ In a mutual block, the variables bound to the other local definitions are not di
   𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F2.2.even n | zero. ↦ false. ]
     : ℕ → bool
   
+
+Variables bound to local definitions from other blocks, such as enclosing ones, are displayed as usual.
+
+  $ cat >nested.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > def bool : Type ≔ data [ true. | false. ]
+  > def h (m : ℕ) : bool ≔
+  >   let rec f : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ f n ] in
+  >   let rec g : ℕ → bool ≔ [ zero. ↦ f m | suc. n ↦ g n ]
+  >   and g2 : ℕ → bool ≔ [ zero. ↦ g m | suc. n ↦ g2 n ] in
+  >   g2 m
+  > axiom k : ℕ
+  > EOF
+
+  $ narya nested.ny -e 'display let ≔ environments' -e 'echo h k'
+  (let only m : ℕ ≔ k
+   and f : ℕ → bool ≔ let only m : ℕ ≔ k in _letrec.F2.0.f in
+   _letrec.F2.2.g2) k
+    : bool
+  
+  $ narya nested.ny -e 'display let ≔ definitions' -e 'echo h k'
+  (let only m : ℕ ≔ k
+   and f : ℕ → bool ≔
+     let only m : ℕ ≔ k in
+     (𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F2.0.f n | zero. ↦ true. ] : ℕ → bool)
+   in
+   (𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F2.2.g2 n | zero. ↦ _letrec.F2.1.g m ]
+    : ℕ → bool)) k
+    : bool
+  

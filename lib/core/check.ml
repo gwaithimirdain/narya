@@ -1251,7 +1251,7 @@ and synth_or_check_letrec : type mode a b c ac s p.
   let (Checked_tel (type bc) ((vtys, _) : (mode, _, _, bc) Telescope.t * (_, _, bc) Ctx.t)) =
     check_tel ctx rvtys in
   (* Then we create the metavariables. *)
-  let metas = make_letrec_metas ctx vtys in
+  let metas = make_letrec_metas (Meta.new_letrec_block ()) ctx vtys in
   (* Now we check the bound terms. *)
   let ac = Raw.bplus_of_tel rvtys in
   let () = check_letrec_bindings mode ctx ac metas vtys vtms in
@@ -1318,8 +1318,11 @@ and check_letrec_bindings : type mode a xc b ac bc.
 
 (* Given a telescope of types for let-bound variables, create a global metavariable for each of them, and give it the correct type in Global. *)
 and make_letrec_metas : type mode x a b ab.
-    (mode, x, a) Ctx.t -> (mode, a, b, ab) Telescope.t -> (mode, a, b, ab) meta_tel =
- fun ctx tel ->
+    Meta.letrec_block ->
+    (mode, x, a) Ctx.t ->
+    (mode, a, b, ab) Telescope.t ->
+    (mode, a, b, ab) meta_tel =
+ fun block ctx tel ->
   match tel with
   | Emp -> Nil
   | Ext (x, Modal (modality, plus, vty), tel) -> (
@@ -1327,8 +1330,8 @@ and make_letrec_metas : type mode x a b ab.
       | Eq, Plus_lock (Zero _, Zero) ->
           (* Create the metavariable. *)
           let meta =
-            Meta.make_def `Letrec x (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential
-          in
+            Meta.make_def (`Letrec block) x (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx)
+              Potential in
           (* Assign it the correct type. *)
           let termctx = readback_ctx ctx in
           Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
@@ -1340,7 +1343,7 @@ and make_letrec_metas : type mode x a b ab.
             Ctx.ext_let ~dirt:(dirt_of_meta meta) ctx modality x
               { tm = neutm; ty = Lazy.from_val evty } in
           (* And recurse. *)
-          Ext (x, meta, make_letrec_metas ctx tel)
+          Ext (x, meta, make_letrec_metas block ctx tel)
       | _ -> fatal (Unimplemented "modal let-rec variables"))
 
 (* A let-only is checked with all its parts kinetic: the bound terms, and the body, which must synthesize.  We check its clauses to get an environment of their values in the ambient context, of the dimension k given by the user, and a context of free variables for the body, which doesn't extend the ambient one.  The type of the body is then transported to the ambient context by reading it back and evaluating it, at that dimension, in that environment. *)
