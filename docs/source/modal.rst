@@ -112,6 +112,14 @@ However, often it is not necessary to specify keys explicitly: if Narya can dete
 By default, Narya also omits unique 2-cell keys when printing a term.  However, the option ``display unique keys ≔ on`` (equivalently, the command-line flag ``-show-unique-keys``, or ``C-c C-d C-k`` in ProofGeneral) instructs it to print (nonidentity) keys even if they are unique.  Identity keys are never printed.
 
 
+Modal let-only
+^^^^^^^^^^^^^^
+
+The :ref:`Let-only binding`, which allows you to synthesize a term in a completely explicit context and then apply a completely explicit substitution (context morphism) to it, generalizes to these new constructs of modal type theory.  You can add locks to the context in which the body is synthesized with the syntax ``and lock □`` interspersed with the let-bound values.  When typechecking the bound terms in this case, the locks in the ambient context must end (at the right) with a matching lock, and that lock is stripped off of the ambient context while typechecking the terms to the left of the ``and lock``.  Moreover, any variables in the context appearing to the right of that lock (or interspersed with it, if the modality is composed of multiple generators) also become inaccessible while checking terms to the left.
+
+You can also add explicit key operations to the substitution with the syntax ``and key α``.  This requires the codomain context (the new one composed of the types in the ``let only``) to end (at the right) with locks matching the source of ``α``, and the domain (ambient) context to end with locks matching the target of ``α``.  In this case, those target locks are stripped off the ambient context and replaced by locks matching the source of ``α`` when typechecking the bound terms to the left of the ``and key``, similarly to the case of ``and lock``.  Semantically, this means *precomposing* the substitution to the left with the key substitution of ``α``.  Note that it does not change the codomain context in which the body is typechecked.  If it appears at the end of the ``let only`` chain, then it is equivalent to acting on the whole result by ``α``, that is ``let only x : A ≔ M and lock μ and key α in N`` is equivalent to ``(let only x : A ≔ M and lock μ in N) #α``.
+
+
 Modal function-types
 --------------------
 
