@@ -258,15 +258,98 @@ let rec is_weakened_identity_ordered_env : type mode a b c d.
                 | None -> None))
       | _ -> None)
 
-(* Test whether the environment of a metavariable is the identity environment of the context we are reading back in, possibly weakened by some variables.  Since this is only an optimization of display, any errors encountered just mean that the test fails. *)
-let is_identity_env : type mode a b n c d.
-    (mode, a, b) Ctx.t -> (mode, n, d) env -> (mode, c, d) termctx -> (mode, d, b) weakening option
-    =
- fun (Permute { ctx; _ }) env (Permute (_, envctx)) ->
+(* The ways we can read back a metavariable whose environment is the identity, possibly weakened: either as the metavariable itself, or as a let-bound variable whose value is that metavariable. *)
+type (_, _, _) meta_readback =
+  | Weakened_meta : ('mode, 'd, 'b) weakening -> ('mode, 'd, 'b) meta_readback
+  | Let_var : ('mode, 'x, 'b) weakening * ('mode, 'x, kinetic) term -> ('mode, 'd, 'b) meta_readback
+
+let weaken_meta_readback : type mode d b modality n.
+    mode Mode.t ->
+    (mode, d, b) meta_readback ->
+    (mode, d, (b, (modality, n) dim_entry) snoc) meta_readback =
+ fun mode r ->
+  let weak w = Weak (w, plus_no_lock mode, plus_no_lock mode) in
+  match r with
+  | Weakened_meta w -> Weakened_meta (weak w)
+  | Let_var (w, tm) -> Let_var (weak w, tm)
+
+(* Test whether a value is a given metavariable, with no degeneracy or arguments, in an environment that is the identity on an ordered context. *)
+let is_meta_in_identity : type mode a b c d x s m.
+    (mode, a, b) Ctx.Ordered.t ->
+    (mode, c, d) ordered_termctx ->
+    (mode, x, d, s) Meta.t ->
+    (mode, m) value ->
+    bool =
+ fun ctx envctx meta v ->
+  match v with
+  | Neu { head = Live (Meta { meta = meta'; env; ins }); args = Emp; _ } -> (
+      match (Meta.compare meta' meta, D.compare (dim_env env) D.zero, is_id_ins ins) with
+      | Eq, Eq, Some _ -> Option.is_some (is_identity_ordered_env ctx env envctx)
+      | _ -> false)
+  | _ -> false
+
+(* Test whether a context entry is a variable with the identity modality that is let-bound to a given metavariable, in an environment that is the identity on the context to its left, and whether the given environment for that metavariable is also the identity on that context.  If so, return that variable as a term. *)
+let let_var_of_meta : type mode a b c d x s dom modality f k.
+    (mode, x, d, s) Meta.t ->
+    (mode, a, b) Ctx.Ordered.t ->
+    (dom, modality, mode, f, k) Ctx.entry ->
+    (mode, D.zero, d) env ->
+    (mode, c, d) ordered_termctx ->
+    (mode, (b, (modality, k) dim_entry) snoc, kinetic) term option =
+ fun meta ctx entry env envctx ->
+  match Modality.compare_id (Ctx.modality_entry entry) with
+  | Neq -> None
+  | Eq -> (
+      let b = CubeOf.find_top (Ctx.bindings_entry entry) in
+      match (Binding.level b, Binding.value_opt b) with
+      | None, Some v
+        when is_meta_in_identity ctx envctx meta v.tm
+             && Option.is_some (is_identity_ordered_env ctx env envctx) ->
+          let k = Ctx.dim_entry entry in
+          Some
+            (Var
+               (Index
+                  ( Now,
+                    id_sface k,
+                    Ctx.filter_entry entry,
+                    plus_with_no_locks (Ctx.Ordered.mode ctx) )))
+      | _ -> None)
+
+(* Search for a way to read back a metavariable whose environment is the identity, possibly weakened, preferring a let-bound variable whose value is that metavariable.  We look for such a variable only among those with no locks to their right, so that it can be referred to without a key; behind locks we just look for a weakening. *)
+let rec find_meta_readback : type mode a b c d x s.
+    (mode, x, d, s) Meta.t ->
+    (mode, a, b) Ctx.Ordered.t ->
+    (mode, D.zero, d) env ->
+    (mode, c, d) ordered_termctx ->
+    (mode, d, b) meta_readback option =
+ fun meta ctx env envctx ->
+  match ctx with
+  | Snoc (rest, entry, _) -> (
+      match is_identity_ordered_env ctx env envctx with
+      | Some Eq -> Some (Weakened_meta Id)
+      | None -> (
+          match let_var_of_meta meta rest entry env envctx with
+          | Some tm -> Some (Let_var (Id, tm))
+          | None ->
+              Option.map
+                (weaken_meta_readback (Ctx.Ordered.mode rest))
+                (find_meta_readback meta rest env envctx)))
+  | Weaken (rest, _) -> find_meta_readback meta rest env envctx
+  | Emp _ | Lock _ ->
+      Option.map (fun w -> Weakened_meta w) (is_weakened_identity_ordered_env ctx env envctx)
+
+(* Test whether the environment of a metavariable is the identity environment of the context we are reading back in, possibly weakened by some variables, and if so how to read it back.  Since this is only an optimization of display, any errors encountered just mean that the test fails. *)
+let is_identity_env : type mode a b n c d x s.
+    (mode, a, b) Ctx.t ->
+    (mode, x, d, s) Meta.t ->
+    (mode, n, d) env ->
+    (mode, c, d) termctx ->
+    (mode, d, b) meta_readback option =
+ fun (Permute { ctx; _ }) meta env (Permute (_, envctx)) ->
   match D.compare (dim_env env) D.zero with
   | Eq ->
       Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
-      is_weakened_identity_ordered_env ctx env envctx
+      find_meta_readback meta ctx env envctx
   | Neq -> None
 
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
@@ -750,8 +833,9 @@ and readback_head : type mode c z.
       let termctx = (Global.find_meta meta).termctx in
       (* If the environment is the identity, possibly weakened, we can omit it. *)
       let tm : (mode, c, kinetic) term =
-        match is_identity_env ctx env termctx with
-        | Some w -> weaken_by w (Meta (meta, Kinetic))
+        match is_identity_env ctx meta env termctx with
+        | Some (Weakened_meta w) -> weaken_by w (Meta (meta, Kinetic))
+        | Some (Let_var (w, x)) -> weaken_by w x
         | None -> MetaEnv (meta, readback_env ctx env termctx) in
       match is_id_ins ins with
       | Some _ -> tm
@@ -930,9 +1014,14 @@ and readback_ordered_env : type mode n a b c d.
 
 (* Read back a context of values into a context of terms. *)
 
+(* If ~value is given, it is used to read back the values of let-bound variables. *)
 and readback_bindings : type mode a b n.
-    (mode, a, b) Ctx.t -> (n, mode Binding.t) CubeOf.t -> (n, (mode, b) binding) CubeOf.t =
- fun ctx vbs ->
+    ?value:(mode normal -> (mode, b, kinetic) term) ->
+    (mode, a, b) Ctx.t ->
+    (n, mode Binding.t) CubeOf.t ->
+    (n, (mode, b) binding) CubeOf.t =
+ fun ?value ctx vbs ->
+  let value = Option.value value ~default:(readback_nf ctx) in
   CubeOf.mmap
     {
       map =
@@ -943,7 +1032,7 @@ and readback_bindings : type mode a b n.
                 : (mode, b) binding)
           | None ->
               {
-                tm = Some (readback_nf ctx (Binding.value b));
+                tm = Some (value (Binding.value b));
                 ty = readback_val ctx (Lazy.force (Binding.value b).ty);
               });
     }
@@ -970,7 +1059,10 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
                 in
                 (f, x, fldty))
               fields in
-          let bindings = readback_bindings lctx bindings in
+          let bindings =
+            readback_bindings
+              ?value:(readback_let_value rest modality plus_lock bindings)
+              lctx bindings in
           Ext
             ( readback_ordered_ctx rest,
               Vis { dim; plusdim; plus_lock; vars; bindings; hasfields; fields; fplus; filter },
@@ -982,12 +1074,27 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
             Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
             View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
+          let value = readback_let_value rest modality plus_lock bindings in
           Ext
             ( readback_ordered_ctx rest,
-              Invis { plus_lock; filter; bindings = readback_bindings lctx bindings; hints },
+              Invis { plus_lock; filter; bindings = readback_bindings ?value lctx bindings; hints },
               af ))
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
+
+(* The value of a zero-dimensional let-bound variable can't depend on that variable itself, so we read it back in the context to its left and weaken it.  This prevents it from being read back as the variable itself, if its value is a metavariable (see let_var_of_meta).  The values in a higher-dimensional cube can depend on the lower-dimensional ones, so we read them back in the whole context. *)
+and readback_let_value : type mode a b dom modality n bm.
+    (mode, a, b) Ctx.Ordered.t ->
+    (dom, modality, mode) Modality.t ->
+    ((b, (modality, n) dim_entry) snoc, mode, modality, dom, bm) plus_lock ->
+    (n, dom Binding.t) CubeOf.t ->
+    (dom normal -> (dom, bm, kinetic) term) option =
+ fun rest modality plus_lock bindings ->
+  match D.compare (CubeOf.dim bindings) D.zero with
+  | Eq ->
+      let (Locked (rplus, lrest)) = Ctx.lock (Ctx.of_ordered rest) modality in
+      Some (fun nf -> Weaken (rplus, readback_nf lrest nf, plus_lock))
+  | Neq -> None
 
 and readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = function
   | Permute { perm; ctx; _ } -> Permute (perm, readback_ordered_ctx ctx)

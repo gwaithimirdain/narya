@@ -114,3 +114,32 @@ Local mutually recursive definitions
   _letrec.F2.1.even n
     : bool
   
+
+In a hole, a let-rec-bound variable whose value is its metavariable is displayed as that variable.
+
+  $ narya -v -e 'def bool : Type ≔ data [ false. | true. ]  def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]' -e 'def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]' -e 'def eo (m : ℕ) : bool ≔ let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ odd n ] and odd : ℕ → bool ≔ [ zero. ↦ false. | suc. n ↦ even n ] in ((p ↦ true.) : J bool (even m) (odd m) → bool) ?'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ info[I0000]
+   ￮ constant eo defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     m : ℕ
+     even ≔ _letrec.F4.0.even : ℕ → bool
+     odd ≔ _letrec.F4.1.odd : ℕ → bool
+     ----------------------------------------------------------------------
+     J bool (even m) (odd m)
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
