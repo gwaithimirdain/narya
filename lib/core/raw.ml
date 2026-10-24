@@ -57,7 +57,9 @@ module rec Make : functor (I : Indices) -> sig
         I.name * string located list located * 'a synth located * 'a I.suc check located
         -> 'a synth
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
-    | Letonly : (I.emp, 'b, 'eb) tel * ('a check located, 'b) Vec.t * 'eb synth located -> 'a synth
+    | Letonly :
+        'k D.t * (I.emp, 'b, 'eb) tel * ('a check located, 'b) Vec.t * 'eb synth located
+        -> 'a synth
     | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
     | Match : {
         tm : 'a synth located;
@@ -218,9 +220,9 @@ functor
           -> 'a synth
       (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
       | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
-      (* Letonly has a telescope of types in the *empty* context, an equal-length vector of bound terms in the ambient context, and a body in the context of only the bound variables.  The body must synthesize, since the type of the whole let-only is obtained by substituting the bound terms into its type. *)
+      (* Letonly has a dimension, a telescope of types in the *empty* context, an equal-length vector of bound terms in the ambient context, and a body in the context of only the bound variables.  The bound terms form a substitution of that dimension into the context of the types.  The body must synthesize, since the type of the whole let-only is obtained by substituting the bound terms into its type. *)
       | Letonly :
-          (I.emp, 'b, 'eb) tel * ('a check located, 'b) Vec.t * 'eb synth located
+          'k D.t * (I.emp, 'b, 'eb) tel * ('a check located, 'b) Vec.t * 'eb synth located
           -> 'a synth
       (* An Act can also often check, but can also synthesizes if its body does.  *)
       | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
@@ -498,10 +500,10 @@ module Resolve (R : Resolver) = struct
           let tys2, ctx2 = tel ctx tys ab in
           let tms2 = Vec.map (check ctx2) tms in
           Letrec (tys2, tms2, check ctx2 body)
-      | Letonly (tys, tms, body) ->
+      | Letonly (k, tys, tms, body) ->
           let (Bplus ab) = R.T2.bplus (Vec.length tms) in
           let tys2, ctx2 = tel (R.empty ctx) tys ab in
-          Letonly (tys2, Vec.map (check ctx) tms, synth ctx2 body)
+          Letonly (k, tys2, Vec.map (check ctx) tms, synth ctx2 body)
       | Act (s, fa, tm) -> Act (s, fa, Option.map (check ctx) tm)
       | Match { tm; window; sort; branches; refutables = r; highers } ->
           let tm = synth ctx tm in

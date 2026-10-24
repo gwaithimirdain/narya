@@ -728,6 +728,28 @@ The supplied files are symlinked into the directory where the test is run, and u
     and u : ℕ ≔ 0 in
     x
   
+  def xh (X : Type) (x0 x1 : X) (x2 : Id X x0 x1) : Id X x0 x1 ≔
+    let⁽ᵉ⁾ only Y : Type ≔ Id X
+    and y : Y ≔ x2 in
+    y
+  
+  def xh1 (X : Type) (x0 x1 : X) (x2 : Id X x0 x1) : Id X x0 x1 ≔
+    let⁽ᵉ⁾ only Y : Type ≔ Id X
+    and y : Y ≔ x2 in
+    y
+  
+  def xh2 (X : Type) (x0 x1 : X) (x2 : Id X x0 x1) : Id X x0 x1 ≔
+    let⁽ᵉ⁾ `line comment
+      only Y : Type
+      ≔ Id X
+    and y : Y ≔ x2 in
+    y
+  
+  def xh3 (X : Type) (x0 x1 : X) (x2 : Id X x0 x1) : Id X x0 x1 ≔
+    let only Y : Type ≔ X
+    and x : Id Y ≔ x2 in
+    x
+  
   import "importable"
   import "importable" | all
   import "importable"

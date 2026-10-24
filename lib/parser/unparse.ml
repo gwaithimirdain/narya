@@ -559,7 +559,7 @@ let rec unparse : type mode n lt ls rt rs s.
           let body = unparse_body ri in
           unlocated
             (prefix ~notn:letonly
-               ~inner:(Multiple (wstok Let, binding, wstok In))
+               ~inner:(Multiple (dimtok Let (dim_term_env tmenv), binding, wstok In))
                ~last:body ~right_ok)
       | None ->
           let body = unparse_body No.Interval.entire in
@@ -567,7 +567,7 @@ let rec unparse : type mode n lt ls rt rs s.
           parenthesize
             (unlocated
                (prefix ~notn:letonly
-                  ~inner:(Multiple (wstok Let, binding, wstok In))
+                  ~inner:(Multiple (dimtok Let (dim_term_env tmenv), binding, wstok In))
                   ~last:body ~right_ok)))
   | Lam (Variables (m, _, _), _, _, _) ->
       (* Modalities aren't printed on abstractions *)
@@ -667,41 +667,56 @@ and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
  fun vars tm -> { unparse = (fun li ri -> unparse vars tm li ri) }
 
 (* Unparse the clauses of a let-only, walking its body context and its environment of bound terms together, and returning also the names of the body context.  The bound terms are unparsed in the ambient context, while each type is unparsed in the body context up to its variable. *)
-and unparse_letonly_clauses : type mode n i b.
+and unparse_letonly_clauses : type mode n i k b.
     n Names.t ->
     (mode, i, b) ordered_termctx ->
-    (mode, n, D.zero, b) env ->
+    (mode, n, k, b) env ->
     observation Bwd.t * b Names.t =
  fun vars ctx tmenv ->
   match (ctx, tmenv) with
   | Emp _, Emp _ -> (Emp, Names.empty)
   | ( Ext (ctx, Vis { vars = xs; plus_lock; bindings; _ }, _),
-      Ext { env; values = Modal (modality, plus, tms); _ } ) -> (
-      match D.compare (CubeOf.dim bindings) D.zero with
-      | Neq -> fatal (Unimplemented "unparsing higher-dimensional let-only variables")
-      | Eq ->
-          let acc, names = unparse_letonly_clauses vars ctx env in
-          let x, names = Names.add_cube D.zero names (NICubeOf.find_top xs) in
-          let ty =
-            unparse (Names.add_lock names plus_lock) (CubeOf.find_top bindings).ty
-              No.Interval.entire No.Interval.entire in
-          let tm =
-            unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
-              No.Interval.entire in
-          (* The first clause is preceded by "only", and the rest by "and". *)
-          let tok =
-            match acc with
-            | Emp -> Token.Only
-            | Snoc _ -> Token.And in
-          let acc = acc <: mktok tok <: Term (unparse_var x) <: mktok Colon in
-          let acc =
-            match Modality.compare_id modality with
-            | Eq -> acc
-            | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
-          (acc <: Term ty <: mktok Coloneq <: Term tm, names))
+      Ext { env; values = Modal (modality, plus, tms); _ } ) ->
+      let acc, names = unparse_letonly_clauses vars ctx env in
+      let n = CubeOf.dim bindings in
+      let x, names = Names.add_cube n names (NICubeOf.find_top xs) in
+      let ty =
+        unparse (Names.add_lock names plus_lock)
+          (uninst_letonly_type n (CubeOf.find_top bindings).ty)
+          No.Interval.entire No.Interval.entire in
+      let tm =
+        unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
+          No.Interval.entire in
+      (* The first clause is preceded by "only", and the rest by "and". *)
+      let tok =
+        match acc with
+        | Emp -> Token.Only
+        | Snoc _ -> Token.And in
+      let acc = acc <: mktok tok <: Term (unparse_var x) <: mktok Colon in
+      let acc =
+        match Modality.compare_id modality with
+        | Eq -> acc
+        | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
+      (acc <: Term ty <: mktok Coloneq <: Term tm, names)
   | Lock _, _ | _, Lock _ | _, Prekey _ -> fatal (Unimplemented "unparsing locks in let-only")
   | Ext (_, Invis _, _), _ | Weaken _, _ ->
       fatal (Anomaly "invisible or weakened variable in let-only")
+
+(* The type of a cube variable of dimension n bound by a let-only, as stored in its context, is the type that was written, instantiated at the boundary of the variable.  To display the former, we remove those instantiation arguments, which were the last ones applied, and hence come first in the tube. *)
+and uninst_letonly_type : type mode b n. n D.t -> (mode, b, kinetic) term -> (mode, b, kinetic) term
+    =
+ fun n ty ->
+  match (D.compare_zero n, ty) with
+  | Zero, _ -> ty
+  | Pos _, Inst (energy, tm, args) -> (
+      match (D.compare_zero (TubeOf.uninst args), D.factor (TubeOf.inst args) n) with
+      | Zero, Some (Factor n_l) -> (
+          let _, rest = TubeOf.split (D.zero_plus n) n_l args in
+          match D.compare_zero (TubeOf.inst rest) with
+          | Zero -> tm
+          | Pos _ -> Inst (energy, tm, rest))
+      | _ -> fatal (Anomaly "dimension mismatch in type of let-only cube variable"))
+  | Pos _, _ -> fatal (Anomaly "uninstantiated type of let-only cube variable")
 
 (* A version that wraps implicit arguments in braces. *)
 and make_unparser_implicit : type n. n Names.t -> (n, kinetic) spine_arg -> unparser =

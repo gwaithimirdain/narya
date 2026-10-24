@@ -164,7 +164,7 @@ module rec Term : sig
         -> ('mode, 'a, 's) term
     | Letonly :
         ('mode, 'c, 'b) termctx
-        * ('mode, 'a, D.zero, 'b) env
+        * ('mode, 'a, 'k, 'b) env
         * ('mode, 'b, kinetic) term
         * ('mode, 'b, kinetic) term
         -> ('mode, 'a, kinetic) term
@@ -493,10 +493,10 @@ end = struct
         (* A let is also always zero-dimensional. *)
         * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 's) term
         -> ('mode, 'a, 's) term
-    (* A 'let only' binds some variables, forming a context that doesn't extend the ambient one, and whose values are given by a term environment in the ambient context.  The body lives in that context of only those variables, without their values.  Evaluation just evaluates the environment and then the body in it.  The context, and the type of the body, are stored only for display (the latter so that a body that doesn't synthesize on its own can be displayed with an ascription).  A let-only is always kinetic, as are its bound terms and its body: a case tree in any of them is bound to a metavariable as usual. *)
+    (* A 'let only' binds some variables, forming a context that doesn't extend the ambient one, and whose values are given by a term environment in the ambient context, of some dimension 'k.  The body lives in that context of only those variables, without their values.  Evaluation just evaluates the environment and then the body in it.  The context, and the type of the body, are stored only for display (the latter so that a body that doesn't synthesize on its own can be displayed with an ascription).  A let-only is always kinetic, as are its bound terms and its body: a case tree in any of them is bound to a metavariable as usual. *)
     | Letonly :
         ('mode, 'c, 'b) termctx
-        * ('mode, 'a, D.zero, 'b) env
+        * ('mode, 'a, 'k, 'b) env
         * ('mode, 'b, kinetic) term
         * ('mode, 'b, kinetic) term
         -> ('mode, 'a, kinetic) term

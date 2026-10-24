@@ -527,8 +527,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            })
         body
   | Letonly (_, tmenv, body, _) ->
-      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  If the ambient environment is higher-dimensional, so is the result. *)
-      eval (eval_env env (D.plus_zero (dim_env env)) tmenv) body
+      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment, as for MetaEnv. *)
+      let (Plus m_n) = D.plus (dim_term_env tmenv) in
+      eval (eval_env env m_n tmenv) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
   | Act (_, x, s, _) ->
       let k = dim_env env in

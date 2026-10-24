@@ -411,41 +411,56 @@ let process_let_value : type n.
       { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc }
   | _ -> invalid "let"
 
+(* The keyword "let" that begins a let-binding, let-rec, or let-only can be superscripted by a dimension, although only a let-only allows a nontrivial one.  This splits it off an observation list, returning its whitespace, its superscript if any, and the rest of the observations. *)
+let split_let (obs : observation list) :
+    (Whitespace.t list * (string located * Whitespace.t list) option * observation list) option =
+  match obs with
+  | Token (Let, (ws, _)) :: obs | Ss_token ((Let, (ws, _)), []) :: obs -> Some (ws, None, obs)
+  | Ss_token ((Let, (ws, _)), [ sup ]) :: obs -> Some (ws, Some sup, obs)
+  | _ -> None
+
+(* Split off the "let" of an ordinary let-binding or let-rec, which can't have a superscript. *)
+let split_let_nodim (obs : observation list) : observation list option =
+  match split_let obs with
+  | Some (_, None, obs) -> Some obs
+  | Some (_, Some _, _) -> fatal (Parse_error "only a let-only can have a dimension")
+  | None -> None
+
 let process_let : type n.
     (string option, n) Bwv.t -> observation list -> Asai.Range.t option -> n check located =
  fun ctx obs loc ->
-  match obs with
-  | [
-   Token (Let, _);
-   Term x;
-   Token (Colon, _);
-   (Term _ as ty);
-   Token (Coloneq, _);
-   (Term _ as tm);
-   Token (In, _);
-   Term body;
-  ] ->
+  match split_let_nodim obs with
+  | Some
+      [
+        Term x;
+        Token (Colon, _);
+        (Term _ as ty);
+        Token (Coloneq, _);
+        (Term _ as tm);
+        Token (In, _);
+        Term body;
+      ] ->
       let x = get_var x in
       let v = process_let_value ctx ty tm in
       let body = process (Bwv.snoc ctx x) body in
       { value = Synth (Let (x, locate_opt None [], v, body)); loc }
-  | [ Token (Let, _); Term x; Token (Coloneq, _); Term tm; Token (In, _); Term body ] ->
+  | Some [ Term x; Token (Coloneq, _); Term tm; Token (In, _); Term body ] ->
       let x = get_var x in
       let term = process_synth ctx tm "value of let" in
       let body = process (Bwv.snoc ctx x) body in
       { value = Synth (Let (x, locate_opt None [], term, body)); loc }
-  | [
-   Token (Let, _);
-   Term x;
-   Token (Colon, _);
-   Term modality;
-   Token (Op "|", _);
-   (Term _ as ty);
-   Token (Coloneq, _);
-   (Term _ as tm);
-   Token (In, _);
-   Term body;
-  ] ->
+  | Some
+      [
+        Term x;
+        Token (Colon, _);
+        Term modality;
+        Token (Op "|", _);
+        (Term _ as ty);
+        Token (Coloneq, _);
+        (Term _ as tm);
+        Token (In, _);
+        Term body;
+      ] ->
       let x = get_var x in
       let v = process_let_value ctx ty tm in
       let body = process (Bwv.snoc ctx x) body in
@@ -455,7 +470,7 @@ let process_let : type n.
 
 let letin_tree =
   Closed_entry
-    (eop Let
+    (eop_ss Let
        (terms
           [
             (Coloneq, term In (Done_closed letin));
@@ -506,8 +521,8 @@ let rec process_letrec_terms : type c a.
   | _ -> invalid "let-rec"
 
 let process_letrec ctx obs loc =
-  match obs with
-  | Token (Let, _) :: Token (Rec, _) :: obs ->
+  match split_let_nodim obs with
+  | Some (Token (Rec, _) :: obs) ->
       let (Letrec_terms (tys, Zero, tms, body)) =
         process_letrec_terms ctx (Token (And, ([], None)) :: obs) Emp N.zero in
       locate (Synth (Letrec (tys, tms, body))) loc
@@ -517,7 +532,7 @@ let rec letrec_terms () =
   term Colon
     (term Coloneq (terms [ (And, Lazy (lazy (letrec_terms ()))); (In, Done_closed letrec) ]))
 
-let letrec_tree = Closed_entry (eop Let (op Rec (letrec_terms ())))
+let letrec_tree = Closed_entry (eop_ss Let (op Rec (letrec_terms ())))
 
 (* ********************
    Let only
@@ -553,18 +568,24 @@ let rec process_letonly_terms : type a e.
   | _ -> invalid "let-only"
 
 let process_letonly ctx obs loc =
-  match obs with
-  | Token (Let, _) :: Token (Only, _) :: obs ->
+  match split_let obs with
+  | Some (_, sup, Token (Only, _) :: obs) -> (
       let (Letonly_terms (tys, tms, body)) =
         process_letonly_terms ctx Emp (Token (And, ([], None)) :: obs) in
-      locate (Synth (Letonly (tys, tms, body))) loc
+      let dim =
+        match sup with
+        | None -> ""
+        | Some (dim, _) -> dim.value in
+      match dim_of_string dim with
+      | Some (Any k) -> locate (Synth (Letonly (k, tys, tms, body))) loc
+      | None -> fatal ?loc (Parse_error "invalid dimension for let-only"))
   | _ -> invalid "let-only"
 
 let rec letonly_terms () =
   let rest = terms [ (And, Lazy (lazy (letonly_terms ()))); (In, Done_closed letonly) ] in
   term Colon (terms [ (Coloneq, rest); (Op "|", term Coloneq rest) ])
 
-let letonly_tree = Closed_entry (eop Let (op Only (letonly_terms ())))
+let letonly_tree = Closed_entry (eop_ss Let (op Only (letonly_terms ())))
 
 (* ****************************************
    Printing abstractions and let-bindings
@@ -579,16 +600,29 @@ let rec get_abslets heads obs =
   | [ Term vars; Token (DblMapsto, (wsmapsto, _)); Term body ] ->
       get_abslets_of_parse (Snoc (heads, `Abs (Wrap vars, DblMapsto, wsmapsto))) (Wrap body)
   (* Let-binding *)
-  | Token _ :: _ -> (
+  | (Token _ | Ss_token _) :: _ -> (
       (* First we pull off the "let", "let rec", or "and" tokens and the variable name. *)
       let toks, x, obs =
-        match obs with
-        | Token (Let, (wslet, _)) :: Token (Rec, (wsrec, _)) :: Term x :: rest ->
-            ([ (Token.Let, wslet); (Rec, wsrec) ], Wrap x, rest)
-        | Token (Let, (wslet, _)) :: Token (Only, (wsonly, _)) :: Term x :: rest ->
-            ([ (Token.Let, wslet); (Only, wsonly) ], Wrap x, rest)
-        | Token (Let, (wslet, _)) :: Term x :: rest -> ([ (Token.Let, wslet) ], Wrap x, rest)
-        | Token (And, (wsand, _)) :: Term x :: rest -> ([ (Token.And, wsand) ], Wrap x, rest)
+        match (split_let obs, obs) with
+        | Some (wslet, sup, rest), _ -> (
+            (* The "let" may have a superscript. *)
+            let plet, wslet =
+              match sup with
+              | None -> (Token.pp Let, wslet)
+              | Some (dim, wsdim) ->
+                  ( Token.pp Let
+                    ^^ pp_ws (if Display.chars () = `Unicode then `None else `Nobreak) wslet
+                    ^^ pp_superscript dim,
+                    wsdim ) in
+            match rest with
+            | Token (Rec, (wsrec, _)) :: Term x :: rest ->
+                ([ (plet, wslet); (Token.pp Rec, wsrec) ], Wrap x, rest)
+            | Token (Only, (wsonly, _)) :: Term x :: rest ->
+                ([ (plet, wslet); (Token.pp Only, wsonly) ], Wrap x, rest)
+            | Term x :: rest -> ([ (plet, wslet) ], Wrap x, rest)
+            | _ -> invalid "let")
+        | None, Token (And, (wsand, _)) :: Term x :: rest ->
+            ([ (Token.pp And, wsand) ], Wrap x, rest)
         | _ -> invalid "let" in
       (* Then we pull off the ascribed type, possibly with a modality, if any. *)
       let ty, obs =
@@ -643,7 +677,7 @@ let pp_abslets obs :
             | Bwd.Emp -> (Snoc (introabs, (prews, head)), heads, trailabs, Some wsmapsto)
             | Snoc _ -> (introabs, heads, Snoc (trailabs, (prews, head)), Some wsmapsto))
         | `Let (toks, Wrap x, ty, wscoloneq, Wrap tm, wsin) ->
-            let kws = concat_map (fun (tok, ws) -> Token.pp tok ^^ pp_ws `Nobreak ws) toks in
+            let kws = concat_map (fun (tok, ws) -> tok ^^ pp_ws `Nobreak ws) toks in
             let px, wx = pp_term x in
             (* The type of an explicitly typed let-binding is always displayed in term mode, with a wrapping break allowed before the colon. *)
             (* This code should be as parallel as possible with the printing of "def" commands. *)

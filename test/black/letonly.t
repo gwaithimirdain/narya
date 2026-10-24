@@ -230,3 +230,272 @@ The word "only" is reserved (it is also used as an import modifier).
   
   [1]
 
+If the type of a variable synthesizes a higher-dimensional universe, the variable is a cube, and its bound term must synthesize an instantiation of that type, whose boundary supplies the rest of the cube.
+
+  $ cat >higher.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]
+  > axiom B : Type
+  > axiom b0 : B
+  > axiom b1 : B
+  > axiom b2 : Id B b0 b1
+  > axiom b22 : B⁽ᵉᵉ⁾ b2 b2 (refl b0) (refl b1)
+  > EOF
+
+  $ narya higher.ny -e 'synth let only x : Id B ≔ b2 in x' -e 'synth let only x : Id B ≔ b2 in x.0' -e 'echo let only x : Id B ≔ b2 in x.1' -e 'synth let only C : Type ≔ B and x : Id C ≔ b2 in x' -e 'synth let only x : B⁽ᵉᵉ⁾ ≔ b22 in x' -e 'synth let only x : B⁽ᵉᵉ⁾ b2 b2 ≔ b22 in x' -e 'synth let only B0 : Type ≔ ℕ and B1 : Type ≔ ℕ and B2 : Id Type B0 B1 ≔ Id ℕ and x : B2 ≔ refl (0 : ℕ) in x'
+  let only x : Id B ≔ b2 in x.2
+    : Id B b0 b1
+  
+  let only x : Id B ≔ b2 in x.0
+    : B
+  
+  b1
+    : B
+  
+  let only C : Type ≔ B and x : Id C ≔ b2 in x.2
+    : Id B b0 b1
+  
+  let only x : B⁽ᵉᵉ⁾ ≔ b22 in x.22
+    : B⁽ᵉᵉ⁾ b2 b2 (refl b0) (refl b1)
+  
+  let only x : B⁽ᵉᵉ⁾ b2 b2 ≔ b22 in x.2
+    : B⁽ᵉᵉ⁾ b2 b2 (refl b0) (refl b1)
+  
+  let only B0 : Type ≔ ℕ
+  and B1 : Type ≔ ℕ
+  and B2 : Type⁽ᵉ⁾ B0 B1 ≔ ℕ⁽ᵉ⁾
+  and x : B2 ≔ refl 0 in
+  x.2
+    : ℕ⁽ᵉ⁾ 0 0
+  
+
+  $ narya -v higher.ny -e 'def h : Id B b0 b1 ≔ let only x : Id B ≔ b2 in (? : Id B x.0 x.1)'
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b2 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b22 assumed
+  
+   ￫ info[I0000]
+   ￮ constant h defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     x.0 : B
+     x.1 : B
+     x.2 : Id B x.0 x.1
+     ----------------------------------------------------------------------
+     Id B x.0 x.1
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+  $ narya higher.ny -e 'def k (A : Type) (a0 a1 : A) (a2 : Id A a0 a1) : Id A a0 a1 ≔ let only C : Type ≔ A and x : Id C ≔ a2 in x' -e 'echo k B b0 b1 b2' -e 'echo refl k (Id B) b2 b2 b22'
+  b2
+    : Id B b0 b1
+  
+  b22
+    : B⁽ᵉᵉ⁾ b2 b2 (refl b0) (refl b1)
+  
+
+  $ narya higher.ny -e 'synth let only x : Id B ≔ b0 in x'
+   ￫ error[E0709]
+   ￭ command-line exec string
+   1 | synth let only x : Id B ≔ b0 in x
+     ^ invalid higher-dimensional let-only: bound term has a type of dimension 0, which isn't an instantiation of a type of dimension e
+  
+  [1]
+
+  $ narya higher.ny -e 'synth let only x : Id ℕ ≔ b2 in x'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | synth let only x : Id ℕ ≔ b2 in x
+     ^ term synthesized type
+         Id B b0 b1
+       but is being checked against type
+         ℕ⁽ᵉ⁾ b0 b1
+       unequal head constants:
+         B
+       does not equal
+         ℕ
+  
+  [1]
+
+  $ narya higher.ny -e 'synth let only x : Id ℕ ≔ 0 in x'
+   ￫ error[E0400]
+   ￭ command-line exec string
+   1 | synth let only x : Id ℕ ≔ 0 in x
+     ^ non-synthesizing term in synthesizing position (bound term of higher-dimensional let-only)
+  
+  [1]
+
+  $ narya higher.ny -e 'synth let only x : b0 ≔ b0 in x'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | synth let only x : b0 ≔ b0 in x
+     ^ term synthesized type
+         B
+       but is being checked against type
+         Type
+       unequal head terms:
+         B
+       does not equal
+         Type
+  
+  [1]
+
+A superscript on the "let" makes the bound terms a higher-dimensional substitution, so that each of them has the dimension of its type plus that of the let-only.  The let-only then has the corresponding dimension too.
+
+  $ narya higher.ny -e 'synth let⁽ᵉ⁾ only C : Type ≔ Id B and c : C ≔ b2 in c' -e 'echo let⁽ᵉ⁾ only C : Type ≔ Id B and c : C ≔ b2 in c' -e 'synth let^^(e) only C : Type ≔ Id B and c : C ≔ b2 in c' -e 'synth let⁽ᵉ⁾ only x : Id B ≔ b22 in x' -e 'echo let⁽ᵉ⁾ only x : Id B ≔ b22 in x'
+  let⁽ᵉ⁾ only C : Type ≔ Id B and c : C ≔ b2 in c
+    : Id B b0 b1
+  
+  b2
+    : Id B b0 b1
+  
+  let⁽ᵉ⁾ only C : Type ≔ Id B and c : C ≔ b2 in c
+    : Id B b0 b1
+  
+  let⁽ᵉ⁾ only x : Id B ≔ b22 in x.2
+    : B⁽ᵉᵉ⁾ b2 b2 (refl b0) (refl b1)
+  
+  b22
+    : B⁽ᵉᵉ⁾ b2 b2 (refl b0) (refl b1)
+  
+
+It agrees with the degeneration of an ordinary let-only.
+
+  $ narya higher.ny -e 'def k (y0 y1 : B) (y2 : Id B y0 y1) : B ≔ let only x : Id B ≔ y2 in x.0' -e 'echo refl k b2 b2 b22' -e 'echo let⁽ᵉ⁾ only x : Id B ≔ b22 in x.0' -e 'echo refl k (refl b0) (refl b1) (sym b22)' -e 'echo let⁽ᵉ⁾ only x : Id B ≔ sym b22 in x.0'
+  b2
+    : Id B b0 b1
+  
+  b2
+    : Id B b0 b1
+  
+  refl b0
+    : Id B b0 b0
+  
+  refl b0
+    : Id B b0 b0
+  
+
+  $ narya higher.ny -e 'synth let⁽ᵉ⁾ only C : Type ≔ B in C'
+   ￫ error[E0709]
+   ￭ command-line exec string
+   1 | synth let⁽ᵉ⁾ only C : Type ≔ B in C
+     ^ invalid higher-dimensional let-only: bound term has a type of dimension 0, which isn't an instantiation of a type of dimension e
+  
+  [1]
+
+  $ narya higher.ny -e 'synth let⁽ᵉᵉ⁾ only c : B ≔ b2 in c'
+   ￫ error[E0709]
+   ￭ command-line exec string
+   1 | synth let⁽ᵉᵉ⁾ only c : B ≔ b2 in c
+     ^ invalid higher-dimensional let-only: bound term has a type of dimension e, which isn't an instantiation of a type of dimension ee
+  
+  [1]
+
+Only a let-only can have a dimension.
+
+  $ narya higher.ny -e 'synth let⁽ᵉ⁾ x ≔ b0 in x'
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | synth let⁽ᵉ⁾ x ≔ b0 in x
+     ^ parse error: only a let-only can have a dimension
+  
+  [1]
+
+  $ narya higher.ny -e 'synth let⁽ᵉ⁾ rec x : B ≔ b0 in x'
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | synth let⁽ᵉ⁾ rec x : B ≔ b0 in x
+     ^ parse error: only a let-only can have a dimension
+  
+  [1]
+
+Higher variables and substitutions can be modal.
+
+  $ cat >hmodal.ny <<EOF
+  > def f1 (A :♭| Type) (a0 a1 :♭| A) (a2 :♭| Id A a0 a1) : Id A a0 a1 ≔ let only B :♭| Type ≔ A and x :♭| Id B ≔ a2 in x
+  > def f2 (A :♭| Type) (a0 a1 :♭| A) (a2 :♭| Id A a0 a1) : Id A a0 a1 ≔ let⁽ᵉ⁾ only B :♭| Type ≔ Id A and y :♭| B ≔ a2 in y
+  > EOF
+
+  $ narya -v -coreflector hmodal.ny
+   ￫ info[I0000]
+   ￮ constant f1 defined
+  
+   ￫ info[I0000]
+   ￮ constant f2 defined
+  
+
+If the modality is discrete, the bound terms it annotates have the dimension of their type only, and a variable of positive dimension is not allowed.
+
+  $ cat >hdiscrete.ny <<EOF
+  > def f3 (A :♭| Type) (a0 :♭| A) (C : Type) (c0 c1 : C) (c2 : Id C c0 c1) : Id C c0 c1 ≔ let⁽ᵉ⁾ only B :♭| Type ≔ A and y :♭| B ≔ a0 and D : Type ≔ Id C and z : D ≔ c2 in z
+  > def f4 (A :♭| Type) (a0 :♭| A) (C : Type) (c0 c1 : C) (c2 : Id C c0 c1) : Id A a0 a0 ≔ let⁽ᵉ⁾ only B :♭| Type ≔ A and y :♭| B ≔ a0 and D : Type ≔ Id C and z : D ≔ c2 in y
+  > EOF
+
+  $ narya -v -parametric -discrete-coreflector hdiscrete.ny
+   ￫ info[I0000]
+   ￮ constant f3 defined
+  
+   ￫ info[I0000]
+   ￮ constant f4 defined
+  
+
+  $ narya -parametric -discrete-coreflector -e 'def f5 (A :♭| Type) (a0 a1 :♭| A) (a2 :♭| Id A a0 a1) : Id A a0 a1 ≔ let only B :♭| Type ≔ A and x :♭| Id B ≔ a2 in x'
+   ￫ error[E0709]
+   ￭ command-line exec string
+   1 | def f5 (A :♭| Type) (a0 a1 :♭| A) (a2 :♭| Id A a0 a1) : Id A a0 a1 ≔ let only B :♭| Type ≔ A and x :♭| Id B ≔ a2 in x
+     ^ invalid higher-dimensional let-only: dimension of variable is not stable under its modality
+  
+  [1]
+
+In arity zero, a cube variable has no boundary.
+
+  $ cat >arity0.ny <<EOF
+  > axiom A : Type
+  > axiom a2 : Br A .
+  > EOF
+
+  $ narya -v -parametric -arity 0 -direction p,Br arity0.ny -e 'synth let only x : Br A ≔ a2 in x' -e 'synth let⁽ᵖ⁾ only B : Type ≔ Br A and y : B ≔ a2 in y' -e 'def h : Br A . ≔ let only x : Br A ≔ a2 in (? : Br A .)'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a2 assumed
+  
+  let only x : Br A ≔ a2 in x.0
+    : Br A .
+  
+  let⁽ᵖ⁾ only B : Type ≔ Br A and y : B ≔ a2 in y
+    : Br A .
+  
+   ￫ info[I0000]
+   ￮ constant h defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     x.0 : Br A .
+     ----------------------------------------------------------------------
+     Br A .
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]

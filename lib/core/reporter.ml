@@ -131,6 +131,7 @@ module Code = struct
         -> t
     | Not_enough_domains : 'a D.t -> t
     | Invalid_higher_function : string -> t
+    | Invalid_higher_letonly : string -> t
     | Invalid_nullary_application : t
     | Expected_nullary_application : t
     | Checking_tuple_at_degenerated_record : printable -> t
@@ -360,6 +361,7 @@ module Code = struct
     | Unequal_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
+    | Invalid_higher_letonly _ -> Error
     | Invalid_nullary_application -> Error
     | Expected_nullary_application -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
@@ -585,6 +587,7 @@ module Code = struct
     | Invalid_higher_function _ -> "E0706"
     | Invalid_nullary_application -> "E0707"
     | Expected_nullary_application -> "E0708"
+    | Invalid_higher_letonly _ -> "E0709"
     (* Record fields *)
     | No_such_field _ -> "E0800"
     | Wrong_dimension_of_field _ -> "E0801"
@@ -797,6 +800,7 @@ module Code = struct
       | Not_enough_domains dim ->
           textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
       | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
+      | Invalid_higher_letonly str -> textf "invalid higher-dimensional let-only: %s" str
       | Invalid_nullary_application -> text "invalid nullary application"
       | Expected_nullary_application -> text "expected nullary application"
       | Checking_tuple_at_degenerated_record r ->

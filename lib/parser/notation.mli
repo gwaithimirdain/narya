@@ -231,6 +231,7 @@ val field : ('t, 's) tree -> ('t, 's) tree
 val of_entry : ('t, 's) tokmap -> ('t, 's) tree
 val done_open : ('left opn, 'tight, 'right) notation -> ('tight, No.nonstrict) tree
 val eop : TokMap.key -> ('t, 's) tree -> ('t, 's) tokmap
+val eop_ss : TokMap.key -> ('t, 's) tree -> ('t, 's) tokmap
 val eops : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tokmap
 val empty_entry : 'a TokMap.t
 
