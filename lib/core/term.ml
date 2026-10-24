@@ -179,7 +179,7 @@ module rec Term : sig
         plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
         tm : ('dom, 'aw, kinetic) term;
         dim : 'n D.t;
-        motive : ('mode, 'a, kinetic) term option;
+        motive : ('mode, 'a) match_motive;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
       }
         -> ('mode, 'a, potential) term
@@ -209,6 +209,8 @@ module rec Term : sig
     eta : ('s, 'et) eta;
     energy : 's energy;
   }
+
+  and ('mode, 'a) match_motive = [ `Explicit of ('mode, 'a, kinetic) term | `Implicit | `Nondep ]
 
   and (_, _, _) branch =
     | Branch : {
@@ -512,8 +514,8 @@ end = struct
         plus_lock : ('a, 'mode, 'window, 'dom, 'aw) plus_lock;
         tm : ('dom, 'aw, kinetic) term;
         dim : 'n D.t;
-        (* An explicit motive supplied by the user, if any: a type family over the datatype's indices and the datatype itself.  It is stored only so that the match can be displayed with its "return" clause; evaluation never needs it, since the branch it selects carries its own body.  Matches without an explicit motive store None. *)
-        motive : ('mode, 'a, kinetic) term option;
+        (* How the match was typechecked: with an explicit motive supplied by the user (a type family over the datatype's indices and the datatype itself), implicitly dependently (refining a variable in the context and the goal), or non-dependently.  This is stored only for display: the explicit motive is displayed with a "return" clause, and whether the match synthesizes when redisplayed depends on how it was checked.  Evaluation never needs it, since the branch it selects carries its own body. *)
+        motive : ('mode, 'a) match_motive;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
       }
         -> ('mode, 'a, potential) term
@@ -549,6 +551,8 @@ end = struct
 
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them.  Finally, each of the variables might be annotated by a different modality, so we include a list of such modalities and make it into a tctx extension that all have the same dimension. *)
   (* The pattern-variable display names are carried inside the "annotate" witness (one per variable, in VarAnnote/VarAnnotator), so unparse.ml can recover them when displaying a match branch ("about pred"). *)
+  and ('mode, 'a) match_motive = [ `Explicit of ('mode, 'a, kinetic) term | `Implicit | `Nondep ]
+
   and (_, _, _) branch =
     | Branch : {
         (* The annotations must be those given to the constructor arguments, postcomposed by the window modality *)

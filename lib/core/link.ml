@@ -63,7 +63,10 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
           plus_lock;
           window;
           dim;
-          motive = Option.map (term f) motive;
+          motive =
+            (match motive with
+            | `Explicit motive -> `Explicit (term f motive)
+            | (`Implicit | `Nondep) as motive -> motive);
           branches = Constr.Map.map (branch f) branches;
         }
   | Realize tm -> Realize (term f tm)
