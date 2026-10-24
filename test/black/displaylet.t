@@ -81,3 +81,43 @@ A recursive local definition refers to itself by name.
     k
     : bool
   
+
+In a mutual block, the variables bound to the other local definitions are not displayed as bindings, but are referred to by name.
+
+  $ cat >eo.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > def bool : Type ≔ data [ true. | false. ]
+  > def eo (m : ℕ) : bool ≔
+  >   let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ odd n ]
+  >   and odd : ℕ → bool ≔ [ zero. ↦ false. | suc. n ↦ even n ] in
+  >   even m
+  > def eo2 : ℕ → bool ≔
+  >   let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ odd n ]
+  >   and odd : ℕ → bool ≔ [ zero. ↦ false. | suc. n ↦ even n ] in
+  >   odd
+  > axiom k : ℕ
+  > EOF
+
+  $ narya eo.ny -e 'echo eo (suc. k)' -e 'echo eo2'
+  (let only … in _letrec.F2.1.odd) k
+    : bool
+  
+  _letrec.F2.3.odd
+    : ℕ → bool
+  
+  $ narya eo.ny -e 'display let ≔ environments' -e 'echo eo (suc. k)' -e 'echo eo2'
+  (let only m : ℕ ≔ suc. k in _letrec.F2.1.odd) k
+    : bool
+  
+  _letrec.F2.3.odd
+    : ℕ → bool
+  
+  $ narya eo.ny -e 'display let ≔ definitions' -e 'echo eo (suc. k)' -e 'echo eo2'
+  (let only m : ℕ ≔ suc. k in
+   (𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F2.0.even n | zero. ↦ false. ] : ℕ → bool))
+    k
+    : bool
+  
+  𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F2.2.even n | zero. ↦ false. ]
+    : ℕ → bool
+  
