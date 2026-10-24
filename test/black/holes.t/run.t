@@ -432,3 +432,101 @@ No holes in imported file
      ^ imported file '$TESTCASE_ROOT/to_import.ny' cannot contain holes
   
   [1]
+
+A case tree construct in a kinetic position is wrapped in a metavariable, which is displayed as its definition (here appearing in the types of holes).
+
+  $ narya -v -fake-interact 'def B : Type ≔ data [ true. | false. ]  def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]
+  > def t1 (b : B) : B ≔ ((p ↦ true.) : J Type (match b [ true. ↦ B | false. ↦ Type ]) B → B) ?
+  > def t2 (b : B) : B ≔ ((p ↦ true.) : J (B → B) [ true. ↦ b | false. ↦ true. ] (x ↦ x) → B) ?
+  > def t3 (X : Type) : B ≔ ((p ↦ true.) : J Type (sig (x : X, y : B)) X → B) ?
+  > def t4 (X : Type) : B ≔ ((p ↦ true.) : J Type (data [ a. | b. (_ : X) ]) X → B) ?
+  > def t5 (X : Type) : B ≔ ((p ↦ true.) : J Type (codata [ x .head : X | x .tail : ? ]) X → B) ?'
+   ￫ info[I0000]
+   ￮ constant B defined
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   2 | def t1 (b : B) : B ≔ ((p ↦ true.) : J Type (match b [ true. ↦ B | false. ↦ Type ]) B → B) ?
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t1 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     b : B
+     ----------------------------------------------------------------------
+     J Type (match b [ false. ↦ Type | true. ↦ B ]) B
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   3 | def t2 (b : B) : B ≔ ((p ↦ true.) : J (B → B) [ true. ↦ b | false. ↦ true. ] (x ↦ x) → B) ?
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t2 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     b : B
+     ----------------------------------------------------------------------
+     J (B → B) (𝑥 ↦ match 𝑥 [ false. ↦ true. | true. ↦ b ]) (x ↦ x)
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   4 | def t3 (X : Type) : B ≔ ((p ↦ true.) : J Type (sig (x : X, y : B)) X → B) ?
+     ^ sig encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t3 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?2:
+     
+     X : Type
+     ----------------------------------------------------------------------
+     J Type (sig ( x : X, y : B )) X
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   5 | def t4 (X : Type) : B ≔ ((p ↦ true.) : J Type (data [ a. | b. (_ : X) ]) X → B) ?
+     ^ data encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t4 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?3:
+     
+     X : Type
+     ----------------------------------------------------------------------
+     J Type (data [ a. | b. (𝑥 : X) ]) X
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   6 | def t5 (X : Type) : B ≔ ((p ↦ true.) : J Type (codata [ x .head : X | x .tail : ? ]) X → B) ?
+     ^ codata encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t5 defined, containing 2 holes
+  
+   ￫ info[I3003]
+   ￮ hole ?4:
+     
+     X : Type
+     x : codata [ x′ .head : X | x′ .tail : ?4 ]
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ info[I3003]
+   ￮ hole ?5:
+     
+     X : Type
+     ----------------------------------------------------------------------
+     J Type (codata [ x .head : X | x .tail : ?4 ]) X
+  

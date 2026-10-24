@@ -9,8 +9,16 @@ open Tctx
 
 (* Metavariables, such as holes and unification variables.  Local generative definitions are also reperesented as metavariables.  A metavariable is identified by its class, an autonumber that's specific to the class, and its origin (file or interactive instant).  Since the autonumbers are specific to the class, we store them as arguments of the class, even though every metavariable has one. *)
 
+(* A defined metavariable is either bound by a let or let rec, or else inserted automatically to hold the value of a case tree construct (such as a match, comatch, or canonical type) appearing bare in a kinetic position, in which case we record what sort of construct it was. *)
+type sort = [ `Let | `Letrec | `Bare of string ]
+
+let string_of_sort : sort -> string = function
+  | `Let -> "let"
+  | `Letrec -> "letrec"
+  | `Bare sort -> sort
+
 module Identity = struct
-  type t = [ `Hole of int | `Def of int * string * string option ]
+  type t = [ `Hole of int | `Def of int * sort * string option ]
 
   let compare : t -> t -> int = compare
 end
@@ -50,7 +58,7 @@ let def_counters = Versioned.make ~default:(fun _ -> 0) ~inherit_values:false
 
 (* Create a new defined constant in the current execution location (file or interactive instant). *)
 let make_def : type mode a b s.
-    string ->
+    sort ->
     string option ->
     mode Mode.t ->
     a N.t ->
@@ -93,9 +101,17 @@ let name : type mode a b s. (mode, a, b, s) t -> string =
   | `Hole number ->
       (* We don't need to include the origin here, since holes are sequentially numbered globally rather than by origin. *)
       Printf.sprintf "?%d" number
-  | `Def (number, sort, None) -> Printf.sprintf "_%s.%s.%d" sort (Origin.to_string origin) number
+  | `Def (number, sort, None) ->
+      Printf.sprintf "_%s.%s.%d" (string_of_sort sort) (Origin.to_string origin) number
   | `Def (number, sort, Some name) ->
-      Printf.sprintf "_%s.%s.%d.%s" sort (Origin.to_string origin) number name
+      Printf.sprintf "_%s.%s.%d.%s" (string_of_sort sort) (Origin.to_string origin) number name
+
+(* Whether a metavariable was inserted automatically to hold a bare case tree construct. *)
+let is_bare : type mode a b s. (mode, a, b, s) t -> bool =
+ fun (_, x) ->
+  match x.identity with
+  | `Def (_, `Bare _, _) -> true
+  | `Def (_, (`Let | `Letrec), _) | `Hole _ -> false
 
 let origin : type mode a b s. (mode, a, b, s) t -> Origin.t = fun (origin, _) -> origin
 
