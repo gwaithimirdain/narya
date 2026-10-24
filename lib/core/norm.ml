@@ -261,9 +261,6 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
       | { ty; _ }, Kinetic ->
           Val (Neu { head; args = Emp; value = ready Unrealized; ty = lazy (make_ty meta ty) }))
-  | MetaEnv (meta, metaenv) ->
-      let (Plus m_n) = D.plus (dim_term_env metaenv) in
-      eval (eval_env env m_n metaenv) (Term.Meta (meta, Kinetic))
   | UU (mode, n) ->
       let m = dim_env env in
       let (Plus mn) = D.plus n in
@@ -528,7 +525,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            })
         body
   | Letonly { env = tmenv; tm = body; _ } ->
-      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment, as for MetaEnv. *)
+      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment. *)
       let (Plus m_n) = D.plus (dim_term_env tmenv) in
       eval (eval_env env m_n tmenv) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)

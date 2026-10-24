@@ -125,7 +125,6 @@ module rec Term : sig
     | Var : ('mode, 'a) index -> ('mode, 'a, kinetic) term
     | Const : Constant.t -> ('mode, 'a, kinetic) term
     | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
-    | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
     | Field :
         's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, 's) term
@@ -451,9 +450,8 @@ end = struct
     (* Most term-formers only appear in kinetic (ordinary) terms. *)
     | Var : ('mode, 'a) index -> ('mode, 'a, kinetic) term
     | Const : Constant.t -> ('mode, 'a, kinetic) term
+    (* A metavariable lives in its own context.  When one arises by readback from a value metavariable whose environment is not the identity, it is wrapped in a let-only that binds the variables of its context. *)
     | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
-    (* Normally, checked metavariables don't require an environment attached, but they do when they arise by readback from a value metavariable. *)
-    | MetaEnv : ('mode, 'x, 'b, 's) Meta.t * ('mode, 'a, 'n, 'b) env -> ('mode, 'a, kinetic) term
     (* A field projection.  For a modal field, the term being projected lives behind a lock by the left adjoint of the field's adjunction; for ordinary fields that modality is the identity. *)
     | Field :
         's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion

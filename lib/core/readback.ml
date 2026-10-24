@@ -117,7 +117,7 @@ let is_plain_var : type mode s. level -> (mode, s) value -> bool =
       v.level = level && Option.is_some (is_id_deg v.deg) && Modalcell.is_id v.key
   | _ -> false
 
-(* Test whether a zero-dimensional environment for a metavariable's context is the identity environment of an ordered context (the one we are reading back in), i.e. whether the two contexts have the same shape and each entry of the environment is the value of the corresponding variable in that context.  If so, we return the resulting equality of checked lengths, built up entry by entry as we compare the shapes.  This is a conservative test: a free variable must appear literally, as a variable with the same level and no degeneracy, key, or arguments, while a let-bound variable must have its own value, up to physical equality.  It is used to read back a metavariable whose environment is the identity as a plain Meta, rather than a MetaEnv. *)
+(* Test whether a zero-dimensional environment for a metavariable's context is the identity environment of an ordered context (the one we are reading back in), i.e. whether the two contexts have the same shape and each entry of the environment is the value of the corresponding variable in that context.  If so, we return the resulting equality of checked lengths, built up entry by entry as we compare the shapes.  This is a conservative test: a free variable must appear literally, as a variable with the same level and no degeneracy, key, or arguments, while a let-bound variable must have its own value, up to physical equality.  It is used to read back a metavariable whose environment is the identity as a plain Meta, rather than wrapped in a let-only. *)
 let rec is_identity_ordered_env : type mode a b c d.
     (mode, a, b) Ctx.Ordered.t ->
     (mode, D.zero, d) env ->
@@ -850,12 +850,14 @@ and readback_head : type mode c z.
             | `Other -> canonical in
           Act (Kinetic, Const name, deg, (sort, canonical)))
   | Meta { meta; env; ins } -> (
-      let termctx = (Global.find_meta meta).termctx in
-      (* If the environment is the identity, possibly weakened, we can omit it. *)
+      let { termctx; ty; _ } : _ Metadef.t = Global.find_meta meta in
+      (* If the environment is the identity, possibly weakened, we can omit it.  Otherwise, we bind the variables of the metavariable's context with a let-only. *)
       let tm : (mode, c, kinetic) term =
         match readback_meta_identity ctx meta env termctx with
         | Some tm -> tm
-        | None -> MetaEnv (meta, readback_env ctx env termctx) in
+        | None ->
+            Letonly { termctx; env = readback_env ctx env termctx; tm = Meta (meta, Kinetic); ty }
+      in
       match is_id_ins ins with
       | Some _ -> tm
       | None ->

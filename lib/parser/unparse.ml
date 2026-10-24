@@ -271,7 +271,7 @@ let bare_definition : type mode x b s. (mode, x, b, s) Meta.t -> (mode, x, b, s)
 let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   (* A metavariable displayed as its definition might not synthesize, as a case tree construct.  Since this is only for display, we conservatively assume it doesn't. *)
   | Meta (v, _) -> Option.is_none (bare_definition v)
-  | Var _ | Const _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ -> true
+  | Var _ | Const _ | Field _ | UU _ | Inst _ | Pi _ -> true
   (* A let-only always synthesizes, since its body is ascribed if necessary. *)
   | Letonly _ -> true
   | Constr _ | Lam _ | Struct _ -> false
@@ -518,15 +518,6 @@ let rec unparse : type mode n lt ls rt rs s.
             ~finally:(fun () -> unparsing_metas := outer)
             (fun () -> unparse vars def li ri)
       | _ -> name ())
-  | MetaEnv (v, env) -> (
-      (* A bare metavariable with an environment is displayed as its definition wrapped in a let-only that binds the variables of its context to the terms in the environment. *)
-      match bare_definition v with
-      | Some { termctx; ty; _ } ->
-          unparse vars (Letonly { termctx; env; tm = Meta (v, Kinetic); ty }) li ri
-      (* NB: We don't currently print the arguments of other metavariables. *)
-      | None ->
-          unlocated
-            (Ident ([ (if Display.metas () == `Numbered then Meta.name v ^ "{…}" else "?") ], [])))
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
