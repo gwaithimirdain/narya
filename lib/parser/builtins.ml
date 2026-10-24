@@ -1671,11 +1671,10 @@ and get_attribute_values : observation list -> wrapped_parse list * observation 
   | Term v :: Token (RParen, _) :: rest -> ([ Wrap v ], rest)
   | _ -> invalid "attribute"
 
-(* Allow a single attribute group without values, like #(gen), at the beginning of a tree.  Unlike "attributes" above, this is finite, so it can be used for notations that share their initial token and hence have their trees merged, since merging forces all the lazy subtrees. *)
-let rec with_attribute : type t s. (t, s) tree -> (t, s) tree = function
-  | Inner b ->
-      Inner { b with ops = TokMap.add (Op "#") (op LParen (term RParen (Inner b)), `Noss) b.ops }
-  | Lazy t -> Lazy (lazy (with_attribute (Lazy.force t)))
+(* Allow attribute groups at the beginning of a tree. *)
+let rec with_attributes : type t s. (t, s) tree -> (t, s) tree = function
+  | Inner b -> Inner (attributes (fun () -> b) ())
+  | Lazy t -> Lazy (lazy (with_attributes (Lazy.force t)))
   | t -> t
 
 (* When the unparser displays the definition of a metavariable, it marks the first case-tree-only construct (such as a match, comatch, or canonical type) with the attribute #(gen), since if the user copies and re-enters it, it will be generative and won't be equal to the original.  The only effect of this attribute when parsing is a warning. *)
@@ -2463,7 +2462,7 @@ let () =
   make implicit_mtch
     {
       name = "implicit match";
-      tree = Closed_entry (eop Match (with_attribute (discriminees ())));
+      tree = Closed_entry (eop Match (with_attributes (discriminees ())));
       processor =
         (fun ctx obs loc ->
           let ctx = Matchscope.make ctx in
@@ -2501,7 +2500,7 @@ let () =
       tree =
         Closed_entry
           (eop Match
-             (with_attribute
+             (with_attributes
                 (Inner
                    {
                      empty_branch with
@@ -2553,7 +2552,7 @@ let () =
   make mtchlam
     {
       name = "matchlam";
-      tree = Closed_entry (eop LBracket (with_attribute (mtch_branches mtchlam true false true)));
+      tree = Closed_entry (eop LBracket (with_attributes (mtch_branches mtchlam true false true)));
       processor =
         (fun ctx obs loc ->
           (* Empty matching lambdas are a different notation, empty_co_match, so here there must be at least one branch. *)
@@ -2638,7 +2637,7 @@ let () =
       tree =
         Closed_entry
           (eop LBracket
-             (with_attribute
+             (with_attributes
                 (Inner
                    {
                      empty_branch with
@@ -2678,7 +2677,8 @@ let () =
   make empty_co_match
     {
       name = "empty_co_match";
-      tree = Closed_entry (eop LBracket (with_attribute (op RBracket (Done_closed empty_co_match))));
+      tree =
+        Closed_entry (eop LBracket (with_attributes (op RBracket (Done_closed empty_co_match))));
       processor =
         (fun _ obs loc ->
           let _ = strip_gen_attributes obs in
