@@ -1520,7 +1520,9 @@ let pp_tuple_case (triv : [ `Trivial | `Nontrivial of Whitespace.t list ]) obs =
           | `Trivial -> (Token.pp LParen, group (align (pp_ws `None wslparen ^^ doc)), ws)
           | `Nontrivial _ -> (Token.pp LParen, group (nest 2 (pp_ws `Cut wslparen ^^ doc)), ws)))
   | `Parens (wslparen, Wrap body, wsrparen) ->
-      let ibody, pbody, wbody = pp_case (`Nontrivial wslparen) body in
+      (* If the body isn't a case tree, we print it as a "trivial" one, since otherwise it could have a break between the opening parenthesis and the beginning of the body, leaving the parenthesis alone on a line. *)
+      let triv = if is_case body then `Nontrivial wslparen else `Trivial in
+      let ibody, pbody, wbody = pp_case triv body in
       ( Token.pp LParen ^^ pp_ws `None wslparen ^^ ibody,
         pbody ^^ pp_ws `None wbody ^^ Token.pp RParen,
         wsrparen )
