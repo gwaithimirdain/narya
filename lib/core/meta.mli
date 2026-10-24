@@ -23,6 +23,7 @@ val make_hole : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('m
 val remake : (File.t -> File.t) -> ('mode, 'a, 'b, 's) t -> ('mode, 'a, 'b, 's) t
 val mode : ('mode, 'a, 'b, 's) t -> 'mode Mode.t
 val name : ('mode, 'a, 'b, 's) t -> string
+val sort_of : ('mode, 'a, 'b, 's) t -> sort option
 val is_bare : ('mode, 'a, 'b, 's) t -> bool
 val origin : ('mode, 'a, 'b, 's) t -> Origin.t
 
