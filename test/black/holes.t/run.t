@@ -530,3 +530,62 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      ----------------------------------------------------------------------
      J Type (codata [ x .head : X | x .tail : ?4 ]) X
   
+
+If such a metavariable has a nontrivial environment, its definition is wrapped in a let-only binding the variables of its context.
+
+  $ narya -v -fake-interact 'def B : Type ≔ data [ true. | false. ]  def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]
+  > def t (b : B) : B ≔ ((y p ↦ true.) : (y : B) → J Type (match y [ true. ↦ B | false. ↦ Type ]) B → B) b ?
+  > axiom u : B
+  > def f (x : B) : Type ≔ J Type (match x [ true. ↦ B | false. ↦ Type ]) B
+  > echo f u
+  > echo refl f (refl u)'
+   ￫ info[I0000]
+   ￮ constant B defined
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   2 | def t (b : B) : B ≔ ((y p ↦ true.) : (y : B) → J Type (match y [ true. ↦ B | false. ↦ Type ]) B → B) b ?
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     b : B
+     ----------------------------------------------------------------------
+     J Type
+       (let only b : B ≔ b
+        and y : B ≔ b in
+        (match y [ false. ↦ Type | true. ↦ B ] : Type)) B
+  
+   ￫ info[I0001]
+   ￮ axiom u assumed
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   4 | def f (x : B) : Type ≔ J Type (match x [ true. ↦ B | false. ↦ Type ]) B
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant f defined
+  
+  J Type
+    (let only x : B ≔ u in (match x [ false. ↦ Type | true. ↦ B ] : Type)) B
+    : Type
+  
+  J⁽ᵉ⁾ Type⁽ᵉ⁾
+    (let⁽ᵉ⁾ only x : B ≔ refl u in
+     (match x [ false. ↦ Type | true. ↦ B ] : Type)) B⁽ᵉ⁾
+    : Type⁽ᵉ⁾
+        (J Type
+           (let only x : B ≔ u in
+            (match x [ false. ↦ Type | true. ↦ B ] : Type)) B)
+        (J Type
+           (let only x : B ≔ u in
+            (match x [ false. ↦ Type | true. ↦ B ] : Type)) B)
+  

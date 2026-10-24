@@ -253,9 +253,25 @@ let rec get_bwd : type mode n.
       | _ -> None)
   | _ -> None
 
+(* The automatically inserted metavariables whose definitions we are currently unparsing. *)
+let unparsing_metas : Meta.WrapSet.t ref = ref Meta.WrapSet.empty
+
+(* A metavariable inserted automatically to hold a bare case tree construct is displayed as its definition, which lives in the context of the metavariable.  If it has no definition yet (e.g. because we are displaying an error that occurred while checking it), we fall back to its name.  We also use its name for occurrences inside its own definition, as in the constructor types of a datatype. *)
+let bare_definition : type mode x b s. (mode, x, b, s) Meta.t -> (mode, x, b, s) Metadef.t option =
+ fun v ->
+  if Meta.is_bare v && not (Meta.WrapSet.mem (Wrap v) !unparsing_metas) then
+    match
+      Reporter.discard_errors ~fallback:(fun () -> None) (fun () -> Some (Global.find_meta v))
+    with
+    | Some ({ tm = `Defined _; _ } as def) -> Some def
+    | _ -> None
+  else None
+
 (* Whether we expect a given term to synthesize, after being unparsed. *)
 let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
-  | Var _ | Const _ | Meta _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ -> true
+  (* A metavariable displayed as its definition might not synthesize, as a case tree construct.  Since this is only for display, we conservatively assume it doesn't. *)
+  | Meta (v, _) -> Option.is_none (bare_definition v)
+  | Var _ | Const _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ -> true
   (* A let-only always synthesizes, since its body is ascribed if necessary. *)
   | Letonly _ -> true
   | Constr _ | Lam _ | Struct _ -> false
@@ -475,9 +491,6 @@ let unparse_modality_name : type dom modality mode. (dom, modality, mode) Modali
           ms)
 
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
-(* The automatically inserted metavariables whose definitions we are currently unparsing. *)
-let unparsing_metas : Meta.WrapSet.t ref = ref Meta.WrapSet.empty
-
 let rec unparse : type mode n lt ls rt rs s.
     n Names.t ->
     (mode, n, s) term ->
@@ -492,27 +505,28 @@ let rec unparse : type mode n lt ls rt rs s.
       | Some { keys = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (constant_name vars (Scope.name_of c), [])))
-  | Meta (v, _) ->
+  | Meta (v, _) -> (
       let name () =
         unlocated (Ident ([ (if Display.metas () == `Numbered then Meta.name v else "?") ], []))
       in
-      (* A metavariable inserted automatically to hold a bare case tree construct is displayed as its definition, which lives in the same context.  If it has no definition yet (e.g. because we are displaying an error that occurred while checking it), we fall back to its name.  We also use its name for occurrences inside its own definition, as in the constructor types of a datatype. *)
-      if Meta.is_bare v && not (Meta.WrapSet.mem (Wrap v) !unparsing_metas) then
-        match
-          Reporter.discard_errors ~fallback:(fun () -> `Undefined) (fun () -> (Global.find_meta v).tm)
-        with
-        | `Defined def ->
-            let outer = !unparsing_metas in
-            unparsing_metas := Meta.WrapSet.add (Wrap v) outer;
-            Fun.protect
-              ~finally:(fun () -> unparsing_metas := outer)
-              (fun () -> unparse vars def li ri)
-        | `Axiom | `Undefined -> name ()
-      else name ()
-  (* NB: We don't currently print the arguments of a metavariable. *)
-  | MetaEnv (v, _) ->
-      unlocated
-        (Ident ([ (if Display.metas () == `Numbered then Meta.name v ^ "{…}" else "?") ], []))
+      (* A bare metavariable is displayed as its definition, which lives in the same context (see bare_definition). *)
+      match bare_definition v with
+      | Some { tm = `Defined def; _ } ->
+          let outer = !unparsing_metas in
+          unparsing_metas := Meta.WrapSet.add (Wrap v) outer;
+          Fun.protect
+            ~finally:(fun () -> unparsing_metas := outer)
+            (fun () -> unparse vars def li ri)
+      | _ -> name ())
+  | MetaEnv (v, env) -> (
+      (* A bare metavariable with an environment is displayed as its definition wrapped in a let-only that binds the variables of its context to the terms in the environment. *)
+      match bare_definition v with
+      | Some { termctx; ty; _ } ->
+          unparse vars (Letonly { termctx; env; tm = Meta (v, Kinetic); ty }) li ri
+      (* NB: We don't currently print the arguments of other metavariables. *)
+      | None ->
+          unlocated
+            (Ident ([ (if Display.metas () == `Numbered then Meta.name v ^ "{…}" else "?") ], [])))
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
