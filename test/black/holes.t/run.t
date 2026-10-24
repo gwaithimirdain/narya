@@ -460,7 +460,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      b : B
      ----------------------------------------------------------------------
-     J Type (match b [ false. ↦ Type | true. ↦ B ]) B
+     J Type (match #(gen) b [ false. ↦ Type | true. ↦ B ]) B
   
    ￫ hint[H0403]
    ￭ command line fake-interact
@@ -475,7 +475,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      b : B
      ----------------------------------------------------------------------
-     J (B → B) (𝑥 ↦ match 𝑥 [ false. ↦ true. | true. ↦ b ]) (x ↦ x)
+     J (B → B) (𝑥 ↦ match #(gen) 𝑥 [ false. ↦ true. | true. ↦ b ]) (x ↦ x)
   
    ￫ hint[H0403]
    ￭ command line fake-interact
@@ -490,7 +490,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      X : Type
      ----------------------------------------------------------------------
-     J Type (sig ( x : X, y : B )) X
+     J Type (sig #(gen) ( x : X, y : B )) X
   
    ￫ hint[H0403]
    ￭ command line fake-interact
@@ -505,7 +505,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      X : Type
      ----------------------------------------------------------------------
-     J Type (data [ a. : _data.6.0 | b. (𝑥 : X) : _data.6.0 ]) X
+     J Type (data #(gen) [ a. | b. (𝑥 : X) ]) X
   
    ￫ hint[H0403]
    ￭ command line fake-interact
@@ -519,7 +519,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
    ￮ hole ?4:
      
      X : Type
-     x : codata [ x′ .head : X | x′ .tail : ?4 ]
+     x : codata #(gen) [ x′ .head : X | x′ .tail : ?4 ]
      ----------------------------------------------------------------------
      Type
   
@@ -528,7 +528,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      X : Type
      ----------------------------------------------------------------------
-     J Type (codata [ x .head : X | x .tail : ?4 ]) X
+     J Type (codata #(gen) [ x .head : X | x .tail : ?4 ]) X
   
 
 If such a metavariable has a nontrivial environment, its definition is wrapped in a let-only binding the variables of its context.
@@ -561,7 +561,7 @@ If such a metavariable has a nontrivial environment, its definition is wrapped i
      J Type
        (let only b : B ≔ b
         and y : B ≔ b in
-        (match y [ false. ↦ Type | true. ↦ B ] : Type)) B
+        (match #(gen) y [ false. ↦ Type | true. ↦ B ] : Type)) B
   
    ￫ info[I0001]
    ￮ axiom u assumed
@@ -575,17 +575,18 @@ If such a metavariable has a nontrivial environment, its definition is wrapped i
    ￮ constant f defined
   
   J Type
-    (let only x : B ≔ u in (match x [ false. ↦ Type | true. ↦ B ] : Type)) B
+    (let only x : B ≔ u in
+     (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B
     : Type
   
   J⁽ᵉ⁾ Type⁽ᵉ⁾
     (let⁽ᵉ⁾ only x : B ≔ refl u in
-     (match x [ false. ↦ Type | true. ↦ B ] : Type)) B⁽ᵉ⁾
+     (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B⁽ᵉ⁾
     : Type⁽ᵉ⁾
         (J Type
            (let only x : B ≔ u in
-            (match x [ false. ↦ Type | true. ↦ B ] : Type)) B)
+            (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
         (J Type
            (let only x : B ≔ u in
-            (match x [ false. ↦ Type | true. ↦ B ] : Type)) B)
+            (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
   
