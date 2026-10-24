@@ -295,6 +295,7 @@ module Code = struct
     | Synthesizing_recursion : printable -> t
     | Invalid_synthesized_type : string * printable -> t
     | Unrecognized_attribute : t
+    | Display_only_syntax : string -> t
     | Invalid_degeneracy_action : string * 'nk D.t * 'n D.t -> t
     | Wrong_number_of_patterns : t
     | Inconsistent_patterns : t
@@ -482,6 +483,7 @@ module Code = struct
     | Synthesizing_recursion _ -> Error
     | Invalid_synthesized_type _ -> Error
     | Unrecognized_attribute -> Error
+    | Display_only_syntax _ -> Error
     | Invalid_degeneracy_action _ -> Bug
     | Wrong_number_of_patterns -> Error
     | Inconsistent_patterns -> Error
@@ -550,6 +552,7 @@ module Code = struct
     | Invalid_degeneracy _ -> "E0206"
     | No_relative_precedence _ -> "E0207"
     | Unrecognized_attribute -> "E0208"
+    | Display_only_syntax _ -> "E0209"
     | Comment_end_in_string -> "E0250"
     | Encoding_error -> "E0299"
     (* Scope errors *)
@@ -1213,6 +1216,7 @@ module Code = struct
       | Invalid_synthesized_type (str, ty) ->
           textf "type %a synthesized by %s is invalid for entire term" pp_printed (print ty) str
       | Unrecognized_attribute -> textf "unrecognized attribute"
+      | Display_only_syntax str -> textf "display-only syntax can't be parsed: %s" str
       | Invalid_degeneracy_action (str, nk, n) ->
           textf
             "invalid degeneracy action on %s: dimension '%s' doesn't factor through codomain '%s'"
