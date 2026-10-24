@@ -385,7 +385,7 @@ module F = struct
           check dom.value synth body.value
     | Let (_, _, _, _) -> fprintf ppf "Let(?)"
     | Letrec (_, _, _) -> fprintf ppf "LetRec(?)"
-    | Letonly (_, _, _, _) -> fprintf ppf "LetOnly(?)"
+    | Letonly (_, _, _) -> fprintf ppf "LetOnly(?)"
     | Act (_, _, _) -> fprintf ppf "Act(?)"
     | Match { tm; window = _; sort = _; branches = br; refutables = _; highers = _ } ->
         fprintf ppf "Match (%a, (%a))" synth tm.value branches br

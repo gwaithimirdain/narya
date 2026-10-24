@@ -430,6 +430,11 @@ let constant_name : type n. n Names.t -> string list -> string list =
       else name
   | None -> name
 
+(* A composite of adjacent locks in a let-only, with the given source mode. *)
+type _ letonly_lock =
+  | No_letonly_lock : 'mode letonly_lock
+  | Letonly_lock : ('mode, 'modality, 'tgt) Modality.t -> 'mode letonly_lock
+
 (* The name of a modality, as a spine of identifiers, or a placeholder for the identity. *)
 let unparse_modality_name : type dom modality mode. (dom, modality, mode) Modality.t -> observation
     =
@@ -666,15 +671,25 @@ let rec unparse : type mode n lt ls rt rs s.
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
  fun vars tm -> { unparse = (fun li ri -> unparse vars tm li ri) }
 
-(* Unparse the clauses of a let-only, walking its body context and its environment of bound terms together, and returning also the names of the body context.  The bound terms are unparsed in the ambient context, while each type is unparsed in the body context up to its variable. *)
+(* Unparse the clauses of a let-only, walking its body context and its environment of bound terms together, and returning also the names of the body context.  The bound terms are unparsed in the ambient context, while each type is unparsed in the body context up to its variable.  The ambient context of the bound terms to the left of a lock or key is obtained by splitting off the locks it stripped, as for a key applied to a term. *)
 and unparse_letonly_clauses : type mode n i k b.
     n Names.t ->
     (mode, i, b) ordered_termctx ->
     (mode, n, k, b) env ->
     observation Bwd.t * b Names.t =
  fun vars ctx tmenv ->
+  let acc, pending, names = unparse_letonly_clauses_pending vars ctx tmenv in
+  (flush_letonly_lock acc pending, names)
+
+(* Adjacent locks are displayed as a single lock clause by their composite modality, so while walking the clauses we keep track of the composite of the locks seen since the last other clause, whose source is the mode at which the walk has arrived. *)
+and unparse_letonly_clauses_pending : type mode n i k b.
+    n Names.t ->
+    (mode, i, b) ordered_termctx ->
+    (mode, n, k, b) env ->
+    observation Bwd.t * mode letonly_lock * b Names.t =
+ fun vars ctx tmenv ->
   match (ctx, tmenv) with
-  | Emp _, Emp _ -> (Emp, Names.empty)
+  | Emp _, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty)
   | ( Ext (ctx, Vis { vars = xs; plus_lock; bindings; _ }, _),
       Ext { env; values = Modal (modality, plus, tms); _ } ) ->
       let acc, names = unparse_letonly_clauses vars ctx env in
@@ -687,20 +702,45 @@ and unparse_letonly_clauses : type mode n i k b.
       let tm =
         unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
           No.Interval.entire in
-      (* The first clause is preceded by "only", and the rest by "and". *)
-      let tok =
-        match acc with
-        | Emp -> Token.Only
-        | Snoc _ -> Token.And in
-      let acc = acc <: mktok tok <: Term (unparse_var x) <: mktok Colon in
+      let acc = letonly_sep acc <: Term (unparse_var x) <: mktok Colon in
       let acc =
         match Modality.compare_id modality with
         | Eq -> acc
         | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
-      (acc <: Term ty <: mktok Coloneq <: Term tm, names)
-  | Lock _, _ | _, Lock _ | _, Prekey _ -> fatal (Unimplemented "unparsing locks in let-only")
+      (acc <: Term ty <: mktok Coloneq <: Term tm, No_letonly_lock, names)
+  | Lock (ctx, cgen), Lock { env; gen; plus_tgt = Plus_with_locks (comp, _) } ->
+      let Eq = Modality.Gen.tgt_uniq cgen gen in
+      let acc, pending, names = unparse_letonly_clauses_pending (Names.split vars comp) ctx env in
+      let pending =
+        match pending with
+        | No_letonly_lock -> Letonly_lock (Modality.of_gen gen)
+        | Letonly_lock modality -> Letonly_lock (Modality.suc modality gen) in
+      (acc, pending, Names.add_gen_lock names)
+  | _, Prekey { env; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } ->
+      let acc, names =
+        unparse_letonly_clauses (Names.add_lock (Names.split vars comp) plus_src) ctx env in
+      (* A key is displayed as a sequence of key clauses, one for each piece of its vertical composite, innermost first.  An identity key is omitted, since without it the bound terms to its left would be checked in the same context except for some variables that they don't use. *)
+      ( List.fold_left
+          (fun acc parts ->
+            letonly_sep acc <: mktok Keyword_key <: Term (unlocated (Ident (parts, []))))
+          acc (Modalcell.name cell),
+        No_letonly_lock,
+        names )
+  | Lock _, _ | _, Lock _ -> fatal (Anomaly "mismatched lock in let-only")
   | Ext (_, Invis _, _), _ | Weaken _, _ ->
       fatal (Anomaly "invisible or weakened variable in let-only")
+
+and flush_letonly_lock : type mode. observation Bwd.t -> mode letonly_lock -> observation Bwd.t =
+ fun acc pending ->
+  match pending with
+  | No_letonly_lock -> acc
+  | Letonly_lock modality -> letonly_sep acc <: mktok Lock <: unparse_modality_name modality
+
+(* The first clause of a let-only directly follows "only", while the rest are preceded by "and". *)
+and letonly_sep (acc : observation Bwd.t) : observation Bwd.t =
+  match acc with
+  | Snoc (Emp, _) -> acc
+  | _ -> acc <: mktok And
 
 (* The type of a cube variable of dimension n bound by a let-only, as stored in its context, is the type that was written, instantiated at the boundary of the variable.  To display the former, we remove those instantiation arguments, which were the last ones applied, and hence come first in the tube. *)
 and uninst_letonly_type : type mode b n. n D.t -> (mode, b, kinetic) term -> (mode, b, kinetic) term
@@ -1810,9 +1850,25 @@ let rec unparse_ctx : type dom modality mode a b.
       let names, out = unparse_ctx names (Modality.comp_out (Modality.of_gen newlock) ll) vars ctx in
       (Names.add_lock names (plus_lock_suc (plus_no_lock (Modality.Gen.tgt newlock)) newlock), out)
   | Weaken (ctx, _) ->
-      (* A weakening entry consumes one raw variable (which has no printable name of its own) and adds no printed entry. *)
-      let (Snoc (vars, _)) = vars in
-      unparse_ctx names lock vars ctx
+      (* A weakening entry is a variable hidden by a lock or key: it is still in textual scope, so that its name shadows a constant or an earlier variable, but it can't be used and its type isn't available.  So we display it with a placeholder type and a marker. *)
+      let (Snoc (vars, (x, orig))) = vars in
+      let names, result = unparse_ctx names lock vars ctx in
+      let renamed =
+        match orig with
+        | `Renamed -> true
+        | `Original -> false in
+      ( names,
+        Snoc
+          ( result,
+            {
+              var = x;
+              modality = [];
+              renamed;
+              hidden = true;
+              lock = [];
+              tm = None;
+              ty = Wrap (unlocated (Placeholder []));
+            } ) )
   | Ext
       (type edom emod a' x b' bm n)
       ((ctx, entry, af) :
@@ -1877,7 +1933,7 @@ let rec unparse_ctx : type dom modality mode a b.
                   match orig with
                   | `Renamed -> true
                   | `Original -> false in
-                let res = Snoc (res, { var = x; modality; renamed; lock; tm; ty }) in
+                let res = Snoc (res, { var = x; modality; renamed; hidden = false; lock; tm; ty }) in
                 ((), res) in
           let result = ref result in
           CubeOf.miter
@@ -1891,7 +1947,8 @@ let rec unparse_ctx : type dom modality mode a b.
                 match orig with
                 | `Renamed -> true
                 | `Original -> false in
-              result := Snoc (!result, { var = x; modality; renamed; lock; tm = None; ty }))
+              result :=
+                Snoc (!result, { var = x; modality; renamed; hidden = false; lock; tm = None; ty }))
             [ fs; fields ];
           (names, !result))
 

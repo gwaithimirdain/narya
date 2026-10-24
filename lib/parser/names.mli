@@ -43,6 +43,7 @@ val add_full :
   'b t -> 'mn variables -> ('mn, string) gvariables * ('b, ('modality, 'mn) dim_entry) snoc t
 
 val add_lock : 'a t -> ('a, 'mode, 'modality, 'dom, 'am) plus_lock -> 'am t
+val add_gen_lock : 'a t -> ('a, 'g lock_entry) snoc t
 val of_ctx : ('mode, 'a, 'b) Ctx.t -> 'b t
 val degenerate : 'r D.t -> ('r, 'b, 'kb, 'mode) plusmap -> 'b t -> 'kb t
 

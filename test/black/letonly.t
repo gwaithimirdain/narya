@@ -499,3 +499,408 @@ In arity zero, a cube variable has no boundary.
    ￮ command-line exec string contains open holes
   
   [1]
+
+A let-only can contain lock and key clauses, separated from the other clauses by "and" like any clause, which make its bound terms a substitution into a context with locks.  The bound terms to the left of a lock are checked in the ambient context with a matching lock (and everything after it) removed.
+
+  $ cat >locks.ny <<EOF
+  > def ♭ (A :♭| Type) : Type ≔ data [ box. (x :♭| A) ]
+  > def h (A :♭| Type) (x :♭| A) : ♭ A ≔ box. (let only B :♭| Type ≔ A and lock ♭ and y : B ≔ x in y)
+  > def h2 (A :♭| Type) : ♭ (A → A) ≔ box. (z ↦ let only B :♭| Type ≔ A and lock ♭ and y : B ≔ z in y)
+  > EOF
+
+  $ narya -v -coreflector locks.ny -e 'synth ((A x ↦ box. (let only B :♭| Type ≔ A and lock ♭ and y : B ≔ x in y)) : (A :♭| Type) (x :♭| A) → ♭ A)' -e 'synth ((A ↦ box. (z ↦ let only B :♭| Type ≔ A and lock ♭ and y : B ≔ z in y)) : (A :♭| Type) → ♭ (A → A))'
+   ￫ info[I0000]
+   ￮ constant ♭ defined
+  
+   ￫ info[I0000]
+   ￮ constant h defined
+  
+   ￫ info[I0000]
+   ￮ constant h2 defined
+  
+  A x ↦ box. let only B :♭| Type ≔ A and lock ♭ and y : B ≔ x in y
+    : (A :♭| Type) (x :♭| A) → ♭ A
+  
+  A ↦ box. (z ↦ let only B :♭| Type ≔ A and lock ♭ and y : B ≔ z in y)
+    : (A :♭| Type) → ♭ (A → A)
+  
+
+A lock or key clause must be preceded by "and", unless it comes first.
+
+  $ narya -coreflector locks.ny -e 'def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X lock ♭ in A'
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X lock ♭ in A
+     ^ parse error: invalid syntax
+  
+  [1]
+  $ narya -coreflector locks.ny -e 'def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and lock ♭ key ε in A'
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and lock ♭ key ε in A
+     ^ parse error: invalid syntax
+  
+  [1]
+
+Lock and key clauses can also come first, or there can be no ordinary clauses at all.
+
+  $ narya -coreflector locks.ny -e 'synth ((A ↦ box. (let only lock ♭ and B :♭| Type ≔ A in B)) : (A :♭| Type) → ♭ Type)' -e 'synth ((A ↦ box. (let only lock ♭ in Type)) : (A :♭| Type) → ♭ Type)'
+  A ↦ box. let only lock ♭ and B :♭| Type ≔ A in B
+    : (A :♭| Type) → ♭ Type
+  
+  A ↦ box. let only lock ♭ in Type
+    : (A :♭| Type) → ♭ Type
+  
+
+The variables in the body context are behind its locks.
+
+  $ narya -v -coreflector locks.ny -e 'def h3 (A :♭| Type) (x :♭| A) : ♭ A ≔ box. (let only B :♭| Type ≔ A and lock ♭ and y : B ≔ x in (? : B))'
+   ￫ info[I0000]
+   ￮ constant ♭ defined
+  
+   ￫ info[I0000]
+   ￮ constant h defined
+  
+   ￫ info[I0000]
+   ￮ constant h2 defined
+  
+   ￫ info[I0000]
+   ￮ constant h3 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     B :♭| Type (locked: ♭)
+     y : B
+     ----------------------------------------------------------------------
+     B
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+  $ narya -coreflector locks.ny -e 'def h4 (A :♭| Type) (x :♭| A) : ♭ Type ≔ box. (let only C : Type ≔ A and lock ♭ in C)'
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def h4 (A :♭| Type) (x :♭| A) : ♭ Type ≔ box. (let only C : Type ≔ A and lock ♭ in C)
+     ^ use of id variable behind ♭ lock requires a key
+  
+  [1]
+
+In the context of a hole, the variables hidden by a lock (or by a key, including a postfix one) are displayed with a marker, since their names are still in scope.  A constant they shadow is displayed with "_root_".  A hidden variable that is itself shadowed is renamed, and then its new name is not in scope.
+
+  $ cat >hidden.ny <<EOF
+  > def ♭ (A :♭| Type) : Type ≔ data [ box. (x :♭| A) ]
+  > axiom C : Type
+  > def k1 (z :♭| Type) : ♭ (Type → Type) ≔ box. (z ↦ let only A :♭| Type ≔ ? and lock ♭ in A)
+  > def k2 (W :♭| Type) : ♭ (Type → Type) ≔ box. (C ↦ (((? : (_root_.C → Type) → Type) #♭) (_ ↦ Type)))
+  > def k3 (z′ :♭| Type) : ♭ (Type → Type) ≔ box. (z ↦ let only A :♭| Type → Type ≔ (z ↦ (? : Type)) and lock ♭ in Type)
+  > EOF
+
+  $ narya -v -coreflector hidden.ny
+   ￫ info[I0000]
+   ￮ constant ♭ defined
+  
+   ￫ info[I0001]
+   ￮ axiom C assumed
+  
+   ￫ info[I0000]
+   ￮ constant k1 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     z′ :♭| Type (not in scope)
+     z : _ (hidden by lock)
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ info[I0000]
+   ￮ constant k2 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     W :♭| Type (locked: ♭)
+     C : _ (hidden by lock)
+     ----------------------------------------------------------------------
+     (_root_.C → Type) → Type
+  
+   ￫ info[I0000]
+   ￮ constant k3 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?2:
+     
+     z′ :♭| Type (locked: ♭)
+     z″ : _ (hidden by lock, not in scope)
+     z : Type
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ error[E3002]
+   ￮ file hidden.ny contains open holes
+  
+  [1]
+
+The ambient context must have a matching lock, and the bound terms to its left can't use the variables after it.
+
+  $ narya -coreflector locks.ny -e 'def k (A : Type) : Type ≔ let only B : Type ≔ A and lock ♭ in B'
+   ￫ error[E1716]
+   ￭ command-line exec string
+   1 | def k (A : Type) : Type ≔ let only B : Type ≔ A and lock ♭ in B
+     ^ let-only lock ♭ doesn't match any suffix of context locks id
+  
+  [1]
+
+  $ narya -coreflector locks.ny -e 'def k : ♭ (Type → Type) ≔ box. (z ↦ let only w : Type ≔ z and lock ♭ in w)'
+   ￫ error[E0314]
+   ￭ command-line exec string
+   1 | def k : ♭ (Type → Type) ≔ box. (z ↦ let only w : Type ≔ z and lock ♭ in w)
+     ^ variable hidden by lock in let-only
+  
+  [1]
+
+  $ narya -coreflector locks.ny -e 'def k : ♭ Type ≔ box. (let only w : Type ≔ Type and lock ♮ in w)'
+   ￫ error[E1704]
+   ￭ command-line exec string
+   1 | def k : ♭ Type ≔ box. (let only w : Type ≔ Type and lock ♮ in w)
+     ^ unknown modality ♮
+  
+  [1]
+
+A key clause acts on the bound terms to its left, which are checked in the ambient context with locks matching its vertical target replaced by its vertical source.
+
+  $ narya -coreflector locks.ny -e 'def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and lock ♭ and key ε in A' -e 'synth ((X ↦ let only A :♭| Type ≔ X and lock ♭ and key ε in A) : (X :♭| Type) → Type)' -e 'def t2 (X :♭| Type) (Y : Type) (y : Y) : Y ≔ let only A :♭| Type ≔ X and lock ♭ and key ε and C : Type ≔ Y and c : C ≔ y in c' -e 'echo (Y0 Y1 : Type) (Y2 : Id Type Y0 Y1) (y0 : Y0) (y1 : Y1) (y2 : Y2 y0 y1) ↦ refl (t2 Type) Y2 y2'
+  X ↦ let only A :♭| Type ≔ X and lock ♭ and key ε in A
+    : (X :♭| Type) → Type
+  
+  Y0 Y1 Y2 y0 y1 y2 ↦ y2
+    : (Y0 : Type) (Y1 : Type) (Y2 : Type⁽ᵉ⁾ Y0 Y1) (y0 : Y0) (y1 : Y1)
+      (y2 : Y2 y0 y1)
+      → Y2 y0 y1
+  
+
+  $ narya -coreflector locks.ny -e 'def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and key ♭ in A'
+   ￫ error[E1707]
+   ￭ command-line exec string
+   1 | def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and key ♭ in A
+     ^ vertical target ♭ of key ε_1_1 doesn't match any suffix of context locks id
+  
+  [1]
+
+  $ narya -coreflector locks.ny -e 'def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and lock ♭ and key (ε ε) in A'
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and lock ♭ and key (ε ε) in A
+     ^ parse error: invalid key
+  
+  [1]
+
+When ♭ is not idempotent, there are two different keys ♭♭ ⇒ ♭, which give different results.
+
+  $ cat >comonad.ny <<EOF
+  > def ♭ (A :♭| Type) : Type ≔ data [ box. (_ :♭| A) ]
+  > def k1 (A :♭| Type) (x :♭♭| A) : ♭ A ≔ box. (let only B :♭♭| Type ≔ A and y :♭♭| B ≔ x and lock ♭ ♭ and key ε.♭ in y)
+  > def k2 (A :♭| Type) (x :♭♭| A) : ♭ A ≔ box. (let only B :♭♭| Type ≔ A and y :♭♭| B ≔ x and lock ♭ ♭ and key ♭.ε in y)
+  > def e1 (A :♭| Type) (x :♭♭| A) : Id (♭ A) (k1 A x) (box. (x #ε.♭)) ≔ refl (k1 A x)
+  > def e2 (A :♭| Type) (x :♭♭| A) : Id (♭ A) (k2 A x) (box. (x #♭.ε)) ≔ refl (k2 A x)
+  > EOF
+
+  $ narya -comonad comonad.ny -e 'echo (A :♭| Type) (x :♭♭| A) ↦ (k1 A x : ♭ A)' -e 'echo (A :♭| Type) (x :♭♭| A) ↦ (k2 A x : ♭ A)' -e 'synth ((A x ↦ box. (let only B :♭♭| Type ≔ A and y :♭♭| B ≔ x and lock ♭ ♭ and key ε.♭ in y)) : (A :♭| Type) (x :♭♭| A) → ♭ A)'
+  A x ↦ box. (x #ε.♭)
+    : (A :♭| Type) (x :♭♭| A) → ♭ A
+  
+  A x ↦ box. (x #ε)
+    : (A :♭| Type) (x :♭♭| A) → ♭ A
+  
+  A x ↦
+  box. let only B :♭♭| Type ≔ A and y :♭♭| B ≔ x and lock ♭♭ and key ε.♭ in y
+    : (A :♭| Type) (x :♭♭| A) → ♭ A
+  
+
+  $ narya -comonad comonad.ny -e 'def e3 (A :♭| Type) (x :♭♭| A) : Id (♭ A) (k1 A x) (box. (x #♭.ε)) ≔ refl (k1 A x)'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def e3 (A :♭| Type) (x :♭♭| A) : Id (♭ A) (k1 A x) (box. (x #♭.ε)) ≔ refl (k1 A x)
+     ^ term synthesized type
+         ♭⁽ᵉ⁾ (Id A) (box. (x #ε.♭)) (box. (x #ε.♭))
+       but is being checked against type
+         ♭⁽ᵉ⁾ (Id A) (box. (x #ε.♭)) (box. (x #ε))
+       unequal head terms:
+         x #ε.♭
+       does not equal
+         x #ε
+  
+  [1]
+
+Adjacent locks are displayed as a single lock by their composite modality, but locks separated by other clauses are not.
+
+  $ narya -comonad comonad.ny -e 'synth ((A ↦ box. (box. (let only B :♭♭| Type ≔ A and B2 :♭♭| Type ≔ A and B3 :♭♭| Type ≔ A and lock ♭ and lock ♭ in Type))) : (A :♭♭| Type) → ♭ (♭ Type))' -e 'synth ((A ↦ box. (box. (let only B :♭♭| Type ≔ A and lock ♭ ♭ and key ε.♭ and lock ♭ in Type))) : (A :♭♭| Type) → ♭ (♭ Type))' -e 'synth ((A ↦ box. (box. (let only B :♭♭| Type ≔ A and lock ♭ and C :♭| Type ≔ A and lock ♭ in C))) : (A :♭♭| Type) → ♭ (♭ Type))'
+  A ↦
+  box.
+    (box.
+       (let only B :♭♭| Type ≔ A
+        and B2 :♭♭| Type ≔ A
+        and B3 :♭♭| Type ≔ A
+        and lock ♭♭ in
+        Type))
+    : (A :♭♭| Type) → ♭ (♭ Type)
+  
+  A ↦
+  box.
+    (box.
+       (let only B :♭♭| Type ≔ A and lock ♭♭ and key ε.♭ and lock ♭ in Type))
+    : (A :♭♭| Type) → ♭ (♭ Type)
+  
+  A ↦
+  box.
+    (box.
+       (let only B :♭♭| Type ≔ A
+        and lock ♭
+        and C :♭| Type ≔ A
+        and lock ♭ in
+        C))
+    : (A :♭♭| Type) → ♭ (♭ Type)
+  
+
+Locks can change the mode.
+
+  $ cat >adjunction.ny <<EOF
+  > def △ (A :△| Disc) : Type ≔ data [ tri. (_ :△| A) ]
+  > EOF
+
+  $ narya -adjunction adjunction.ny -e 'synth ((A a ↦ tri. (let only B :△| Disc ≔ A and lock △ and y : B ≔ a in y)) : (A :△| Disc) (a :△| A) → △ A)'
+  A a ↦ tri. let only B :△| Disc ≔ A and lock △ and y : B ≔ a in y
+    : (A :△| Disc) (a :△| A) → △ A
+  
+
+  $ narya -adjunction adjunction.ny -e 'def k (A :△| Disc) (a :△| A) : △ A ≔ tri. (let only B :△| Disc ≔ A and lock □ and y : B ≔ a in y)'
+   ￫ error[E1700]
+   ￭ command-line exec string
+   1 | def k (A :△| Disc) (a :△| A) : △ A ≔ tri. (let only B :△| Disc ≔ A and lock □ and y : B ≔ a in y)
+     ^ mode mismatch in let-only lock (Type (source of □) ≠ Disc)
+  
+  [1]
+
+Locks and keys can occur in a higher-dimensional let-only, and a discrete lock filters the dimension of the bound terms to its left.
+
+  $ narya -coreflector locks.ny -e 'synth ((X x0 x1 x2 ↦ let⁽ᵉ⁾ only A :♭| Type ≔ Id X and lock ♭ and key ε and y : A ≔ x2 in y) : (X :♭| Type) (x0 x1 :♭| X) (x2 :♭| Id X x0 x1) → Id X x0 x1)'
+  X x0 x1 x2 ↦
+  let⁽ᵉ⁾ only A :♭| Type ≔ Id X
+  and lock ♭
+  and key ε
+  and y : A ≔ x2 in
+  y
+    : (X :♭| Type) (x0 :♭| X) (x1 :♭| X) (x2 :♭| Id X x0 x1) → Id X x0 x1
+  
+
+  $ cat >dlocks.ny <<EOF
+  > def ♭ (A :♭| Type) : Type ≔ data [ flat. (x :♭| A) ]
+  > def u (A :♭| Type) (a :♭| A) : ♭ (Br A a a) ≔ flat. (let⁽ᵖ⁾ only B :♭| Type ≔ A and lock ♭ and y : B ≔ rel a in y)
+  > EOF
+
+  $ narya -parametric -direction p,rel,Br -discrete-coreflector dlocks.ny -e 'echo (A :♭| Type) (a :♭| A) ↦ (u A a : ♭ (Br A a a))' -e 'synth ((A a ↦ flat. (let⁽ᵖ⁾ only B :♭| Type ≔ A and lock ♭ and y : B ≔ rel a in y)) : (A :♭| Type) (a :♭| A) → ♭ (Br A a a))'
+  A a ↦ flat. (rel a)
+    : (A :♭| Type) (a :♭| A) → ♭ (Br A a a)
+  
+  A a ↦ flat. let⁽ᵖ⁾ only B :♭| Type ≔ A and lock ♭ and y : B ≔ rel a in y
+    : (A :♭| Type) (a :♭| A) → ♭ (Br A a a)
+  
+
+When a let-only is broken across lines, each lock and key clause goes on its own line, like any other clause.
+
+  $ cat >reformat.ny <<EOF
+  > def ♭ (A :♭| Type) : Type ≔ data [ box. (x :♭| A) ]
+  > def h (A :♭| Type) (x :♭| A) : ♭ A ≔ box. (let only B :♭| Type ≔ A   and lock   ♭ and y : B ≔ x in y)
+  > def h1 (A :♭| Type) (x :♭| A) : ♭ A ≔ box. (let only B :♭| Type ≔ A \`comment
+  >   and lock {\` c1 \`} ♭ \`comment2
+  >   and y : B ≔ x in y)
+  > def h2 (A :♭| Type) : ♭ Type ≔ box. (let only lock ♭ and B :♭| Type ≔ A in B)
+  > def h3 : ♭ Type ≔ box. (let only lock ♭ in Type)
+  > def t (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and A2 :♭| Type ≔ X and A3 :♭| Type ≔ X and lock ♭ and key ε and A4 : Type ≔ X in A4
+  > def t2 (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and lock ♭ and key ε and B :♭| Type ≔ X and lock ♭ and key ε and C : Type ≔ X in C
+  > def t3 (X :♭| Type) : Type ≔ let only A :♭| Type ≔ X and A2 :♭| Type ≔ X and A3 :♭| Type ≔ X and lock ♭ and key ε in A3
+  > def h5 (A :♭| Type) : ♭ Type ≔ box. (let only lock ♭ and key ε and B :♭| Type ≔ A and C :♭| Type ≔ A and D :♭| Type ≔ A in B)
+  > EOF
+
+  $ narya -coreflector reformat.ny
+
+  $ cat reformat.ny
+  def ♭ (A :♭| Type) : Type ≔ data [ box. (x :♭| A) ]
+  
+  def h (A :♭| Type) (x :♭| A) : ♭ A
+    ≔ box. (let only B :♭| Type ≔ A and lock ♭ and y : B ≔ x in y)
+  
+  def h1 (A :♭| Type) (x :♭| A) : ♭ A
+    ≔ box.
+        (let only B :♭| Type ≔ A `comment
+         and lock {` c1 `} ♭ `comment2
+         and y : B ≔ x in
+         y)
+  
+  def h2 (A :♭| Type) : ♭ Type
+    ≔ box. (let only lock ♭ and B :♭| Type ≔ A in B)
+  
+  def h3 : ♭ Type ≔ box. (let only lock ♭ in Type)
+  
+  def t (X :♭| Type) : Type ≔
+    let only A :♭| Type ≔ X
+    and A2 :♭| Type ≔ X
+    and A3 :♭| Type ≔ X
+    and lock ♭
+    and key ε
+    and A4 : Type ≔ X in
+    A4
+  
+  def t2 (X :♭| Type) : Type ≔
+    let only A :♭| Type ≔ X
+    and lock ♭
+    and key ε
+    and B :♭| Type ≔ X
+    and lock ♭
+    and key ε
+    and C : Type ≔ X in
+    C
+  
+  def t3 (X :♭| Type) : Type ≔
+    let only A :♭| Type ≔ X
+    and A2 :♭| Type ≔ X
+    and A3 :♭| Type ≔ X
+    and lock ♭
+    and key ε in
+    A3
+  
+  def h5 (A :♭| Type) : ♭ Type
+    ≔ box.
+        (let only lock ♭
+         and key ε
+         and B :♭| Type ≔ A
+         and C :♭| Type ≔ A
+         and D :♭| Type ≔ A in
+         B)
+
+  $ cp reformat.ny reformat2.ny
+
+  $ narya -coreflector reformat2.ny
+
+  $ diff reformat.ny reformat2.ny
+
+The words "lock" and "key" are reserved.
+
+  $ narya -e 'def lock : Type ≔ Type'
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | def lock : Type ≔ Type
+     ^ parse error: invalid syntax
+  
+  [1]
+
+  $ narya -e 'def key : Type ≔ Type'
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | def key : Type ≔ Type
+     ^ parse error: invalid syntax
+  
+  [1]

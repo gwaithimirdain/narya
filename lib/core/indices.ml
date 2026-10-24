@@ -10,9 +10,9 @@ module type Indices = sig
   (* There must be unnamed variables. *)
   val none : name
 
-  (* The parametrizing type of the empty context, and how it changes with each bound variable. *)
+  (* The parametrizing type of the empty context, and how it changes with each bound variable.  The latter must be injective, so that backwards lists of bound variables (such as the clauses of a let-only) can be indexed by it. *)
   type emp
-  type 'a suc
+  type !'a suc
 
   (* An 'index' is what labels a variable at the point of *use*. *)
   type 'a index

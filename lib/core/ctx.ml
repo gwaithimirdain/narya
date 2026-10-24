@@ -672,6 +672,13 @@ module Ordered = struct
         Any (Weaken (ctx, code), N.suc_plus_eq_suc a_x)
     | Suc (_, Proj _), Suc (_, _, _), _ -> .
 
+  (* Remove locks as for remove_locks, but keep the raw length, replacing the removed variables by weakenings that raise the given error. *)
+  let strip_locks : type cod mode modality a b bc.
+      (mode, a, bc) t -> Code.t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, a, b) t =
+   fun ctx code plus ->
+    let (Any (removed_ctx, raw_plus)) = remove_locks ctx plus in
+    weaken removed_ctx code raw_plus
+
   type (_, _, _, _, _) replaced_locks =
     | Replaced :
         ('mode, 'a, 'bs) t * ('b, 'cod, 'src, 'mode, 'bs) plus_lock
@@ -924,6 +931,12 @@ let remove_locks : type cod mode modality a b bc.
  fun (Permute { ctx; level; _ }) plus ->
   let (Any (ctx, _)) = Ordered.remove_locks ctx plus in
   Any_ctx (of_ordered ~level ctx)
+
+let strip_locks : type cod mode modality a b bc.
+    (mode, a, bc) t -> Code.t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, a, b) t =
+ fun (Permute { ctx; level; perm; _ }) code plus ->
+  let ctx = Ordered.strip_locks ctx code plus in
+  Permute { ctx; level; perm; env = Ordered.env ctx }
 
 type (_, _, _, _, _) replaced_locks =
   | Replaced :

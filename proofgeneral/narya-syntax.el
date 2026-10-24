@@ -107,7 +107,7 @@ subdivisions."
      (3 'font-lock-warning-face nil t))
 
     (,narya-commands . 'font-lock-keyword-face)
-    ("\\_<\\(Type\\|let\\|rec\\|only\\|in\\|and\\|match\\|return\\|sig\\|data\\|codata\\|Id\\|refl\\|sym\\)\\_>" 1 'font-lock-builtin-face)
+    ("\\_<\\(Type\\|let\\|rec\\|only\\|lock\\|key\\|in\\|and\\|match\\|return\\|sig\\|data\\|codata\\|Id\\|refl\\|sym\\)\\_>" 1 'font-lock-builtin-face)
 
     ;; Constants being defined.
     ("\\_<\\(axiom\\|def\\|and\\)[[:space:]\n]+\\([[:word:]_.']+\\)\\_>" 2 'font-lock-function-name-face)

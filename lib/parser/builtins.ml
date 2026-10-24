@@ -541,16 +541,17 @@ let letrec_tree = Closed_entry (eop_ss Let (op Rec (letrec_terms ())))
 let letonly : (closed, No.minus_omega_plus_one, No.nonstrict opn) notation =
   (Letonly, Prefixr No.minus_omega_plus_one)
 
-type (_, _) letonly_terms =
-  | Letonly_terms :
-      ('e, 'c, 'ec) tel * ('a check located, 'c) Vec.t * 'ec synth located
-      -> ('e, 'a) letonly_terms
+type _ letonly_terms =
+  | Letonly_terms : ('a, 'e) Raw.letonly_clauses * 'e synth located -> 'a letonly_terms
 
-(* The types of a let-only, and its body, are processed in the context of only the variables it binds, while its bound terms are processed in the ambient context.  As for let-rec, we replace the initial "let only" by an "and" so that all the clauses can be treated equally. *)
+(* The types of a let-only, and its body, are processed in the context of only the variables it binds, while its bound terms are processed in the ambient context.  We accumulate the clauses in a backwards list, along with the names of the variables bound so far.  Each clause, whether ordinary or a lock or key clause, is preceded by "only" or "and", which we don't distinguish (the processor below replaces the initial "only" by "and"). *)
 let rec process_letonly_terms : type a e.
-    (string option, a) Bwv.t -> (string option, e) Bwv.t -> observation list -> (e, a) letonly_terms
-    =
- fun ctx bodyctx obs ->
+    (string option, a) Bwv.t ->
+    (a, e) Raw.letonly_clauses ->
+    (string option, e) Bwv.t ->
+    observation list ->
+    a letonly_terms =
+ fun ctx clauses bodyctx obs ->
   match obs with
   | Token (And, _) :: Term x :: Token (Colon, _) :: rest ->
       let x = get_var x in
@@ -561,29 +562,45 @@ let rec process_letonly_terms : type a e.
         | Term ty :: Token (Coloneq, _) :: Term tm :: rest ->
             (locate_opt None [], process bodyctx ty, process ctx tm, rest)
         | _ -> invalid "let-only" in
-      let (Letonly_terms (tel, tms, body)) = process_letonly_terms ctx (Snoc (bodyctx, x)) rest in
-      Letonly_terms (Ext (x, modality, ty, tel), tm :: tms, body)
+      process_letonly_terms ctx (Clause (clauses, x, modality, ty, tm)) (Snoc (bodyctx, x)) rest
+  | Token (And, _) :: Token (Lock, _) :: Term modality :: rest ->
+      process_letonly_terms ctx (Lock_clause (clauses, get_modality fst modality)) bodyctx rest
+  | Token (And, _) :: Token (Keyword_key, _) :: Term { value = Ident (key, _); loc } :: rest ->
+      process_letonly_terms ctx (Key_clause (clauses, locate_opt loc key)) bodyctx rest
+  | Token (And, _) :: Token (Keyword_key, _) :: Term { loc; _ } :: _ ->
+      fatal ?loc (Parse_error "invalid key")
   | [ Token (In, _); Term body ] ->
-      Letonly_terms (Emp, [], process_synth bodyctx body "body of let-only")
+      Letonly_terms (clauses, process_synth bodyctx body "body of let-only")
   | _ -> invalid "let-only"
 
 let process_letonly ctx obs loc =
   match split_let obs with
   | Some (_, sup, Token (Only, _) :: obs) -> (
-      let (Letonly_terms (tys, tms, body)) =
-        process_letonly_terms ctx Emp (Token (And, ([], None)) :: obs) in
+      let (Letonly_terms (clauses, body)) =
+        process_letonly_terms ctx No_clauses Emp (Token (And, ([], None)) :: obs) in
       let dim =
         match sup with
         | None -> ""
         | Some (dim, _) -> dim.value in
       match dim_of_string dim with
-      | Some (Any k) -> locate (Synth (Letonly (k, tys, tms, body))) loc
+      | Some (Any k) -> locate (Synth (Letonly (k, clauses, body))) loc
       | None -> fatal ?loc (Parse_error "invalid dimension for let-only"))
   | _ -> invalid "let-only"
 
-let rec letonly_terms () =
-  let rest = terms [ (And, Lazy (lazy (letonly_terms ()))); (In, Done_closed letonly) ] in
-  term Colon (terms [ (Coloneq, rest); (Op "|", term Coloneq rest) ])
+(* Each clause is an ordinary one, a lock clause, or a key clause, and after each there can be another clause or the body. *)
+let rec letonly_rest () = terms [ (And, Lazy (lazy (letonly_terms ()))); (In, Done_closed letonly) ]
+
+and letonly_clause () =
+  {
+    empty_branch with
+    ops = eops [ (Lock, letonly_rest ()); (Keyword_key, letonly_rest ()) ];
+    term =
+      Some
+        (TokMap.singleton Colon
+           (terms [ (Coloneq, letonly_rest ()); (Op "|", term Coloneq (letonly_rest ())) ], `Noss));
+  }
+
+and letonly_terms () = Inner (letonly_clause ())
 
 let letonly_tree = Closed_entry (eop_ss Let (op Only (letonly_terms ())))
 
@@ -602,7 +619,7 @@ let rec get_abslets heads obs =
   (* Let-binding *)
   | (Token _ | Ss_token _) :: _ -> (
       (* First we pull off the "let", "let rec", or "and" tokens and the variable name. *)
-      let toks, x, obs =
+      let toks, obs =
         match (split_let obs, obs) with
         | Some (wslet, sup, rest), _ -> (
             (* The "let" may have a superscript. *)
@@ -616,35 +633,55 @@ let rec get_abslets heads obs =
                     wsdim ) in
             match rest with
             | Token (Rec, (wsrec, _)) :: Term x :: rest ->
-                ([ (plet, wslet); (Token.pp Rec, wsrec) ], Wrap x, rest)
+                (`Var ([ (plet, wslet); (Token.pp Rec, wsrec) ], Wrap x), rest)
             | Token (Only, (wsonly, _)) :: Term x :: rest ->
-                ([ (plet, wslet); (Token.pp Only, wsonly) ], Wrap x, rest)
-            | Term x :: rest -> ([ (plet, wslet) ], Wrap x, rest)
+                (`Var ([ (plet, wslet); (Token.pp Only, wsonly) ], Wrap x), rest)
+            (* A let-only can also start with a lock or key clause. *)
+            | Token (Only, (wsonly, _))
+              :: Token (((Lock | Keyword_key) as tok), (wstok, _))
+              :: Term arg
+              :: rest ->
+                (`Op ([ (plet, wslet); (Token.pp Only, wsonly) ], tok, wstok, Wrap arg), rest)
+            | Term x :: rest -> (`Var ([ (plet, wslet) ], Wrap x), rest)
             | _ -> invalid "let")
         | None, Token (And, (wsand, _)) :: Term x :: rest ->
-            ([ (Token.pp And, wsand) ], Wrap x, rest)
+            (`Var ([ (Token.pp And, wsand) ], Wrap x), rest)
+        | ( None,
+            Token (And, (wsand, _))
+            :: Token (((Lock | Keyword_key) as tok), (wstok, _))
+            :: Term arg
+            :: rest ) -> (`Op ([ (Token.pp And, wsand) ], tok, wstok, Wrap arg), rest)
         | _ -> invalid "let" in
-      (* Then we pull off the ascribed type, possibly with a modality, if any. *)
-      let ty, obs =
-        match obs with
-        | Token (Colon, (wscolon, _))
-          :: Term modality
-          :: Token (Op "|", (wsbar, _))
-          :: Term ty
-          :: rest -> (Some (wscolon, Some (Wrap modality, wsbar), Wrap ty), rest)
-        | Token (Colon, (wscolon, _)) :: Term ty :: rest -> (Some (wscolon, None, Wrap ty), rest)
-        | _ -> (None, obs) in
-      (* Finally we pull the bound value. *)
-      match obs with
-      (* If we're at an "in", this is the end of this "let". *)
-      | [ Token (Coloneq, (wscoloneq, _)); Term tm; Token (In, (wsin, _)); Term body ] ->
-          get_abslets_of_parse
-            (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, Some wsin)))
-            (Wrap body)
-      (* Otherwise, we must be at an "and", so we continue inspecting this observation list. *)
-      | Token (Coloneq, (wscoloneq, _)) :: Term tm :: rest ->
-          get_abslets (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, None))) rest
-      | _ -> invalid "let")
+      match toks with
+      (* A lock or key clause of a let-only goes on its own line. *)
+      | `Op (toks, tok, wstok, arg) -> (
+          let toks = toks @ [ (Token.pp tok, wstok) ] in
+          match obs with
+          | [ Token (In, (wsin, _)); Term body ] ->
+              get_abslets_of_parse (Snoc (heads, `Op (toks, arg, Some wsin))) (Wrap body)
+          | _ -> get_abslets (Snoc (heads, `Op (toks, arg, None))) obs)
+      | `Var (toks, x) -> (
+          (* Then we pull off the ascribed type, possibly with a modality, if any. *)
+          let ty, obs =
+            match obs with
+            | Token (Colon, (wscolon, _))
+              :: Term modality
+              :: Token (Op "|", (wsbar, _))
+              :: Term ty
+              :: rest -> (Some (wscolon, Some (Wrap modality, wsbar), Wrap ty), rest)
+            | Token (Colon, (wscolon, _)) :: Term ty :: rest -> (Some (wscolon, None, Wrap ty), rest)
+            | _ -> (None, obs) in
+          (* Finally we pull the bound value. *)
+          match obs with
+          (* If we're at an "in", this is the end of this "let". *)
+          | [ Token (Coloneq, (wscoloneq, _)); Term tm; Token (In, (wsin, _)); Term body ] ->
+              get_abslets_of_parse
+                (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, Some wsin)))
+                (Wrap body)
+          (* Otherwise, we must be at an "and", so we continue inspecting this observation list. *)
+          | Token (Coloneq, (wscoloneq, _)) :: Term tm :: rest ->
+              get_abslets (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, None))) rest
+          | _ -> invalid "let"))
   | _ -> invalid "abstraction"
 
 (* This subroutine takes a given parsed notation and extracts its argument list, if it is either an abstraction or a let-binding, to pass back to the previous function.  *)
@@ -676,6 +713,20 @@ let pp_abslets obs :
             match heads with
             | Bwd.Emp -> (Snoc (introabs, (prews, head)), heads, trailabs, Some wsmapsto)
             | Snoc _ -> (introabs, heads, Snoc (trailabs, (prews, head)), Some wsmapsto))
+        | `Op (toks, Wrap arg, wsin) ->
+            let kws = concat_map (fun (tok, ws) -> tok ^^ pp_ws `Nobreak ws) toks in
+            let parg, warg = pp_term arg in
+            let pin, ws =
+              match wsin with
+              | Some wsin -> (group (pp_ws `Break warg ^^ Token.pp In), wsin)
+              | None -> (empty, warg) in
+            ( introabs,
+              Snoc
+                ( Bwd_extra.append heads
+                    (Bwd.map (fun (ws, x) -> optional (pp_ws `Break) ws ^^ x) trailabs),
+                  optional (pp_ws `Break) prews ^^ group (hang 2 (kws ^^ parg) ^^ nest 2 pin) ),
+              Emp,
+              Some ws )
         | `Let (toks, Wrap x, ty, wscoloneq, Wrap tm, wsin) ->
             let kws = concat_map (fun (tok, ws) -> tok ^^ pp_ws `Nobreak ws) toks in
             let px, wx = pp_term x in
