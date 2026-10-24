@@ -457,6 +457,9 @@ let unparse_modality_name : type dom modality mode. (dom, modality, mode) Modali
           ms)
 
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
+(* The automatically inserted metavariables whose definitions we are currently unparsing. *)
+let unparsing_metas : Meta.WrapSet.t ref = ref Meta.WrapSet.empty
+
 let rec unparse : type mode n lt ls rt rs s.
     n Names.t ->
     (mode, n, s) term ->
@@ -472,7 +475,22 @@ let rec unparse : type mode n lt ls rt rs s.
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (constant_name vars (Scope.name_of c), [])))
   | Meta (v, _) ->
-      unlocated (Ident ([ (if Display.metas () == `Numbered then Meta.name v else "?") ], []))
+      let name () =
+        unlocated (Ident ([ (if Display.metas () == `Numbered then Meta.name v else "?") ], []))
+      in
+      (* A metavariable inserted automatically to hold a bare case tree construct is displayed as its definition, which lives in the same context.  If it has no definition yet (e.g. because we are displaying an error that occurred while checking it), we fall back to its name.  We also use its name for occurrences inside its own definition, as in the constructor types of a datatype. *)
+      if Meta.is_bare v && not (Meta.WrapSet.mem (Wrap v) !unparsing_metas) then
+        match
+          Reporter.backtrack ~fatal:(fun _ -> `Undefined) (fun () -> (Global.find_meta v).tm)
+        with
+        | `Defined def ->
+            let outer = !unparsing_metas in
+            unparsing_metas := Meta.WrapSet.add (Wrap v) outer;
+            Fun.protect
+              ~finally:(fun () -> unparsing_metas := outer)
+              (fun () -> unparse vars def li ri)
+        | `Axiom | `Undefined -> name ()
+      else name ()
   (* NB: We don't currently print the arguments of a metavariable. *)
   | MetaEnv (v, _) ->
       unlocated

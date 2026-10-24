@@ -580,7 +580,7 @@
      
      m : ⊤
      ----------------------------------------------------------------------
-     _match.F2.0
+     match m [ star. ↦ sig () ]
   
    ￫ error[E3002]
    ￮ file match_in_type.ny contains open holes

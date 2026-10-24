@@ -7,8 +7,11 @@ open Tctx
 
 type ('mode, 'a, 'b, 's) t
 
+(* A defined metavariable is either bound by a let or let rec, or else inserted automatically to hold the value of a case tree construct appearing bare in a kinetic position, in which case we record what sort of construct it was. *)
+type sort = [ `Let | `Letrec | `Bare of string ]
+
 val make_def :
-  string ->
+  sort ->
   string option ->
   'mode Mode.t ->
   'a N.t ->
@@ -20,6 +23,7 @@ val make_hole : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('m
 val remake : (File.t -> File.t) -> ('mode, 'a, 'b, 's) t -> ('mode, 'a, 'b, 's) t
 val mode : ('mode, 'a, 'b, 's) t -> 'mode Mode.t
 val name : ('mode, 'a, 'b, 's) t -> string
+val is_bare : ('mode, 'a, 'b, 's) t -> bool
 val origin : ('mode, 'a, 'b, 's) t -> Origin.t
 
 val compare :
