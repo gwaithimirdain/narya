@@ -86,6 +86,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         implicits = (if !show_implicits then `Show else `Hide);
         unique_keys = (if !show_unique_keys then `Show else `Hide);
         degeneracy_names = Display.default.degeneracy_names;
+        lets = Display.default.lets;
         holes = `Without_number;
         variables =
           (match !variables with

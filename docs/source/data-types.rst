@@ -704,7 +704,7 @@ However, a let-bound local function can use a ``let rec`` instead to define a lo
 
 In fact, ``let rec`` is *always* treated generatively and lifted to top-level like an ordinary ``let`` that contains a ``match``.  Indeed, in the absence of something like a "fixpoint" operator there is no other possibility, as there is no term syntax for it to evaluate to.
 
-Currently, such local case trees are not printed very comprehensibly if they "escape" from their site of definition.  For instance:
+When such a local case tree "escapes" from its site of definition, it is printed specially.  For instance:
 
 .. code-block:: none
 
@@ -712,9 +712,33 @@ Currently, such local case trees are not printed very comprehensibly if they "es
    
    echo sqdec2 z
 
-prints something like ``_let.0.dec{…} (_let.0.dec{…} z)``, where the number is a metavariable counter.  The name ``_let.0.dec`` is not a valid user-defined identifier since it begins with an underscore, and so this notation is not re-parseable; but it indicates that there is some locally defined function, which was called ``dec`` where it was defined but is not in scope any more, and is being applied twice to the argument ``z``.  The notation ``{…}`` is like that used for a hole, indicating that this local function might also have an un-notated substitution applied to the context in which it was defined.  As noted above, like any other global constant defined by a case tree, ``_let.0.dec`` does not evaluate at all unless it reaches a leaf of its case tree; thus ``_let.0.dec{…} (_let.0.dec{…} z)`` does not reduce further since ``z`` is not a constructor.  (But ``sqdec (suc. z)`` will, of course, reduce once to ``_let.0.dec{…} z``.)
+prints something like ``(let only … in _let.0.dec) ((let only … in _let.0.dec) z)``, where the number is a metavariable counter.  The name ``_let.0.dec`` is not a valid user-defined identifier since it begins with an underscore, and so this notation is not re-parseable; but it indicates that there is some locally defined function, which was called ``dec`` where it was defined but is not in scope any more, and is being applied twice to the argument ``z``.  The prefix ``let only … in`` indicates that the context in which this local function was defined (here, the context containing the variable ``x``) has had a substitution applied to it (see :ref:`Let-only binding`), whose details are elided.  As noted above, like any other global constant defined by a case tree, ``_let.0.dec`` does not evaluate at all unless it reaches a leaf of its case tree; thus this term does not reduce further since ``z`` is not a constructor.  (But ``sqdec2 (suc. z)`` will, of course, reduce once to ``(let only … in _let.0.dec) z``.)
 
-As noted above, such local case trees are generative: textually identical definitions given in two different places will produce unequal values.
+How much of such a local definition is printed can be controlled with the interactive command ``display let ≔ VALUE`` (or ``C-c C-d C-l`` in ProofGeneral, which cycles between the three values).  The default value is ``names``, which prints as above.  The value ``environments`` prints the substitution in full, as a re-parseable ``let only``, but still with the name of the local definition in the body:
+
+.. code-block:: none
+
+   display let ≔ environments
+   
+   echo sqdec2 z
+   
+   (let only x : ℕ ≔ z in _let.0.dec) ((let only x : ℕ ≔ z in _let.0.dec) z)
+     : ℕ
+
+Finally, the value ``definitions`` prints the definitions of local definitions instead of their names:
+
+.. code-block:: none
+
+   display let ≔ definitions
+   
+   echo sqdec2 z
+   
+   (let only x : ℕ ≔ z in (𝑥 ↦ match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ))
+     ((let only x : ℕ ≔ z in (𝑥 ↦ match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ))
+        z)
+     : ℕ
+
+Note that even in this case, the printed term is not quite re-parseable to the same term, because local case trees are generative: textually identical definitions given in two different places will produce unequal values.
 
 .. code-block:: none
 
@@ -727,17 +751,20 @@ As noted above, such local case trees are generative: textually identical defini
 
    def fails : dec1_is_dec2 ≔ rfl.
    
-      ￫ error[E1003]
+    ￫ error[E0401]
     1 | def fails : dec1_is_dec2 ≔ rfl.
-      ^ index
-          _let.1.dec{…}
-        of constructor application doesn't match the corresponding index
-          _let.2.dec{…}
-        of datatype instance
+      ^ term synthesized type
+          Jd (ℕ → ℕ) _let.1.dec _let.1.dec
+        but is being checked against type
+          Jd (ℕ → ℕ) _let.1.dec (let only … in _let.2.dec)
+        unequal head metavariables:
+          _let.1.dec
+        does not equal
+          _let.2.dec
 
-Note that both local functions are called ``_let.N.dec`` based on their name when defined, but their metavariable counters are different, and they are unequal.
+Note that both local functions are called ``_let.N.dec`` based on their name when defined, but their metavariable counters are different, and they are unequal.  (The second one is printed with ``let only … in`` because it was defined in a context containing the earlier variables ``dec`` and ``dec1``.)  With ``display let ≔ definitions``, both would be printed as the same pattern-matching lambda, but the error message would still mention their distinct names.
 
-A match not occuring inside any ``let`` value doesn't even have a user-assigned name like ``dec``, so it is printed only with a number.  For instance, ``echo sqdec3`` from above will print something like ``sq (H ↦ _match.3{…})``.  Note that the dependence of the match on the variable (which Narya named ``H``) is not even indicated (it is hidden in the context substitution ``{…}``).  However, the advantage of matches of this sort is that, unlike the value of a let-bound variable, they can check rather than synthesize.
+A match not occuring inside any ``let`` value doesn't have a user-assigned name like ``dec``, so it is always printed as its definition (wrapped in a ``let only`` if it has a nontrivial substitution), regardless of the setting of ``display let``.  For instance, ``echo sqdec3`` from above will print ``sq (𝑥 ↦ match 𝑥 [ suc. n ↦ n | zero. ↦ 0 ])``.  The advantage of matches of this sort is that, unlike the value of a let-bound variable, they can check rather than synthesize.
 
-The printing of local case trees will hopefully be improved somewhat in future, but there is a limit to how much improvement is possible.  Moreover, overuse of local case trees can make it difficult to prove theorems about a function: facts one may need about its components cannot easily be separated out into lemmas since the pieces cannot easily be referred to.  Thus, while this sort of code can be convenient for programming, and in simple cases (such as ``match e [ ]`` to fill any checking context, given any ``e:⊥``), it is often better eschewed in favor of additional explicit global helper functions.  For this reason, Narya currently emits a hint whenever it detects a "bare" case-tree-only construct and interprets it in this way.
+However, overuse of local case trees can make it difficult to prove theorems about a function: facts one may need about its components cannot easily be separated out into lemmas since the pieces cannot easily be referred to.  Thus, while this sort of code can be convenient for programming, and in simple cases (such as ``match e [ ]`` to fill any checking context, given any ``e:⊥``), it is often better eschewed in favor of additional explicit global helper functions.  For this reason, Narya currently emits a hint whenever it detects a "bare" case-tree-only construct and interprets it in this way.
 

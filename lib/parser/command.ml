@@ -122,6 +122,7 @@ module Command = struct
         what :
           [ `Chars of Whitespace.t list * Display.chars Display.toggle * Whitespace.t list
           | `Implicits of Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Lets of Whitespace.t list * [ `Set of Display.lets | `Cycle ] * Whitespace.t list
           | `Unique_keys of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Degeneracy_names of Whitespace.t list * Whitespace.t list * int * Whitespace.t list
@@ -656,6 +657,7 @@ module Parse = struct
           match tok with
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
           | Ident [ "implicits" ] -> Some ((`Implicits, ws), state)
+          | Let -> Some ((`Lets, ws), state)
           | Ident [ "degeneracy" ] -> Some ((`Degeneracy, ws), state)
           | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
@@ -673,6 +675,18 @@ module Parse = struct
             let open Monad.Ops (Monad.Maybe) in
             let* show = show_of_token tok in
             return (Display { wsdisplay; wscoloneq; what = `Implicits (wswhat, show, ws) }, state))
+    | `Lets ->
+        let* wscoloneq = token Coloneq in
+        step "" (fun state _ (tok, ws) ->
+            let open Monad.Ops (Monad.Maybe) in
+            let* lets =
+              match tok with
+              | Ident [ "names" ] -> Some (`Set `Names)
+              | Ident [ "environments" ] -> Some (`Set `Environments)
+              | Ident [ "definitions" ] -> Some (`Set `Definitions)
+              | Ident [ "cycle" ] -> Some `Cycle
+              | _ -> None in
+            return (Display { wsdisplay; wscoloneq; what = `Lets (wswhat, lets, ws) }, state))
     | `Degeneracy ->
         let* wsnames = token (Ident [ "names" ]) in
         let* wscoloneq = token Coloneq in
@@ -1398,6 +1412,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Implicits (_, im, _) ->
           let im = Display.modify_implicits im in
           emit (Display_set ("implicits", Display.to_string (im :> Display.values)))
+      | `Lets (_, lets, _) ->
+          let lets = Display.modify_lets lets in
+          emit (Display_set ("let", Display.string_of_lets lets))
       | `Unique_keys (_, _, uk, _) ->
           let uk = Display.modify_unique_keys uk in
           emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))
