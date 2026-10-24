@@ -32,6 +32,9 @@ module Binding : sig
   val make : ?dirt:Positivity.recursion -> level option -> 'mode normal -> 'mode t
   val level : 'mode t -> level option
   val value : 'mode t -> 'mode normal
+
+  (* The value of a binding, if it is known and available, without raising any errors. *)
+  val value_opt : 'mode t -> 'mode normal option
   val dirt : 'mode t -> Positivity.recursion
   val set_dirt : 'mode t -> Positivity.recursion -> unit
 
@@ -61,6 +64,11 @@ end = struct
     match !(b.state) with
     | Known (_, x) -> x
     | Unknown | Delayed _ -> fatal (Anomaly "Undetermined context variable")
+
+  let value_opt b =
+    match !(b.state) with
+    | Known (_, x) -> Some x
+    | Unknown | Delayed _ -> None
 
   let dirt b = b.dirt
   let set_dirt b d = b.dirt <- d

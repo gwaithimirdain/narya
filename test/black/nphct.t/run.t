@@ -160,7 +160,7 @@ of type Type⁽ᵉ⁾ A.0 A.1, which is not a Type.
             (√_ext (Γhat Γ A B) (Ahat Γ A B) (Bhat Γ A B) (x0, x1, x2, u0, u1)
                (x0, x1, x2, u0, u1) rfl.
                (id_√_iso Γ A B x0 x1 x2 u0 u1
-                .fro (id_√_iso Γ A B x0 x1 x2 u0 u1 .to a)) a _comatch.F0.0{…}))
+                .fro (id_√_iso Γ A B x0 x1 x2 u0 u1 .to a)) a _comatch.F0.0))
          (id_√_iso Γ A B x0 x1 x2 u0 u1
           .to_fro (id_√_iso Γ A B x0 x1 x2 u0 u1 .to a))
   
