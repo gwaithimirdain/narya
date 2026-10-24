@@ -106,6 +106,13 @@ let name : type mode a b s. (mode, a, b, s) t -> string =
   | `Def (number, sort, Some name) ->
       Printf.sprintf "_%s.%s.%d.%s" (string_of_sort sort) (Origin.to_string origin) number name
 
+(* The sort of a defined metavariable, if it is one. *)
+let sort_of : type mode a b s. (mode, a, b, s) t -> sort option =
+ fun (_, x) ->
+  match x.identity with
+  | `Def (_, sort, _) -> Some sort
+  | `Hole _ -> None
+
 (* Whether a metavariable was inserted automatically to hold a bare case tree construct. *)
 let is_bare : type mode a b s. (mode, a, b, s) t -> bool =
  fun (_, x) ->

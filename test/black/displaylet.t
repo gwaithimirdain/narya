@@ -77,8 +77,7 @@ A recursive local definition refers to itself by name.
 
   $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  def bool : Type ≔ data [ true. | false. ]' -e 'display let ≔ definitions' -e 'def ev (m : ℕ) : bool ≔ let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ even n ] in even m' -e 'axiom k : ℕ' -e 'echo ev (suc. k)'
   (let only m : ℕ ≔ suc. k in
-   (let even ≔ _letrec.F4.0.even in
-    𝑥 ↦ match 𝑥 [ suc. n ↦ even n | zero. ↦ true. ]
-    : ℕ → bool)) k
+   (𝑥 ↦ match 𝑥 [ suc. n ↦ _letrec.F4.0.even n | zero. ↦ true. ] : ℕ → bool))
+    k
     : bool
   
