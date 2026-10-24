@@ -80,13 +80,34 @@ The same is true for a modal domain.
    ￮ hole ?1:
      
      ----------------------------------------------------------------------
-     (x :♭| ?0) (y :♭| ?0{…}) → Type
+     (x :♭| ?0) (y :♭| ?0) → Type
   
    ￫ info[I0005]
    ￮ hole solved
   
   t
     : (x :♭| A) (y :♭| A) → Type
+  
+
+When the hole is displayed in the type of a later variable, it is weakened by the earlier variables of the group, which may lie behind locks.
+
+  $ narya -spatial pi.ny -fake-interact 'def t : (x : A) (y z :♭| (u v :♭| ?) → A) → Type ≔ ?'
+   ￫ info[I0000]
+   ￮ constant t defined, containing 2 holes
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     x : A (locked: ♭♭)
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     ----------------------------------------------------------------------
+     (x : A) (y :♭| (u :♭| ?0) (v :♭| ?0) → A) (z :♭| (u :♭| ?0) (v :♭| ?0) → A)
+     → Type
   
 
 A datatype constructor whose type is given as a pi-type takes the domains of that pi-type as its arguments, including groups of variables sharing a domain.
