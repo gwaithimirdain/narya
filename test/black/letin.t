@@ -486,3 +486,32 @@ Matches in non-toplevel definitions of datatype
    ￮ constant f defined
   
 
+
+In a hole, a let-bound variable whose value is its metavariable is displayed as that variable, including in the values of later let-bound variables.
+
+  $ narya -v letcase.ny -e 'def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]' -e 'def t (b : bool) : bool ≔ let not : bool → bool ≔ [ true. ↦ false. | false. ↦ true. ] in let y : bool ≔ not b in ((x p ↦ true.) : (x : bool) → J bool (not x) y → bool) b ?'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ info[I0001]
+   ￮ axiom u assumed
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ info[I0000]
+   ￮ constant t defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     b : bool
+     not ≔ _let.F4.0.not : bool → bool
+     y ≔ not b : bool
+     ----------------------------------------------------------------------
+     J bool (not b) (not b)
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
