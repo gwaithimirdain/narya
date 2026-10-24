@@ -555,6 +555,7 @@ let done_open n =
 
 (* Similar, but for "entries". *)
 let eop tok x = TokMap.singleton tok (x, `Noss)
+let eop_ss tok x = TokMap.singleton tok (x, `Ss)
 let eops toks = TokMap.of_list (List.map (fun (k, x) -> (k, (x, `Noss))) toks)
 let empty_entry = TokMap.empty
 

@@ -131,6 +131,7 @@ module Code = struct
         -> t
     | Not_enough_domains : 'a D.t -> t
     | Invalid_higher_function : string -> t
+    | Invalid_higher_letonly : string -> t
     | Invalid_nullary_application : t
     | Expected_nullary_application : t
     | Checking_tuple_at_degenerated_record : printable -> t
@@ -225,6 +226,7 @@ module Code = struct
     | Unknown_modality : string -> t
     | Unknown_modalcell : string -> t
     | Key_mismatch : ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'p, 'd) Modality.t -> t
+    | Lock_mismatch : ('a, 'm, 'b) Modality.t * ('c, 'p, 'd) Modality.t -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
     | Intangible_modality : ('a, 'm, 'b) Modality.t -> t
     | Nontransparent_window_modality :
@@ -271,6 +273,7 @@ module Code = struct
     | Locked_variable : t
     | Locked_constant : printable -> t
     | Hidden_variable : t
+    | Hidden_by_lock : t
     | Missing_key : ('dom1, 'mu1, 'cod1) Modality.t * ('dom2, 'mu2, 'cod2) Modality.t -> t
     | Axiom_in_parametric_definition : printable -> t
     | Modality_not_sinister : ('dom, 'mu, 'cod) Modality.t -> t
@@ -360,6 +363,7 @@ module Code = struct
     | Unequal_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
+    | Invalid_higher_letonly _ -> Error
     | Invalid_nullary_application -> Error
     | Expected_nullary_application -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
@@ -424,6 +428,7 @@ module Code = struct
     | Unknown_modality _ -> Error
     | Unknown_modalcell _ -> Error
     | Key_mismatch _ -> Error
+    | Lock_mismatch _ -> Error
     | Modalcell_mismatch _ -> Error
     | Intangible_modality _ -> Error
     | Nontransparent_window_modality _ -> Error
@@ -461,6 +466,7 @@ module Code = struct
     | Locked_variable -> Error
     | Locked_constant _ -> Error
     | Hidden_variable -> Error
+    | Hidden_by_lock -> Error
     | Missing_key _ -> Error
     | Axiom_in_parametric_definition _ -> Error
     | Modality_not_sinister _ -> Error
@@ -551,6 +557,7 @@ module Code = struct
     | Locked_constant _ -> "E0311"
     | Axiom_in_parametric_definition _ -> "E0312"
     | Hidden_variable -> "E0313"
+    | Hidden_by_lock -> "E0314"
     (* Bidirectional typechecking and case trees *)
     | Nonsynthesizing _ -> "E0400"
     | Unequal_synthesized_type _ -> "E0401"
@@ -585,6 +592,7 @@ module Code = struct
     | Invalid_higher_function _ -> "E0706"
     | Invalid_nullary_application -> "E0707"
     | Expected_nullary_application -> "E0708"
+    | Invalid_higher_letonly _ -> "E0709"
     (* Record fields *)
     | No_such_field _ -> "E0800"
     | Wrong_dimension_of_field _ -> "E0801"
@@ -654,6 +662,7 @@ module Code = struct
     | Missing_key _ -> "E1705"
     | Unknown_modalcell _ -> "E1706"
     | Key_mismatch _ -> "E1707"
+    | Lock_mismatch _ -> "E1716"
     | Modality_not_sinister _ -> "E1711"
     | Wrong_locking_modality _ -> "E1712"
     | Modal_field_filtered_away _ -> "E1713"
@@ -797,6 +806,7 @@ module Code = struct
       | Not_enough_domains dim ->
           textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
       | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
+      | Invalid_higher_letonly str -> textf "invalid higher-dimensional let-only: %s" str
       | Invalid_nullary_application -> text "invalid nullary application"
       | Expected_nullary_application -> text "expected nullary application"
       | Checking_tuple_at_degenerated_record r ->
@@ -1025,6 +1035,9 @@ module Code = struct
           textf "vertical target %s of key %s doesn't match any suffix of context locks %s"
             (Modality.to_string (Modalcell.vtgt key))
             (Modalcell.to_string key) (Modality.to_string ctx_lock)
+      | Lock_mismatch (lock, ctx_lock) ->
+          textf "let-only lock %s doesn't match any suffix of context locks %s"
+            (Modality.to_string lock) (Modality.to_string ctx_lock)
       | Intangible_modality m -> textf "modality %s is not tangible" (Modality.to_string m)
       | Nontransparent_window_modality (m, _, `Recursive) ->
           textf "window modality %s must be pellucid since the datatype has recursive constructors"
@@ -1174,6 +1187,7 @@ module Code = struct
             "constant %a is or uses a nonparametric axiom, can't appear inside an external degeneracy"
             pp_printed (print a)
       | Hidden_variable -> text "variable hidden by key application"
+      | Hidden_by_lock -> text "variable hidden by lock in let-only"
       | Axiom_in_parametric_definition a ->
           textf
             "constant %a is or uses a nonparametric axiom, can't be used in a parametric command"

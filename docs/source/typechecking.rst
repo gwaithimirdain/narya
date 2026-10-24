@@ -46,15 +46,32 @@ Checking ordinary redexes is not usually very useful; usually you want :ref:`Let
 Let-binding
 -----------
 
+Ordinary let-binding
+^^^^^^^^^^^^^^^^^^^^
+
 Writing ``let x ≔ M in N`` binds the local variable ``x`` to the value ``M`` while typechecking and evaluating ``N``.  The unicode ≔ is interchangeable with the ASCII ``:=``.  Computationally, ``let x ≔ M in N`` is equivalent to ``(x ↦ N) M``, but it also binds ``x`` to the value ``M`` while typechecking ``N``, which in a dependent type theory is stronger.
 
 The term ``M`` is required to synthesize.  Thus ``let x ≔ M : A in N`` is a common idiom, and can be written alternatively as ``let x : A ≔ M in N``.  Conversely, when ``M`` synthesizes, you can also write ``let x : _ ≔ M in N`` to mean ``let x : M in N``; this becomes more useful with :ref:`Modal let-bindings`.
 
 The body ``N`` can either check or synthesize, and the let-binding as a whole inherits this from it: if ``N`` synthesizes a type then the let-binding synthesizes the same type, while if ``N`` checks then the let-binding checks against a type that is passed on to ``N`` to check against.  The let-binding notation is right-associative with tightness −ω.
 
+Recursive let-binding
+^^^^^^^^^^^^^^^^^^^^^
+
 An ordinary let-binding is not recursive: the variable ``x`` cannot appear in the term ``M``.  This is intentional and enables a common idiom where ``x`` shadows a previously existing variable of the same name in ``N``, while the *previous* variable of that name can appear in ``M``, thereby creating the illusion that the value of that variable has been "changed".  For instance, ``let x ≔ x + 1 in`` has the appearance of incrementing the value of ``x``.
 
 However, it is possible to define a recursive let-binding by writing ``let rec`` instead of ``let``.  (Note that ``let`` and ``rec`` are two keywords separated by a space.)  In this case, the variable ``x`` *can* appear in ``M``, and of course shadows any previously defined variable of the same name in ``M`` as well as in ``N``.  In a recursive let-binding the type of ``M`` must be given explicitly (as with a top-level ``def`` which can also be recursive): the only valid syntax is ``let rec x : A ≔ M in N``.  (Recursive let-bindings are also treated "generatively", like let-bindings that include matches or comatches; see :ref:`Matches in terms and case trees`.)
+
+A family of mutually recursive let-bindings can be defined by prefixing the second and later with the keyword ``and`` instead of ``let rec``, yielding ``let rec x : A ≔ M and y : B ≔ N in P``.  See :ref:`Mutually recursive let-bindings`.
+
+Let-only binding
+^^^^^^^^^^^^^^^^
+
+In an ordinary or recursive let-binding, the body is typechecked in the ambient context with the let-bound variables added.  A third kind of let-binding allows you to specify the *entire* context of the body, without inheriting anything from the ambient.  If you write ``let only x : A ≔ M and y : B ≔ N in P``, then *only* the variables ``x`` and ``y`` will be in scope in ``P``, not any of the other variables previously in the context.  The values such as ``M`` and ``N`` can use all the other variables previously in scope, but their types can only use variables occurring previously in the ``let only``: thus the first type ``A`` must be defined in the empty context, without using any variables, while the second type ``B`` can use the first variable ``x:A``, and so on.  The body term ``P`` must synthesize (otherwise, you must ascribe it).
+
+In contrast to ordinary and recursive let-binding, the variables are *not* bound to the supplied terms when typechecking the body of a ``let only``.  Indeed, this would not even make sense, since those values are defined in the ambient context.  Instead, these variables are treated as free (unbound) when typechecking the body.  They are only bound to the supplied values when *evaluating* the expression.
+
+Semantically, a ``let only`` defines an entirely new context consisting of the supplied types, such as ``(x:A, y:B)``, then synthesizes a term ``P`` in that context, and then applies a substitution (context morphism) from the ambient context to the new one consisting of the supplied terms, such as ``(M,N)``.  This is not usually extremely useful; it becomes a little more useful in the :ref:`modal case <Modal let-only>`, but its primary purpose is for printing metavariables.
 
 
 Eta-conversion and case trees

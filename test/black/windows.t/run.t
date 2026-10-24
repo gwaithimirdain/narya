@@ -221,6 +221,22 @@ a clean let-bound variable is fine:
    ￮ constant dgood defined
   
 
+The same goes for the variables of a let-only, which are free in its body but remember whether their bound terms are dirty:
+
+  $ narya -transparent-functor preserve.ny -e "def DO : DomType ≔ let only Z : DomType ≔ (DO → DO) in (data [ d. (_ : Z) ] : DomType)" -e "def dbad (u : ○ DO) : ○ DO ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]"
+   ￫ error[E1715]
+   ￭ command-line exec string
+   1 | def dbad (u : ○ DO) : ○ DO ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]
+     ^ window modality ○ must be pellucid since the datatype has recursive constructors
+  
+  [1]
+
+  $ narya -v -transparent-functor preserve.ny -e "def DO : DomType ≔ let only Z : DomType ≔ (DO → DO) and Y : DomType ≔ ℕ in (data [ d. (_ : Y) ] : DomType)" -e "def dgood (u : ○ DO) : ○ DO ≔ match u [ circle. w ↦ match (w :○| _) [ d. y ↦ u ] ]" 2>&1 | tail -4
+  
+   ￫ info[I0000]
+   ￮ constant dgood defined
+  
+
 A datatype with an unsolved hole in a constructor type might turn out to be
 recursive, so it conservatively rejects non-pellucid windows; solving the hole
 with something non-recursive lifts the restriction, while solving it
