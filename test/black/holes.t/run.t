@@ -167,7 +167,7 @@
    ￮ hole ?12:
      
      ----------------------------------------------------------------------
-     ?11{…}
+     ?11
   
    ￫ info[I0000]
    ￮ constant foo defined, containing 1 hole
@@ -413,7 +413,7 @@
 Holes in echo:
 
   $ narya -e 'echo (? : Type)'
-  ?0{…}
+  ?0
     : Type
   
    ￫ error[E3002]
