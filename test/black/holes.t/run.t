@@ -460,7 +460,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      b : B
      ----------------------------------------------------------------------
-     J Type match b [ false. ↦ Type | true. ↦ B ] B
+     J Type (match b [ false. ↦ Type | true. ↦ B ]) B
   
    ￫ hint[H0403]
    ￭ command line fake-interact
@@ -490,7 +490,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      X : Type
      ----------------------------------------------------------------------
-     J Type sig ( x : X, y : B ) X
+     J Type (sig ( x : X, y : B )) X
   
    ￫ hint[H0403]
    ￭ command line fake-interact
@@ -505,7 +505,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      X : Type
      ----------------------------------------------------------------------
-     J Type data [ a. | b. (𝑥 : X) ] X
+     J Type (data [ a. | b. (𝑥 : X) ]) X
   
    ￫ hint[H0403]
    ￭ command line fake-interact
@@ -528,5 +528,5 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      
      X : Type
      ----------------------------------------------------------------------
-     J Type codata [ x .head : X | x .tail : ?4 ] X
+     J Type (codata [ x .head : X | x .tail : ?4 ]) X
   

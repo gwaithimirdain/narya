@@ -129,7 +129,7 @@ A higher-dimensional (Gel-like) codatatype is read back at its intrinsic dimensi
 A permuted Gel-like codatatype is not a record type at all, since its fields can't be projected.  But it is the permutation of one, so it is read back by un-permuting it and applying the permutation to the result as a degeneracy.  Here it is uninstantiated, at permutations of two and of three dimensions.
 
   $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'about ((Gel A B R)⁽ᵉ¹⁾)' -e 'about ((Gel A B R)⁽ᵉᵉ¹⁾)'
-  sym sig⁽ᵉ⁾ ( a .ungel : Id R a.02 a.12 (a.20 .ungel) (a.21 .ungel) )
+  sym (sig⁽ᵉ⁾ ( a .ungel : Id R a.02 a.12 (a.20 .ungel) (a.21 .ungel) ))
     : Type⁽ᵉᵉ⁾ (Gel A B R) (Gel A B R) (Id A) (Id B)
   
   sig⁽ᵉᵉ⁾ (
@@ -146,7 +146,7 @@ A permuted Gel-like codatatype is not a record type at all, since its fields can
 An instantiated one is un-instantiated first, permuted as the uninstantiated codatatype it then is, and re-instantiated, like an instantiated datatype.  This is necessary even when it is *fully* instantiated, although such a one could be un-permuted where it stands by a symmetry of its instantiation arguments: the readback of a codatatype absorbs its instantiation arguments into the self variable, so it would then read as a record type of the lower dimension, which is not something the permutation could be applied to.
 
   $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom a₂ : Id A a₀ a₁' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom b₂ : Id B b₀ b₁' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'about ((Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,) a₂ b₂)'
-  sym sig⁽ᵉ⁾ ( a .ungel : Id R a.02 a.12 (a.20 .ungel) (a.21 .ungel) ) {a₀}
+  sym (sig⁽ᵉ⁾ ( a .ungel : Id R a.02 a.12 (a.20 .ungel) (a.21 .ungel) )) {a₀}
     {b₀} (_ ≔ r₀) {a₁} {b₁} (_ ≔ r₁) a₂ b₂
     : Type
   
@@ -155,7 +155,7 @@ An instantiated one is un-instantiated first, permuted as the uninstantiated cod
 A *partially* instantiated one is read back the same way, and there it is the only option: a permutation mixes its instantiated and uninstantiated dimensions, while an instantiation can only instantiate the last ones, so it has no un-permuted form where it stands.
 
   $ narya -parametric -e 'def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )' -e 'axiom A : Type' -e 'axiom B : Type' -e 'axiom R : A → B → Type' -e 'axiom a₀ : A' -e 'axiom a₁ : A' -e 'axiom b₀ : B' -e 'axiom b₁ : B' -e 'axiom r₀ : R a₀ b₀' -e 'axiom r₁ : R a₁ b₁' -e 'about ((Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} (r₀,) {a₁} {b₁} (r₁,))'
-  sym sig⁽ᵉ⁾ ( a .ungel : Id R a.02 a.12 (a.20 .ungel) (a.21 .ungel) ) {a₀}
+  sym (sig⁽ᵉ⁾ ( a .ungel : Id R a.02 a.12 (a.20 .ungel) (a.21 .ungel) )) {a₀}
     {b₀} (_ ≔ r₀) {a₁} {b₁} (_ ≔ r₁)
     : Type⁽ᵉ⁾ (Id A a₀ a₁) (Id B b₀ b₁)
   
