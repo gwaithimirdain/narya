@@ -10,11 +10,14 @@ open Tctx
 (* Metavariables, such as holes and unification variables.  Local generative definitions are also reperesented as metavariables.  A metavariable is identified by its class, an autonumber that's specific to the class, and its origin (file or interactive instant).  Since the autonumbers are specific to the class, we store them as arguments of the class, even though every metavariable has one. *)
 
 (* A defined metavariable is either bound by a let or let rec, or else inserted automatically to hold the value of a case tree construct (such as a match, comatch, or canonical type) appearing bare in a kinetic position, in which case we record what sort of construct it was. *)
-type sort = [ `Let | `Letrec | `Bare of string ]
+type sort = [ `Let | `Letrec of letrec_block | `Bare of string ]
+
+(* The metavariables bound by the same "let rec … and …" block share a block identifier. *)
+and letrec_block = int
 
 let string_of_sort : sort -> string = function
   | `Let -> "let"
-  | `Letrec -> "letrec"
+  | `Letrec _ -> "letrec"
   | `Bare sort -> sort
 
 module Identity = struct
@@ -55,6 +58,14 @@ type ('mode, 'a, 'b, 's) t = Origin.t * ('mode, 'a, 'b, 's) Extended_identity.t
 
 (* Store autonumber counters for defined metavariables, for both files and instants. *)
 let def_counters = Versioned.make ~default:(fun _ -> 0) ~inherit_values:false
+
+(* Store autonumber counters for "let rec" blocks, similarly. *)
+let block_counters = Versioned.make ~default:(fun _ -> 0) ~inherit_values:false
+
+let new_letrec_block () : letrec_block =
+  let number = Versioned.get block_counters in
+  Versioned.set block_counters (number + 1);
+  number
 
 (* Create a new defined constant in the current execution location (file or interactive instant). *)
 let make_def : type mode a b s.
@@ -118,7 +129,17 @@ let is_bare : type mode a b s. (mode, a, b, s) t -> bool =
  fun (_, x) ->
   match x.identity with
   | `Def (_, `Bare _, _) -> true
-  | `Def (_, (`Let | `Letrec), _) | `Hole _ -> false
+  | `Def (_, (`Let | `Letrec _), _) | `Hole _ -> false
+
+(* Whether two metavariables were bound by the same "let rec" block. *)
+let letrec_siblings : type m1 a1 b1 s1 m2 a2 b2 s2. (m1, a1, b1, s1) t -> (m2, a2, b2, s2) t -> bool
+    =
+ fun (origin1, x1) (origin2, x2) ->
+  origin1 = origin2
+  &&
+  match (x1.identity, x2.identity) with
+  | `Def (_, `Letrec block1, _), `Def (_, `Letrec block2, _) -> block1 = block2
+  | _ -> false
 
 let origin : type mode a b s. (mode, a, b, s) t -> Origin.t = fun (origin, _) -> origin
 
