@@ -109,6 +109,105 @@ let apply_status : type mode s dom modality k n.
   | Kinetic -> Kinetic
   | Potential neutral -> Potential (apply_term neutral filter args)
 
+(* Whether a value is literally the variable with a given level, with no degeneracy, key, or arguments. *)
+let is_plain_var : type mode s. level -> (mode, s) value -> bool =
+ fun level x ->
+  match x with
+  | Neu { head = Var v; args = Emp; _ } ->
+      v.level = level && Option.is_some (is_id_deg v.deg) && Modalcell.is_id v.key
+  | _ -> false
+
+(* Test whether a zero-dimensional environment for a metavariable's context is the identity environment of an ordered context (the one we are reading back in), i.e. whether the two contexts have the same shape and each entry of the environment is the value of the corresponding variable in that context.  If so, we return the resulting equality of checked lengths, built up entry by entry as we compare the shapes.  This is a conservative test: a free variable must appear literally, as a variable with the same level and no degeneracy, key, or arguments, while a let-bound variable must have its own value, up to physical equality.  It is used to read back a metavariable whose environment is the identity as a plain Meta, rather than a MetaEnv. *)
+let rec is_identity_ordered_env : type mode a b c d.
+    (mode, a, b) Ctx.Ordered.t ->
+    (mode, D.zero, d) env ->
+    (mode, c, d) ordered_termctx ->
+    (b, d) Eq.t option =
+ fun ctx env envctx ->
+  match (ctx, envctx) with
+  (* Weakening entries contribute nothing to the checked length or the environment. *)
+  | Weaken (ctx, _), _ -> is_identity_ordered_env ctx env envctx
+  | _, Weaken (envctx, _) -> is_identity_ordered_env ctx env envctx
+  | Emp _, Emp _ -> Some Eq
+  | Lock (ctx, g), Lock (envctx, g') -> (
+      match Modality.Gen.compare g g' with
+      | Neq -> None
+      | Eq -> (
+          let (Restrict_keys (env, pre)) =
+            restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g)
+          in
+          if not (Modalcell.is_id pre) then None
+          else
+            match is_identity_ordered_env ctx env envctx with
+            | Some Eq -> Some Eq
+            | None -> None))
+  | Snoc (ctx, entry, _), Ext (envctx, tentry, _) -> (
+      let modality = Ctx.modality_entry entry in
+      let bindings = Ctx.bindings_entry entry in
+      let k = CubeOf.dim bindings in
+      match (Modality.compare modality (modality_entry tentry), D.compare k (dim_entry tentry)) with
+      | Eq, Eq -> (
+          let (* We first check that all the variables in this entry are determined, so that we don't force any of them that are undetermined (such as those in a let rec whose values are still being computed). *)
+            exception
+            Not_identity
+            in
+          try
+            let expected =
+              CubeOf.mmap
+                {
+                  map =
+                    (fun _ [ b ] ->
+                      match Binding.level b with
+                      | Some level -> `Var level
+                      | None -> (
+                          match Binding.value_opt b with
+                          | Some v -> `Value v.tm
+                          | None -> raise_notrace Not_identity));
+                }
+                [ bindings ] in
+            (* Now we look up the top entry as in readback_ordered_env, but with the environment dimension zero. *)
+            let (Has_filter filter) = Modality.filter modality D.zero in
+            let m = Modality.filtered D.zero filter in
+            let (Plus m_k) = D.plus k in
+            let mk = D.plus_out m m_k in
+            let aenv = act_env env (opt_op_of_opt_sface (Modality.sface_of_filter D.zero filter)) in
+            let (Looked_up { act; op; entry = xs; pre }) =
+              lookup_cube aenv m_k modality modality Now (id_opt_op mk) in
+            let (Op (fc, fd)) =
+              match op_of_opt op with
+              | Some op -> op
+              | None -> raise_notrace Not_identity in
+            let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
+            match D.compare (CubeOf.dim xs) k with
+            | Neq -> None
+            | Eq -> (
+                CubeOf.miter
+                  {
+                    it =
+                      (fun _ [ x; e ] ->
+                        let ok =
+                          match e with
+                          | `Var level -> is_plain_var level x
+                          | `Value v -> x == v in
+                        if not ok then raise_notrace Not_identity);
+                  }
+                  [ xs; expected ];
+                match is_identity_ordered_env ctx (remove_top env) envctx with
+                | Some Eq -> Some Eq
+                | None -> None)
+          with Not_identity -> None)
+      | _ -> None)
+  | _ -> None
+
+(* Test whether the environment of a metavariable is the identity environment of the context we are reading back in.  Since this is only an optimization of display, any errors encountered just mean that the test fails. *)
+let is_identity_env : type mode a b n c d.
+    (mode, a, b) Ctx.t -> (mode, n, d) env -> (mode, c, d) termctx -> (b, d) Eq.t option =
+ fun (Permute { ctx; _ }) env (Permute (_, envctx)) ->
+  match D.compare (dim_env env) D.zero with
+  | Eq ->
+      Reporter.backtrack ~fatal:(fun _ -> None) @@ fun () -> is_identity_ordered_env ctx env envctx
+  | Neq -> None
+
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
@@ -570,7 +669,12 @@ and readback_head : type mode c z.
             | `Other -> canonical in
           Act (Kinetic, Const name, deg, (sort, canonical)))
   | Meta { meta; env; ins } -> (
-      let tm = MetaEnv (meta, readback_env ctx env (Global.find_meta meta).termctx) in
+      let termctx = (Global.find_meta meta).termctx in
+      (* If the environment is the identity, we can omit it. *)
+      let tm : (mode, c, kinetic) term =
+        match is_identity_env ctx env termctx with
+        | Some Eq -> Meta (meta, Kinetic)
+        | None -> MetaEnv (meta, readback_env ctx env termctx) in
       match is_id_ins ins with
       | Some _ -> tm
       | None ->
