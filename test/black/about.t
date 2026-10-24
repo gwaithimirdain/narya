@@ -5,8 +5,8 @@ About: display the potential value (canonical type or case tree) of a neutral
     : Type
   
   data [
-  | zero. : N
-  | suc. (𝑥 : N) : N ]
+  | zero.
+  | suc. (𝑥 : N) ]
     : Type
   
   A ↦ codata [ x .head : A | x .tail : Stream A ]
@@ -31,8 +31,8 @@ A neutral that is an applied canonical type is read back and displayed as the co
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def List : Type → Type ≔ A ↦ data [ nil. | cons. (x : A) (xs : List A) ]' -e 'def Stream : Type → Type ≔ A ↦ codata [ x .head : A | x .tail : Stream A ]' -e 'def Vec : Type → N → Type ≔ A ↦ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'about (List N)' -e 'about (Stream N)' -e 'about (Vec N (suc. zero.))'
   data [
-  | nil. : List N
-  | cons. (x : N) (xs : List N) : List N ]
+  | nil.
+  | cons. (x : N) (xs : List N) ]
     : Type
   
   codata [
