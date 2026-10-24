@@ -199,39 +199,69 @@ let rec is_identity_ordered_env : type mode a b c d.
       | _ -> None)
   | _ -> None
 
-(* A weakening of a context by some variables (but no locks) on the end. *)
-type (_, _) weakening =
-  | Id : ('b, 'b) weakening
-  | Weak : ('d, 'b) weakening -> ('d, ('b, ('modality, 'n) dim_entry) snoc) weakening
+(* A weakening of a context by some variables, each of which may lie behind some locks, represented as a sequence of Weaken terms to apply. *)
+type (_, _, _) weakening =
+  | Id : ('mode, 'b, 'b) weakening
+  | Weak :
+      ('mode, 'd, 'bmu) weakening
+      * ('b, 'tgt, 'mu, 'mode, 'bmu) plus_lock
+      * (('b, ('modality, 'n) dim_entry) snoc, 'tgt, 'mu, 'mode, 'bnmu) plus_lock
+      -> ('mode, 'd, 'bnmu) weakening
 
 let rec weaken_by : type mode d b s.
-    mode Mode.t -> (d, b) weakening -> (mode, d, s) term -> (mode, b, s) term =
- fun mode w tm ->
+    (mode, d, b) weakening -> (mode, d, s) term -> (mode, b, s) term =
+ fun w tm ->
   match w with
   | Id -> tm
-  | Weak w -> weaken mode (weaken_by mode w tm)
+  | Weak (w, plus, newplus) -> Weaken (plus, weaken_by w tm, newplus)
 
-(* Test whether a zero-dimensional environment for a metavariable's context is the identity environment of an ordered context weakened by some variables on the end.  We first test whether it is the identity environment of the whole context, and if not we remove the last variable of the context and try again.  Once the test for the identity has begun to succeed, there can be no more weakening, since a weakening that is not on the end of the context could not be represented by Weaken. *)
+(* Put a weakening behind a lock, by adding it to the locks behind which each weakened variable lies. *)
+let rec lock_weakening : type dom g cod d b.
+    (cod, d, b) weakening ->
+    (dom, g, cod) Modality.gen ->
+    (dom, (d, g lock_entry) snoc, (b, g lock_entry) snoc) weakening =
+ fun w g ->
+  match w with
+  | Id -> Id
+  | Weak (w, plus, newplus) ->
+      Weak (lock_weakening w g, plus_lock_suc plus g, plus_lock_suc newplus g)
+
+(* Test whether a zero-dimensional environment for a metavariable's context is the identity environment of an ordered context weakened by some variables.  We first test whether it is the identity environment of the whole context.  If not, and the context ends with a variable, we remove that variable from the context and try again; while if it ends with a lock that matches one at the end of the metavariable's context, we remove both and look for a weakening behind them. *)
 let rec is_weakened_identity_ordered_env : type mode a b c d.
     (mode, a, b) Ctx.Ordered.t ->
     (mode, D.zero, d) env ->
     (mode, c, d) ordered_termctx ->
-    (d, b) weakening option =
+    (mode, d, b) weakening option =
  fun ctx env envctx ->
   match is_identity_ordered_env ctx env envctx with
   | Some Eq -> Some Id
   | None -> (
-      match ctx with
-      | Snoc (ctx, _, _) -> (
+      match (ctx, envctx) with
+      | Snoc (ctx, _, _), _ -> (
+          let mode = Ctx.Ordered.mode ctx in
           match is_weakened_identity_ordered_env ctx env envctx with
-          | Some w -> Some (Weak w)
+          | Some w -> Some (Weak (w, plus_no_lock mode, plus_no_lock mode))
           | None -> None)
-      | Weaken (ctx, _) -> is_weakened_identity_ordered_env ctx env envctx
+      | Weaken (ctx, _), _ -> is_weakened_identity_ordered_env ctx env envctx
+      | Lock _, Weaken (envctx, _) -> is_weakened_identity_ordered_env ctx env envctx
+      | Lock (ctx, g), Lock (envctx, g') -> (
+          match Modality.Gen.compare g g' with
+          | Neq -> None
+          | Eq -> (
+              let (Restrict_keys (env, pre)) =
+                restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g)
+              in
+              if not (Modalcell.is_id pre) then None
+              else
+                match is_weakened_identity_ordered_env ctx env envctx with
+                | Some w -> Some (lock_weakening w g)
+                | None -> None))
       | _ -> None)
 
-(* Test whether the environment of a metavariable is the identity environment of the context we are reading back in, possibly weakened by some variables on the end.  Since this is only an optimization of display, any errors encountered just mean that the test fails. *)
+(* Test whether the environment of a metavariable is the identity environment of the context we are reading back in, possibly weakened by some variables.  Since this is only an optimization of display, any errors encountered just mean that the test fails. *)
 let is_identity_env : type mode a b n c d.
-    (mode, a, b) Ctx.t -> (mode, n, d) env -> (mode, c, d) termctx -> (d, b) weakening option =
+    (mode, a, b) Ctx.t -> (mode, n, d) env -> (mode, c, d) termctx -> (mode, d, b) weakening option
+    =
  fun (Permute { ctx; _ }) env (Permute (_, envctx)) ->
   match D.compare (dim_env env) D.zero with
   | Eq ->
@@ -704,7 +734,7 @@ and readback_head : type mode c z.
       (* If the environment is the identity, possibly weakened, we can omit it. *)
       let tm : (mode, c, kinetic) term =
         match is_identity_env ctx env termctx with
-        | Some w -> weaken_by (Ctx.mode ctx) w (Meta (meta, Kinetic))
+        | Some w -> weaken_by w (Meta (meta, Kinetic))
         | None -> MetaEnv (meta, readback_env ctx env termctx) in
       match is_id_ins ins with
       | Some _ -> tm
