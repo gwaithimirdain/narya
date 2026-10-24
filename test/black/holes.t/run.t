@@ -400,11 +400,11 @@
    ￭ $TESTCASE_ROOT/dtt-holes.ny
    6 | def g (X : Type) : Type⁽ᵈ⁾ X ≔ (f ?)⁽ᵈ⁾
      ^ term synthesized type
-         Type⁽ᵈ⁾ ?0{…}
+         Type⁽ᵈ⁾ ?0
        but is being checked against type
          Type⁽ᵈ⁾ X
        unequal head terms:
-         ?0{…}
+         ?0
        does not equal
          X
   
