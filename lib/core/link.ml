@@ -11,7 +11,6 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Var i -> Var i
   | Const c -> Const (Constant.remake f c)
   | Meta (m, s) -> Meta (Meta.remake f m, s)
-  | MetaEnv (m, e) -> MetaEnv (Meta.remake f m, env f e)
   | Field (e, Modal (modality, al, tm), fld, fldins) ->
       Field (e, Modal (modality, al, term f tm), fld, fldins)
   | UU (mode, n) -> UU (mode, n)

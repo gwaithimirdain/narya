@@ -263,7 +263,7 @@ Let can contain case trees:
   true.
     : bool
   
-  _let.F3.0.n{…}
+  let only x : bool ≔ u in _let.F3.0.n
     : bool
   
 
@@ -283,7 +283,7 @@ Let can contain case trees:
   true.
     : bool
   
-  _let.F3.0.n{…} u
+  (let only x : bool ≔ u in _let.F3.0.n) u
     : bool
   
 
@@ -310,7 +310,7 @@ Synthesizing matches don't need to be annotated
   true.
     : bool
   
-  _let.F3.0.n{…}
+  let only x : bool ≔ u in _let.F3.0.n
     : bool
   
 
@@ -337,7 +337,7 @@ Either branch can synthesize:
   true.
     : bool
   
-  _let.F3.0.n{…}
+  let only x : bool ≔ u in _let.F3.0.n
     : bool
   
 
