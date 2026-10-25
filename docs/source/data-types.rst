@@ -712,7 +712,7 @@ When such a local case tree "escapes" from its site of definition, it is printed
    
    echo sqdec2 z
 
-prints something like ``(let only … in _let.0.dec) ((let only … in _let.0.dec) z)``, where the number is a metavariable counter.  The name ``_let.0.dec`` is not a valid user-defined identifier since it begins with an underscore, and so this notation is not re-parseable; but it indicates that there is some locally defined function, which was called ``dec`` where it was defined but is not in scope any more, and is being applied twice to the argument ``z``.  The prefix ``let only … in`` indicates that the context in which this local function was defined (here, the context containing the variable ``x``) has had a substitution applied to it (see :ref:`Let-only binding`), whose details are elided.  (This elided form is also not re-parseable: entering it produces an error.)  As noted above, like any other global constant defined by a case tree, ``_let.0.dec`` does not evaluate at all unless it reaches a leaf of its case tree; thus this term does not reduce further since ``z`` is not a constructor.  (But ``sqdec2 (suc. z)`` will, of course, reduce once to ``(let only … in _let.0.dec) z``.)
+prints ``(let only … in sqdec2._dec) ((let only … in sqdec2._dec) z)``.  The name ``sqdec2._dec`` is not a valid user-defined identifier since its last part begins with an underscore, and so this notation is not re-parseable; but it indicates that there is some function, which was defined locally in the definition of ``sqdec2`` and called ``dec`` there but is not in scope any more, and is being applied twice to the argument ``z``.  (If more than one local definition in the same definition has the same name, the later ones are distinguished by primes, as in ``sqdec2._dec′``.  A local definition that occurs outside of any definition, such as in an ``echo`` command, is instead named with a number such as ``F2.0._dec``.)  The prefix ``let only … in`` indicates that the context in which this local function was defined (here, the context containing the variable ``x``) has had a substitution applied to it (see :ref:`Let-only binding`), whose details are elided.  (This elided form is also not re-parseable: entering it produces an error.)  As noted above, like any other global constant defined by a case tree, ``sqdec2._dec`` does not evaluate at all unless it reaches a leaf of its case tree; thus this term does not reduce further since ``z`` is not a constructor.  (But ``sqdec2 (suc. z)`` will, of course, reduce once to ``(let only … in sqdec2._dec) z``.)
 
 How much of such a local definition is printed can be controlled with the interactive command ``display let ≔ VALUE`` (or ``C-c C-d C-l`` in ProofGeneral, which cycles between the three values).  The default value is ``names``, which prints as above.  The value ``environments`` prints the substitution in full, as a re-parseable ``let only``, but still with the name of the local definition in the body:
 
@@ -722,7 +722,7 @@ How much of such a local definition is printed can be controlled with the intera
    
    echo sqdec2 z
    
-   (let only x : ℕ ≔ z in _let.0.dec) ((let only x : ℕ ≔ z in _let.0.dec) z)
+   (let only x : ℕ ≔ z in sqdec2._dec) ((let only x : ℕ ≔ z in sqdec2._dec) z)
      : ℕ
 
 Finally, the value ``definitions`` prints the definitions of local definitions instead of their names:
@@ -755,15 +755,15 @@ Note that even in this case, the printed term is not quite re-parseable to the s
     ￫ error[E0401]
     1 | def fails : dec1_is_dec2 ≔ rfl.
       ^ term synthesized type
-          Jd (ℕ → ℕ) _let.1.dec _let.1.dec
+          Jd (ℕ → ℕ) dec1_is_dec2._dec dec1_is_dec2._dec
         but is being checked against type
-          Jd (ℕ → ℕ) _let.1.dec (let only … in _let.2.dec)
+          Jd (ℕ → ℕ) dec1_is_dec2._dec (let only … in dec1_is_dec2._dec′)
         unequal head metavariables:
-          _let.1.dec
+          dec1_is_dec2._dec
         does not equal
-          _let.2.dec
+          dec1_is_dec2._dec′
 
-Note that both local functions are called ``_let.N.dec`` based on their name when defined, but their metavariable counters are different, and they are unequal.  (The second one is printed with ``let only … in`` because it was defined in a context containing the earlier variables ``dec`` and ``dec1``.)  With ``display let ≔ definitions``, both would be printed as the same pattern-matching lambda, but the error message would still mention their distinct names.
+Note that both local functions are named after ``dec``, their name when defined, but the second one has a prime to distinguish it, and they are unequal.  (The second one is printed with ``let only … in`` because it was defined in a context containing the earlier variables ``dec`` and ``dec1``.)  With ``display let ≔ definitions``, both would be printed as the same pattern-matching lambda, but the error message would still mention their distinct names.
 
 A match not occuring inside any ``let`` value doesn't have a user-assigned name like ``dec``, so it is always printed as its definition (wrapped in a ``let only`` if it has a nontrivial substitution), regardless of the setting of ``display let``.  For instance, ``echo sqdec3`` from above will print ``sq (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ])``.  The advantage of matches of this sort is that, unlike the value of a let-bound variable, they can check rather than synthesize.
 

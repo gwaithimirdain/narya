@@ -263,7 +263,7 @@ Let can contain case trees:
   true.
     : bool
   
-  let only … in _let.F3.0.n
+  let only … in not._n
     : bool
   
 
@@ -283,7 +283,7 @@ Let can contain case trees:
   true.
     : bool
   
-  (let only … in _let.F3.0.n) u
+  (let only … in not._n) u
     : bool
   
 
@@ -310,7 +310,7 @@ Synthesizing matches don't need to be annotated
   true.
     : bool
   
-  let only … in _let.F3.0.n
+  let only … in not._n
     : bool
   
 
@@ -337,7 +337,7 @@ Either branch can synthesize:
   true.
     : bool
   
-  let only … in _let.F3.0.n
+  let only … in not._n
     : bool
   
 
@@ -510,7 +510,7 @@ In a hole, a let-bound variable whose value is its metavariable is displayed as 
    ￮ hole ?0:
      
      b : bool
-     not ≔ _let.F4.0.not : bool → bool
+     not ≔ t._not : bool → bool
      y ≔ not b : bool
      ----------------------------------------------------------------------
      J bool (not b) (not b)
@@ -539,7 +539,7 @@ This also works for a modal let-bound variable used with a key.
    ￮ hole ?0:
      
      b : bool
-     not ≔ _let.F4.0.not :♭| bool → bool
+     not ≔ t._not :♭| bool → bool
      ----------------------------------------------------------------------
      J bool (not b) b
   

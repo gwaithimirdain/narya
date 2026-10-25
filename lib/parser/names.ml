@@ -136,12 +136,7 @@ let lookup_field : type mode a. a t -> (mode, a) index -> string -> string list 
     | Emp, _ | Lock _, _ -> . in
   lookup (split_ctx ctx comp) x fa
 
-let rec primes n =
-  if n <= 0 then ""
-  else if n = 1 then "′"
-  else if n = 2 then "″"
-  else if n = 3 then "‴"
-  else "⁗" ^ primes (n - 4)
+let primes = Unicode.primes
 
 (* Whether a name is currently that of a variable in textual scope (perhaps behind a lock), including a field variable and a hidden one.  This is what a raw identifier consisting of that name (perhaps with a face) would resolve to, so a constant displayed with that name would be captured by it. *)
 let bound : type b. b t -> string -> bool =

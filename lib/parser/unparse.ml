@@ -296,14 +296,18 @@ let displayed_definition : type mode x b s.
     | _ -> None
   else None
 
+(* The full name of a metavariable, using the name currently in scope for the constant that owns it. *)
+let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
+ fun v -> Meta.name ~owner_name:(fun c -> String.concat "." (Scope.name_of c)) v
+
 (* The name of a metavariable. *)
 let unparse_meta_name : type mode x b s lt ls rt rs.
     (mode, x, b, s) Meta.t -> (lt, ls, rt, rs) parse located =
- fun v -> unlocated (Ident ([ (if Display.metas () == `Numbered then Meta.name v else "?") ], []))
+ fun v -> unlocated (Ident ([ (if Display.metas () == `Numbered then meta_name v else "?") ], []))
 
 (* The name with which a variable whose value is a metavariable is displayed in place of being bound. *)
 let meta_var_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
- fun v -> if Display.metas () == `Numbered then Meta.name v else "?"
+ fun v -> if Display.metas () == `Numbered then meta_name v else "?"
 
 (* The variables bound to the other metavariables in a mutual "let rec" block, in the contexts and definitions of those metavariables, are not displayed as bindings; instead the variables are displayed as the names of those metavariables.  (Variables bound to metavariables from other "let rec" blocks, such as enclosing ones, are displayed as usual.)  This tests whether a term bound to a variable is a metavariable from the same block as a given one, if any (possibly weakened, as the value of a let-bound variable in a context is), and if so returns its name. *)
 let rec letrec_meta_name : type mode b s.
@@ -2186,7 +2190,7 @@ let () =
                   No.Interval.entire))
             `None
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
-      | PMeta v -> utf8string (Meta.name v)
+      | PMeta v -> utf8string (meta_name v)
       | PHole (origin, vars, (Permute (p, ctx) as termctx), ty) ->
           let run =
             match origin with

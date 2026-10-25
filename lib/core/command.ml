@@ -60,6 +60,7 @@ type checked_term =
 let check_term (def : defined_const) : checked_term =
   match def with
   | Defined_check { const; bplus; mode; params; ty; tm } ->
+      Meta.with_owner const @@ fun () ->
       (* It's essential that we evaluate the type at this point, rather than sooner, so that the evaluation uses the *definitions* of previous constants in the mutual block and not just their types.  For the same reason, we need to re-evaluate the telescope of parameters. *)
       let ctx = eval_append (Ctx.empty mode) bplus params in
       let ety = eval_term (Ctx.env ctx) ty in
@@ -71,6 +72,7 @@ let check_term (def : defined_const) : checked_term =
       Global.set const mode ~parametric:`Maybe_parametric tm;
       Checked (const, mode, tm)
   | Defined_synth { const; params; tm } ->
+      Meta.with_owner const @@ fun () ->
       let (Wrap mode) =
         match synth_mode_tel params with
         | Some mode -> mode
@@ -122,11 +124,14 @@ let check_defs (defs : (Constant.t Lazy.t * defconst Lazy.t) list) : printable l
                   | Some mode -> mode
                   | None -> fatal (Non_mode_synthesizing "checking def")) in
             let bplus = Raw.bplus_of_tel params in
-            let (Checked_tel (params, ctx)) = check_tel (Ctx.empty mode) params in
-            let ty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
+            let const = Lazy.force const in
+            let (Checked_tel (params, ctx)) =
+              Meta.with_owner const @@ fun () -> check_tel (Ctx.empty mode) params in
+            let ty =
+              Meta.with_owner const @@ fun () ->
+              check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
             let pi_cty = Telescope.pis params ty in
             (* We set the type now; the value will be added later.  We mark it as "maybe parametric" so that we can detect if it is used behind an external degeneracy. *)
-            let const = Lazy.force const in
             Global.add const
               (Definition { mode; ty = pi_cty; tm = `Axiom; parametric = `Maybe_parametric });
             go defs
@@ -151,8 +156,10 @@ let execute : t -> int option * (int -> Reporter.Code.t option) = function
             match synth_mode ty with
             | Some mode -> mode
             | None -> fatal (Non_mode_synthesizing "axiom")) in
-      let (Checked_tel (params, ctx)) = check_tel (Ctx.empty mode) params in
-      let cty = check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
+      let (Checked_tel (params, ctx)) =
+        Meta.with_owner name @@ fun () -> check_tel (Ctx.empty mode) params in
+      let cty =
+        Meta.with_owner name @@ fun () -> check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
       let cty = Telescope.pis params cty in
       let p = (Global.get_parametric () :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
       Global.add name (Definition { mode; ty = cty; tm = `Axiom; parametric = p });
