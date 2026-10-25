@@ -12,12 +12,11 @@ The "display let" option controls how local definitions (let-bound case trees) a
 By default, they are displayed by name, with the substitution elided.
 
   $ narya dl.ny -e 'echo sqdec z'
-  (let only … in _let.F2.0.dec) ((let only … in _let.F2.0.dec) z)
+  (let only … in sqdec._dec) ((let only … in sqdec._dec) z)
     : ℕ
   
   $ narya dl.ny -e 'display let ≔ environments' -e 'echo sqdec z'
-  (let only x : ℕ ≔ z in _let.F2.0.dec)
-    ((let only x : ℕ ≔ z in _let.F2.0.dec) z)
+  (let only x : ℕ ≔ z in sqdec._dec) ((let only x : ℕ ≔ z in sqdec._dec) z)
     : ℕ
   
   $ narya dl.ny -e 'display let ≔ definitions' -e 'echo sqdec z'
@@ -28,7 +27,7 @@ By default, they are displayed by name, with the substitution elided.
     : ℕ
   
   $ narya dl.ny -ascii -e 'echo sqdec z'
-  (let only ... in _let.F2.0.dec) ((let only ... in _let.F2.0.dec) z)
+  (let only ... in sqdec._dec) ((let only ... in sqdec._dec) z)
     : ℕ
   
 
@@ -78,8 +77,7 @@ A recursive local definition refers to itself by name.
 
   $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  def bool : Type ≔ data [ true. | false. ]' -e 'display let ≔ definitions' -e 'def ev (m : ℕ) : bool ≔ let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ even n ] in even m' -e 'axiom k : ℕ' -e 'echo ev (suc. k)'
   (let only m : ℕ ≔ suc. k in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ _letrec.F4.0.even n | zero. ↦ true. ]
-    : ℕ → bool)) k
+   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ ev._even n | zero. ↦ true. ] : ℕ → bool)) k
     : bool
   
 
@@ -100,26 +98,26 @@ In a mutual block, the variables bound to the other local definitions are not di
   > EOF
 
   $ narya eo.ny -e 'echo eo (suc. k)' -e 'echo eo2'
-  (let only … in _letrec.F2.1.odd) k
+  (let only … in eo._odd) k
     : bool
   
-  _letrec.F2.3.odd
+  eo2._odd
     : ℕ → bool
   
   $ narya eo.ny -e 'display let ≔ environments' -e 'echo eo (suc. k)' -e 'echo eo2'
-  (let only m : ℕ ≔ suc. k in _letrec.F2.1.odd) k
+  (let only m : ℕ ≔ suc. k in eo._odd) k
     : bool
   
-  _letrec.F2.3.odd
+  eo2._odd
     : ℕ → bool
   
   $ narya eo.ny -e 'display let ≔ definitions' -e 'echo eo (suc. k)' -e 'echo eo2'
   (let only m : ℕ ≔ suc. k in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ _letrec.F2.0.even n | zero. ↦ false. ]
-    : ℕ → bool)) k
+   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ eo._even n | zero. ↦ false. ] : ℕ → bool))
+    k
     : bool
   
-  𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ _letrec.F2.2.even n | zero. ↦ false. ]
+  𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ eo2._even n | zero. ↦ false. ]
     : ℕ → bool
   
 
@@ -137,20 +135,16 @@ Variables bound to local definitions from other blocks, such as enclosing ones, 
   > EOF
 
   $ narya nested.ny -e 'display let ≔ environments' -e 'echo h k'
-  (let only m : ℕ ≔ k
-   and f : ℕ → bool ≔ let only m : ℕ ≔ k in _letrec.F2.0.f in
-   _letrec.F2.2.g2) k
+  (let only m : ℕ ≔ k and f : ℕ → bool ≔ let only m : ℕ ≔ k in h._f in h._g2)
+    k
     : bool
   
   $ narya nested.ny -e 'display let ≔ definitions' -e 'echo h k'
   (let only m : ℕ ≔ k
    and f : ℕ → bool ≔
      let only m : ℕ ≔ k in
-     (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ _letrec.F2.0.f n | zero. ↦ true. ]
-      : ℕ → bool) in
-   (𝑥 ↦
-    match #(gen) 𝑥 [ suc. n ↦ _letrec.F2.2.g2 n | zero. ↦ _letrec.F2.1.g m ]
-    : ℕ → bool)) k
+     (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ h._f n | zero. ↦ true. ] : ℕ → bool) in
+   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ h._g2 n | zero. ↦ h._g m ] : ℕ → bool)) k
     : bool
   
 

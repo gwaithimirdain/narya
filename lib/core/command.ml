@@ -59,6 +59,7 @@ type checked_term =
 let check_term (def : defined_const) : checked_term =
   match def with
   | Defined_check { const; bplus; mode; params; ty; tm } ->
+      Meta.with_owner const @@ fun () ->
       (* It's essential that we evaluate the type at this point, rather than sooner, so that the evaluation uses the *definitions* of previous constants in the mutual block and not just their types.  For the same reason, we need to re-evaluate the telescope of parameters.  If one of them failed, its variable has a failed type, but the term can still be checked. *)
       let ctx = eval_append (Ctx.empty mode) bplus params in
       let ety = eval_term (Ctx.env ctx) ty in
@@ -70,6 +71,7 @@ let check_term (def : defined_const) : checked_term =
       Global.set const mode ~parametric:`Maybe_parametric tm;
       Checked (const, mode, tm)
   | Defined_synth { const; params; tm } ->
+      Meta.with_owner const @@ fun () ->
       let (Wrap mode) =
         match synth_mode_tel params with
         | Some mode -> mode
@@ -130,10 +132,11 @@ type 'b checked_type =
     }
       -> 'b checked_type
 
-(* Check the parameters and type of an axiom or a checking constant, in the mode that they synthesize. *)
-let check_type_of : type b c. string -> (N.zero, b, c) Raw.tel -> c check located -> b checked_type
-    =
- fun which params ty ->
+(* Check the parameters and type of an axiom or a checking constant, in the mode that they synthesize.  The constant is the owner of any metavariables created. *)
+let check_type_of : type b c.
+    string -> Constant.t -> (N.zero, b, c) Raw.tel -> c check located -> b checked_type =
+ fun which const params ty ->
+  Meta.with_owner const @@ fun () ->
   let (Wrap mode) =
     match synth_mode_tel params with
     | Some mode -> mode
@@ -152,9 +155,10 @@ let check_type_of : type b c. string -> (N.zero, b, c) Raw.tel -> c check locate
 let check_type (const : Constant.t Lazy.t) (defconst : defconst) : Constant.t * defined_const =
   match defconst with
   | Def_check { params; ty; tm } ->
-      let (Checked_type { mode; params = cparams; ty }) = check_type_of "checking def" params ty in
-      (* We set the type now; the value will be added later.  We mark it as "maybe parametric" so that we can detect if it is used behind an external degeneracy. *)
       let const = Lazy.force const in
+      let (Checked_type { mode; params = cparams; ty }) =
+        check_type_of "checking def" const params ty in
+      (* We set the type now; the value will be added later.  We mark it as "maybe parametric" so that we can detect if it is used behind an external degeneracy. *)
       Global.add const
         (Definition
            { mode; ty = Telescope.pis cparams ty; tm = `Axiom; parametric = `Maybe_parametric });
@@ -195,7 +199,7 @@ let execute : t -> int option * (int -> Reporter.Code.t option) = function
             fatal_diagnostic d)
       @@ fun () ->
         let (Axiom_type { params; ty }) = Lazy.force ty in
-        let (Checked_type { mode; params; ty }) = check_type_of "axiom" params ty in
+        let (Checked_type { mode; params; ty }) = check_type_of "axiom" name params ty in
         let p = (Global.get_parametric () :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
         Global.add name
           (Definition { mode; ty = Telescope.pis params ty; tm = `Axiom; parametric = p }) );

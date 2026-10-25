@@ -69,7 +69,7 @@ Local recursive datatypes
    ￮ constant ℕadder defined
   
   2
-    : _letrec.F2.0.ℕ
+    : ℕadder._ℕ
   
 
 Local mutually recursive definitions
@@ -111,7 +111,7 @@ Local mutually recursive definitions
    ￫ info[I0001]
    ￮ axiom n assumed
   
-  _letrec.F2.1.even n
+  even_odd._even n
     : bool
   
 
@@ -134,8 +134,8 @@ In a hole, a let-rec-bound variable whose value is its metavariable is displayed
    ￮ hole ?0:
      
      m : ℕ
-     even ≔ _letrec.F4.0.even : ℕ → bool
-     odd ≔ _letrec.F4.1.odd : ℕ → bool
+     even ≔ eo._even : ℕ → bool
+     odd ≔ eo._odd : ℕ → bool
      ----------------------------------------------------------------------
      J bool (even m) (odd m)
   

@@ -86,8 +86,8 @@ Like ``match`` and ``comatch``, the constructs ``sig``, ``data``, and ``codata``
         but is being checked against type
           B
         unequal head metavariables:
-          _let.0.A
+          foo._A
         does not equal
-          _let.1.B
+          foo._B
 
 Thus, it is probably ill-advised to use such "on-the-fly" definitions of canonical types very much.  However, it may sometimes be convenient to, for example, pass a custom type like ``data [ red. | green. | blue. ]`` directly as an argument to some other function.  Such a type passed directly as an argument is printed as its definition, e.g. ``f (data #(gen) [ red. | green. | blue. ])`` (where the attribute ``#(gen)`` is a reminder that it is generative: see :ref:`Matches in terms and case trees`).  Types defined directly on the fly like this cannot be recursive, so in practice their usefulness is mostly restricted to record types and enumerated types (which could, in theory, also be treated non-generatively).  However, local recursive types can be defined with ``let rec``, e.g. ``let rec ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ] in ...``.
