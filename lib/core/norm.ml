@@ -1496,7 +1496,7 @@ and force_eval : type mode s. (mode, s) lazy_eval -> (mode, s) evaluation =
     etm in
   match !lev with
   | Deferred_eval (env, tm, ins, c) ->
-      (* TODO: In an ideal world, there would be one function that would traverse the term once doing both "eval" and "act" by the insertion. *)
+      (* The insertion and cell are only the part of any outer actions that act_lazy_eval couldn't compose into the environment.  They are almost always trivial, in which case act_evaluation returns immediately. *)
       let (To p) = deg_of_ins ins in
       cache (act_evaluation (eval env tm) p c)
   | Deferred tm -> cache (tm ())
