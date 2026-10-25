@@ -80,19 +80,6 @@ let parenthesize_maybe (tm : ('lt, 'ls, 'rt, 'rs) parse located) =
   | Notn ((Postprocess.Parens, _), _) -> tm
   | _ -> parenthesize tm
 
-(* In an application spine, the head and arguments are separated only by whitespace, so a reader takes anything that looks like a name to be a separate argument.  Thus, although an outfix notation such as "match x [ … ]" can appear as an argument without parentheses, it is confusing to do so, since "match" and "x" look like two arguments.  So we parenthesize a notation in a spine if one of its edges that faces a juxtaposition (the left edge of an argument, the right edge of a head or of an argument that is followed by another one) is a "word-like" token, i.e. one whose character at that edge is a letter or a digit.  For now, we approximate this by only counting ASCII letters and digits. *)
-let word_like_edge (side : [ `Left | `Right ]) (tok : Token.t) : bool =
-  let s = Token.to_string tok in
-  s <> ""
-  &&
-  match
-    match side with
-    | `Left -> s.[0]
-    | `Right -> s.[String.length s - 1]
-  with
-  | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true
-  | _ -> false
-
 (* Whether a term is a notation with more than one piece whose token at the given edge is word-like.  Other terms, such as identifiers, are supposed to look like separate arguments, as is a notation consisting of a single token such as "Type"; while a notation whose edge is a term has to be parenthesized anyway on that side. *)
 let word_like_notation : type lt ls rt rs.
     [ `Left | `Right ] -> (lt, ls, rt, rs) parse located -> bool =
@@ -101,10 +88,10 @@ let word_like_notation : type lt ls rt rs.
   | Notn (_, n) -> (
       match (side, args n) with
       | _, ([] | [ _ ]) -> false
-      | `Left, (Token (tok, _) | Ss_token ((tok, _), _)) :: _ -> word_like_edge `Left tok
+      | `Left, (Token (tok, _) | Ss_token ((tok, _), _)) :: _ -> Token.word_like_edge `Left tok
       | `Right, obs -> (
           match List.rev obs with
-          | Token (tok, _) :: _ -> word_like_edge `Right tok
+          | Token (tok, _) :: _ -> Token.word_like_edge `Right tok
           (* A superscript follows the token, so the edge is not word-like. *)
           | _ -> false)
       | `Left, _ -> false)
