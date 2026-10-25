@@ -27,6 +27,11 @@
    1 | def g (A : Type) (x : A) : A := f A x
      ^ use of id variable behind ♭ lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def g (A : Type) (x : A) : A := f A x
+     ^ use of id variable behind ♭ lock requires a key
+  
   [1]
 
   $ narya -coreflector box.ny -e "def η (A :♭| Type) (x : A) : ♭ A := box. x"
@@ -106,6 +111,11 @@ Unlike the coreflector, the reflector has no counit, so a ♯-locked variable ca
    1 | def ε (A :♯| Type) (x :♯| A) : A := x
      ^ use of ♯ variable behind id lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def ε (A :♯| Type) (x :♯| A) : A := x
+     ^ use of ♯ variable behind id lock requires a key
+  
   [1]
 
 
@@ -138,6 +148,11 @@ The reflector ♯ has no counit of its own, unlike the coreflector ♭.
    1 | def ε (A :♯| Type) (x :♯| A) : A := x
      ^ use of ♯ variable behind id lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def ε (A :♯| Type) (x :♯| A) : A := x
+     ^ use of ♯ variable behind id lock requires a key
+  
   [1]
 
 
@@ -155,6 +170,11 @@ The coreflector ♭ has no unit of its own, unlike the reflector ♯.
 The adjunction ♭ ⊣ ♯ only gives cells ♭∘♯ ⇒ id and id ⇒ ♯∘♭, not the other way around.
 
   $ narya -spatial spatial.ny -e "def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x"
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x
+     ^ use of ♯♭ variable behind id lock requires a key
+  
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x
@@ -702,6 +722,11 @@ suffix (or at a wrong dimension) is an error, as for ordinary higher fields.
    ￭ command-line exec string
    1 | def bad : √♭A ≔ [ .root ↦ a ]
      ^ codata method 'root.e' missing in comatch
+  
+   ￫ error[E1403]
+   ￭ command-line exec string
+   1 | def bad : √♭A ≔ [ .root ↦ a ]
+     ^ method 'root.' in comatch doesn't occur in codata type
   
   [1]
 

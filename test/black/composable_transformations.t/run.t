@@ -33,6 +33,11 @@ There is no 2-cell in the reverse direction, so there is no induced function ▹
    1 | def backwards (A :▹| DomMode) (u : ▹ A) : ○ A := match u [ tri. x ↦ circle. x ]
      ^ use of ▹ variable behind ○ lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def backwards (A :▹| DomMode) (u : ▹ A) : ○ A := match u [ tri. x ↦ circle. x ]
+     ^ use of ▹ variable behind ○ lock requires a key
+  
   [1]
 
 

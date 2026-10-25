@@ -116,3 +116,13 @@ Since a function application cannot be part of a case tree, it goes into the bod
         ≔ let id' : A → A ≔ (x ↦ x) in id'
 
 However, the type ``A → A`` still has to be written again, since a let-binding must synthesize.  If there is significant demand for it, we may implement a less kludgy way to force transitioning from case tree nodes to a leaf.
+
+
+Error reporting
+---------------
+
+When you run Narya on some code --- which may include various source files, the files they import, command-line execution strings, and interactively given commands --- its primary obligation is to either (1) verify that all the code is correct, or (2) report *at least one error* showing a place where the code is incorrect.  In the second case, you can fix that error, re-run Narya and perhaps get another error, and so on until the code is correct.
+
+Although Narya is not *obligated* to report more than one error at a time, it tries to make your life easier by reporting as many errors as possible at once.  It is not always possible, even in theory, to report *all* the errors at once.  This is already true for ordinary programming languages, and becomes even more true in a dependently typed language where later pieces of code can't in general even be typechecked without knowing the value of previous ones.  However, there are many situations in which it is possible to continue on past an error and check more code.  For instance, if the first component of a non-dependent tuple fails, that does not interfere with checking the other components; and if one definition in a file fails, there may be many later definitions that don't depend on it.
+
+It's not guaranteed that Narya will be able to find *all the possible* errors that could be reported at once.  If there is an error that could be reported at the same time as some previous error but isn't, that is not a bug, but adding the ability to report it is a feature enhancement request.  Similarly, it's not guaranteed that later-reported errors will always be "true" errors; they might be accidents that will disappear when some earlier error is fixed.  If you find such a "phantom" error, it is not a bug, but preventing it from being reported is a feature enhancement request.

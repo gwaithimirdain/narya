@@ -42,6 +42,11 @@ There is no 2-cell in the reverse direction, so there is no induced function ◃
    1 | def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ lt. x ↦ rt. x ]
      ^ use of ◃ variable behind ▹ lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ lt. x ↦ rt. x ]
+     ^ use of ◃ variable behind ▹ lock requires a key
+  
   [1]
 
 

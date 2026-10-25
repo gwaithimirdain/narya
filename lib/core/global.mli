@@ -120,8 +120,6 @@ val with_definition :
   'a
 
 val with_meta_definition : ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'b, 's) term -> (unit -> 'x) -> 'x
-val without_definition : Constant.t -> Reporter.Code.t -> (unit -> 'a) -> 'a
-val without_meta_definition : ('mode, 'a, 'b, 's) Meta.t -> Reporter.Code.t -> (unit -> 'x) -> 'x
 val set_nonparametric : Constant.t option -> unit
 val set_parametric : Constant.t -> unit
 val set_maybe_parametric : unit -> unit
