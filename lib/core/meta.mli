@@ -14,8 +14,10 @@ type sort = [ `Let | `Letrec of letrec_block | `Bare of string ]
 and letrec_block
 
 val new_letrec_block : unit -> letrec_block
+val with_owner : Constant.t -> (unit -> 'x) -> 'x
 
 val make_def :
+  ?loc:Asai.Range.t ->
   sort ->
   string option ->
   'mode Mode.t ->
@@ -27,7 +29,7 @@ val make_def :
 val make_hole : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t
 val remake : (File.t -> File.t) -> ('mode, 'a, 'b, 's) t -> ('mode, 'a, 'b, 's) t
 val mode : ('mode, 'a, 'b, 's) t -> 'mode Mode.t
-val name : ('mode, 'a, 'b, 's) t -> string
+val name : ?owner_name:(Constant.t -> string) -> ('mode, 'a, 'b, 's) t -> string
 val sort_of : ('mode, 'a, 'b, 's) t -> sort option
 val is_bare : ('mode, 'a, 'b, 's) t -> bool
 val letrec_siblings : ('m1, 'a1, 'b1, 's1) t -> ('m2, 'a2, 'b2, 's2) t -> bool
