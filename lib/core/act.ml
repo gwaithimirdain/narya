@@ -633,7 +633,7 @@ module Act = struct
     let nj = TubeOf.plus args in
     let m = dom_deg fa in
     let (Plus mj) = D.plus j in
-    (* The new arguments are obtained by factoring and acting on appropriate original arguments *)
+    (* The new arguments are obtained by factoring and acting on appropriate original arguments. *)
     let args =
       TubeOf.build m mj
         {
@@ -657,7 +657,7 @@ module Act = struct
     | Deferred_eval (env, tm, ins, key, Emp) ->
         let (Insfact_comp_ext (fa, ins, _, _)) = insfact_comp_ext ins s in
         let acted_env = act_env env (opt_op_of_deg fa) in
-        (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite.  We use the cell returned by act_apps, which lives at the mode inside the pending spine. *)
+        (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite. *)
         let (Wrap newkey) = key_vcomp c key in
         ref (Deferred_eval (acted_env, tm, ins, newkey, Emp))
     | Deferred (tm, s', key, Emp) ->
