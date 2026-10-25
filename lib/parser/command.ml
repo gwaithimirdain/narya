@@ -1158,14 +1158,24 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       Global.set_meta meta ~recursion ctm;
       let buf = Buffer.create 20 in
       PPrint.ToBuffer.compact buf (pp_complete_term data.tm `None);
-      ( Reporter.try_with ~fatal:(fun _ ->
-            data.tm <- Wrap (parenthesize tm);
-            data.parenthesized <- true)
-      @@ fun () ->
+      let parenthesize_it () =
+        data.tm <- Wrap (parenthesize tm);
+        data.parenthesized <- true in
+      ( Reporter.try_with ~fatal:(fun _ -> parenthesize_it ()) @@ fun () ->
         let _ =
           TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None })
         in
-        () );
+        (* Even if the term parses in the hole's position, if that position is in an application spine, we parenthesize it for readability when its edge facing a juxtaposition is word-like, as the unparser does (see Unparse.word_like_notation).  A hole that is an application argument has left tightness interval (+ω,+ω], and one that is a head or an argument followed by another argument (or a field projection) has right tightness interval [+ω,+ω]; no other positions have these intervals. *)
+        let left_juxt =
+          match li with
+          | No.Interval { strictness = Strict; endpoint } -> No.equalb endpoint No.plus_omega
+          | _ -> false in
+        let right_juxt =
+          match ri with
+          | No.Interval { strictness = Nonstrict; endpoint } -> No.equalb endpoint No.plus_omega
+          | _ -> false in
+        if (left_juxt && word_like_notation `Left tm) || (right_juxt && word_like_notation `Right tm)
+        then parenthesize_it () );
       (Some offset, fun h -> Some (Code.Hole_solved h))
   | Split data ->
       let (Found_hole { instant; termctx; ty; vars; parametric; _ }) =
