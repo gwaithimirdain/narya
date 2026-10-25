@@ -445,7 +445,7 @@ module Act = struct
           | Pos k -> Any (Inst (new_base_args, k, new_inst_args)) in
         (* Since we've normalized the type already, its 'value' can't be a 'Realize'; it must be a Val Canonical or an Unrealized.  In the Canonical case, we act on its instantiation arguments (which should really be the same arguments) in the same way.  We defer this computation, since it forces the type's stored value and rebuilds its instantiation tube, and the acted type's value is frequently never inspected; any dimension errors were already reported by the eager action on the outer instantiation arguments above, which are the same arguments. *)
         let value =
-          defer (Modalcell.hsrc cell) @@ fun () ->
+          defer @@ fun () ->
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
           | Unrealized -> Unrealized
@@ -666,22 +666,20 @@ module Act = struct
       =
    fun lev s c ->
     match !lev with
-    (* When there are no accumulated pending arguments (apps = Emp), we compose the outer actions onto the environment and leave the term untouched. *)
-    | Deferred_eval (env, tm, ins, key, Emp) ->
+    (* An unevaluated term: we compose the outer actions onto the environment and leave the term untouched. *)
+    | Deferred_eval (env, tm, ins, key) ->
         let (Insfact_comp_ext (fa, ins, _, _)) = insfact_comp_ext ins s in
         let acted_env = act_env env (opt_op_of_deg fa) in
         (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite. *)
         let (Wrap newkey) = key_vcomp c key in
-        ref (Deferred_eval (acted_env, tm, ins, newkey, Emp))
-    | Deferred (tm, s', key, Emp) ->
+        ref (Deferred_eval (acted_env, tm, ins, newkey))
+    (* A pending action on something else: we compose the two actions, still acting on the same shared inner value. *)
+    | Applied (inner, Action (s', key)) ->
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
         let (Wrap newkey) = key_vcomp c key in
-        ref (Deferred (tm, fa, newkey, Emp))
-    (* When the deferral carries a pending argument spine, we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
-    | Deferred_eval (_, _, _, _, (Arg _ | Field _ | Inst _))
-    | Deferred (_, _, _, (Arg _ | Field _ | Inst _)) ->
-        ref (Deferred ((fun () -> force_eval lev), s, c, Emp))
-    | Ready tm -> ref (Deferred ((fun () -> tm), s, c, Emp))
+        ref (Applied (inner, Action (fa, newkey)))
+    (* Otherwise, and in particular when there is a pending argument spine, we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
+    | Applied (_, Apps _) | Deferred _ | Ready _ -> ref (Applied (lev, Action (s, c)))
 end
 
 let short_circuit : type mode mu1 mu2 cod m n a.
@@ -724,15 +722,7 @@ let field_lazy : type src f mode s n t i.
   let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins nk)) in
   (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the filtered dimension.  Trivial for a fresh projection. *)
   let (Has_filter filter) = Modality.filter f n in
-  match !(act_lazy_eval lev p (Modalcell.id2 src)) with
-  | Deferred_eval (env, tm, ins, cell, apps) ->
-      ref (Deferred_eval (env, tm, ins, cell, Field (apps, filter, fld, nk, ins_zero n)))
-  | Deferred (tm, ins, cell, apps) ->
-      ref (Deferred (tm, ins, cell, Field (apps, filter, fld, nk, ins_zero n)))
-  | Ready tm ->
-      ref
-        (Deferred
-           ( (fun () -> tm),
-             id_deg D.zero,
-             Modalcell.id2 src,
-             Field (Emp, filter, fld, nk, ins_zero n) ))
+  let lev = act_lazy_eval lev p (Modalcell.id2 src) in
+  match !lev with
+  | Ready Unrealized -> ready Unrealized
+  | _ -> ref (Applied (lev, Apps (Field (Emp, filter, fld, nk, ins_zero n))))

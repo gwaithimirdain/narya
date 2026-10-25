@@ -747,9 +747,8 @@ and tyof_app : type dom modality mode k n.
     (k, (dom, kinetic) value) CubeOf.t ->
     (mode, kinetic) value =
  fun cods fns filter args ->
-  let mode = Modality.src (Modality.filter_modality filter) in
   tyof_app_lazy cods fns filter
-    (CubeOf.mmap { map = (fun _ [ v ] -> defer mode (fun () -> Val v)) } [ args ])
+    (CubeOf.mmap { map = (fun _ [ v ] -> defer (fun () -> Val v)) } [ args ])
 
 (* Like tyof_app, but with arguments that may not yet have been evaluated.  They are forced only if the function is higher-dimensional (so that its boundary has to be applied to them) or if the codomain uses them. *)
 and tyof_app_lazy : type dom modality mode k n.
@@ -1314,9 +1313,8 @@ and apply_binder : type dom modality mode kl mn s.
     (kl, (dom, kinetic) value) CubeOf.t ->
     (mode, s) evaluation =
  fun b filter argstbl ->
-  let mode = Modality.src (Modality.filter_modality filter) in
   apply_binder_lazy b filter
-    (CubeOf.mmap { map = (fun _ [ v ] -> defer mode (fun () -> Val v)) } [ argstbl ])
+    (CubeOf.mmap { map = (fun _ [ v ] -> defer (fun () -> Val v)) } [ argstbl ])
 
 (* Like apply_binder, but with arguments that may not yet have been evaluated, so that if the body doesn't use them they never are. *)
 and apply_binder_lazy : type dom modality mode kl mn s.
@@ -1493,17 +1491,18 @@ and apply_binder_term : type dom modality mode k n.
 
 and force_eval : type mode s. (mode, s) lazy_eval -> (mode, s) evaluation =
  fun lev ->
-  let undefer tm s c apps =
-    (* TODO: In an ideal world, there would be one function that would traverse the term once doing both "eval" and "act" by the insertion. *)
-    let etm = act_evaluation tm s c in
-    let etm = app_eval_apps etm apps in
+  let cache etm =
     lev := Ready etm;
     etm in
   match !lev with
-  | Deferred_eval (env, tm, ins, c, apps) ->
+  | Deferred_eval (env, tm, ins, c) ->
+      (* TODO: In an ideal world, there would be one function that would traverse the term once doing both "eval" and "act" by the insertion. *)
       let (To p) = deg_of_ins ins in
-      undefer (eval env tm) p c apps
-  | Deferred (tm, s, c, apps) -> undefer (tm ()) s c apps
+      cache (act_evaluation (eval env tm) p c)
+  | Deferred tm -> cache (tm ())
+  (* Forcing the inner value caches it there too, so that it is shared with anything else that refers to it. *)
+  | Applied (inner, Apps apps) -> cache (app_eval_apps (force_eval inner) apps)
+  | Applied (inner, Action (s, c)) -> cache (act_evaluation (force_eval inner) s c)
   | Ready etm -> etm
 
 and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) value =
@@ -1705,11 +1704,7 @@ and inst : type mode m n mn s.
               let args = Inst (base_args, D.pos_plus dim2 nk, newargs) in
               (* Now we have to construct the type OF the new instantiation.  The old term must have belonged to some instantiation of the universe of the previously uninstantiated dimension. *)
               let viewed_ty = lazy (view_type (Lazy.force ty) "inst") in
-              let mode () =
-                match Lazy.force viewed_ty with
-                | Canonical (_, UU (mode, _), _, _) -> mode
-                | _ -> fatal (Anomaly "can't instantiate non-type") in
-              let value = inst_lazy mode value args2 in
+              let value = inst_lazy value args2 in
               let ty =
                 lazy
                   (match Lazy.force viewed_ty with

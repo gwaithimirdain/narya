@@ -124,13 +124,13 @@ module F = struct
     else
       match !v with
       | Ready v -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (evaluation 0) v l
-      | Deferred _ -> fprintf ppf "(%s%s, (Deferred), %s)" (Field.to_string f) p l
-      | Deferred_eval (e, tm, ins, cell, args) ->
-          fprintf ppf "(%s%s, Deferred_eval (?(%s), %a, %s(%s), %a, %s), %s)"
+      | Deferred_eval (e, tm, ins, cell) ->
+          fprintf ppf "(%s%s, Deferred_eval (?(%s), %a, %s(%s), %s), %s)"
             (string_of_dim (dim_env e))
             (Field.to_string f) p term tm (string_of_ins ins)
             (string_of_dim (dom_ins ins))
-            apps args (Modalcell.to_string cell) l
+            (Modalcell.to_string cell) l
+      | _ -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (lazy_eval 0) v l
 
   and lazy_eval : type mode s. int -> formatter -> (mode, s) lazy_eval -> unit =
    fun depth ppf v ->
@@ -138,7 +138,12 @@ module F = struct
     else
       match !v with
       | Ready v -> (evaluation (depth - 1)) ppf v
-      | _ -> fprintf ppf "(Deferred)"
+      | Deferred_eval _ -> fprintf ppf "(Deferred_eval)"
+      | Deferred _ -> fprintf ppf "(Deferred)"
+      | Applied (inner, Apps a) -> fprintf ppf "Applied (%a, %a)" (lazy_eval 0) inner apps a
+      | Applied (inner, Action (s, c)) ->
+          fprintf ppf "Acted (%a, %s, %s)" (lazy_eval 0) inner (string_of_deg s)
+            (Modalcell.to_string c)
 
   and evaluation : type mode s. int -> formatter -> (mode, s) evaluation -> unit =
    fun depth ppf v ->
