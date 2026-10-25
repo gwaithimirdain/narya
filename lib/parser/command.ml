@@ -1027,10 +1027,12 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               Global.run_command_then_undo ~holes_allowed:(Ok ()) )
         | Some number ->
             let num = Global.find_hole number in
-            let (Found_hole { instant; termctx; vars; parametric; _ }) = num in
+            let (Found_hole { meta; instant; termctx; vars; parametric; _ }) = num in
             show_hole num;
             ( Scope_and_ctx (vars, fun _ -> Of_raw (Norm.eval_ctx termctx)),
-              Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant ) in
+              fun f ->
+                Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant
+                @@ fun () -> Meta.with_owner_of meta f ) in
       run @@ fun () ->
       let rtm = process vars tm in
       action_taken ();
@@ -1166,7 +1168,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       (* Now we typecheck the supplied term, in an occurrence-analysis scope with the set of constants that were being defined when the hole was created, and record the resulting recursion verdict on the metavariable so that it can be chased by the window checks of datatypes whose constructor types contained this hole. *)
       let ctx = Norm.eval_ctx termctx in
       let ety = Norm.eval_term (Ctx.env ctx) ty in
+      (* The metavariables created, such as by let-bindings, have the same owner as the hole. *)
       let ctm, recursion =
+        Meta.with_owner_of meta @@ fun () ->
         Positivity.run_beingdefined beingdefined @@ fun () ->
         Positivity.scope @@ fun () -> Check.check status ctx ptm ety in
       Global.set_meta meta ~recursion ctm;
