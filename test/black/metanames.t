@@ -83,3 +83,54 @@ Local definitions in the types of definitions and axioms are named after them to
   F2.2._x
     : Type
   
+
+Local definitions in a term that solves a hole, or that is echoed in the context of a hole, are named after the definition containing the hole.
+
+  $ cat >solve.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > def g (k : ℕ) : ℕ ≔
+  >   let x : ℕ → ℕ ≔ y ↦ match y [ zero. ↦ zero. | suc. n ↦ n ] in
+  >   ?
+  > solve 0 ≔ let x : ℕ → ℕ ≔ y ↦ match y [ zero. ↦ k | suc. n ↦ n ] in ?
+  > echo in 1 let z : Type ≔ data [ c. ] in z
+  > EOF
+
+  $ narya -v -fake-interact solve.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant g defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     k : ℕ
+     x ≔ g._x : ℕ → ℕ
+     ----------------------------------------------------------------------
+     ℕ
+  
+   ￫ info[I0005]
+   ￮ hole solved, containing 1 new hole
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     k : ℕ
+     x′ ≔ g._x : ℕ → ℕ (not in scope)
+     x ≔ g._x′ : ℕ → ℕ
+     ----------------------------------------------------------------------
+     ℕ
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     k : ℕ
+     x′ ≔ g._x : ℕ → ℕ (not in scope)
+     x ≔ g._x′ : ℕ → ℕ
+     ----------------------------------------------------------------------
+     ℕ
+  
+  g._z
+    : Type
+  

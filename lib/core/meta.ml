@@ -26,7 +26,7 @@ module Identity = struct
   let compare : t -> t -> int = compare
 end
 
-(* A metavariable is also parametrized by its raw context length, its checked context length, and its energy (kinetic or potential), although these are not part of its identity.  A defined metavariable also remembers, for display purposes only, the constant in whose definition it was created (its "owner"), if any, and the name of the variable it was bound to, if any; when it has an owner, this name has been made unique among the metavariables of that owner by adding primes. *)
+(* A metavariable is also parametrized by its raw context length, its checked context length, and its energy (kinetic or potential), although these are not part of its identity.  A metavariable also remembers, for display purposes only, the constant in whose definition it was created (its "owner"), if any.  This is used to name a defined metavariable, and is remembered by a hole so that the metavariables created when solving it have the same owner.  A defined metavariable also remembers the name of the variable it was bound to, if any; when it has an owner, this name has been made unique among the metavariables of that owner by adding primes. *)
 module Extended_identity = struct
   type ('mode, 'a, 'b, 's) t = {
     identity : Identity.t;
@@ -74,11 +74,14 @@ let new_letrec_block () : letrec_block =
 (* The constant whose definition is currently being checked, if any, which will be the owner of any defined metavariables created. *)
 let current_owner : Constant.t option ref = ref None
 
-let with_owner : type x. Constant.t -> (unit -> x) -> x =
- fun const f ->
+let with_owner_opt : type x. Constant.t option -> (unit -> x) -> x =
+ fun owner f ->
   let old = !current_owner in
-  current_owner := Some const;
+  current_owner := owner;
   Fun.protect ~finally:(fun () -> current_owner := old) f
+
+let with_owner : type x. Constant.t -> (unit -> x) -> x =
+ fun const f -> with_owner_opt (Some const) f
 
 (* For each owner, the local names that have been given to its metavariables, and the names given to the metavariables bound at each location.  The latter ensures that if a binding is checked more than once, as can happen when backtracking, its metavariable gets the same name each time. *)
 type local_names = { mutable used : string list; at_loc : (int * int, string) Hashtbl.t }
@@ -143,7 +146,11 @@ let make_hole : type mode a b s.
   let number = Dynarray.length hole_origins in
   Dynarray.add_last hole_origins origin;
   let identity = `Hole number in
-  (origin, { identity; mode; raw; len; energy; owner = None; local = None })
+  (origin, { identity; mode; raw; len; energy; owner = !current_owner; local = None })
+
+(* Run a callback with the same owner as a given metavariable, such as a hole being solved, so that the metavariables created by the callback have that owner. *)
+let with_owner_of : type mode a b s x. (mode, a, b, s) t -> (unit -> x) -> x =
+ fun (_, m) f -> with_owner_opt m.owner f
 
 (* Re-make (link) a metavariable when loading a compiled version from disk. *)
 let remake : type mode a b s. (File.t -> File.t) -> (mode, a, b, s) t -> (mode, a, b, s) t =
