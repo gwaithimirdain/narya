@@ -140,7 +140,7 @@ module F = struct
       | Ready v -> (evaluation (depth - 1)) ppf v
       | Deferred_eval _ -> fprintf ppf "(Deferred_eval)"
       | Deferred _ -> fprintf ppf "(Deferred)"
-      | Applied (inner, Apps a) -> fprintf ppf "Applied (%a, %a)" (lazy_eval 0) inner apps a
+      | Applied (inner, Apps e) -> fprintf ppf "Applied (%a, %a)" (lazy_eval 0) inner apps_entry e
       | Applied (inner, Action (s, c)) ->
           fprintf ppf "Acted (%a, %s, %s)" (lazy_eval 0) inner (string_of_deg s)
             (Modalcell.to_string c)
@@ -152,16 +152,20 @@ module F = struct
     | Realize v -> fprintf ppf "Realize (%a)" (dvalue depth) v
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 
-  (* TODO: display the outer insertion *)
   and apps : type hmode mode any fail. formatter -> (hmode, mode, any, fail) apps -> unit =
    fun ppf args ->
     match args with
     | Emp -> fprintf ppf "Emp"
-    | Arg (rest, _, xs, _) -> fprintf ppf "%a <: %a" apps rest (cubeof normal) xs
-    | Field (rest, _, fld, plus, ins) -> (
+    | Snoc (rest, e) -> fprintf ppf "%a <: %a" apps rest apps_entry e
+
+  (* TODO: display the outer insertion *)
+  and apps_entry : type mode1 mode2 any inst.
+      formatter -> (mode1, mode2, any, inst) apps_entry -> unit =
+   fun ppf e ->
+    match e with
+    | Arg (_, xs, _) -> cubeof normal ppf xs
+    | Field (_, fld, plus, ins) -> (
         (* 'ins' is an *outer* insertion, not the field insertion.  The field insertion has been pushed inside and become the 'plus'. *)
-        apps ppf rest;
-        fprintf ppf " <: ";
         (* Intrinsic dimension *)
         let i = D.plus_right plus in
         (* result dimension *)
@@ -174,10 +178,7 @@ module F = struct
             fprintf ppf ".%s%s(%s)" (Field.to_string fld)
               (string_of_ins (ins_of_plus t plus))
               (string_of_dim n))
-    | Inst (rest, d, args) ->
-        apps ppf rest;
-        fprintf ppf " <: ";
-        fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
+    | Inst (d, args) -> fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
 
   and level : type a b m n. formatter -> level -> (a, m, n, b) Modalcell.t -> unit =
    fun ppf l key -> fprintf ppf "LVar (%d,%d,%s)" (fst l) (snd l) (Modalcell.to_string key)

@@ -423,15 +423,16 @@ module Act = struct
         (* Pull off the instantiation, perhaps empty, from the end of the arguments. *)
         let base_args, Full_tube inst_args =
           match args with
-          | Inst (base_args, _, inst_args) -> (
+          | Snoc (base_args, Inst (_, inst_args)) -> (
               match D.compare_zero (TubeOf.uninst inst_args) with
               | Zero ->
                   let Eq =
                     D.plus_uniq (TubeOf.plus inst_args) (D.zero_plus (TubeOf.inst inst_args)) in
-                  (base_args, (TubeOf.Full_tube inst_args : mode normal TubeOf.full))
+                  ( (base_args : (_, mode, noninst, live) apps),
+                    (TubeOf.Full_tube inst_args : mode normal TubeOf.full) )
               | Pos _ -> fatal (Dimension_mismatch ("act_ty", TubeOf.uninst inst_args, D.zero)))
-          | Arg _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
-          | Field _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
+          | Snoc (_, Arg _) -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
+          | Snoc (_, Field _) -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
           | Emp -> (args, TubeOf.Full_tube (TubeOf.empty D.zero)) in
         let (Ty_acted_instargs (fa, new_inst_args)) =
           gact_ty_instargs ?err tm tmty inst_args s cell in
@@ -442,7 +443,7 @@ module Act = struct
         let (Any args) =
           match D.compare_zero (TubeOf.inst new_inst_args) with
           | Zero -> Any base_args
-          | Pos k -> Any (Inst (new_base_args, k, new_inst_args)) in
+          | Pos k -> Any (Snoc (new_base_args, Inst (k, new_inst_args))) in
         (* Since we've normalized the type already, its 'value' can't be a 'Realize'; it must be a Val Canonical or an Unrealized.  In the Canonical case, we act on its instantiation arguments (which should really be the same arguments) in the same way.  We defer this computation, since it forces the type's stored value and rebuilds its instantiation tube, and the acted type's value is frequently never inspected; any dimension errors were already reported by the eager action on the outer instantiation arguments above, which are the same arguments. *)
         let value =
           defer @@ fun () ->
@@ -601,7 +602,7 @@ module Act = struct
     match apps with
     | Emp -> (Any_deg s, Wrap c, Emp)
     (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
-    | Arg (rest, filter, args, ins) ->
+    | Snoc (rest, Arg (filter, args, ins)) ->
         (* In the function case, we also act on the arguments by factorization of dimensions and by whiskering of keys. *)
         let modality = Modality.filter_modality filter in
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
@@ -610,8 +611,8 @@ module Act = struct
           let (Wrap newc) = Modalcell.prewhisker_wrapped c modality in
           act_cube { act = (fun x s c -> act_normal x s c) } args fb newc in
         let new_s, new_c, new_rest = act_apps rest fa c in
-        (new_s, new_c, Arg (new_rest, arg_filter, new_arg, new_ins))
-    | Field (rest, filter, fld, fldplus, ins) -> (
+        (new_s, new_c, Snoc (new_rest, Arg (arg_filter, new_arg, new_ins)))
+    | Snoc (rest, Field (filter, fld, fldplus, ins)) -> (
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* Note that we don't need to change the degeneracy on the outside, since it can be extended on the right as needed. *)
         let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
@@ -622,15 +623,15 @@ module Act = struct
         match Modality.compare_id modality with
         | Eq ->
             let new_s, new_c, new_rest = act_apps rest fb c in
-            (new_s, new_c, Field (new_rest, new_filter, fld, new_fldplus, new_ins))
+            (new_s, new_c, Snoc (new_rest, Field (new_filter, fld, new_fldplus, new_ins)))
         | Neq ->
             let (Wrap c) = Modalcell.prewhisker_wrapped c modality in
             let new_s, new_c, new_rest = act_apps rest fb c in
-            (new_s, new_c, Field (new_rest, new_filter, fld, new_fldplus, new_ins)))
-    | Inst (rest, dim, args) ->
+            (new_s, new_c, Snoc (new_rest, Field (new_filter, fld, new_fldplus, new_ins))))
+    | Snoc (rest, Inst (dim, args)) ->
         let (Acted_instargs (fa, new_args, None)) = act_instargs args s c None in
         let new_s, new_c, new_rest = act_apps rest fa c in
-        (new_s, new_c, Inst (new_rest, dim, new_args))
+        (new_s, new_c, Snoc (new_rest, Inst (dim, new_args)))
 
   and act_instargs : type mode mu1 mu2 cod a b n j nj p.
       (n, j, nj, mode normal) TubeOf.t ->
@@ -725,4 +726,4 @@ let field_lazy : type src f mode s n t i.
   let lev = act_lazy_eval lev p (Modalcell.id2 src) in
   match !lev with
   | Ready Unrealized -> ready Unrealized
-  | _ -> ref (Applied (lev, Apps (Field (Emp, filter, fld, nk, ins_zero n))))
+  | _ -> ref (Applied (lev, Apps (Field (filter, fld, nk, ins_zero n))))

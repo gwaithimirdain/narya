@@ -732,7 +732,7 @@ and apply : type dom modality mode n m s.
               (* We compute the output type of the application. *)
               let newty = lazy (tyof_app cods tyargs filter arg) in
               (* We add the new argument to the existing application spine. *)
-              let args = Arg (args, filter, newarg, ins_zero m) in
+              let args = Snoc (args, Arg (filter, newarg, ins_zero m)) in
               (* We add the argument to the lazy value and return a glued neutral. *)
               let value = apply_lazy value m filter newarg in
               Val (Neu { head; args; value; ty = newty }))
@@ -829,7 +829,7 @@ and field : type src f mode n k nk s.
           let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
           (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
           let (Has_filter filter) = Modality.filter fm n in
-          let args = Field (args, filter, fld, fldplus, ins_zero n) in
+          let args = Snoc (args, Field (filter, fld, fldplus, ins_zero n)) in
           (* We add the projection to the lazy value and return a glued neutral.  At this point we've already pushed the insertion inside by acting on the whole neutral above, so the remaining insertion to project from its value is "the identity" of appropriate dimensions. *)
           let value = field_lazy fm value fld (ins_of_plus n fldplus) in
           Val (Neu { head; args; value; ty = newty })
@@ -1501,7 +1501,7 @@ and force_eval : type mode s. (mode, s) lazy_eval -> (mode, s) evaluation =
       cache (act_evaluation (eval env tm) p c)
   | Deferred tm -> cache (tm ())
   (* Forcing the inner value caches it there too, so that it is shared with anything else that refers to it. *)
-  | Applied (inner, Apps apps) -> cache (app_eval_apps (force_eval inner) apps)
+  | Applied (inner, Apps e) -> cache (app_eval_entry (force_eval inner) e)
   | Applied (inner, Action (s, c)) -> cache (act_evaluation (force_eval inner) s c)
   | Ready etm -> etm
 
@@ -1510,17 +1510,24 @@ and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) va
   let (Val v) = force_eval v in
   v
 
-(* Apply an 'apps' to something, calling either 'apply' or 'field' or 'inst' for each stage as appropriate. *)
+(* Apply an 'apps' to something, one entry at a time. *)
 and app_eval_apps : type hmode mode s any.
     (hmode, s) evaluation -> (hmode, mode, any, live) apps -> (mode, s) evaluation =
  fun ev x ->
   match x with
   | Emp -> ev
-  | Arg (rest, filter, xs, ins) -> (
+  | Snoc (rest, e) -> app_eval_entry (app_eval_apps ev rest) e
+
+(* Apply a single entry of an 'apps' to something, calling either 'apply' or 'field' or 'inst' as appropriate. *)
+and app_eval_entry : type mode1 mode2 s any inst.
+    (mode1, s) evaluation -> (mode1, mode2, any, inst) apps_entry -> (mode2, s) evaluation =
+ fun ev e ->
+  match e with
+  | Arg (filter, xs, ins) -> (
       let modality = Modality.filter_modality filter in
       let mode = Modality.tgt modality in
       let (To p) = deg_of_ins ins in
-      match app_eval_apps ev rest with
+      match ev with
       (* A datatype not yet applied to all its indices is a potential value that 'apply' can't handle, since the new index must be stored with its type; we deal with it here where we have the argument as a cube of normals. *)
       | Val
           (Canonical
@@ -1543,11 +1550,11 @@ and app_eval_apps : type hmode mode s any.
             act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode) in
           Realize v
       | Unrealized -> Unrealized)
-  | Field (rest, filter, fld, fldplus, ins) -> (
+  | Field (filter, fld, fldplus, ins) -> (
       let fm = Modality.filter_modality filter in
       let mode = Modality.tgt fm in
       let (To p) = deg_of_ins ins in
-      match app_eval_apps ev rest with
+      match ev with
       | Val tm ->
           act_evaluation
             (field fm tm fld (id_ins (cod_left_ins ins) fldplus))
@@ -1559,8 +1566,8 @@ and app_eval_apps : type hmode mode s any.
               p (Modalcell.id2 mode) in
           Realize v
       | Unrealized -> Unrealized)
-  | Inst (rest, _, args) -> (
-      match app_eval_apps ev rest with
+  | Inst (_, args) -> (
+      match ev with
       | Val tm -> Val (inst tm args)
       | Realize tm -> Realize (inst tm args)
       | Unrealized -> Unrealized)
@@ -1701,7 +1708,7 @@ and inst : type mode m n mn s.
           | Eq ->
               let (Plus nk) = D.plus (TubeOf.inst args1) in
               let newargs = TubeOf.plus_tube nk args1 args2 in
-              let args = Inst (base_args, D.pos_plus dim2 nk, newargs) in
+              let args = Snoc (base_args, Inst (D.pos_plus dim2 nk, newargs)) in
               (* Now we have to construct the type OF the new instantiation.  The old term must have belonged to some instantiation of the universe of the previously uninstantiated dimension. *)
               let viewed_ty = lazy (view_type (Lazy.force ty) "inst") in
               let value = inst_lazy value args2 in
@@ -1763,15 +1770,17 @@ and inst_fibrancy_fields : type mode m n mn.
               let v =
                 match
                   app_eval_apps idfld
-                    (Arg
-                       ( Arg
+                    (Snoc
+                       ( Snoc
                            ( Emp,
-                             Modality.filter_id mode (CubeOf.dim xcube),
-                             xcube,
-                             ins_zero (CubeOf.dim xcube) ),
-                         Modality.filter_id mode (CubeOf.dim ycube),
-                         ycube,
-                         ins_zero (CubeOf.dim ycube) ))
+                             Arg
+                               ( Modality.filter_id mode (CubeOf.dim xcube),
+                                 xcube,
+                                 ins_zero (CubeOf.dim xcube) ) ),
+                         Arg
+                           ( Modality.filter_id mode (CubeOf.dim ycube),
+                             ycube,
+                             ins_zero (CubeOf.dim ycube) ) ))
                 with
                 | Val v -> Some v
                 | Realize (Neu { value; _ }) -> (

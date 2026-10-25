@@ -153,11 +153,12 @@ let app_entry : type hmode dom modality mode f n any.
   | Vis { bindings; filter; _ } | Invis { filter; bindings; _ } ->
       if all_free bindings then
         let n = CubeOf.dim bindings in
-        Arg
+        Snoc
           ( apps,
-            filter,
-            CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ],
-            ins_zero n )
+            Arg
+              ( filter,
+                CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ],
+                ins_zero n ) )
       else fatal (Anomaly "let-bound variable in Ctx.apps")
 
 module Ordered = struct
