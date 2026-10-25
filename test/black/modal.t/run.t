@@ -34,10 +34,10 @@
   
   [1]
 
-  $ narya -coreflector box.ny -e "def η (A :♭| Type) (x : A) : ♭ A := box. x"
+  $ narya -coreflector box.ny -e "def η (A :♭| Type) (x : A) : ♭ A := ♭. x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def η (A :♭| Type) (x : A) : ♭ A := box. x
+   1 | def η (A :♭| Type) (x : A) : ♭ A := ♭. x
      ^ use of id variable behind ♭ lock requires a key
   
   [1]
@@ -60,7 +60,7 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/functor.ny
-   28 |            match u0, u1 [ circle. x0, circle. x1 ↦ ○ (Id A x0 x1) ] [
+   28 |            match u0, u1 [ ○. x0, ○. x1 ↦ ○ (Id A x0 x1) ] [
       ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -69,8 +69,8 @@
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/functor.ny
    37 |            match u0, u1 [
-   38 |            | circle. x0, circle. x1 ↦
-   39 |                Id (Id (○ A) (circle. x0) (circle. x1))
+   38 |            | ○. x0, ○. x1 ↦
+   39 |                Id (Id (○ A) (○. x0) (○. x1))
    40 |                  (to_Id A x0 x1 (from_Id A x0 x1 u2)) u2] [
       ^ match encountered outside case tree, wrapping in implicit let-binding
   
@@ -84,10 +84,10 @@
 
   $ narya -v -reflector reflector.ny
    ￫ info[I0000]
-   ￮ constant diamond defined
+   ￮ constant ♯ defined
   
    ￫ info[I0000]
-   ￮ constant diamondmap defined
+   ￮ constant ♯map defined
   
    ￫ info[I0001]
    ￮ axiom A assumed
@@ -515,7 +515,7 @@ disappears at dimensions it filters (the reflexivity/parametric direction).
    ￮ constant a22 defined
   
   ()
-    : ♯⁽ᵉ⁾ (Id A) (_ ≔ (a0 :♭| _) .unsharp) (_ ≔ (a1 :♭| _) .unsharp)
+    : ♯⁽ᵉ⁾ (Id A) (_ ≔ (a0 :♭| _) .♯) (_ ≔ (a1 :♭| _) .♯)
   
 
 At dimension 0 the field projects and computes.
@@ -571,16 +571,16 @@ An ordinary (non-modal) field never disappears: it projects at any dimension.
 
 If a type is given in a modal field projection, it must be correct.
 
-  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ A) .unbox : A)" -e "def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| Disc) .unbox"
+  $ narya -coreflection -e "def □ (A :□| Type) : Disc ≔ sig ((x :△| □ A) .□ : A)" -e "def unbox (A :△□| Type) (u :△| □ A) : A ≔ (u :△| Disc) .□"
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| Disc) .unbox
+   1 | def unbox (A :△□| Type) (u :△| □ A) : A ≔ (u :△| Disc) .□
      ^ term synthesized type
-         □′ A
+         □ A
        but is being checked against type
          Disc
        unequal head terms:
-         □′
+         □
        does not equal
          Disc
   
@@ -588,20 +588,20 @@ If a type is given in a modal field projection, it must be correct.
 
 And likewise in a record definition.
 
-  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .unbox : A)"
+  $ narya -coreflection -e "def □ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .□ : A)"
    ￫ error[E1508]
    ￭ command-line exec string
-   1 | def □′ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .unbox : A)
-     ^ invalid self variable type for field unbox: head must be current record
+   1 | def □ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .□ : A)
+     ^ invalid self variable type for field □: head must be current record
   
   [1]
 
-  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ Type) .unbox : A)"
+  $ narya -coreflection -e "def □ (A :□| Type) : Disc ≔ sig ((x :△| □ Type) .□ : A)"
    ￫ error[E1508]
    ￭ command-line exec string
-   1 | def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ Type) .unbox : A)
-     ^ invalid self variable type for field unbox: unequal head terms: 
-       Type does not equal A
+   1 | def □ (A :□| Type) : Disc ≔ sig ((x :△| □ Type) .□ : A)
+     ^ invalid self variable type for field □: unequal head terms: Type
+       does not equal A
   
   [1]
 

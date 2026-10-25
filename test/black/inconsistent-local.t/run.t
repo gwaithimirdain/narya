@@ -58,7 +58,7 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/inconsistency.ny
-   52 |   : match u₀, u₁ [ nab. x₀, nab. x₁ ↦ ∇′ (eqD B x₀ x₁) ]
+   52 |   : match u₀, u₁ [ ∇. x₀, ∇. x₁ ↦ ∇′ (eqD B x₀ x₁) ]
       ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]

@@ -66,7 +66,7 @@
    ￮ constant adjcounit defined
   
    ￫ info[I0000]
-   ￮ constant Neg defined
+   ￮ constant ♭ defined
   
    ￫ info[I0000]
    ￮ constant mk defined

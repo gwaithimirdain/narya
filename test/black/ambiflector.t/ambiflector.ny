@@ -45,11 +45,11 @@ def roundtrip_good_ok (A :♮| Type) (x :♮| A) : Id A (roundtrip_good A x) x
 
 ` ♮ is adjoint to itself (unit id ⇒ ♮∘♮ via unit-then-comult, counit ♮∘♮ ⇒ id via mult-then-counit),
 ` so it is sinister and can parametrize a modal (negative) field.
-def Neg (A :♮| Type) : Type ≔ codata [ (x :♮| _) .un : A ]
+def ♮ (A :♮| Type) : Type ≔ codata [ (_ :♮| _) .♮ : A ]
 
-def mk (A :♮| Type) (a :♮| A) : Neg A ≔ [ .un ↦ a ]
+def mk (A :♮| Type) (a :♮| A) : ♮ A ≔ [ .♮ ↦ a ]
 
-def unmk (A :♮| Type) (u :♮| Neg A) : A ≔ (u :♮| _) .un
+def unmk (A :♮| Type) (u :♮| ♮ A) : A ≔ (u :♮| _) .♮
 
 ` unmk (mk a) reduces to a, with the (unique) key applied.
 def unmk_mk (A :♮| Type) (a :♮| A) : Id A (unmk A (mk A a)) a ≔ refl a
