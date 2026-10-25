@@ -137,20 +137,18 @@ let failed_elim : type m mode.
       | Neu { head = Failed _; _ } -> failed_type mode
       | ty -> tyof ty))
 
-(* If glued evaluation is off, then every value is fully normalized already, so there is nothing for viewing a term to do.  If glued evaluation is on, then the term might be a neutral with a lazy value waiting to be evaluated, in which case we force that value recursively.  Importantly, even under glued evaluation this function should be IDEMPOTENT up to PHYSICAL EQUALITY. *)
+(* Because of glued evaluation, a term might be a neutral with a lazy value waiting to be evaluated.  Viewing it forces that value recursively.  Importantly, this function should be IDEMPOTENT up to PHYSICAL EQUALITY. *)
 let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
  fun tm ->
-  if GluedEval.read () then
-    match tm with
-    (* A failed term has no value to view, so viewing it leaves it alone, as when glued evaluation is off.  Code that needs to inspect it must instead fail silently (see Value.Failed). *)
-    | Neu { head = Failed _; _ } -> tm
-    | Neu { value; _ } -> (
-        (* For glued evaluation, when viewing a term, we force its value and proceed to view that value instead. *)
-        match force_eval value with
-        | Realize v -> view_term v
-        | _ -> tm)
-    | _ -> tm
-  else tm
+  match tm with
+  (* A failed term has no value to view, so viewing it leaves it alone.  Code that needs to inspect it must instead fail silently (see Value.Failed). *)
+  | Neu { head = Failed _; _ } -> tm
+  | Neu { value; _ } -> (
+      (* When viewing a term, we force its value and proceed to view that value instead. *)
+      match force_eval value with
+      | Realize v -> view_term v
+      | _ -> tm)
+  | _ -> tm
 
 (* Viewing a type fails if the argument is not fully instantiated.  In most situations this would be a bug, but we allow the caller to specify it differently, since during typechecking it could be a user error. *)
 and view_type : type mode.
@@ -224,16 +222,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
               let head = Live (Const { name; ins = ins_zero dim }) in
               let result =
                 match defn with
-                | `Defined tree -> (
-                    if GluedEval.read () then
-                      (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
-                      Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
-                    else
-                      let value = eval (Emp (mode, dim)) tree in
-                      let newtm = Neu { head; args = Emp; value = ready value; ty } in
-                      match value with
-                      | Realize x -> x
-                      | _ -> newtm)
+                | `Defined tree ->
+                    (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
+                    Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
                 | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
               add_cached_const name dim mode result;
               Val result
@@ -262,16 +253,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       | { tm = `Defined tm; energy = Potential; _ }, Potential -> eval env tm
       | { tm = `Defined tm; energy = Kinetic; _ }, Kinetic -> eval env tm
       | { tm = `Defined tm; energy = Kinetic; _ }, Potential -> Realize (eval_term env tm)
-      | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic -> (
-          if GluedEval.read () then
-            (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
-            Val (Neu { head; args = Emp; value = lazy_eval env tm; ty = lazy (make_ty meta ty) })
-          else
-            (* If a potential metavariable with a definition is used in a kinetic context, and doesn't evaluate yet to a kinetic result, we again have to build a neutral. *)
-            match eval env tm with
-            | Realize tm -> Val tm
-            | value ->
-                Val (Neu { head; args = Emp; value = ready value; ty = lazy (make_ty meta ty) }))
+      | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic ->
+          (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
+          Val (Neu { head; args = Emp; value = lazy_eval env tm; ty = lazy (make_ty meta ty) })
       (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  We don't need to return the metavariable itself; it suffices to know that that branch of the case tree is stuck, as the constant whose definition it is should handle all identity/equality checks correctly. *)
       | _, Potential -> Unrealized
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
@@ -649,7 +633,7 @@ and eval_args : type mode m n mn a.
           eval_term (act_env env (opt_op_of_sface fa)) (CubeOf.find tms fb));
     }
 
-(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used both by 'apply', for a neutral application spine being evaluated with a case tree, and by 'app_eval_apps', for a glued application spine being replayed. *)
+(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used by 'app_eval_apps', for a glued application spine being replayed. *)
 and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     mode Mode.t ->
     m D.t ->
@@ -742,53 +726,16 @@ and apply : type dom modality mode n m s.
           | _, Neq ->
               fatal
                 (Modality_mismatch (`Internal, "applying a neutral function", pi_modality, modality))
-          | Eq, Eq -> (
+          | Eq, Eq ->
               (* We annotate the new argument by its type, extracted from the domain type of the function being applied. *)
               let newarg = norm_of_vals_cube arg doms in
               (* We compute the output type of the application. *)
               let newty = lazy (tyof_app cods tyargs filter arg) in
               (* We add the new argument to the existing application spine. *)
               let args = Arg (args, filter, newarg, ins_zero m) in
-              if GluedEval.read () then
-                (* We add the argument to the lazy value and return a glued neutral. *)
-                let value = apply_lazy value m filter newarg in
-                Val (Neu { head; args; value; ty = newty })
-              else
-                (* We evaluate further with a case tree. *)
-                match force_eval value with
-                | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
-                (* It could be an indexed datatype waiting to be applied to more indices. *)
-                | Val
-                    (Canonical
-                       {
-                         mode;
-                         canonical =
-                           Data
-                             {
-                               dim;
-                               tyfam;
-                               indices = Unfilled _ as indices;
-                               constrs;
-                               recursive;
-                               hints;
-                             };
-                         tyargs = data_tyargs;
-                         ins;
-                         fields;
-                         inst_fields = _;
-                       }) ->
-                    (* TODO: What happens to the fields?  What even are the fields of a not-fully-applied indexed datatype? *)
-                    let value =
-                      apply_unfilled_data_index mode dim tyfam indices constrs recursive hints
-                        (TubeOf.inst data_tyargs) ins fields modality newarg in
-                    Val (Neu { head; args; value = ready value; ty = newty })
-                | Val tm -> (
-                    let value = apply tm filter_nm arg in
-                    let newtm = Neu { head; args; value = ready value; ty = newty } in
-                    match value with
-                    | Realize x -> Val x
-                    | _ -> Val newtm)
-                | _ -> fatal (Anomaly "invalid application of type")))
+              (* We add the argument to the lazy value and return a glued neutral. *)
+              let value = apply_lazy value m filter newarg in
+              Val (Neu { head; args; value; ty = newty }))
       | _ -> fatal (Anomaly "invalid application by non-function"))
   | _ -> fatal (Anomaly "invalid application of non-function")
 
@@ -879,26 +826,14 @@ and field : type src f mode n k nk s.
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
       match act_value viewed_tm p (Modalcell.id2 src) with
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
-      | Neu { head = Live _ as head; args; value; ty } -> (
+      | Neu { head = Live _ as head; args; value; ty } ->
           let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
           (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
           let (Has_filter filter) = Modality.filter fm n in
           let args = Field (args, filter, fld, fldplus, ins_zero n) in
-          if GluedEval.read () then
-            (* As in the non-glued case below, the insertion was already pushed inside by acting on the whole neutral above, so the remaining insertion to project from its value is the identity. *)
-            let value = field_lazy fm value fld (ins_of_plus n fldplus) in
-            Val (Neu { head; args; value; ty = newty })
-          else
-            match force_eval value with
-            | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
-            | Val tm -> (
-                (* At this point we've already pushed the insertion inside in computing our neutral, so the remaining insertion on the field to compute of its value is "the identity" of appropriate dimensions *)
-                let value = field fm tm fld (ins_of_plus n fldplus) in
-                let newtm = Neu { head; args; value = ready value; ty = newty } in
-                match value with
-                | Realize x -> Val x
-                | _ -> Val newtm)
-            | Realize _ -> fatal (Anomaly "realized neutral"))
+          (* We add the projection to the lazy value and return a glued neutral.  At this point we've already pushed the insertion inside by acting on the whole neutral above, so the remaining insertion to project from its value is "the identity" of appropriate dimensions. *)
+          let value = field_lazy fm value fld (ins_of_plus n fldplus) in
+          Val (Neu { head; args; value; ty = newty })
       | _ ->
           fatal ~severity:Asai.Diagnostic.Bug
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))
