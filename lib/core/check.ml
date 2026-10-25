@@ -1550,36 +1550,6 @@ and check_letonly_term : type mode a b mn.
                    { got = PVal (ctx, sty); expected = PVal (ctx, expected); which = None; why })))
   | Pos _, _ -> fatal ?loc:tm.loc (Nonsynthesizing "bound term of higher-dimensional let-only")
 
-(* The type of a term evaluated in a possibly higher-dimensional environment: its type evaluated there, instantiated at the term evaluated at all the strict faces of that environment. *)
-and eval_with_type : type mode n b.
-    (mode, n, b) Value.env ->
-    (mode, b, kinetic) term ->
-    (mode, b, kinetic) term ->
-    (mode, kinetic) value =
- fun env tm ty ->
-  let tbl = Hashtbl.create 10 in
-  let tyargs =
-    TubeOf.build D.zero
-      (D.zero_plus (dim_env env))
-      {
-        build =
-          (fun fa ->
-            let fenv = act_env env (opt_op_of_sface (sface_of_tface fa)) in
-            let fty =
-              inst (eval_term fenv ty)
-                (TubeOf.build D.zero
-                   (D.zero_plus (dom_tface fa))
-                   {
-                     build =
-                       (fun fb ->
-                         Hashtbl.find tbl (Tface_of (tface_comp_sface fa (sface_of_tface fb))));
-                   }) in
-            let nf = { tm = eval_term fenv tm; ty = Lazy.from_val fty } in
-            Hashtbl.add tbl (Tface_of fa) nf;
-            nf);
-      } in
-  inst (eval_term env ty) tyargs
-
 and let_metas : type mode b c bc s.
     mode Modal.Mode.t -> (mode, b, c, bc) meta_tel -> (mode, bc, s) term -> (mode, b, s) term =
  fun mode metas tm ->
@@ -3537,7 +3507,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
             } in
         (* The shuffleable degenerates the codatatype's parameters; the self value and its boundary we degenerate here, since the field type is applied to them only after that degeneration.  The boundary is used to instantiate the field type, by projecting this field from it, so it stays in the ambient context; but the self value is substituted for the self *variable*, which lies behind the locks by the right and then the left adjoint, so we transport it there along the adjunction unit first and degenerate it in that doubly locked context.  (For an ordinary field the unit is an identity cell and both locks are trivial.) *)
         let dtyargs =
-          TubeOf.mmap { map = (fun _ [ nf ] -> degenerate_normal ctx degenv r nf) } [ tyargs ] in
+          TubeOf.mmap { map = (fun _ [ nf ] -> degenerate_normal ctx degenv nf) } [ tyargs ] in
         let (Plus r_m) = D.plus m in
         let values =
           match prev_etm with

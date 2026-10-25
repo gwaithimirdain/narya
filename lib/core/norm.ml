@@ -1875,6 +1875,24 @@ and norm_of_vals_tube : type mode n k nk.
     { map = (fun fab [ tm; ty ] -> norm_of_val new_tm_tbl (sface_of_tface fab) tm ty) }
     [ tms; tys ]
 
+(* The type of a term evaluated in a possibly higher-dimensional environment: its type evaluated there, instantiated at the term evaluated at all the strict faces of that environment. *)
+and eval_with_type : type mode n b.
+    (mode, n, b) env -> (mode, b, kinetic) term -> (mode, b, kinetic) term -> (mode, kinetic) value
+    =
+ fun env tm ty ->
+  let tbl = Hashtbl.create 10 in
+  let tyargs =
+    TubeOf.build D.zero
+      (D.zero_plus (dim_env env))
+      {
+        build =
+          (fun fa ->
+            let fa = sface_of_tface fa in
+            let fenv = act_env env (opt_op_of_sface fa) in
+            norm_of_val tbl fa (eval_term fenv tm) (eval_term fenv ty));
+      } in
+  inst (eval_term env ty) tyargs
+
 (* Given a type belonging to the m+n dimensional universe instantiated at tyargs, compute the instantiation of the m-dimensional universe that its instantiation belongs to. *)
 and tyof_inst : type mode m n mn.
     mode Mode.t ->
