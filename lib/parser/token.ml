@@ -297,6 +297,9 @@ let word_like_edge (side : [ `Left | `Right ]) (tok : t) : bool =
   | Solve
   | Split
   | Synth
+  | Only
+  | Lock
+  | Keyword_key
   | Undo -> true
   | Field (_, strs) | Key strs -> (
       match side with

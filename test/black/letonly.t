@@ -511,7 +511,7 @@ A let-only can contain lock and key clauses, separated from the other clauses by
    ￫ info[I0000]
    ￮ constant h2 defined
   
-  A x ↦ ♭. let only B :♭| Type ≔ A and lock ♭ and y : B ≔ x in y
+  A x ↦ ♭. (let only B :♭| Type ≔ A and lock ♭ and y : B ≔ x in y)
     : (A :♭| Type) (x :♭| A) → ♭ A
   
   A ↦ ♭. (z ↦ let only B :♭| Type ≔ A and lock ♭ and y : B ≔ z in y)
@@ -538,10 +538,10 @@ A lock or key clause must be preceded by "and", unless it comes first.
 Lock and key clauses can also come first, or there can be no ordinary clauses at all.
 
   $ narya -coreflector locks.ny -e 'synth ((A ↦ ♭. (let only lock ♭ and B :♭| Type ≔ A in B)) : (A :♭| Type) → ♭ Type)' -e 'synth ((A ↦ ♭. (let only lock ♭ in Type)) : (A :♭| Type) → ♭ Type)'
-  A ↦ ♭. let only lock ♭ and B :♭| Type ≔ A in B
+  A ↦ ♭. (let only lock ♭ and B :♭| Type ≔ A in B)
     : (A :♭| Type) → ♭ Type
   
-  A ↦ ♭. let only lock ♭ in Type
+  A ↦ ♭. (let only lock ♭ in Type)
     : (A :♭| Type) → ♭ Type
   
 
@@ -709,7 +709,7 @@ When ♭ is not idempotent, there are two different keys ♭♭ ⇒ ♭, which g
     : (A :♭| Type) (x :♭♭| A) → ♭ A
   
   A x ↦
-  ♭. let only B :♭♭| Type ≔ A and y :♭♭| B ≔ x and lock ♭♭ and key ε.♭ in y
+  ♭. (let only B :♭♭| Type ≔ A and y :♭♭| B ≔ x and lock ♭♭ and key ε.♭ in y)
     : (A :♭| Type) (x :♭♭| A) → ♭ A
   
 
@@ -808,7 +808,7 @@ Locks can change the mode.
   > EOF
 
   $ narya -adjunction adjunction.ny -e 'synth ((A a ↦ △. (let only B :△| Disc ≔ A and lock △ and y : B ≔ a in y)) : (A :△| Disc) (a :△| A) → △ A)'
-  A a ↦ △. let only B :△| Disc ≔ A and lock △ and y : B ≔ a in y
+  A a ↦ △. (let only B :△| Disc ≔ A and lock △ and y : B ≔ a in y)
     : (A :△| Disc) (a :△| A) → △ A
   
 
@@ -841,7 +841,7 @@ Locks and keys can occur in a higher-dimensional let-only, and a discrete lock f
   A a ↦ ♭. (rel a)
     : (A :♭| Type) (a :♭| A) → ♭ (Br A a a)
   
-  A a ↦ ♭. let⁽ᵖ⁾ only B :♭| Type ≔ A and lock ♭ and y : B ≔ rel a in y
+  A a ↦ ♭. (let⁽ᵖ⁾ only B :♭| Type ≔ A and lock ♭ and y : B ≔ rel a in y)
     : (A :♭| Type) (a :♭| A) → ♭ (Br A a a)
   
 
