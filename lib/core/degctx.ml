@@ -224,6 +224,6 @@ end
 let degctx : type mode a b k. (mode, a, b) Ctx.t -> k D.t -> (mode, a, b, k) degctx =
  fun (Permute { perm; ctx; level; _ }) k ->
   let (Degctx (kb, newctx, env)) = Ordered.degenerate ctx k in
-  Degctx (kb, Permute { perm; env = Ctx.Ordered.env newctx; level; ctx = newctx }, env)
+  Degctx (kb, Permute { perm; level; ctx = newctx }, env)
 
 let () = set_degctx { degctx }

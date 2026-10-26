@@ -1647,6 +1647,18 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
               Looked_up
                 { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); op; entry; pre }
           | _, Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu))))
+  (* In the identity environment of a context, we skip the variables that aren't ours without unfolding them, and unfold only the one that is. *)
+  | Ctx (Snoc (ctx, _, _) as octx) -> (
+      match v with
+      | Later v -> lookup_cube (Ctx ctx) nk mu pretr v op
+      | Now -> lookup_cube (unfold_ctx octx) nk mu pretr v op)
+  | Ctx (Weaken (ctx, _)) -> lookup_cube (Ctx ctx) nk mu pretr v op
+  | Ctx (Emp _) -> (
+      match v with
+      | _ -> .)
+  | Ctx (Lock _) -> (
+      match v with
+      | _ -> .)
 
 and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
  fun env (Index (v, fa, _, (Plus_with_locks (_, locks) as plus))) ->
@@ -2026,7 +2038,7 @@ let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode,
 let eval_ctx : type mode a b. (mode, a, b) termctx -> (mode, a, b) Ctx.t = function
   | Permute (perm, ctx) ->
       let ctx = eval_ordered_ctx ctx in
-      Permute { perm; env = Ctx.Ordered.env ctx; level = Ctx.Ordered.length ctx; ctx }
+      Permute { perm; level = Ctx.Ordered.length ctx; ctx }
 
 (* Evaluate a telescope (forwards context of terms) and append the result to a context. *)
 let rec eval_append : type mode a b c ac bc.
