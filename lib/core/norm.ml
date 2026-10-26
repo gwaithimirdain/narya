@@ -1876,7 +1876,7 @@ and norm_of_vals_tube : type mode n k nk.
     [ tms; tys ]
 
 (* The type of a term evaluated in a possibly higher-dimensional environment: its type evaluated there, instantiated at the term evaluated at all the strict faces of that environment. *)
-and eval_with_type : type mode n b.
+and type_of_eval : type mode n b.
     (mode, n, b) env -> (mode, b, kinetic) term -> (mode, b, kinetic) term -> (mode, kinetic) value
     =
  fun env tm ty ->

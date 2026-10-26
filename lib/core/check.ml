@@ -306,10 +306,10 @@ type (_, _) tel_prev =
       -> ('mode, 'b) tel_prev
 
 (* The output of checking the clauses of a let-only of dimension 'k: the term and value environments of the bound terms in the ambient context of checked length 'b, and the context of the body, of raw length 'e. *)
-type (_, _, _, _) checked_letonly =
-  | Checked_letonly :
+type (_, _, _, _) checked_letonly_clauses =
+  | Checked_letonly_clauses :
       ('mode, 'b, 'k, 'eb) Term.env * ('mode, 'k, 'eb) Value.env * ('mode, 'e, 'eb) Ctx.t
-      -> ('mode, 'b, 'k, 'e) checked_letonly
+      -> ('mode, 'b, 'k, 'e) checked_letonly_clauses
 
 (* The checked type of a let-only variable: an uninstantiated type of some dimension 'n, together with the instantiation arguments of its own type, which is a fully instantiated n-dimensional universe. *)
 type (_, _) letonly_type =
@@ -1350,23 +1350,27 @@ and synth_letonly : type mode a b k e.
     e synth located ->
     (mode, b, kinetic) term * (mode, kinetic) value =
  fun ctx k clauses body ->
-  let (Checked_letonly (tmenv, venv, bodyctx)) = check_letonly_clauses ctx k clauses in
+  let (Checked_letonly_clauses (type eb) ((tmenv, venv, bodyctx) : _ * _ * (mode, e, eb) Ctx.t)) =
+    check_letonly_clauses ctx k clauses in
   let status : (mode, _, kinetic) status = Kinetic `Nolet in
   Annotate.ctx status bodyctx (locate_opt body.loc (Synth body.value));
   let sbody, sbodyty = synth status bodyctx body in
   let sbodyty = readback_val bodyctx sbodyty in
-  (Letonly (readback_ctx bodyctx, tmenv, sbody, sbodyty), eval_with_type venv sbody sbodyty)
+  (Letonly (readback_ctx bodyctx, tmenv, sbody, sbodyty), type_of_eval venv sbody sbodyty)
 
 (* Check the clauses of a let-only.  The ambient context given is that of the rightmost bound term.  To get the ambient context of the bound terms to the left of a lock or key clause, we peel locks off it as for a key applied to a term, so we recurse through the clauses from right to left; but the actual checking happens as the recursion returns, from left to right. *)
 and check_letonly_clauses : type mode a b k e.
-    (mode, a, b) Ctx.t -> k D.t -> (a, e) Raw.letonly_clauses -> (mode, b, k, e) checked_letonly =
+    (mode, a, b) Ctx.t ->
+    k D.t ->
+    (a, e) Raw.letonly_clauses ->
+    (mode, b, k, e) checked_letonly_clauses =
  fun ctx k clauses ->
   match clauses with
   | No_clauses ->
       let mode = Ctx.mode ctx in
-      Checked_letonly (Emp (mode, k), Emp (mode, k), Ctx.empty mode)
+      Checked_letonly_clauses (Emp (mode, k), Emp (mode, k), Ctx.empty mode)
   | Clause (clauses, x, modality, rty, tm) ->
-      let (Checked_letonly (tmenv, venv, bodyctx)) = check_letonly_clauses ctx k clauses in
+      let (Checked_letonly_clauses (tmenv, venv, bodyctx)) = check_letonly_clauses ctx k clauses in
       check_letonly_clause ctx bodyctx venv tmenv x modality rty tm
   | Lock_clause (clauses, lock) -> (
       match Modality.of_name_src lock.value (Ctx.mode ctx) with
@@ -1376,7 +1380,7 @@ and check_letonly_clauses : type mode a b k e.
           | Some _ -> check_letonly_lock ctx k modality clauses
           | None ->
               let (Wrap ctx_lock) = Ctx.total_locks ctx in
-              fatal ?loc:lock.loc (Lock_mismatch (modality, ctx_lock))))
+              fatal ?loc:lock.loc (Letonly_lock_mismatch (modality, ctx_lock))))
   | Key_clause (clauses, keyname) -> (
       (* As for a key applied to a term, the bound terms to the left of a key are checked in the ambient context with locks matching the key's vertical target replaced by its vertical source.  Their values are then acted on by the key. *)
       match Modalcell.of_name (Ctx.mode ctx) keyname with
@@ -1384,10 +1388,10 @@ and check_letonly_clauses : type mode a b k e.
           match find_plus_with_locks (Ctx.tctx ctx) (Modalcell.vtgt cell) with
           | Some (Found_plus_with_locks plus_tgt) ->
               let (Replaced (newctx, plus_src)) =
-                Ctx.replace_locks ctx Hidden_variable plus_tgt (Modalcell.vsrc cell) in
-              let (Checked_letonly (tmenv, venv, bodyctx)) =
+                Ctx.replace_locks ctx (Hidden_variable `Key) plus_tgt (Modalcell.vsrc cell) in
+              let (Checked_letonly_clauses (tmenv, venv, bodyctx)) =
                 check_letonly_clauses newctx k clauses in
-              Checked_letonly
+              Checked_letonly_clauses
                 (Prekey { env = tmenv; cell; plus_src; plus_tgt }, prekey_env venv cell, bodyctx)
           | None ->
               let (Wrap ctx_lock) = Ctx.total_locks ctx in
@@ -1400,7 +1404,7 @@ and check_letonly_lock : type mode mu tgt a b k e.
     k D.t ->
     (mode, mu, tgt) Modality.t ->
     (a, e) Raw.letonly_clauses ->
-    (mode, b, k, e) checked_letonly =
+    (mode, b, k, e) checked_letonly_clauses =
  fun ctx k modality clauses ->
   match modality with
   | Path (Zero, _) -> check_letonly_clauses ctx k clauses
@@ -1408,13 +1412,15 @@ and check_letonly_lock : type mode mu tgt a b k e.
       match find_plus_with_locks (Ctx.tctx ctx) (Modality.of_gen gen) with
       | None -> fatal (Anomaly "let-only lock doesn't match context")
       | Some (Found_plus_with_locks plus_tgt) -> (
-          let ctx = Ctx.strip_locks ctx Hidden_by_lock plus_tgt in
-          let (Checked_letonly (tmenv, venv, bodyctx)) =
+          let ctx = Ctx.remove_locks_weakened ctx (Hidden_variable `Lock) plus_tgt in
+          let (Checked_letonly_clauses (tmenv, venv, bodyctx)) =
             check_letonly_lock ctx k (Path (rest, tgt)) clauses in
           let (Locked (plus, bodyctx)) = Ctx.lock bodyctx (Modality.of_gen gen) in
           match plus with
           | Plus_lock (Suc (Zero _, Inject (Lock_lock _), Suc (Zero, Lock _)), Suc (Zero, Lock _))
-            -> Checked_letonly (Lock { env = tmenv; gen; plus_tgt }, lock_env venv plus, bodyctx)))
+            ->
+              Checked_letonly_clauses
+                (Lock { env = tmenv; gen; plus_tgt }, lock_env venv plus, bodyctx)))
 
 (* Check an ordinary clause of a let-only: first the type, in the context of the previous variables only, and then the bound term, in the ambient context, at an instantiation of that type evaluated at the previous bound terms.  The new variable is free in the body context, but its bindings record the occurrence-analysis verdict of its bound term as their "dirt", as for an ordinary let-bound variable, so that occurrences of currently-being-defined constants in the bound term are detected if the variable is used. *)
 and check_letonly_clause : type mode a b ea eb k.
@@ -1426,7 +1432,7 @@ and check_letonly_clause : type mode a b ea eb k.
     string located list located ->
     ea check located ->
     a check located ->
-    (mode, b, k, ea N.suc) checked_letonly =
+    (mode, b, k, ea N.suc) checked_letonly_clauses =
  fun ctx bodyctx venv tmenv x modality rty tm ->
   match Modality.of_name_tgt (Ctx.mode ctx) modality.value with
   | Error e -> modality_fatal "checking let-only" (e :> modality_error)
@@ -1489,7 +1495,7 @@ and check_letonly_clause : type mode a b ea eb k.
           let _, newnfs = dom_vars bodyctx modality edoms in
           CubeOf.miter { it = (fun _ [ b ] -> Ctx.Binding.set_dirt b dirt) } [ newnfs ];
           let newbodyctx = Ctx.cube_vis bodyctx nfilter x newnfs in
-          Checked_letonly (tmenv, venv, newbodyctx))
+          Checked_letonly_clauses (tmenv, venv, newbodyctx))
 
 (* Check the type of a let-only variable.  If it synthesizes, its type can be any fully instantiated universe, of some dimension n, in which case the variable will be an n-dimensional cube; otherwise it must check against the 0-dimensional universe. *)
 and check_letonly_type : type mode a b.
@@ -3671,7 +3677,7 @@ and synth : type mode a b s.
             match find_plus_with_locks (Ctx.tctx ctx) tgt with
             | Some (Found_plus_with_locks plus_tgt) ->
                 let (Replaced (newctx, plus_src)) =
-                  Ctx.replace_locks ctx Hidden_variable plus_tgt src in
+                  Ctx.replace_locks ctx (Hidden_variable `Key) plus_tgt src in
                 let tm, sty = synth (Kinetic `Nolet) newctx tm in
                 ( realize status (Key { tm; cell; plus_tgt; plus_src }),
                   act_value sty (deg_zero D.zero) cell )
