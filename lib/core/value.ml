@@ -57,6 +57,61 @@ module rec Value : sig
 
   module StructfieldAbwd : module type of Field.Abwd (Structfield)
 
+  module Binding : sig
+    type 'mode t
+
+    val make : ?dirt:Positivity.recursion -> level option -> 'mode Value.normal -> 'mode t
+    val level : 'mode t -> level option
+    val value : 'mode t -> 'mode Value.normal
+    val value_opt : 'mode t -> 'mode Value.normal option
+    val dirt : 'mode t -> Positivity.recursion
+    val set_dirt : 'mode t -> Positivity.recursion -> unit
+    val unknown : unit -> 'mode t
+    val specify : 'mode t -> level option -> 'mode Value.normal -> unit
+    val delay : 'mode t -> 'mode t
+    val force : 'mode t -> unit
+  end
+
+  module Ctx_entry : sig
+    type (_, _, _, _, _) entry =
+      | Vis :
+          ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data
+          -> ('dom, 'modality, 'mode, 'f, 'mn) entry
+      | Invis :
+          ('dom, 'modality, 'mode, 'n) invis_data
+          -> ('dom, 'modality, 'mode, N.zero, 'n) entry
+
+    and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
+      dim : 'm D.t;
+      plusdim : ('m, 'n, 'mn) D.plus;
+      filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
+      vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
+      bindings : ('mn, 'dom Binding.t) CubeOf.t;
+      hasfields : ('m, 'f2) has_fields;
+      fields : (D.zero Field.t * string, 'f2) Bwv.t;
+      fplus : ('f1, 'f2, 'f) N.plus;
+    }
+
+    and ('dom, 'modality, 'mode, 'n) invis_data = {
+      filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
+      bindings : ('n, 'dom Binding.t) CubeOf.t;
+    }
+  end
+
+  module Ordered_ctx : sig
+    type ('mode, _, _) t =
+      | Emp : 'mode Mode.t -> ('mode, N.zero, 'mode emp) t
+      | Snoc :
+          ('mode, 'a, 'b) t
+          * ('dom, 'modality, 'mode, 'x, 'n) Ctx_entry.entry
+          * ('a, 'x, 'ax) N.plus
+          -> ('mode, 'ax, ('b, ('modality, 'n) dim_entry) snoc) t
+      | Lock :
+          ('cod, 'a, 'b) t * ('dom, 'modality, 'cod) Modality.gen
+          -> ('dom, 'a, ('b, 'modality lock_entry) snoc) t
+      | Weaken : ('mode, 'a, 'b) t * Reporter.Code.t -> ('mode, 'a N.suc, 'b) t
+  end
+
   type (_, _, _) modal_value_cube =
     | Modal :
         ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
@@ -220,6 +275,7 @@ module rec Value : sig
     | Unshift :
         ('mode, 'm, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb, 'mode) plusmap
         -> ('mode, 'mn, 'b) env
+    | Ctx : ('mode, 'a, 'b) Ordered_ctx.t -> ('mode, D.zero, 'b) env
 
   and ('mode, 's) lazy_state =
     | Deferred_eval :
@@ -274,6 +330,93 @@ end = struct
   end
 
   module StructfieldAbwd = Field.Abwd (Structfield)
+
+  (* The binding of each variable in a context is a "level option * normal".  But instead of exposing this literally as a product type, we use an abstract type with a constructor "Binding.make" and accessors "Binding.level" and "Binding.value".  The reason is that in the "bind_some" machinery below, we work with contexts where the binding of a variable is "known but not yet available" or "not yet computed".  So the internal implementation of Binding is actually a reference cell that usually stores a "Known" "level option * normal", but sometimes is Unknown or other times a Delayed "level option * normal".
+
+     A binding also carries a mutable "dirt" verdict recording whether its value contains occurrences of constants currently being defined (see Positivity).  This applies only to let-bound variables, whose values were typechecked, and to the free variables in the body of a let-only, which inherit the verdicts of their bound terms; other free variables are always clean.  It is mutable, separately from the state reference, so that letrec can pre-mark its bindings as recursive while checking their bodies and update them to the real verdict afterwards.  (Note that bind_some's "specify" installs computed values without computing their dirt; free pattern variables are clean in practice, but this could be revisited along with strict positivity.) *)
+  module Binding = struct
+    type 'mode state =
+      | Known of level option * 'mode Value.normal
+      | Unknown
+      | Delayed of level option * 'mode Value.normal
+
+    type 'mode t = { state : 'mode state ref; mutable dirt : Positivity.recursion }
+
+    let make ?(dirt = `Nonrecursive) i x = { state = ref (Known (i, x)); dirt }
+
+    let level b =
+      match !(b.state) with
+      | Known (i, _) -> i
+      | Unknown | Delayed _ -> None
+
+    let value b =
+      match !(b.state) with
+      | Known (_, x) -> x
+      | Unknown | Delayed _ -> fatal (Anomaly "Undetermined context variable")
+
+    let value_opt b =
+      match !(b.state) with
+      | Known (_, x) -> Some x
+      | Unknown | Delayed _ -> None
+
+    let dirt b = b.dirt
+    let set_dirt b d = b.dirt <- d
+    let unknown () = { state = ref Unknown; dirt = `Nonrecursive }
+    let specify b i x = b.state := Known (i, x)
+    let delay b = { state = ref (Delayed (level b, value b)); dirt = b.dirt }
+
+    let force b =
+      match !(b.state) with
+      | Known _ | Unknown -> ()
+      | Delayed (i, x) -> b.state := Known (i, x)
+  end
+
+  module Ctx_entry = struct
+    (* A context is a list of "entries", which can be either visible or invisible in the raw world.  An (f,n) entry contains f raw variables and an n-dimensional cube of checked variables. *)
+    type (_, _, _, _, _) entry =
+      (* Add a cube of internal variables that are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn. *)
+      | Vis :
+          ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data
+          -> ('dom, 'modality, 'mode, 'f, 'mn) entry
+      (* Add a cube of internal variables that are not visible to the parser.  We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable. *)
+      | Invis :
+          ('dom, 'modality, 'mode, 'n) invis_data
+          -> ('dom, 'modality, 'mode, N.zero, 'n) entry
+
+    and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
+      dim : 'm D.t;
+      plusdim : ('m, 'n, 'mn) D.plus;
+      filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
+      (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
+      vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
+      bindings : ('mn, 'dom Binding.t) CubeOf.t;
+      (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'vars' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
+      hasfields : ('m, 'f2) has_fields;
+      fields : (D.zero Field.t * string, 'f2) Bwv.t;
+      fplus : ('f1, 'f2, 'f) N.plus;
+    }
+
+    and ('dom, 'modality, 'mode, 'n) invis_data = {
+      filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
+      bindings : ('n, 'dom Binding.t) CubeOf.t;
+    }
+  end
+
+  (* An ordered context: a context without a permutation of its raw indices.  See Ctx for more explanation. *)
+  module Ordered_ctx = struct
+    type ('mode, _, _) t =
+      | Emp : 'mode Mode.t -> ('mode, N.zero, 'mode emp) t
+      | Snoc :
+          ('mode, 'a, 'b) t
+          * ('dom, 'modality, 'mode, 'x, 'n) Ctx_entry.entry
+          * ('a, 'x, 'ax) N.plus
+          -> ('mode, 'ax, ('b, ('modality, 'n) dim_entry) snoc) t
+      | Lock :
+          ('cod, 'a, 'b) t * ('dom, 'modality, 'cod) Modality.gen
+          -> ('dom, 'a, ('b, 'modality lock_entry) snoc) t
+      (* A "weakening" entry increases the raw length by one, but stores no checked variables or bindings.  It records a Code.t; looking up the added (dataless) raw variable raises that fatal error.  To weaken by more than one, stack several of these. *)
+      | Weaken : ('mode, 'a, 'b) t * Reporter.Code.t -> ('mode, 'a N.suc, 'b) t
+  end
 
   type (_, _, _) modal_value_cube =
     | Modal :
@@ -487,6 +630,8 @@ end = struct
     | Unshift :
         ('mode, 'm, 'nb) env * ('m, 'n, 'mn) D.plus * ('n, 'b, 'nb, 'mode) plusmap
         -> ('mode, 'mn, 'b) env
+    (* The identity environment of a context, which substitutes each (level) variable for itself (index).  Rather than computing it in advance, we look through the context itself when traversing it, one entry at a time.  It always has dimension zero, so the variables don't need to come with any boundaries. *)
+    | Ctx : ('mode, 'a, 'b) Ordered_ctx.t -> ('mode, D.zero, 'b) env
 
   (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  It can also accumulate degeneracies on an arbitrary thunk (which could, of course, be a constant value that was already forced, but now is deferred again until it's done accumulating degeneracy actions).  Both kinds of deferred values can also store more arguments and field projections for it to be applied to; this is how glued evaluation defers the computation of an application spine. *)
   and ('mode, 's) lazy_state =
@@ -522,6 +667,47 @@ type (_, _) modal_value =
 
 type any_canonical = Any : ('mode, 'm, 'n) canonical -> any_canonical
 
+let defer : type mode s. mode Mode.t -> (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
+ fun mode tm -> ref (Deferred (tm, id_deg D.zero, Modalcell.id2 mode, Emp))
+
+(* The values in the identity environment of a cube of variables in a context.  We defer them because they might be Unknown or Delayed, but we don't want an error reported unless such a value is actually *used*. *)
+let env_entry : type mode n.
+    mode Mode.t -> (n, mode Binding.t) CubeOf.t -> (n, (mode, kinetic) lazy_eval) CubeOf.t =
+ fun mode v ->
+  CubeOf.mmap { map = (fun _ [ x ] -> defer mode (fun () -> Val (Binding.value x).tm)) } [ v ]
+
+(* Extend an identity environment of a context to that of the context extended by a cube of variables. *)
+let env_ext : type dom modality mode b n.
+    (mode, D.zero, b) env ->
+    (dom, modality, mode, n, n) Modality.filter_dim ->
+    (n, dom Binding.t) CubeOf.t ->
+    (mode, D.zero, (b, (modality, n) dim_entry) snoc) env =
+ fun env filter bindings ->
+  Ext
+    {
+      env;
+      plus = D.zero_plus (CubeOf.dim bindings);
+      filtered = filter;
+      filter = Modality.filter_zero (Modality.filter_modality filter);
+      values = `Lazy (env_entry (Modality.src (Modality.filter_modality filter)) bindings);
+    }
+
+(* Unfold the identity environment of a context by one entry, so that it can be traversed like any other environment. *)
+let rec unfold_ctx : type mode a b. (mode, a, b) Ordered_ctx.t -> (mode, D.zero, b) env = function
+  | Ordered_ctx.Emp mode -> Emp (mode, D.zero)
+  | Ordered_ctx.Snoc (ctx, Ctx_entry.Vis { bindings; filter; _ }, _) ->
+      env_ext (Ctx ctx) filter bindings
+  | Ordered_ctx.Snoc (ctx, Ctx_entry.Invis { bindings; filter }, _) ->
+      env_ext (Ctx ctx) filter bindings
+  | Ordered_ctx.Lock (ctx, g) -> Lock (Ctx ctx, g)
+  | Ordered_ctx.Weaken (ctx, _) -> unfold_ctx ctx
+
+let rec mode_ordered_ctx : type mode a b. (mode, a, b) Ordered_ctx.t -> mode Mode.t = function
+  | Ordered_ctx.Emp mode -> mode
+  | Ordered_ctx.Snoc (ctx, _, _) -> mode_ordered_ctx ctx
+  | Ordered_ctx.Lock (_, modality) -> Modality.src (Modality.of_gen modality)
+  | Ordered_ctx.Weaken (ctx, _) -> mode_ordered_ctx ctx
+
 (* Every context morphism has a valid dimension. *)
 let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
   | Emp (_, n) -> n
@@ -532,6 +718,7 @@ let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
   | Permute (_, e) -> dim_env e
   | Shift (e, mn, _) -> D.plus_left mn (dim_env e)
   | Unshift (e, mn, _) -> D.plus_out (dim_env e) mn
+  | Ctx _ -> D.zero
 
 (* And likewise every binder *)
 let dim_binder : type mode modality dom m s. (mode, modality, dom, m, s) binder -> m D.t =
@@ -550,6 +737,7 @@ let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
   | Permute (_, e) -> mode_env e
   | Shift (e, _, _) -> mode_env e
   | Unshift (e, _, _) -> mode_env e
+  | Ctx ctx -> mode_ordered_ctx ctx
 
 (* let dim_canonical : type mode m n mn. (mode, m, n, mn) canonical -> mn D.t = function
      | UU dim -> dim
@@ -569,6 +757,7 @@ let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = funct
   | Permute (p, env) -> perm_dom p (length_env env)
   | Shift (_, mn, nb) -> Plusmap.cod (D.plus_right mn) nb
   | Unshift (_, _, nb) -> Plusmap.dom nb
+  | Ctx ctx -> length_env (unfold_ctx ctx)
 
 (* Smart constructor that composes actions and cancels identities *)
 let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) opt_op -> (mode, m, b) env =
@@ -620,7 +809,10 @@ let remove_top : type mode a modality k n.
         Shift (remove_ins env v', mn, na)
     | Unshift (env, mn, nb), _ ->
         let (Uninsert (_, _, v', na)) = Plusmap.uninsert v nb in
-        Unshift (remove_ins env v', mn, na) in
+        Unshift (remove_ins env v', mn, na)
+    (* Removing the top entry of the identity environment of a context needs no unfolding. *)
+    | Ctx (Ordered_ctx.Snoc (ctx, _, _)), Now -> Ctx ctx
+    | Ctx ctx, _ -> remove_ins (unfold_ctx ctx) v in
   remove_ins env Now
 
 (* A prekey action is a key cell with a given mode as vertical source but existential vertical target (and horizontal target). *)
@@ -704,14 +896,12 @@ let rec restrict_keys : type mode mu cod k b bc.
   | Suc _, _, Act (env, op) ->
       let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
       Restrict_keys (Act (env, op), pre)
+  | Suc _, _, Ctx ctx -> restrict_keys (unfold_ctx ctx) (Plus_with_locks (bc, llc))
 
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
  fun env tm ->
   ref (Deferred_eval (env, tm, ins_zero (dim_env env), Modalcell.id2 (mode_env env), Emp))
-
-let defer : type mode s. mode Mode.t -> (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
- fun mode tm -> ref (Deferred (tm, id_deg D.zero, Modalcell.id2 mode, Emp))
 
 let ready : type mode s. (mode, s) evaluation -> (mode, s) lazy_eval = fun ev -> ref (Ready ev)
 

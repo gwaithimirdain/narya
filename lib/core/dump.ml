@@ -243,6 +243,7 @@ module F = struct
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
     | Unshift (e, mn, _) -> fprintf ppf "%a >> %a" env e dim (D.plus_right mn)
+    | Ctx ctx -> denv depth ppf (unfold_ctx ctx)
 
   and env : type mode b n. formatter -> (mode, n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
 
