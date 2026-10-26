@@ -338,6 +338,31 @@ let plus_with_locks_concat : type an exc exl cod b nu dom bn.
   let (Comp (l3, _)) = Locks.comp l2 l1 c2_c1 in
   Wrap_plus_with_locks (Plus_with_locks (Tctx.comp_assocr e1 c2_c1 e2, l3))
 
+(* Split off the outermost lock of a context extension whose composite modality ends with a generator g: the extension consists of one for the rest of the modality, followed by one containing just that lock and the dimension entries after it.  We also return the generator itself. *)
+type (_, _, _, _, _, _) split_lock =
+  | Split_lock :
+      ('a, 'cod, 'mu, 'x, 'ax) plus_with_locks
+      * ('dom, 'g, 'x) Modality.gen
+      * ('ax, 'x, ('x Modality.id, 'g) snoc, 'dom, 'amu) plus_with_locks
+      -> ('a, 'cod, 'mu, 'g, 'dom, 'amu) split_lock
+
+let rec split_lock : type a cod mu g dom amu.
+    (a, cod, (mu, g) snoc, dom, amu) plus_with_locks -> (a, cod, mu, g, dom, amu) split_lock =
+ fun (Plus_with_locks (comp, locks)) ->
+  match (comp, locks) with
+  | Suc (comp, Dim (n, f)), Suc (locks, Locks_dim _, Zero) ->
+      let (Split_lock (rest, g, last)) = split_lock (Plus_with_locks (comp, locks)) in
+      Split_lock (rest, g, plus_with_locks_dim last n f)
+  | Suc (comp, Lock g), Suc (locks, Locks_lock g', Suc (Zero, _)) ->
+      let Eq = Modality.Gen.src_uniq g g' in
+      let Eq = Modality.Gen.tgt_uniq g g' in
+      Split_lock
+        ( Plus_with_locks (comp, locks),
+          g,
+          plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g )
+  | Suc (_, Proj _), Suc (_, _, _) -> .
+  | Zero, _ -> .
+
 (* Given a Tctx and a modality, peel matching lock generators off the front of both, in lockstep, skipping over any dimension entries in the Tctx along the way (as long as the modality isn't empty yet).  If we use up the whole modality, we return the resulting plus_with_locks recording the entries we peeled off and what remains of the Tctx.  If instead a lock in the Tctx doesn't match the next generator of the modality, or the Tctx runs out (reaches its Proj base) before the modality does, we return None. *)
 
 type (_, _, _, _) found_plus_with_locks =
