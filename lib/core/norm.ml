@@ -526,7 +526,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     { build = (fun fa -> lazy_eval (act_env flenv (opt_op_of_sface fa)) v) });
            })
         body
-  | Letonly (_, tmenv, body, _) ->
+  | Letonly { env = tmenv; tm = body; _ } ->
       (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment, as for MetaEnv. *)
       let (Plus m_n) = D.plus (dim_term_env tmenv) in
       eval (eval_env env m_n tmenv) body

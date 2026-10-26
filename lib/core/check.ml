@@ -1356,7 +1356,8 @@ and synth_letonly : type mode a b k e.
   Annotate.ctx status bodyctx (locate_opt body.loc (Synth body.value));
   let sbody, sbodyty = synth status bodyctx body in
   let sbodyty = readback_val bodyctx sbodyty in
-  (Letonly (readback_ctx bodyctx, tmenv, sbody, sbodyty), type_of_eval venv sbody sbodyty)
+  ( Letonly { termctx = readback_ctx bodyctx; env = tmenv; tm = sbody; ty = sbodyty },
+    type_of_eval venv sbody sbodyty )
 
 (* Check the clauses of a let-only.  The ambient context given is that of the rightmost bound term.  To get the ambient context of the bound terms to the left of a lock or key clause, we peel locks off it as for a key applied to a term, so we recurse through the clauses from right to left; but the actual checking happens as the recursion returns, from left to right. *)
 and check_letonly_clauses : type mode a b k e.

@@ -543,7 +543,7 @@ let rec unparse : type mode n lt ls rt rs s.
                (prefix ~notn:letin
                   ~inner:(Multiple (wstok Let, binding, wstok In))
                   ~last:body ~right_ok)))
-  | Letonly (Permute (_, ctx), tmenv, body, ty) -> (
+  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty } -> (
       (* The bound terms are unparsed in the ambient context, while the types and the body are unparsed in the context of only the bound variables. *)
       let binding, bodyvars = unparse_letonly_clauses vars ctx tmenv in
       (* The body must synthesize, so if it wouldn't after unparsing, we ascribe it with its stored type. *)
