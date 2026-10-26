@@ -74,11 +74,13 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Unact (o, tm) -> Unact (o, term f tm)
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
   | Weaken (plus, tm, newplus) -> Weaken (plus, term f tm, newplus)
+  | Failed energy -> Failed energy
 
 and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, a, n) branch =
  fun f br ->
   match br with
   | Branch b -> Branch { b with tm = term f b.tm }
+  | Failed_branch -> Failed_branch
 
 and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode, a) canonical =
  fun f can ->

@@ -347,7 +347,7 @@ If the type of a variable synthesizes a higher-dimensional universe, the variabl
    ￫ error[E1500]
    ￭ command-line exec string
    1 | synth let only x : b0 ≔ b0 in x
-     ^ expected universe while checking type of let-only variable, got B
+     ^ synthesizing let-only variable gave non-universe B
   
   [1]
 

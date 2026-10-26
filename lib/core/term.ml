@@ -197,6 +197,7 @@ module rec Term : sig
         * ('src, 'bmu, 's) term
         * (('b, ('modality, 'n) dim_entry) snoc, 'tgt, 'mu, 'src, 'bnmu) plus_lock
         -> ('src, 'bnmu, 's) term
+    | Failed : 's energy -> ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -220,6 +221,7 @@ module rec Term : sig
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
+    | Failed_branch : ('mode, 'a, 'n) branch
 
   and (_, _) canonical =
     | Data : {
@@ -536,6 +538,8 @@ end = struct
         * ('src, 'bmu, 's) term
         * (('b, ('modality, 'n) dim_entry) snoc, 'tgt, 'mu, 'src, 'bnmu) plus_lock
         -> ('src, 'bnmu, 's) term
+    (* A term that failed to typecheck, such as a component of a structure (a field of a struct, or a constructor of a datatype), allowing the rest of the term or structure to be checked and used.  Evaluating it produces a failed value (see Value.Failed), which fails silently when it is inspected. *)
+    | Failed : 's energy -> ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
@@ -562,6 +566,8 @@ end = struct
         tm : ('mode, 'c, potential) term;
       }
         -> ('mode, 'a, 'n) branch
+    (* A branch that the user wrote but that failed to typecheck, or that the user omitted but failed to be refutable, or whose constructor itself failed to typecheck.  The error has already been reported (as mortal), so the whole command will fail; but other parts of it can still be checked, and if they evaluate the match at this constructor, they fail silently rather than reporting an anomaly as for a constructor genuinely missing from the match.  We can't just use a Branch whose body is a Failed term, because the other data of a Branch (annotate, comp, perm) describe how the pattern variables extend the context, and these are computed from the constructor's type, which may be unavailable (e.g. if the constructor itself failed, its arity is unknown). *)
+    | Failed_branch : ('mode, 'a, 'n) branch
 
   (* A canonical type is either a datatype or a codatatype/record. *)
   and (_, _) canonical =
@@ -827,6 +833,18 @@ let rec lock_term_env : type dom mu cod a amu m b bmu.
       let Eq = Modality.Gen.tgt_uniq g g'' in
       Lock { env = lock_term_env env rest (Plus_lock (lock, comp)); gen = g; plus_tgt = last }
 
+(* Whether a term failed to typecheck.  We look through wrappers that act on a single subterm, such as weakenings and degeneracies, since such a wrapper of a failed term also evaluates to a failed value. *)
+let rec is_failed : type mode a s. (mode, a, s) term -> bool = function
+  | Failed _ -> true
+  | Act (_, tm, _, _) -> is_failed tm
+  | Key { tm; _ } -> is_failed tm
+  | Realize tm -> is_failed tm
+  | Unshift (_, _, tm) -> is_failed tm
+  | Unact (_, tm) -> is_failed tm
+  | Shift (_, _, tm) -> is_failed tm
+  | Weaken (_, tm, _) -> is_failed tm
+  | _ -> false
+
 (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
 module Telescope = struct
   type ('mode, 'a, 'b, 'ab) t =
@@ -844,6 +862,11 @@ module Telescope = struct
     | Emp -> cod
     | Ext (x, dom, doms) ->
         pi (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
+
+  (* Whether any of the types in a telescope failed to typecheck (see Check.check_tel). *)
+  let rec has_failed : type mode a b ab. (mode, a, b, ab) t -> bool = function
+    | Emp -> false
+    | Ext (_, Modal (_, _, ty), doms) -> is_failed ty || has_failed doms
 end
 
 (* Count the number of zero-dimensional pi-types on the front of a term, i.e. the length of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to determine a datatype constructor's arity from its stored function-type.  We peel only zero-dimensional pis: a dimension-killing modality can have a zero-dimensional domain cube on a positive-dimensional pi, which must not be counted, and the codomain of a higher pi is not a constructor argument. *)
@@ -857,6 +880,8 @@ let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = functio
           let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
           let (Wrap n) = pi_arity cod in
           Wrap (Suc n))
+  (* A constructor that failed to typecheck has no known arity, so anything that needs it fails dependently. *)
+  | tm when is_failed tm -> Reporter.fatal (Dependent "arity of failed constructor")
   | _ -> Wrap Zero
 
 (* Collect the binder names of the zero-dimensional pi-types on the front of a term, in order, as a plain list — the names of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to name the pattern variables when displaying a "split". *)

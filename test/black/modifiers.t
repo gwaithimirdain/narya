@@ -75,6 +75,11 @@ Or exclude the notations but get everything else
    ￫ error[E0400]
    ￮ non-synthesizing term in synthesizing position (argument of echo)
   
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | import "nat" | except notations echo myzero echo 1 + 1
+     ^ parse error: invalid syntax
+  
   [1]
 
 Or import some of the notations but not others
