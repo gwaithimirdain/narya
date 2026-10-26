@@ -126,6 +126,18 @@
        does not equal
          x0
   
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def id_map_act' : Id X (((x ↦ x) : X → X) x0) x1 ≔ refl x1 synth (((x ↦ x) : X → X) x2)
+     ^ term synthesized type
+         Id X x0 x1
+       but is being checked against type
+         X
+       unequal head terms:
+         Id X
+       does not equal
+         X
+  
   [1]
   $ narya idrefl.ny -e "synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x2) synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x0)"
    ￫ error[E0401]
@@ -140,6 +152,18 @@
        does not equal
          x0
   
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x2) synth (refl ((x ↦ x) : (X → X)) {x0} {x0} x0)
+     ^ term synthesized type
+         X
+       but is being checked against type
+         Id X x0 x0
+       unequal head terms:
+         X
+       does not equal
+         Id X
+  
   [1]
   $ narya idrefl.ny -e "def gof' : X -> Z := x |-> f (g x) "
    ￫ error[E0401]
@@ -153,6 +177,30 @@
          X
        does not equal
          Y
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def gof' : X -> Z := x |-> f (g x) 
+     ^ term synthesized type
+         Z
+       but is being checked against type
+         X
+       unequal head constants:
+         Z
+       does not equal
+         X
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def gof' : X -> Z := x |-> f (g x) 
+     ^ term synthesized type
+         Y
+       but is being checked against type
+         Z
+       unequal head constants:
+         Y
+       does not equal
+         Z
   
   [1]
   $ narya idrefl.ny -e "def idff_eq_idff' : Id Type idff idff' := refl idff"

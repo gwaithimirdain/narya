@@ -10,6 +10,6 @@ def ⊤ : DomType ≔ sig ()
 
 def ⊤eq⊥ : Id DomType ⊤ ⊥ ≔ Gel ⊤ ⊥ [ ]
 
-def ○ (A :○| DomType) : CodType ≔ data [ circ. (_ :○| A) ]
+def ○ (A :○| DomType) : CodType ≔ data [ ○. (_ :○| A) ]
 
-def foo : ((_ :○| ⊤eq⊥) ⇒ refl (○ DomType)) (x ↦ circ. DomType) (x ↦ circ. DomType) ≔ [ ]
+def foo : ((_ :○| ⊤eq⊥) ⇒ refl (○ DomType)) (x ↦ ○. DomType) (x ↦ ○. DomType) ≔ [ ]

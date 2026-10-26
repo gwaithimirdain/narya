@@ -156,14 +156,9 @@ module Ordered = struct
       mode normal option =
    fun ~level ~oldctx ~newctx nf ->
     Reporter.try_with ~fatal:(fun d ->
-        if
-          Reporter.accumulates
-            (function
-              | No_such_level _ -> true
-              | _ -> false)
-            d
-        then None
-        else fatal_diagnostic d)
+        match d.message with
+        | No_such_level _ -> None
+        | _ -> fatal_diagnostic d)
     @@ fun () ->
     Some
       {
@@ -182,14 +177,9 @@ module Ordered = struct
       (mode, kinetic) value option =
    fun ~level ~oldctx ~newctx ty ->
     Reporter.try_with ~fatal:(fun d ->
-        if
-          Reporter.accumulates
-            (function
-              | No_such_level _ -> true
-              | _ -> false)
-            d
-        then None
-        else fatal_diagnostic d)
+        match d.message with
+        | No_such_level _ -> None
+        | _ -> fatal_diagnostic d)
     @@ fun () ->
     Some (eval_term (Ctx.Ordered.env newctx) (readback_val (Ctx.of_ordered ~level oldctx) ty))
 

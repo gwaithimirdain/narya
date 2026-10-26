@@ -61,3 +61,23 @@ In an application spine, a notation is parenthesized, even when this isn't neces
   g ((fun a nuf) b) c
     : B
   
+
+The same parentheses are added around a term that solves a hole interactively in such a position, so that ProofGeneral inserts it with them.  Each solve below shows whether the term was parenthesized and its reformatted version.
+
+  $ for c in 'def B : Type ≔ data [ t. | f. ]' 'axiom g : B → B → B' 'axiom k : B → B' 'notation "when" x "[" y "]" ≔ g x y' 'notation "<|" x "done" ≔ k x' 'notation "⟪" x "⟫" ≔ k x' \
+  >   'def x0 : B → B ≔ b ↦ g ? t.' 'solve 0 ≔ match b [ t. ↦ t. | f. ↦ f. ]' \
+  >   'def x1 : B ≔ g t. ?' 'solve 1 ≔ when t. [ f. ]' \
+  >   'def x2 : B ≔ g ? t.' 'solve 2 ≔ <| t. done' \
+  >   'def x3 : B ≔ g t. ?' 'solve 3 ≔ <| t. done' \
+  >   'def x4 : B ≔ g ? t.' 'solve 4 ≔ ⟪ when t. [ f. ] ⟫' \
+  >   'def x5 : B ≔ g t. ?' 'solve 5 ≔ (when t. [ f. ])' \
+  >   'def x6 : B → B ≔ b ↦ ?' 'solve 6 ≔ match b [ t. ↦ t. | f. ↦ f. ]'; do printf '%s\n\f\n' "$c"; done > input
+
+  $ narya -proofgeneral < input | tr '\f' '\n' | awk '/hole solved/ { s = 1 } /^(un)?parenthesized$/ { p = $0 } s && r && $0 != "" { print p ": " $0; s = 0 } { r = ($0 == "[reformat]") || (r && $0 == "") }'
+  parenthesized: (match b [ t. ↦ t. | f. ↦ f. ])
+  parenthesized: (when t. [ f. ])
+  parenthesized: (<| t. done)
+  unparenthesized: <| t. done
+  unparenthesized: ⟪ when t. [ f. ] ⟫
+  unparenthesized: (when t. [ f. ])
+  unparenthesized: match b [ t. ↦ t. | f. ↦ f. ]

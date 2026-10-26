@@ -36,10 +36,15 @@
 
 There is no 2-cell in the reverse direction, so there is no induced function ◃ A → ▹ A.
 
-  $ narya -interchange interchange.ny -e "def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ lt. x ↦ rt. x ]"
+  $ narya -interchange interchange.ny -e "def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ ◃. x ↦ ▹. x ]"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ lt. x ↦ rt. x ]
+   1 | def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ ◃. x ↦ ▹. x ]
+     ^ use of ◃ variable behind ▹ lock requires a key
+  
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def backwards (A :◃| AType) (u : ◃ A) : ▹ A := match u [ ◃. x ↦ ▹. x ]
      ^ use of ◃ variable behind ▹ lock requires a key
   
   [1]

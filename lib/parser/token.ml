@@ -227,3 +227,89 @@ let to_string = function
 
 (* Given a token, create a constant pretty-printer that prints that token. *)
 let pp tok = PPrint.utf8string (to_string tok)
+
+(* In an application spine, the head and arguments are separated only by whitespace, so a reader takes anything that looks like a name to be a separate argument.  Thus, although an outfix notation such as "match x [ … ]" can appear as an argument without parentheses, it is confusing to do so, since "match" and "x" look like two arguments.  So we parenthesize a notation in a spine if one of its edges that faces a juxtaposition (the left edge of an argument, the right edge of a head or of an argument that is followed by another one) is a "word-like" token, i.e. one whose character at that edge is a letter or a digit.  For now, we approximate this by only counting ASCII letters and digits. *)
+let word_like_edge (side : [ `Left | `Right ]) (tok : t) : bool =
+  let alnum_start = function
+    | [] -> true
+    | s :: _ -> (
+        match s.[0] with
+        | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true
+        | _ -> false) in
+  let rec alnum_end = function
+    | [] -> true
+    | [ s ] -> (
+        match s.[String.length s - 1] with
+        | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true
+        | _ -> false)
+    | _ :: (_ :: _ as strs) -> alnum_end strs in
+  match tok with
+  | LParen
+  | RParen
+  | LBracket
+  | RBracket
+  | LBrace
+  | RBrace
+  | Hole _
+  | GeldedQuery
+  | DblQuery
+  | Arrow
+  | DblArrow
+  | Mapsto
+  | DblMapsto
+  | Colon
+  | Coloneq
+  | DblColoneq
+  | Pluseq
+  | Dot
+  | Ellipsis
+  | String _
+  | Underscore
+  | Superscript _
+  | Invalid_superscript _
+  | Op _
+  | Bof
+  | Eof -> false
+  | And
+  | Axiom
+  | Codata
+  | Data
+  | About
+  | Def
+  | Display
+  | Echo
+  | End
+  | Export
+  | Import
+  | Chdir
+  | In
+  | Let
+  | Match
+  | Notation
+  | Option
+  | Quit
+  | Rec
+  | Return
+  | Section
+  | Fmt
+  | Show
+  | Sig
+  | Solve
+  | Split
+  | Synth
+  | Undo
+  | Only
+  | Lock
+  | Keyword_key -> true
+  | Field (_, strs) | Key strs -> (
+      match side with
+      | `Left -> false
+      | `Right -> alnum_end strs)
+  | Constr (str, _) -> (
+      match side with
+      | `Left -> alnum_start [ str ]
+      | `Right -> false)
+  | Ident strs -> (
+      match side with
+      | `Left -> alnum_start strs
+      | `Right -> alnum_end strs)

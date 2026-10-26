@@ -80,19 +80,6 @@ let parenthesize_maybe (tm : ('lt, 'ls, 'rt, 'rs) parse located) =
   | Notn ((Postprocess.Parens, _), _) -> tm
   | _ -> parenthesize tm
 
-(* In an application spine, the head and arguments are separated only by whitespace, so a reader takes anything that looks like a name to be a separate argument.  Thus, although an outfix notation such as "match x [ … ]" can appear as an argument without parentheses, it is confusing to do so, since "match" and "x" look like two arguments.  So we parenthesize a notation in a spine if one of its edges that faces a juxtaposition (the left edge of an argument, the right edge of a head or of an argument that is followed by another one) is a "word-like" token, i.e. one whose character at that edge is a letter or a digit.  For now, we approximate this by only counting ASCII letters and digits. *)
-let word_like_edge (side : [ `Left | `Right ]) (tok : Token.t) : bool =
-  let s = Token.to_string tok in
-  s <> ""
-  &&
-  match
-    match side with
-    | `Left -> s.[0]
-    | `Right -> s.[String.length s - 1]
-  with
-  | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true
-  | _ -> false
-
 (* Whether a term is a notation with more than one piece whose token at the given edge is word-like.  Other terms, such as identifiers, are supposed to look like separate arguments, as is a notation consisting of a single token such as "Type"; while a notation whose edge is a term has to be parenthesized anyway on that side. *)
 let word_like_notation : type lt ls rt rs.
     [ `Left | `Right ] -> (lt, ls, rt, rs) parse located -> bool =
@@ -101,10 +88,10 @@ let word_like_notation : type lt ls rt rs.
   | Notn (_, n) -> (
       match (side, args n) with
       | _, ([] | [ _ ]) -> false
-      | `Left, (Token (tok, _) | Ss_token ((tok, _), _)) :: _ -> word_like_edge `Left tok
+      | `Left, (Token (tok, _) | Ss_token ((tok, _), _)) :: _ -> Token.word_like_edge `Left tok
       | `Right, obs -> (
           match List.rev obs with
-          | Token (tok, _) :: _ -> word_like_edge `Right tok
+          | Token (tok, _) :: _ -> Token.word_like_edge `Right tok
           (* A superscript follows the token, so the edge is not word-like. *)
           | _ -> false)
       | `Left, _ -> false)
@@ -291,7 +278,9 @@ let displayed_definition : type mode x b s.
     (Meta.is_bare v || Display.lets () = `Definitions)
     && not (Meta.WrapSet.mem (Wrap v) !unparsing_metas)
   then
-    match Reporter.backtrack ~fatal:(fun _ -> None) (fun () -> Some (Global.find_meta v)) with
+    match
+      Reporter.discard_errors ~fallback:(fun () -> None) (fun () -> Some (Global.find_meta v))
+    with
     | Some ({ tm = `Defined _; _ } as def) -> Some def
     | _ -> None
   else None
@@ -369,6 +358,7 @@ let rec synths : type mode n s. ?visiting:Meta.WrapSet.t -> (mode, n, s) term ->
   | Unact (_, tm) -> go tm
   | Shift (_, _, tm) -> go tm
   | Weaken (_, tm, _) -> go tm
+  | Failed _ -> false
   (* Of the potential terms, a leaf synthesizes if its term does, while canonical types don't synthesize.  A match synthesizes if its discriminee does, and either it has an explicit motive or it is non-dependent and one of its branches synthesizes (giving the type of the match).  An implicitly dependent match doesn't synthesize, since its branches may have different types. *)
   | Realize tm -> go tm
   | Canonical _ -> false
@@ -377,7 +367,12 @@ let rec synths : type mode n s. ?visiting:Meta.WrapSet.t -> (mode, n, s) term ->
       &&
       match motive with
       | `Explicit _ -> true
-      | `Nondep -> Constr.Map.exists (fun _ (Branch { tm; _ }) -> go tm) branches
+      | `Nondep ->
+          Constr.Map.exists
+            (fun _ -> function
+              | Branch { tm; _ } -> go tm
+              | Failed_branch -> false)
+            branches
       | `Implicit -> false)
 
 (* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
@@ -678,10 +673,11 @@ let rec unparse : type mode n lt ls rt rs s.
                   ~inner:(Multiple (wstok Let, binding, wstok In))
                   ~last:body ~right_ok)))
   (* A let-only whose body is a metavariable that isn't a bare one arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
-  | Letonly (Permute (_, ctx), _, (Meta (v, _) as body), _)
+  | Letonly { termctx = Permute (_, ctx); tm = Meta (v, _) as body; _ }
     when (not (Meta.is_bare v)) && Display.lets () = `Names && letonly_all_hidden ctx body ->
       unparse_meta_name v
-  | Letonly (_, tmenv, Meta (v, _), _) when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
+  | Letonly { env = tmenv; tm = Meta (v, _); _ }
+    when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
       let inner =
         Multiple
           (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Ellipsis), wstok In)
@@ -694,11 +690,12 @@ let rec unparse : type mode n lt ls rt rs s.
             (unlocated
                (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v)
                   ~right_ok:No.minusomega_lt_minusomegaplusone)))
-  | Letonly (Permute (_, ctx), tmenv, body, _) when letonly_all_hidden ctx body ->
+  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; _ }
+    when letonly_all_hidden ctx body ->
       (* If all the bound variables are hidden, so are the "let only" and its body's ascription. *)
       let _, bodyvars = unparse_letonly_clauses ?sib:(letonly_sib body) vars ctx tmenv in
       unparse bodyvars body li ri
-  | Letonly (Permute (_, ctx), tmenv, body, ty) -> (
+  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty } -> (
       (* The bound terms are unparsed in the ambient context, while the types and the body are unparsed in the context of only the bound variables. *)
       let binding, bodyvars = unparse_letonly_clauses ?sib:(letonly_sib body) vars ctx tmenv in
       (* The body must synthesize, so if it wouldn't after unparsing, we ascribe it with its stored type. *)
@@ -821,6 +818,8 @@ let rec unparse : type mode n lt ls rt rs s.
   | Weaken (plus_lock, tm, Plus_lock (_, comp)) ->
       (* We remove the names of the locks, then the weakened variable, and then put back the locks. *)
       unparse (Names.add_lock (Names.remove (Names.split vars comp) Now) plus_lock) tm li ri
+  (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
+  | Failed _ -> fatal (Dependent "unparsing failed component")
 
 (* Unparse the definition of a metavariable.  The definition of a "let rec" metavariable is wrapped in let-bindings of the variables of its mutual block to their metavariables, which we don't display, instead displaying those variables as the names of the metavariables (see letrec_meta_name). *)
 and unparse_meta_definition : type mode n lt ls rt rs s.
@@ -1239,7 +1238,9 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
             let is_cube = function
               | Names.Cube_var _ -> true
               | Names.Boundary_var _ -> false in
-            acc <: (pat, ubody, List.exists is_cube xs, List.exists (fun x -> not (is_cube x)) xs))
+            acc <: (pat, ubody, List.exists is_cube xs, List.exists (fun x -> not (is_cube x)) xs)
+        (* A failed branch can only be displayed in an error message of the command whose checking failed.  We don't have names for its pattern variables, so we just omit it. *)
+        | Term.Failed_branch -> acc)
       branches Emp in
   (* A higher-dimensional match displays with the cube abstraction ⤇, unless some of its pattern variables were given explicit boundaries and none of them are cube variables, in which case it displays with the ordinary abstraction ↦.  (A branch with no pattern variables at all, such as that of a constant constructor, says nothing about which of these to use, so it follows the other branches.) *)
   let mapsto =
@@ -2161,8 +2162,12 @@ let () =
   Reporter.printer :=
     fun pr ->
       Reporter.try_with ~fatal:(fun d ->
-          Reporter.Code.PrintingError.read () d.message;
-          string "_UNPRINTABLE")
+          match d.message with
+          (* A dependent error means the term depends on a part that already failed, such as a failed match branch.  Then the message we are printing is just a consequence of that failure, so we let the dependent error replace it. *)
+          | Dependent _ -> fatal_diagnostic d
+          | _ ->
+              Reporter.Code.PrintingError.read () d.message;
+              string "_UNPRINTABLE")
       @@ fun () ->
       Readback.Displaying.run ~env:true @@ fun () ->
       match pr with

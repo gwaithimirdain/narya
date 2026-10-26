@@ -54,8 +54,8 @@ let if_known (test : 'a Err.t option) err =
   | Some x -> x
 
 (* If an application spine crosses no modal field projection (every field has the identity left adjoint), then its head lives at the ambient mode; this returns a witness of that mode equality, or None if the spine is modal. *)
-let rec nonmodal_apps : type hmode mode any. (hmode, mode, any) apps -> (hmode, mode) Eq.t option =
-  function
+let rec nonmodal_apps : type hmode mode any.
+    (hmode, mode, any, live) apps -> (hmode, mode) Eq.t option = function
   | Emp -> Some Eq
   | Arg (rest, _, _, _) -> nonmodal_apps rest
   | Inst (rest, _, _) -> nonmodal_apps rest
@@ -166,7 +166,7 @@ and equal_at : type mode a b.
                         let (Locked (_, lctx)) = Ctx.lock ctx right in
                         equal_at lctx (field_term left xu fld fldins)
                           (field_term left yu fld fldins)
-                          (tyof_field left (Ok xu) tyu fld fldins)) in
+                          (tyof_field left xu tyu fld fldins)) in
               do_fields fields
         (* At a codatatype without eta, there are no kinetic structs, only comatches, and those are not compared componentwise, only as neutrals, since they are generative. *)
         | Noeta -> equal_val ctx x y)
@@ -225,6 +225,9 @@ and equal_at_data : type mode m a b.
       if vx != x || vy != y then equal_at_data ctx constrs ty tyargs vx vy
       else
         match (x, y) with
+        (* A failed term can't be compared with a constructor, any more than with a neutral (see equal_head). *)
+        | Neu { head = Failed _; _ }, _ | _, Neu { head = Failed _; _ } ->
+            fatal (Dependent "comparing a failed term")
         | Constr _, _ | _, Constr _ ->
             fail
               (Unequal.Terms
@@ -258,8 +261,11 @@ and equal_neu : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
  fun ctx x y ->
   match (x, y) with
-  | ( Neu { head = head1; args = apps1; value = _; ty = _ },
-      Neu { head = head2; args = apps2; value = _; ty = _ } ) -> (
+  (* A failed term is unequal to everything, but this is a consequence of the failure, so we fail silently. *)
+  | Neu { head = Failed _; _ }, _ | _, Neu { head = Failed _; _ } ->
+      fatal (Dependent "comparing a failed term")
+  | ( Neu { head = Live head1; args = apps1; value = _; ty = _ },
+      Neu { head = Live head2; args = apps2; value = _; ty = _ } ) -> (
       (* To check two neutral applications are equal, with their types, we check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  We don't need to check that the types agree; this procedure concludes equality of types rather than assumes it. *)
       match (nonmodal_apps apps1, nonmodal_apps apps2) with
       (* If neither spine crosses a modal field projection, the heads are at the ambient mode and we can compare them first (as we always did before modal fields), which gives more precise "unequal heads" error messages. *)
@@ -376,8 +382,8 @@ and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> 
 and equal_apps : type h1 h2 mode any1 any2 a b.
     (mode, a, b) Ctx.t ->
     ?heads:h1 head * h2 head ->
-    (h1, mode, any1) apps ->
-    (h2, mode, any2) apps ->
+    (h1, mode, any1, live) apps ->
+    (h2, mode, any2, live) apps ->
     unit ErrOpt.t =
  fun ctx ?heads apps1 apps2 ->
   let open Monad.Ops (ErrOpt) in

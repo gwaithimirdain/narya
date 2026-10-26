@@ -124,18 +124,31 @@ type (_, _, _, _) shuffleable =
     }
       -> ('mode, 'r, 'h, 'i) shuffleable
 
-(* If glued evaluation is off, then every value is fully normalized already, so there is nothing for viewing a term to do.  If glued evaluation is on, then the term might be a neutral with a lazy value waiting to be evaluated, in which case we force that value recursively.  Importantly, even under glued evaluation this function should be IDEMPOTENT up to PHYSICAL EQUALITY. *)
+(* Eliminating a failed term, by application, field projection, or instantiation, produces another failed term.  Its type is computed from that of the eliminated term as usual, unless that is also failed. *)
+let failed_elim : type m mode.
+    mode Mode.t ->
+    (m, kinetic) value Lazy.t ->
+    ((m, kinetic) value -> (mode, kinetic) value) ->
+    (mode, kinetic) value =
+ fun mode ty tyof ->
+  failed mode
+    (lazy
+      (match Lazy.force ty with
+      | Neu { head = Failed _; _ } -> failed_type mode
+      | ty -> tyof ty))
+
+(* Because of glued evaluation, a term might be a neutral with a lazy value waiting to be evaluated.  Viewing it forces that value recursively.  Importantly, this function should be IDEMPOTENT up to PHYSICAL EQUALITY. *)
 let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
  fun tm ->
-  if GluedEval.read () then
-    match tm with
-    | Neu { value; _ } -> (
-        (* For glued evaluation, when viewing a term, we force its value and proceed to view that value instead. *)
-        match force_eval value with
-        | Realize v -> view_term v
-        | _ -> tm)
-    | _ -> tm
-  else tm
+  match tm with
+  (* A failed term has no value to view, so viewing it leaves it alone.  Code that needs to inspect it must instead fail silently (see Value.Failed). *)
+  | Neu { head = Failed _; _ } -> tm
+  | Neu { value; _ } -> (
+      (* When viewing a term, we force its value and proceed to view that value instead. *)
+      match force_eval value with
+      | Realize v -> view_term v
+      | _ -> tm)
+  | _ -> tm
 
 (* Viewing a type fails if the argument is not fully instantiated.  In most situations this would be a bug, but we allow the caller to specify it differently, since during typechecking it could be a user error. *)
 and view_type : type mode.
@@ -143,7 +156,9 @@ and view_type : type mode.
  fun ?(severity = Asai.Diagnostic.Bug) (ty : (mode, kinetic) value) (err : string) :
      mode view_type ->
   match ty with
-  | Neu { head; args; value; ty = _ } -> (
+  (* A failed type has no value to view, so code that needs to view it fails silently (see Value.Failed). *)
+  | Neu { head = Failed _; _ } -> fatal (Dependent "viewing a failed type")
+  | Neu { head = Live head; args; value; ty = _ } -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
       | Val (Canonical { mode = _; canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
@@ -204,19 +219,12 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                               | _ ->
                                   fatal (Anomaly "eval of lower-dim constant not neutral/canonical"));
                         })) in
-              let head = Const { name; ins = ins_zero dim } in
+              let head = Live (Const { name; ins = ins_zero dim }) in
               let result =
                 match defn with
-                | `Defined tree -> (
-                    if GluedEval.read () then
-                      (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
-                      Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
-                    else
-                      let value = eval (Emp (mode, dim)) tree in
-                      let newtm = Neu { head; args = Emp; value = ready value; ty } in
-                      match value with
-                      | Realize x -> x
-                      | _ -> newtm)
+                | `Defined tree ->
+                    (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
+                    Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
                 | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
               add_cached_const name dim mode result;
               Val result
@@ -224,7 +232,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
               fatal (Mode_mismatch (`Internal, "evaluating a constant", mode, None, mode_env env))))
   | Meta (meta, ambient) -> (
       let dim = dim_env env in
-      let head = Value.Meta { meta; env; ins = ins_zero dim } in
+      let head = Live (Value.Meta { meta; env; ins = ins_zero dim }) in
       (* As with constants, we need to instantiate the type at the same meta evaluated at lower dimensions. *)
       let make_ty meta ty =
         inst (eval_term env ty)
@@ -245,16 +253,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       | { tm = `Defined tm; energy = Potential; _ }, Potential -> eval env tm
       | { tm = `Defined tm; energy = Kinetic; _ }, Kinetic -> eval env tm
       | { tm = `Defined tm; energy = Kinetic; _ }, Potential -> Realize (eval_term env tm)
-      | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic -> (
-          if GluedEval.read () then
-            (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
-            Val (Neu { head; args = Emp; value = lazy_eval env tm; ty = lazy (make_ty meta ty) })
-          else
-            (* If a potential metavariable with a definition is used in a kinetic context, and doesn't evaluate yet to a kinetic result, we again have to build a neutral. *)
-            match eval env tm with
-            | Realize tm -> Val tm
-            | value ->
-                Val (Neu { head; args = Emp; value = ready value; ty = lazy (make_ty meta ty) }))
+      | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic ->
+          (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
+          Val (Neu { head; args = Emp; value = lazy_eval env tm; ty = lazy (make_ty meta ty) })
       (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  We don't need to return the metavariable itself; it suffices to know that that branch of the case tree is stuck, as the constant whose definition it is should handle all identity/equality checks correctly. *)
       | _, Potential -> Unrealized
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
@@ -499,7 +500,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     fields;
                     inst_fields = Some fields;
                   })) in
-        let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
+        let tm = Neu { head = Live head; args = Emp; value; ty = Lazy.from_val ty } in
         Hashtbl.add pitbl (SFace_of fab) { tm; ty = Lazy.from_val ty } in
       CubeOf.iter_faces mn { it };
       Val (Hashtbl.find pitbl (SFace_of (id_sface mn))).tm
@@ -523,7 +524,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     { build = (fun fa -> lazy_eval (act_env flenv (opt_op_of_sface fa)) v) });
            })
         body
-  | Letonly (_, tmenv, body, _) ->
+  | Letonly { env = tmenv; tm = body; _ } ->
       (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment. *)
       let (Plus m_n) = D.plus (dim_term_env tmenv) in
       eval (eval_env env m_n tmenv) body
@@ -559,6 +560,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                 (Anomaly
                    (Printf.sprintf "constructor %s missing from compiled match"
                       (Constr.to_string name)))
+          (* A branch that failed to typecheck has already reported its error, so it realizes to a failed value (whose type is unknown), which fails silently if it is ever inspected. *)
+          | Some Failed_branch -> Realize (failed_untyped (mode_env env))
           | Some (Branch { annotate; comp; perm; tm }) -> (
               let total_dim = D.plus_out (Modality.filtered env_dim fw) plus_dim in
               match D.compare constr_dim total_dim with
@@ -568,6 +571,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   let env = take_args env plus_dim dargs window fw annotate comp in
                   (* Then we proceed recursively with the body of that branch. *)
                   eval (Permute (perm, env)) tm))
+      (* A match on a failed term also realizes to a failed value. *)
+      | Neu { head = Failed _; _ } -> Realize (failed_untyped (mode_env env))
       (* Otherwise, the case tree doesn't reduce. *)
       | _ -> Unrealized)
   | Realize tm -> Realize (eval_term env tm)
@@ -598,6 +603,12 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* We strip off the locks, remove the weakened variable, put the locks back, and re-apply any prekey action stripped along the way. *)
       let (Restrict_keys (env, pre)) = restrict_keys env (plus_with_locks_of_plus_lock newplus) in
       eval (prekey_env (lock_env (remove_top env) plus) pre) tm
+  (* A term that failed to typecheck has already reported its error, so it evaluates to a failed value, which fails silently if it is ever inspected.  We don't know its type, so that is failed too.  A failed case tree realizes to such a value. *)
+  | Failed energy -> (
+      let tm = failed_untyped (mode_env env) in
+      match energy with
+      | Kinetic -> Val tm
+      | Potential -> Realize tm)
 
 and eval_with_boundary : type mode m a.
     (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =
@@ -623,7 +634,7 @@ and eval_args : type mode m n mn a.
           eval_term (act_env env (opt_op_of_sface fa)) (CubeOf.find tms fb));
     }
 
-(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used both by 'apply', for a neutral application spine being evaluated with a case tree, and by 'app_eval_apps', for a glued application spine being replayed. *)
+(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used by 'app_eval_apps', for a glued application spine being replayed. *)
 and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     mode Mode.t ->
     m D.t ->
@@ -674,6 +685,19 @@ and apply : type dom modality mode n m s.
  fun fn filter_nm arg ->
   let modality = Modality.filter_modality filter_nm in
   match view_term fn with
+  | Neu { head = Failed mode; args = Emp; value = _; ty } ->
+      Val
+        (failed_elim mode ty (fun ty ->
+             match view_type ty "apply" with
+             | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) -> (
+                 let Eq = eq_of_ins_zero ins in
+                 match
+                   ( D.compare (CubeOf.dim arg) (CubeOf.dim doms),
+                     Modality.compare (Modality.filter_modality filter) modality )
+                 with
+                 | Eq, Eq -> tyof_app cods tyargs filter arg
+                 | _ -> fatal (Anomaly "invalid application of failed function"))
+             | _ -> fatal (Anomaly "invalid application of failed non-function")))
   (* If the function is a lambda-abstraction, we check that it has the correct dimension and mode and then beta-reduce, adding the arguments to the environment. *)
   | Lam (_, lam_filter, body) -> (
       let m = dim_binder body in
@@ -689,7 +713,7 @@ and apply : type dom modality mode n m s.
             (Modality_mismatch
                (`Internal, "applying a lambda", Modality.filter_modality lam_filter, modality)))
   (* If it is a uninstantiated neutral application... *)
-  | Neu { head; args; value; ty = (lazy ty) } -> (
+  | Neu { head = Live _ as head; args; value; ty = (lazy ty) } -> (
       (* ... we check that its type is fully instantiated... *)
       match view_type ty "apply" with
       | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) -> (
@@ -703,53 +727,16 @@ and apply : type dom modality mode n m s.
           | _, Neq ->
               fatal
                 (Modality_mismatch (`Internal, "applying a neutral function", pi_modality, modality))
-          | Eq, Eq -> (
+          | Eq, Eq ->
               (* We annotate the new argument by its type, extracted from the domain type of the function being applied. *)
               let newarg = norm_of_vals_cube arg doms in
               (* We compute the output type of the application. *)
               let newty = lazy (tyof_app cods tyargs filter arg) in
               (* We add the new argument to the existing application spine. *)
               let args = Arg (args, filter, newarg, ins_zero m) in
-              if GluedEval.read () then
-                (* We add the argument to the lazy value and return a glued neutral. *)
-                let value = apply_lazy value m filter newarg in
-                Val (Neu { head; args; value; ty = newty })
-              else
-                (* We evaluate further with a case tree. *)
-                match force_eval value with
-                | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
-                (* It could be an indexed datatype waiting to be applied to more indices. *)
-                | Val
-                    (Canonical
-                       {
-                         mode;
-                         canonical =
-                           Data
-                             {
-                               dim;
-                               tyfam;
-                               indices = Unfilled _ as indices;
-                               constrs;
-                               recursive;
-                               hints;
-                             };
-                         tyargs = data_tyargs;
-                         ins;
-                         fields;
-                         inst_fields = _;
-                       }) ->
-                    (* TODO: What happens to the fields?  What even are the fields of a not-fully-applied indexed datatype? *)
-                    let value =
-                      apply_unfilled_data_index mode dim tyfam indices constrs recursive hints
-                        (TubeOf.inst data_tyargs) ins fields modality newarg in
-                    Val (Neu { head; args; value = ready value; ty = newty })
-                | Val tm -> (
-                    let value = apply tm filter_nm arg in
-                    let newtm = Neu { head; args; value = ready value; ty = newty } in
-                    match value with
-                    | Realize x -> Val x
-                    | _ -> Val newtm)
-                | _ -> fatal (Anomaly "invalid application of type")))
+              (* We add the argument to the lazy value and return a glued neutral. *)
+              let value = apply_lazy value m filter newarg in
+              Val (Neu { head; args; value; ty = newty }))
       | _ -> fatal (Anomaly "invalid application by non-function"))
   | _ -> fatal (Anomaly "invalid application of non-function")
 
@@ -815,6 +802,10 @@ and field : type src f mode n k nk s.
  fun fm tm fld fldins ->
   let src = Modality.src fm in
   match view_term tm with
+  (* If the value is failed, it remains failed, with the type computed as usual. *)
+  | Neu { head = Failed _; args = Emp; value = _; ty } ->
+      Val (failed_elim (Modality.tgt fm) ty (fun ty -> tyof_field fm tm ty fld fldins))
+  (* If the value is a struct, we select the appropriate field. *)
   | Struct { fields; ins = structins; energy; eta = _ } -> (
       match (is_id_ins structins, D.compare (cod_left_ins structins) (dom_ins fldins)) with
       | Some _, Eq -> struct_field "struct" energy fm fields fld fldins
@@ -836,26 +827,14 @@ and field : type src f mode n k nk s.
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
       match act_value viewed_tm p (Modalcell.id2 src) with
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
-      | Neu { head; args; value; ty = (lazy ty) } -> (
-          let newty = lazy (tyof_field fm (Ok tm) ty fld fldins) in
+      | Neu { head = Live _ as head; args; value; ty } ->
+          let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
           (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
           let (Has_filter filter) = Modality.filter fm n in
           let args = Field (args, filter, fld, fldplus, ins_zero n) in
-          if GluedEval.read () then
-            (* As in the non-glued case below, the insertion was already pushed inside by acting on the whole neutral above, so the remaining insertion to project from its value is the identity. *)
-            let value = field_lazy fm value fld (ins_of_plus n fldplus) in
-            Val (Neu { head; args; value; ty = newty })
-          else
-            match force_eval value with
-            | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
-            | Val tm -> (
-                (* At this point we've already pushed the insertion inside in computing our neutral, so the remaining insertion on the field to compute of its value is "the identity" of appropriate dimensions *)
-                let value = field fm tm fld (ins_of_plus n fldplus) in
-                let newtm = Neu { head; args; value = ready value; ty = newty } in
-                match value with
-                | Realize x -> Val x
-                | _ -> Val newtm)
-            | Realize _ -> fatal (Anomaly "realized neutral"))
+          (* We add the projection to the lazy value and return a glued neutral.  At this point we've already pushed the insertion inside by acting on the whole neutral above, so the remaining insertion to project from its value is "the identity" of appropriate dimensions. *)
+          let value = field_lazy fm value fld (ins_of_plus n fldplus) in
+          Val (Neu { head; args; value; ty = newty })
       | _ ->
           fatal ~severity:Asai.Diagnostic.Bug
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))
@@ -911,10 +890,10 @@ and field_term : type src f mode n k nk.
   let (Val v) = field fm x fld fldins in
   v
 
-(* Given a term and its record type, compute the type of a field projection, and the substitution dimension it was evaluated at.  There are two versions of this function, one for when we already know the insertion associated to the field, and one for when we are synthesizing it from the user's integer sequence.  First we define the shared part of both, where we have already found the codatafield from the codata type.  We allow the term to be an error, in case typechecking failed earlier but we are continuing on; this can nevertheless succeed (or fail in more interesting ways) if the type doesn't actually depend on that value. *)
+(* Given a term and its record type, compute the type of a field projection, and the substitution dimension it was evaluated at.  There are two versions of this function, one for when we already know the insertion associated to the field, and one for when we are synthesizing it from the user's integer sequence.  First we define the shared part of both, where we have already found the codatafield from the codata type. *)
 and tyof_codatafield : type src f mode m n mn a s i et.
     (src, f, mode) Modality.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     i Field.t ->
     (i, src * a * D.zero * n * et) Codatafield.t ->
     (src, m, a) env ->
@@ -948,20 +927,17 @@ and tyof_codatafield : type src f mode m n mn a s i et.
 (* Assemble the self value that a codatafield's type is applied to, from the term being projected and the boundary of its type.  The self variable lies behind the locks by the right and then the left adjoint, whereas an ambient value being projected from lives in the ambient context; so, exactly as for the *type* of the self variable when the codatatype is checked, we transport it and its boundary along the adjunction unit 1 ⇒ gf.  For an ordinary field the unit is an identity cell and this is a no-op.  (A caller that already has the self *variable* of a self-extended context, such as readback_codata, has no ambient term to transport, and calls tyof_lower_codatafield or tyof_higher_codatafield directly with that variable instead.) *)
 and self_values : type amode f g gmode mn.
     (amode, f, g, gmode) Modalcell.adjunction ->
-    ((amode, kinetic) value, Code.t) Result.t ->
+    (amode, kinetic) value ->
     (D.zero, mn, mn, amode normal) TubeOf.t ->
-    [ `Ok of (mn, (amode, kinetic) value) CubeOf.t | `Error of Code.t ] =
+    (mn, (amode, kinetic) value) CubeOf.t =
  fun (Adjunction { unit; _ }) tm tyargs ->
-  match tm with
-  | Ok tm ->
-      let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
-      `Ok (CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ])
-  | Error e -> `Error e
+  let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
+  CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ]
 
 (* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.  The ~key flag distinguishes two uses.  `Counit computes the type of a *projection* x .fld, which is keyed by the adjunction counit to put it in the ambient context (rule 3 of modal fields).  `Nokey computes the type at which the *component* of a tuple/comatch is checked or read back, which lives behind the lock by the right adjoint and is not keyed (rule 2).  For ordinary fields the two agree, since the counit is the identity. *)
 and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
-    (* As for a higher field, the self value and its boundary, in the context behind the locks where the field's type lives: an ambient value being projected from is transported there along the adjunction unit (self_values does that), while a caller displaying a codatatype supplies the self variable of its self-extended context, which is already there.  It can be an error, if typechecking of the term whose field this is failed earlier; the type may still not depend on it. *)
-    [ `Ok of (mn, (amode, kinetic) value) CubeOf.t | `Error of Code.t ] ->
+    (* As for a higher field, the self value and its boundary, in the context behind the locks where the field's type lives: an ambient value being projected from is transported there along the adjunction unit (self_values does that), while a caller displaying a codatatype supplies the self variable of its self-extended context, which is already there. *)
+    (mn, (amode, kinetic) value) CubeOf.t ->
     (* The boundary of the self, as its type presents it in the context where it lives: an ambient term's untransported boundary, or the boundary of the self variable's own type.  These are the terms whose field projections instantiate the field type. *)
     (D.zero, mn, mn, amode normal) TubeOf.t ->
     D.zero Field.t ->
@@ -991,7 +967,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
             plus = mn;
             filter = mfilter;
             filtered = Modality.filter_idempotent nfilter;
-            values :> (mn, amode) env_binding;
+            values = `Ok values;
           } in
       (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
       let insttm = eval_term env fldty in
@@ -1007,7 +983,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
               (fun fa [ arg ] ->
                 let fains = ins_zero (dom_tface fa) in
                 let tm = field_term left arg.tm fldname fains in
-                let ty = lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname fains) in
+                let ty = lazy (tyof_field left arg.tm (Lazy.force arg.ty) fldname fains) in
                 { tm; ty });
           }
           [ fst (TubeOf.split (D.zero_plus m) mn tyargs) ] in
@@ -1015,8 +991,8 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
 
 (* This function is also called directly from check_higher_field.  In that case, the field is determined by a partial bijection that may *not* be just an insertion, and we have to frobnicate the environment in which we evaluate the type.  Some of that frobnication involves an eval-readback cycle, which requires a callback from here since readback isn't defined yet. *)
 and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
-    (* The self value and its boundary, *already* in the context where this instance of the field lives: transported behind the locks along the adjunction unit if it is an ambient value (self_values does that), or the self variable of a self-extended context if the caller is displaying a codatatype, and degenerated by the remaining dimensions either way.  The value is an (r+n)-cube: for a projection (r=0) that is just the self and its boundary, while for a nonprojectable instance it is their degeneration.  It can be an error, if typechecking of the term whose field this is failed earlier; the type may still not depend on it. *)
-    [ `Ok of (rn, (mode, kinetic) value) CubeOf.t | `Error of Code.t ] ->
+    (* The self value and its boundary, *already* in the context where this instance of the field lives: transported behind the locks along the adjunction unit if it is an ambient value (self_values does that), or the self variable of a self-extended context if the caller is displaying a codatatype, and degenerated by the remaining dimensions either way.  The value is an (r+n)-cube: for a projection (r=0) that is just the self and its boundary, while for a nonprojectable instance it is their degeneration. *)
+    (rn, (mode, kinetic) value) CubeOf.t ->
     (* The boundary faces of the self as its type presents them (see tyof_lower_codatafield), indexed by the faces of n, each degenerated by the remaining dimensions as above (so the face at an n-face of dimension k is (r+k)-dimensional).  These are the terms whose field projections instantiate the field type. *)
     (D.zero, n, n, mode normal) TubeOf.t ->
     (r, n, rn) D.plus ->
@@ -1074,7 +1050,7 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
             plus = D.plus_zero rn;
             filter = rnfilter;
             filtered = Modality.filter_zero left;
-            values :> (rn, mode) env_binding;
+            values = `Ok values;
           } in
       (* Now we act by the inverse of the insertion, in the last n of the r+n dimensions, to get an (r+s+h, agx) env. *)
       let insdeg = plus_deg r r_n r_sh (deg_of_perm (perm_inv (perm_of_ins_plus fldins sh))) in
@@ -1121,15 +1097,14 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
                 match shuf with
                 | Trivial ->
                     let tm = field_term left arg.tm fldname fains in
-                    let ty = lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname fains) in
+                    let ty = lazy (tyof_field left arg.tm (Lazy.force arg.ty) fldname fains) in
                     { tm; ty }
                 | Nontrivial { shuffle; _ } ->
                     (* We use the extra dimensions of the degenerated face to make the pbij into an insertion. *)
                     let (Plus rm) = D.plus (dom_tface faplus) in
                     let arg_ins = ins_plus_of_pbij fains shuffle rm in
                     let tm = field_term left arg.tm fldname arg_ins in
-                    let ty =
-                      lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname arg_ins) in
+                    let ty = lazy (tyof_field left arg.tm (Lazy.force arg.ty) fldname arg_ins) in
                     { tm; ty });
           } in
       inst insttm instargs
@@ -1137,16 +1112,13 @@ and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
 (* This version is when we already know the insertion.  In this case, it's a bug if the field name or dimension don't match.  The modality is the left adjoint of the field's adjunction: the term and its type live at its source mode and the resulting field type at its target mode. *)
 and tyof_field : type src f mode m s i.
     (src, f, mode) Modality.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     (src, kinetic) value ->
     i Field.t ->
     (m, s, i) insertion ->
     (mode, kinetic) value =
  fun fm tm ty fld fldins ->
-  let errtm =
-    match tm with
-    | Ok tm -> Dump.Val tm
-    | Error _err -> PString "[ERROR]" in
+  let errtm = Dump.Val tm in
   let errfld = `Ins (fld, fldins) in
   let severity = Asai.Diagnostic.Bug in
   match view_type ty "tyof_field" with
@@ -1172,10 +1144,7 @@ and tyof_field : type src f mode m s i.
       match Fibrancy.FieldsMap.find_opt srcmode !Fibrancy.fields with
       | None -> fatal ~severity err
       | Some fields ->
-          let values =
-            match tm with
-            | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
-            | Error e -> `Error e in
+          let values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) in
           let env =
             Value.Ext
               {
@@ -1186,16 +1155,11 @@ and tyof_field : type src f mode m s i.
                 values;
               } in
           tyof_field_giventype fm tm head Noeta env (D.plus_zero m) fields tyargs fld fldins)
-  | _ ->
-      let p =
-        match tm with
-        | Ok tm -> Dump.Val tm
-        | Error _err -> PString "[ERROR]" in
-      fatal ~severity (No_such_field (`Other p, errfld))
+  | _ -> fatal ~severity (No_such_field (`Other (Dump.Val tm), errfld))
 
 and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
     (src, f, mode) Modality.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     hmode head ->
     (potential, et) eta ->
     (src, m, a) env ->
@@ -1226,7 +1190,7 @@ and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
 and tyof_field_withname : type src f mode a b.
     (src, f, mode) Modality.t ->
     (src, a, b) Ctx.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     (src, kinetic) value ->
     [ `Name of string * int list | `Int of int ] ->
     Field.with_ins * (mode, kinetic) value =
@@ -1235,10 +1199,7 @@ and tyof_field_withname : type src f mode a b.
     match infld with
     | `Name (str, ints) -> `Strings (str, ints)
     | `Int n -> `Int n in
-  let errtm =
-    match tm with
-    | Ok tm -> PVal (ctx, tm)
-    | Error _err -> PString "[ERROR]" in
+  let errtm = PVal (ctx, tm) in
   match view_type ~severity:Asai.Diagnostic.Error ty "tyof_field" with
   | Canonical (head, Codata { env; fields; opacity = _; eta; hints = _ }, codatains, tyargs) -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
@@ -1253,10 +1214,7 @@ and tyof_field_withname : type src f mode a b.
       match Fibrancy.FieldsMap.find_opt srcmode !Fibrancy.fields with
       | None -> fatal err
       | Some fields ->
-          let values =
-            match tm with
-            | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
-            | Error e -> `Error e in
+          let values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) in
           let env =
             Value.Ext
               {
@@ -1274,7 +1232,7 @@ and tyof_field_withname : type src f mode a b.
 and tyof_field_withname_giventype : type src f mode a b m n mn c et.
     (src, f, mode) Modality.t ->
     (src, a, b) Ctx.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     (src, kinetic) value ->
     (potential, et) eta ->
     (src, m, c) env ->
@@ -1556,7 +1514,7 @@ and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) va
 
 (* Apply an 'apps' to something, calling either 'apply' or 'field' or 'inst' for each stage as appropriate. *)
 and app_eval_apps : type hmode mode s any.
-    (hmode, s) evaluation -> (hmode, mode, any) apps -> (mode, s) evaluation =
+    (hmode, s) evaluation -> (hmode, mode, any, live) apps -> (mode, s) evaluation =
  fun ev x ->
   match x with
   | Emp -> ev
@@ -1684,8 +1642,6 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
           (* The looked-up value lives at the modality's domain mode, where the prekey action starts as an identity. *)
           let pre = Modalcell.id2 (Modality.src mu) in
           match (values, Modality.compare modality mu) with
-          (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
-          | `Error e, _ -> fatal e
           | `Ok entry, Eq -> Looked_up { act = (fun x s c -> act_value x s c); op; entry; pre }
           | `Lazy entry, Eq ->
               Looked_up
@@ -1723,8 +1679,20 @@ and inst : type mode m n mn s.
   | Zero -> tm
   | Pos dim2 -> (
       match view_term tm with
-      | Neu { head; args = neu_args; value; ty = (lazy ty) } -> (
-          (* We have to combine the new instantiation with any existing instantation at the end of the application spine. *)
+      (* If the value is failed, it remains failed, with the type computed as usual. *)
+      | Neu { head = Failed mode; args = Emp; value = _; ty } ->
+          failed_elim mode ty (fun ty ->
+              match view_type ty "inst" with
+              | Canonical (_, UU (mode, m), ins, tys1) -> (
+                  let Eq = eq_of_ins_zero ins in
+                  match D.compare m (TubeOf.out args2) with
+                  | Eq -> tyof_inst mode tys1 args2
+                  | Neq ->
+                      fatal
+                        (Dimension_mismatch ("instantiating a failed type", m, TubeOf.out args2)))
+              | _ -> fatal (Anomaly "can't instantiate failed non-type"))
+      (* If the value is a non-failed neutral, we have to combine the new instantiation with any existing instantation at the end of the application spine. *)
+      | Neu { head = Live _ as head; args = neu_args; value; ty } -> (
           let base_args, args1 = inst_of_apps neu_args in
           let (Any_tube args1) =
             Option.value args1 ~default:(Any_tube (TubeOf.empty (TubeOf.out args2))) in
@@ -1732,22 +1700,29 @@ and inst : type mode m n mn s.
           | Neq ->
               fatal
                 (Dimension_mismatch ("instantiating a type 1", TubeOf.out args2, TubeOf.uninst args1))
-          | Eq -> (
+          | Eq ->
               let (Plus nk) = D.plus (TubeOf.inst args1) in
               let newargs = TubeOf.plus_tube nk args1 args2 in
               let args = Inst (base_args, D.pos_plus dim2 nk, newargs) in
               (* Now we have to construct the type OF the new instantiation.  The old term must have belonged to some instantiation of the universe of the previously uninstantiated dimension. *)
-              match view_type ty "inst" with
-              | Canonical (_, UU (mode, m), ins, tys1) -> (
-                  let Eq = eq_of_ins_zero ins in
-                  match D.compare m (TubeOf.uninst args1) with
-                  | Neq ->
-                      fatal (Dimension_mismatch ("instantiating a type 2", m, TubeOf.uninst args1))
-                  | Eq ->
-                      let value = inst_lazy mode value args2 in
-                      let ty = lazy (tyof_inst mode tys1 args2) in
-                      Neu { head; args; value; ty })
-              | _ -> fatal (Anomaly "can't instantiate non-type")))
+              let viewed_ty = lazy (view_type (Lazy.force ty) "inst") in
+              let mode () =
+                match Lazy.force viewed_ty with
+                | Canonical (_, UU (mode, _), _, _) -> mode
+                | _ -> fatal (Anomaly "can't instantiate non-type") in
+              let value = inst_lazy mode value args2 in
+              let ty =
+                lazy
+                  (match Lazy.force viewed_ty with
+                  | Canonical (_, UU (mode, m), ins, tys1) -> (
+                      let Eq = eq_of_ins_zero ins in
+                      match D.compare m (TubeOf.uninst args1) with
+                      | Neq ->
+                          fatal
+                            (Dimension_mismatch ("instantiating a type 2", m, TubeOf.uninst args1))
+                      | Eq -> tyof_inst mode tys1 args2)
+                  | _ -> fatal (Anomaly "can't instantiate non-type")) in
+              Neu { head; args; value; ty })
       | Canonical { mode; canonical = c; tyargs = args1; ins; fields; inst_fields = _ } -> (
           match D.compare (TubeOf.out args2) (TubeOf.uninst args1) with
           | Neq ->
@@ -1872,6 +1847,24 @@ and norm_of_vals_tube : type mode n k nk.
     { map = (fun fab [ tm; ty ] -> norm_of_val new_tm_tbl (sface_of_tface fab) tm ty) }
     [ tms; tys ]
 
+(* The type of a term evaluated in a possibly higher-dimensional environment: its type evaluated there, instantiated at the term evaluated at all the strict faces of that environment. *)
+and type_of_eval : type mode n b.
+    (mode, n, b) env -> (mode, b, kinetic) term -> (mode, b, kinetic) term -> (mode, kinetic) value
+    =
+ fun env tm ty ->
+  let tbl = Hashtbl.create 10 in
+  let tyargs =
+    TubeOf.build D.zero
+      (D.zero_plus (dim_env env))
+      {
+        build =
+          (fun fa ->
+            let fa = sface_of_tface fa in
+            let fenv = act_env env (opt_op_of_sface fa) in
+            norm_of_val tbl fa (eval_term fenv tm) (eval_term fenv ty));
+      } in
+  inst (eval_term env ty) tyargs
+
 (* Given a type belonging to the m+n dimensional universe instantiated at tyargs, compute the instantiation of the m-dimensional universe that its instantiation belongs to. *)
 and tyof_inst : type mode m n mn.
     mode Mode.t ->
@@ -1953,6 +1946,21 @@ let apply_singleton_tube_nfs : type dom modality mode n.
   let fn = ref fn in
   TubeOf.miter { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) } [ xs ];
   !fn
+
+(* Lazily evaluate a checked term whose type is known.  If it failed, then evaluating it would give a failed value of unknown type (see Value.failed_untyped), so instead we make a failed value of the known type.  Then, for instance, a degeneracy of it can still be instantiated, and an elimination of it has a type that can be computed. *)
+let lazy_eval_at : type mode m b.
+    (mode, m, b) env ->
+    (mode, b, kinetic) term ->
+    (mode, kinetic) value ->
+    (mode, kinetic) lazy_eval =
+ fun env tm ty ->
+  if is_failed tm then ready (Val (failed (mode_env env) (Lazy.from_val ty))) else lazy_eval env tm
+
+(* Similarly, but eagerly evaluate a kinetic term. *)
+let eval_at : type mode m b.
+    (mode, m, b) env -> (mode, b, kinetic) term -> (mode, kinetic) value -> (mode, kinetic) value =
+ fun env tm ty ->
+  if is_failed tm then failed (mode_env env) (Lazy.from_val ty) else eval_term env tm
 
 (* Evaluate a term context to produce a value context. *)
 

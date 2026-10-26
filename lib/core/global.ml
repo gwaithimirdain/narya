@@ -292,11 +292,13 @@ let end_command (offset, make_msg) =
       | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Parametric
       | _ -> `Nonparametric in
     { h with parametric } in
-  Option.iter emit (make_msg (Bwd.length d.current_holes));
+  (* If the command had any errors, it will fail, so its holes won't exist; thus we don't display either the message about the command or the hole goals. *)
+  let failed = moribund () in
+  if not failed then Option.iter emit (make_msg (Bwd.length d.current_holes));
   Mbwd.miter
     (fun [ ({ meta = Meta.Wrap m; printable; _ } : Command_state.hole) ] ->
       (* We intentionally do not "locate" this emission, since we want to display only the hole context and type, not its location in the source. *)
-      emit (Hole (Meta.name m, printable));
+      if not failed then emit (Hole (Meta.name m, printable));
       match Holetable.find_opt m holes with
       | Some h -> Holetable.add m (update_parametric h) holes
       | None -> ())
@@ -308,17 +310,20 @@ let end_command (offset, make_msg) =
         (Meta.hole_number meta, startpos, endpos))
       d.current_holes )
 
-(* Run a command.  The different versions correspond to the Origin command functions that they call. *)
+(* Run a command.  If it reports any errors, even if it returns, it fails with a silent fatal error.  This has to happen inside the Origin command functions, so that in interactive mode they undo its effects, such as definitions with failed parts or partially failed hole solutions. *)
+let in_command init f =
+  Reporter.failing_on_errors ~why:"command" @@ fun () ->
+  Current_command.run ~init @@ fun () -> end_command (f ())
+
+(* The different versions correspond to the Origin command functions that they call. *)
 
 let run_command ~holes_allowed f =
   Origin.do_command @@ fun () ->
-  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric = `Maybe_parametric }
-  @@ fun () -> end_command (f ())
+  in_command { holes_allowed; current_holes = Emp; parametric = `Maybe_parametric } f
 
 let run_command_then_undo ~holes_allowed f =
   Origin.do_command_then_undo @@ fun () ->
-  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric = `Maybe_parametric }
-  @@ fun () -> end_command (f ())
+  in_command { holes_allowed; current_holes = Emp; parametric = `Maybe_parametric } f
 
 (* In the rewind cases, we have to restore the parametric-ness information from the past also. *)
 let rewind_command ~parametric ~holes_allowed instant f =
@@ -327,8 +332,7 @@ let rewind_command ~parametric ~holes_allowed instant f =
     | `Parametric -> `Must_be_parametric
     | `Nonparametric -> `Nonparametric in
   Origin.rewind_command instant @@ fun () ->
-  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric } @@ fun () ->
-  end_command (f ())
+  in_command { holes_allowed; current_holes = Emp; parametric } f
 
 let rewind_command_then_undo ~parametric ~holes_allowed instant f =
   let parametric =
@@ -336,8 +340,7 @@ let rewind_command_then_undo ~parametric ~holes_allowed instant f =
     | `Parametric -> `Must_be_parametric
     | `Nonparametric -> `Nonparametric in
   Origin.rewind_command_then_undo instant @@ fun () ->
-  Current_command.run ~init:{ holes_allowed; current_holes = Emp; parametric } @@ fun () ->
-  end_command (f ())
+  in_command { holes_allowed; current_holes = Emp; parametric } f
 
 (* For white box testing *)
 let run f =
@@ -425,19 +428,3 @@ let with_meta_definition m tm f =
   | None ->
       (* If the metavariable isn't found, that means that when we created it we didn't have a type for it.  That, in turn, means that the user doesn't have a name for it, since the metavariable is only bound to a user name in a "let rec".  So we don't need to do anything. *)
       f ()
-
-(* Temporarily set the value of a constant to produce an error, and restore it afterwards. *)
-let without_definition c err f =
-  match Constant.Table.find_opt c constants with
-  | Some old ->
-      consttable_add c (Error err);
-      Fun.protect ~finally:(fun () -> consttable_add c old) f
-  | _ -> fatal (Anomaly "missing definition in without_definition")
-
-(* Similarly, temporarily set the value of a global metavariable to produce an error. *)
-let without_meta_definition m err f =
-  match Metatable.find_opt m metas with
-  | Some old ->
-      metatable_add m (Error err);
-      Fun.protect ~finally:(fun () -> metatable_add m old) f
-  | None -> f ()

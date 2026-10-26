@@ -30,7 +30,11 @@ let () =
   Parser.Lexer.Specials.run @@ fun () ->
   Origin.run @@ fun () ->
   Origin.with_file ~holes_allowed:true (File.make (`Other "command_ranges")) @@ fun () ->
-  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+  Reporter.run ~emit:Reporter.display
+    ~mortal:(fun d ->
+      Reporter.display d;
+      raise (Failure "Parse failure"))
+    ~fatal:(fun _ d ->
       Reporter.display d;
       raise (Failure "Parse failure"))
   @@ fun () ->
