@@ -117,7 +117,22 @@ let is_plain_var : type mode s. level -> (mode, s) value -> bool =
       v.level = level && Option.is_some (is_id_deg v.deg) && Modalcell.is_id v.key
   | _ -> false
 
-(* Test whether a zero-dimensional environment for a metavariable's context is the identity environment of an ordered context (the one we are reading back in), i.e. whether the two contexts have the same shape and each entry of the environment is the value of the corresponding variable in that context.  If so, we return the resulting equality of checked lengths, built up entry by entry as we compare the shapes.  This is a conservative test: a free variable must appear literally, as a variable with the same level and no degeneracy, key, or arguments, while a let-bound variable must have its own value, up to physical equality.  It is used to read back a metavariable whose environment is the identity as a plain Meta, rather than wrapped in a let-only. *)
+(* Whether the top entry of an environment is the identity environment of a context entry with the given modality and bindings, because the environment is a context whose top entry has those very bindings. *)
+let rec is_top_bindings : type mode n d dom modality k.
+    (mode, n, d) env -> (dom, modality, mode) Modality.t -> (k, dom Binding.t) CubeOf.t -> bool =
+ fun env modality bindings ->
+  match env with
+  | Ctx (Snoc (_, entry, _)) -> (
+      match
+        ( Modality.compare (Ctx.modality_entry entry) modality,
+          D.compare (Ctx.dim_entry entry) (CubeOf.dim bindings) )
+      with
+      | Eq, Eq -> Ctx.bindings_entry entry == bindings
+      | _ -> false)
+  | Ctx (Weaken (ctx, _)) -> is_top_bindings (Ctx ctx) modality bindings
+  | _ -> false
+
+(* Test whether a zero-dimensional environment for a metavariable's context is the identity environment of an ordered context (the one we are reading back in), i.e. whether the two contexts have the same shape and each entry of the environment is the value of the corresponding variable in that context.  If so, we return the resulting equality of checked lengths, built up entry by entry as we compare the shapes.  This is a conservative test: a free variable must appear literally, as a variable with the same level and no degeneracy, key, or arguments, while a let-bound variable must have its own value, up to physical equality.  Usually, though, the environment is (a weakening of) the context itself, which we can recognize entry by entry without looking anything up.  It is used to read back a metavariable whose environment is the identity as a plain Meta, rather than wrapped in a let-only. *)
 let rec is_identity_ordered_env : type mode a b c d.
     (mode, a, b) Ctx.Ordered.t ->
     (mode, D.zero, d) env ->
@@ -146,6 +161,11 @@ let rec is_identity_ordered_env : type mode a b c d.
       let bindings = Ctx.bindings_entry entry in
       let k = CubeOf.dim bindings in
       match (Modality.compare modality (modality_entry tentry), D.compare k (dim_entry tentry)) with
+      | Eq, Eq when is_top_bindings env modality bindings -> (
+          (* If the environment's top entry is literally this entry of the context, there is nothing to look up. *)
+          match is_identity_ordered_env ctx (remove_top env) envctx with
+          | Some Eq -> Some Eq
+          | None -> None)
       | Eq, Eq -> (
           let (* We first check that all the variables in this entry are determined, so that we don't force any of them that are undetermined (such as those in a let rec whose values are still being computed). *)
             exception
