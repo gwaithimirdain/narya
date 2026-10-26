@@ -80,6 +80,23 @@ let parenthesize_maybe (tm : ('lt, 'ls, 'rt, 'rs) parse located) =
   | Notn ((Postprocess.Parens, _), _) -> tm
   | _ -> parenthesize tm
 
+(* Whether a term is a notation with more than one piece whose token at the given edge is word-like.  Other terms, such as identifiers, are supposed to look like separate arguments, as is a notation consisting of a single token such as "Type"; while a notation whose edge is a term has to be parenthesized anyway on that side. *)
+let word_like_notation : type lt ls rt rs.
+    [ `Left | `Right ] -> (lt, ls, rt, rs) parse located -> bool =
+ fun side tm ->
+  match tm.value with
+  | Notn (_, n) -> (
+      match (side, args n) with
+      | _, ([] | [ _ ]) -> false
+      | `Left, (Token (tok, _) | Ss_token ((tok, _), _)) :: _ -> Token.word_like_edge `Left tok
+      | `Right, obs -> (
+          match List.rev obs with
+          | Token (tok, _) :: _ -> Token.word_like_edge `Right tok
+          (* A superscript follows the token, so the edge is not word-like. *)
+          | _ -> false)
+      | `Left, _ -> false)
+  | _ -> false
+
 (* A "delayed" result of unparsing that needs only to know the tightness intervals to produce a result. *)
 type unparser = {
   unparse :
@@ -1017,8 +1034,9 @@ and unparse_comatch : type mode n a s et lt ls rt rs.
           Emp fields in
       unlocated (outfix ~notn:comatch ~inner:(Multiple (wstok LBracket, inner, wstok RBracket)))
 
-(* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing. *)
+(* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing.  The flag ~more indicates that the spine will be applied to more arguments, so that its right edge faces a juxtaposition (see word_like_notation). *)
 and unparse_spine : type mode n lt ls rt rs s.
+    ?more:bool ->
     n Names.t ->
     [ `Term of (mode, n, s) term
     | `Constr of Constr.t
@@ -1029,32 +1047,39 @@ and unparse_spine : type mode n lt ls rt rs s.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars head args li ri ->
+ fun ?(more = false) vars head args li ri ->
+  (* A head whose right edge faces a juxtaposition, and an argument whose left edge does (or whose right edge does, if it is followed by more arguments), are parenthesized if that edge is word-like. *)
+  let head_parens tm = if more && word_like_notation `Right tm then parenthesize tm else tm in
+  let arg_parens ?(more = more) tm =
+    if word_like_notation `Left tm || (more && word_like_notation `Right tm) then parenthesize tm
+    else tm in
   (* First we check whether the head is a term with an associated notation, and if so whether it is applied to enough arguments to instantiate that notation. *)
   match get_notation head args with
   (* If it's applied to exactly the right number of arguments, we unparse it as that notation. *)
-  | Some (Wrap notn, args, inner_symbols, Emp) -> unparse_notation notn args inner_symbols li ri
+  | Some (Wrap notn, args, inner_symbols, Emp) ->
+      head_parens (unparse_notation notn args inner_symbols li ri)
   (* Otherwise, the unparsed notation has to be applied to the rest of the arguments as a spine. *)
   | Some (Wrap notn, args, inner_symbols, (Snoc _ as rest)) ->
-      unparse_spine vars
+      unparse_spine ~more vars
         (`Unparser { unparse = (fun li ri -> unparse_notation notn args inner_symbols li ri) })
         rest li ri
   (* If not, we proceed to unparse it as an application spine, recursively. *)
   | None -> (
       match args with
-      | Emp -> (
-          match head with
-          | `Term tm -> unparse vars tm li ri
-          | `Constr c -> unlocated (Constr (Constr.to_string c, []))
-          | `Field (tm, fld, ins) -> unparse_field vars tm fld ins li ri
-          | `Degen s -> unlocated (Ident ([ s ], []))
-          | `Unparser tm -> tm.unparse li ri)
+      | Emp ->
+          head_parens
+            (match head with
+            | `Term tm -> unparse vars tm li ri
+            | `Constr c -> unlocated (Constr (Constr.to_string c, []))
+            | `Field (tm, fld, ins) -> unparse_field vars tm fld ins li ri
+            | `Degen s -> unlocated (Ident ([ s ], []))
+            | `Unparser tm -> tm.unparse li ri)
       | Snoc (args, arg) -> (
           (* As before, if the application doesn't fit in its tightness interval, we have to parenthesize it. *)
           match (No.Interval.contains li No.plus_omega, No.Interval.contains ri No.plus_omega) with
           | Some left_ok, Some right_ok ->
-              let fn = unparse_spine vars head args li No.Interval.plus_omega_only in
-              let arg = arg.unparse No.Interval.empty ri in
+              let fn = unparse_spine ~more:true vars head args li No.Interval.plus_omega_only in
+              let arg = arg_parens (arg.unparse No.Interval.empty ri) in
               (* We parenthesize the argument if the style dictates and it doesn't already have parentheses. *)
               let arg =
                 match Display.argstyle () with
@@ -1063,9 +1088,12 @@ and unparse_spine : type mode n lt ls rt rs s.
               unlocated (App { fn; arg; left_ok; right_ok })
           | _ ->
               let fn =
-                unparse_spine vars head args No.Interval.plus_omega_only No.Interval.plus_omega_only
+                unparse_spine ~more:true vars head args No.Interval.plus_omega_only
+                  No.Interval.plus_omega_only in
+              (* Since the whole application is parenthesized, the right edge of its last argument doesn't face a juxtaposition. *)
+              let arg =
+                arg_parens ~more:false (arg.unparse No.Interval.empty No.Interval.plus_omega_only)
               in
-              let arg = arg.unparse No.Interval.empty No.Interval.plus_omega_only in
               let arg =
                 match Display.argstyle () with
                 | `Spaces -> arg
