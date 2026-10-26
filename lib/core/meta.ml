@@ -40,15 +40,17 @@ module Extended_identity = struct
       (m1, a1, b1, s1) t -> (m2, a2, b2, s2) t -> (m1 * a1 * b1 * s1, m2 * a2 * b2 * s2) Eq.compare
       =
    fun x y ->
-    match
-      ( x.identity = y.identity,
-        Mode.compare x.mode y.mode,
-        N.compare x.raw y.raw,
-        Tctx.compare x.len y.len,
-        Energy.compare x.energy y.energy )
-    with
-    | true, Eq, Eq, Eq, Eq -> Eq
-    | _ -> Neq
+    (* We compare the identities first, since comparing the lengths takes time linear in them. *)
+    if x.identity <> y.identity then Neq
+    else
+      match
+        ( Mode.compare x.mode y.mode,
+          N.compare x.raw y.raw,
+          Tctx.compare x.len y.len,
+          Energy.compare x.energy y.energy )
+      with
+      | Eq, Eq, Eq, Eq -> Eq
+      | _ -> Neq
 end
 
 (* Finally, a metavariable as stored elsewhere in the code also knows its origin.  We don't store origins as part of the extended identity because the metavariable tables that look things up by extended identity are versioned, so origins are stored as part of the versioning process. *)
