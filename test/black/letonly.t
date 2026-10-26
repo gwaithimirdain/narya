@@ -344,17 +344,10 @@ If the type of a variable synthesizes a higher-dimensional universe, the variabl
   [1]
 
   $ narya higher.ny -e 'synth let only x : b0 ≔ b0 in x'
-   ￫ error[E0401]
+   ￫ error[E1500]
    ￭ command-line exec string
    1 | synth let only x : b0 ≔ b0 in x
-     ^ term synthesized type
-         B
-       but is being checked against type
-         Type
-       unequal head terms:
-         B
-       does not equal
-         Type
+     ^ expected universe while checking type of let-only variable, got B
   
   [1]
 

@@ -264,7 +264,7 @@ module Code = struct
     | Evaluating_display_term : string -> t
     | Show : string * printable -> t
     | Comment_end_in_string : t
-    | Checking_canonical_at_nonuniverse : string * printable -> t
+    | Universe_expected : [ `Check | `Synth ] * string * printable -> t
     | Bare_case_tree_construct : string -> t
     | Wrong_boundary_of_record : int -> t
     | Invalid_constructor_type : Constr.t * (string, Unequal.t) Either.t -> t
@@ -456,7 +456,7 @@ module Code = struct
     | Notation_defined _ -> Info
     | Show _ -> Info
     | Comment_end_in_string -> Warning
-    | Checking_canonical_at_nonuniverse _ -> Error
+    | Universe_expected _ -> Error
     | Bare_case_tree_construct _ -> Hint
     | Wrong_boundary_of_record _ -> Error
     | Invalid_constructor_type _ -> Error
@@ -637,7 +637,7 @@ module Code = struct
     | Duplicate_method_in_comatch _ -> "E1404"
     | Invalid_method_in_comatch -> "E1405"
     (* Canonical types *)
-    | Checking_canonical_at_nonuniverse _ -> "E1500"
+    | Universe_expected _ -> "E1500"
     | Duplicate_field_in_record _ -> "E1501"
     | Duplicate_method_in_codata _ -> "E1502"
     | Duplicate_constructor_in_data _ -> "E1503"
@@ -1142,8 +1142,10 @@ module Code = struct
       | Show (str, x) -> textf "%s: %a" str pp_printed (print x)
       | Comment_end_in_string ->
           text "comment-end sequence `} in quoted string: cannot be commented out"
-      | Checking_canonical_at_nonuniverse (tm, ty) ->
-          textf "checking %s at non-universe %a" tm pp_printed (print ty)
+      | Universe_expected (`Check, str, ty) ->
+          textf "checking %s at non-universe %a" str pp_printed (print ty)
+      | Universe_expected (`Synth, str, ty) ->
+          textf "synthesizing %s gave non-universe %a" str pp_printed (print ty)
       | Bare_case_tree_construct str ->
           textf "%s encountered outside case tree, wrapping in implicit let-binding" str
       | Duplicate_method_in_codata fld ->

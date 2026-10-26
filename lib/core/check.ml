@@ -51,7 +51,7 @@ let rec typefam : type mode a b. (mode, a, b) Ctx.t -> (mode, kinetic) value -> 
           fatal
             (Modality_mismatch
                (`Internal, "indices of datatype", modality, Modality.id (Modality.tgt modality))))
-  | _ -> fatal (Checking_canonical_at_nonuniverse ("datatype", PVal (ctx, ty)))
+  | _ -> fatal (Universe_expected (`Check, "datatype", PVal (ctx, ty)))
 
 (* Given a multi-argument type family, and the type *of* that type family, both as values, and a context for them, compute the type of type families dependent *on* that family, as a term.  For example, if the arguments are
 
@@ -812,7 +812,7 @@ let rec check : type mode a b s.
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Noeta
                      (readback_neu ctx (head_of_potential head) apps))
                   (Bwd.to_list fields) Emp)
-        | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
+        | _ -> fatal (Universe_expected (`Check, "codatatype", PVal (ctx, ty))))
     | SelfRecord (fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking self-record" with
         | Canonical (_, UU (_mode, dim), ins, tyargs) -> (
@@ -838,7 +838,7 @@ let rec check : type mode a b s.
                       (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                          (readback_neu ctx (head_of_potential head) apps))
                       (Bwd.to_list fields) Emp))
-        | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
+        | _ -> fatal (Universe_expected (`Check, "codatatype", PVal (ctx, ty))))
     | Record (xs, fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking record" with
         | Canonical (_, UU (_mode, dim), ins, tyargs) -> (
@@ -853,7 +853,7 @@ let rec check : type mode a b s.
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                      (readback_neu ctx (head_of_potential head) apps))
                   None fields Emp)
-        | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
+        | _ -> fatal (Universe_expected (`Check, "record type", PVal (ctx, ty))))
     | Data (constrs, hints), Potential (head, apps, _) ->
         (* For a datatype, the type to check against might not be a universe, it could include indices. *)
         let n = typefam ctx ty in
@@ -1496,15 +1496,9 @@ and check_letonly_type : type mode a b.
       | _ -> (
           match subtype_of ctx tyty (universe mode D.zero) with
           | Ok () -> Letonly_type (cty, TubeOf.empty D.zero)
-          | Error why ->
-              fatal ?loc:ty.loc
-                (Unequal_synthesized_type
-                   {
-                     got = PVal (ctx, tyty);
-                     expected = PVal (ctx, universe mode D.zero);
-                     which = None;
-                     why;
-                   })))
+          | Error _ ->
+              fatal ?loc:ty.loc (Universe_expected (`Synth, "let-only variable", PVal (ctx, tyty))))
+      )
   | _ -> Letonly_type (check (Kinetic `Nolet) ctx ty (universe mode D.zero), TubeOf.empty D.zero)
 
 (* Check the bound term of a let-only clause, which must belong to an instantiation of the given uninstantiated type of dimension mn, returning it along with the instantiation arguments, which form its boundary.  If mn is zero, there are no instantiation arguments and we can just check it; but otherwise it must synthesize, and we read the arguments off its synthesized type. *)
