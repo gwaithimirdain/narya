@@ -110,3 +110,67 @@ Undo notations
    7 | echo a + a
      ^ parse error: invalid syntax
   
+
+A command that fails is undone, even if it fails only after recording a partial result, so it doesn't count as a command to undo
+
+  $ cat >undo-fail.ny <<EOF
+  > axiom A : Type
+  > def f : Type := Type Type
+  > def B : Type := sig (x : Type, y : Type Type)
+  > undo 1
+  > echo A
+  > EOF
+
+  $ narya -v -fake-interact undo-fail.ny
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ error[E0505]
+   ￭ undo-fail.ny
+   2 | def f : Type := Type Type
+     ^ can't apply/instantiate a zero-dimensional type Type
+  
+   ￫ error[E0505]
+   ￭ undo-fail.ny
+   3 | def B : Type := sig (x : Type, y : Type Type)
+     ^ can't apply/instantiate a zero-dimensional type Type
+  
+   ￫ info[I0006]
+   ￮ 1 command undone
+  
+   ￫ error[E0300]
+   ￭ undo-fail.ny
+   5 | echo A
+     ^ unbound variable: A
+  
+
+A hole solution that fails is undone
+
+  $ cat >solve-fail.ny <<EOF
+  > def S : Type := sig (x : Type, y : Type)
+  > def s : S := ?
+  > solve 0 := (x := Type)
+  > echo s .x
+  > EOF
+
+  $ narya -v -fake-interact solve-fail.ny
+   ￫ info[I0000]
+   ￮ constant S defined
+  
+   ￫ info[I0000]
+   ￮ constant s defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     ----------------------------------------------------------------------
+     S
+  
+   ￫ error[E0902]
+   ￭ solve-fail.ny
+   3 | solve 0 := (x := Type)
+     ^ record field 'y' missing in tuple
+  
+  s .x
+    : Type
+  

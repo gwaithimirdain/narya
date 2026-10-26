@@ -840,14 +840,11 @@ let parse_single (content : string) : Whitespace.t list * Command.t option =
 let show_hole = function
   | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
       let termctx, ty =
-        Reporter.backtrack
-          ~fatal:(fun _ ->
-            (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)
-            (termctx, ty))
-          (fun () ->
-            let ctx = Norm.eval_ctx termctx in
-            let ety = Norm.eval_term (Ctx.env ctx) ty in
-            Readback.Displaying.run ~env:true @@ fun () -> (readback_ctx ctx, readback_val ctx ety))
+        (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)
+        Reporter.discard_errors ~fallback:(fun () -> (termctx, ty)) @@ fun () ->
+        let ctx = Norm.eval_ctx termctx in
+        let ety = Norm.eval_term (Ctx.env ctx) ty in
+        Readback.Displaying.run ~env:true @@ fun () -> (readback_ctx ctx, readback_val ctx ety)
       in
       emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
@@ -963,9 +960,12 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | _ -> ());
       Scope.check_name name loc;
       let const = Scope.define ?loc name in
-      let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
+      let ty =
+        lazy
+          (let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
+           Core.Command.Axiom_type { params; ty = process ctx ty }) in
       let parametric = Option.is_none nonparam in
-      Core.Command.execute (Axiom { name = const; params; ty = process ctx ty; parametric })
+      Core.Command.execute (Axiom { name = const; ty; parametric })
   | Def defs ->
       Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
       let cdefs =
@@ -1038,7 +1038,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 let etm = Norm.eval_term (Ctx.env ctx) ctm in
                 match etm with
                 (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written rather than as it computes.  This is more informative when possible, since the readback of a potential value falls back to a neutral application spine wherever a match is stuck.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
-                | Value.Neu { head = Value.Const { name; ins }; args = Value.Emp; _ }
+                | Value.Neu { head = Value.Live (Const { name; ins }); args = Value.Emp; _ }
                   when Option.is_some (is_id_ins ins)
                        &&
                        match D.compare_zero (cod_left_ins ins) with
@@ -1059,14 +1059,15 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                           No.Interval.entire)) in
           let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let uty = unparse names bty No.Interval.entire No.Interval.entire in
-          !echo_output
-            PPrint.(
-              hang 2
-                (pp_complete_term (Wrap utm) `None
-                ^^ hardline
-                ^^ Token.pp Colon
-                ^^ blank 1
-                ^^ pp_complete_term (Wrap uty) `None));
+          if not (moribund ()) then
+            !echo_output
+              PPrint.(
+                hang 2
+                  (pp_complete_term (Wrap utm) `None
+                  ^^ hardline
+                  ^^ Token.pp Colon
+                  ^^ blank 1
+                  ^^ pp_complete_term (Wrap uty) `None));
           (None, fun _ -> None)
       | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
   | Notation { fixity; loc; pattern; head; args; _ } ->
@@ -1161,10 +1162,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let parenthesize_it () =
         data.tm <- Wrap (parenthesize tm);
         data.parenthesized <- true in
-      ( Reporter.try_with ~fatal:(fun _ -> parenthesize_it ()) @@ fun () ->
-        let _ =
-          TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None })
-        in
+      ( Reporter.discard_errors ~fallback:(fun _ -> parenthesize_it ()) @@ fun () ->
+        ignore
+          (TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None }));
         (* Even if the term parses in the hole's position, if that position is in an application spine, we parenthesize it for readability when its edge facing a juxtaposition is word-like, as the unparser does (see Unparse.word_like_notation).  A hole that is an application argument has left tightness interval (+ω,+ω], and one that is a head or an argument followed by another argument (or a field projection) has right tightness interval [+ω,+ω]; no other positions have these intervals. *)
         let left_juxt =
           match li with
@@ -1346,7 +1346,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
                           let* (Wrap names) = NameBranches.get in
                           let arg_hints =
-                            Reporter.backtrack ~fatal:(fun _ -> Emp) @@ fun () ->
+                            Reporter.discard_errors ~fallback:(fun () -> Emp) @@ fun () ->
                             Domvars.constr_arg_hints ctx env ty in
                           let cargs, newnames =
                             constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in

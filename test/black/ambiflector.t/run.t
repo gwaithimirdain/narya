@@ -39,7 +39,7 @@
    ￮ constant roundtrip_good_ok defined
   
    ￫ info[I0000]
-   ￮ constant Neg defined
+   ￮ constant ♮ defined
   
    ￫ info[I0000]
    ￮ constant mk defined

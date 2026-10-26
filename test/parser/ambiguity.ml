@@ -32,7 +32,11 @@ let () =
   Parser.Lexer.Specials.run @@ fun () ->
   Origin.run @@ fun () ->
   Origin.with_file ~holes_allowed:true (File.make (`Other "ifthen")) @@ fun () ->
-  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+  Reporter.run ~emit:Reporter.display
+    ~mortal:(fun d ->
+      Reporter.display d;
+      raise (Failure "Parse failure 1"))
+    ~fatal:(fun _ d ->
       Reporter.display d;
       raise (Failure "Parse failure 1"))
   @@ fun () ->
@@ -43,7 +47,11 @@ let () =
   Parser.Lexer.Specials.run @@ fun () ->
   Origin.run @@ fun () ->
   Origin.with_file ~holes_allowed:true (File.make (`Other "ifthenelse")) @@ fun () ->
-  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+  Reporter.run ~emit:Reporter.display
+    ~mortal:(fun d ->
+      Reporter.display d;
+      raise (Failure "Parse failure 2"))
+    ~fatal:(fun _ d ->
       Reporter.display d;
       raise (Failure "Parse failure 2"))
   @@ fun () ->
@@ -56,7 +64,13 @@ let () =
   Parser.Lexer.Specials.run @@ fun () ->
   Origin.run @@ fun () ->
   Origin.with_file ~holes_allowed:true (File.make (`Other "ifthen-ifthenelse")) @@ fun () ->
-  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+  Reporter.run ~emit:Reporter.display
+    ~mortal:(fun d ->
+      if d.message = Parsing_ambiguity [ "ifthen"; "ifthenelse" ] then ()
+      else (
+        Reporter.display d;
+        raise (Failure "Unexpected error code")))
+    ~fatal:(fun _ d ->
       if d.message = Parsing_ambiguity [ "ifthen"; "ifthenelse" ] then ()
       else (
         Reporter.display d;
@@ -80,7 +94,11 @@ let () =
   Parser.Lexer.Specials.run @@ fun () ->
   Origin.run @@ fun () ->
   Origin.with_file ~holes_allowed:true (File.make (`Other "ifthenelse-ifthenelif")) @@ fun () ->
-  Reporter.run ~emit:Reporter.display ~fatal:(fun d ->
+  Reporter.run ~emit:Reporter.display
+    ~mortal:(fun d ->
+      Reporter.display d;
+      raise (Failure "Parse failure 3"))
+    ~fatal:(fun _ d ->
       Reporter.display d;
       raise (Failure "Parse failure 3"))
   @@ fun () ->
