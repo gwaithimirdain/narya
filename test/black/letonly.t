@@ -765,6 +765,50 @@ Adjacent locks are displayed as a single lock by their composite modality, but l
     : (A :♭♭| Type) → ♭ (♭ Type)
   
 
+A composite lock can strip locks with variables between and after them.
+
+  $ narya -v -comonad comonad.ny -e 'def f : (A :♭♭| Type) → ♭ (Type → ♭ (Type → Type)) ≔ A ↦ box. (y ↦ box. (z ↦ let only B :♭♭| Type ≔ A and lock ♭♭ in B))' -e 'echo (A :♭♭| Type) ↦ (f A : ♭ (Type → ♭ (Type → Type)))' -e 'synth ((A ↦ box. (y ↦ box. (z ↦ let only B :♭♭| Type ≔ A and lock ♭♭ in B))) : (A :♭♭| Type) → ♭ (Type → ♭ (Type → Type)))' -e 'def g (A :♭♭| Type) : ♭ (Type → ♭ (Type → Type)) ≔ box. (y ↦ box. (z ↦ let only B :♭♭| Type ≔ (? : Type) and lock ♭♭ in B))'
+   ￫ info[I0000]
+   ￮ constant ♭ defined
+  
+   ￫ info[I0000]
+   ￮ constant k1 defined
+  
+   ￫ info[I0000]
+   ￮ constant k2 defined
+  
+   ￫ info[I0000]
+   ￮ constant e1 defined
+  
+   ￫ info[I0000]
+   ￮ constant e2 defined
+  
+   ￫ info[I0000]
+   ￮ constant f defined
+  
+  A ↦ box. (y ↦ box. (z ↦ A))
+    : (A :♭♭| Type) → ♭ (Type → ♭ (Type → Type))
+  
+  A ↦ box. (y ↦ box. (z ↦ let only B :♭♭| Type ≔ A and lock ♭♭ in B))
+    : (A :♭♭| Type) → ♭ (Type → ♭ (Type → Type))
+  
+   ￫ info[I0000]
+   ￮ constant g defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     A :♭♭| Type (locked: ♭♭)
+     y : _ (hidden by lock)
+     z : _ (hidden by lock)
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
 Locks can change the mode.
 
   $ cat >adjunction.ny <<EOF

@@ -780,6 +780,53 @@ let weaken : type mode b modality n s.
     mode Mode.t -> (mode, b, s) term -> (mode, (b, (modality, n) dim_entry) snoc, s) term =
  fun mode tm -> Weaken (plus_no_lock mode, tm, plus_no_lock mode)
 
+(* Split off the outermost lock of a context extension whose composite modality ends with a generator g: the extension consists of one for the rest of the modality, followed by one containing just that lock and the dimension entries after it.  We also return the generator itself. *)
+type (_, _, _, _, _, _) split_lock =
+  | Split_lock :
+      ('a, 'cod, 'mu, 'x, 'ax) plus_with_locks
+      * ('dom, 'g, 'x) Modality.gen
+      * ('ax, 'x, ('x Modality.id, 'g) snoc, 'dom, 'amu) plus_with_locks
+      -> ('a, 'cod, 'mu, 'g, 'dom, 'amu) split_lock
+
+let rec split_lock : type a cod mu g dom amu.
+    (a, cod, (mu, g) snoc, dom, amu) plus_with_locks -> (a, cod, mu, g, dom, amu) split_lock =
+ fun (Plus_with_locks (comp, locks)) ->
+  match (comp, locks) with
+  | Suc (comp, Dim (n, f)), Suc (locks, Locks_dim _, Zero) ->
+      let (Split_lock (rest, g, last)) = split_lock (Plus_with_locks (comp, locks)) in
+      Split_lock (rest, g, plus_with_locks_dim last n f)
+  | Suc (comp, Lock g), Suc (locks, Locks_lock g', Suc (Zero, _)) ->
+      let Eq = Modality.Gen.src_uniq g g' in
+      let Eq = Modality.Gen.tgt_uniq g g' in
+      Split_lock
+        ( Plus_with_locks (comp, locks),
+          g,
+          plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g )
+  | Suc (_, Proj _), Suc (_, _, _) -> .
+  | Zero, _ -> .
+
+(* Lock a term environment by a modality, given the extensions of its domain and codomain by locks for that modality.  Each generator of the modality yields a Lock, whose domain extension consists of the corresponding lock in the given domain extension together with the dimension entries after it.  Any dimension entries before the innermost lock are accounted for by an identity Prekey. *)
+let rec lock_term_env : type dom mu cod a amu m b bmu.
+    (cod, a, m, b) env ->
+    (a, cod, mu, dom, amu) plus_with_locks ->
+    (b, cod, mu, dom, bmu) plus_lock ->
+    (dom, amu, m, bmu) env =
+ fun env plus_tgt plus ->
+  match plus with
+  | Plus_lock (Zero (Eq mode), Zero) -> (
+      match plus_tgt with
+      | Plus_with_locks (Zero, Zero _) -> env
+      | _ ->
+          Prekey
+            { env; cell = Modalcell.id (Modality.id mode); plus_src = plus_no_lock mode; plus_tgt })
+  | Plus_lock (Suc (lock, Inject (Lock_lock g), Suc (Zero, Lock _)), Suc (comp, Lock g')) ->
+      let Eq = Modality.Gen.src_uniq g g' in
+      let Eq = Modality.Gen.tgt_uniq g g' in
+      let (Split_lock (rest, g'', last)) = split_lock plus_tgt in
+      let Eq = Modality.Gen.src_uniq g g'' in
+      let Eq = Modality.Gen.tgt_uniq g g'' in
+      Lock { env = lock_term_env env rest (Plus_lock (lock, comp)); gen = g; plus_tgt = last }
+
 (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
 module Telescope = struct
   type ('mode, 'a, 'b, 'ab) t =

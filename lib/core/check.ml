@@ -1374,11 +1374,18 @@ and check_letonly_clauses : type mode a b k e.
       let (Checked_letonly_clauses (tmenv, venv, bodyctx)) = check_letonly_clauses ctx k clauses in
       check_letonly_clause ctx bodyctx venv tmenv x modality rty tm
   | Lock_clause (clauses, lock) -> (
+      (* The bound terms to the left of a lock are checked in the ambient context with a matching lock, and everything after it, removed.  Their environments and the body context are then locked by it. *)
       match Modality.of_name_src lock.value (Ctx.mode ctx) with
       | Error e -> modality_fatal "let-only lock" (e :> modality_error)
       | Ok (Wrap modality) -> (
           match find_plus_with_locks (Ctx.tctx ctx) modality with
-          | Some _ -> check_letonly_lock ctx k modality clauses
+          | Some (Found_plus_with_locks plus_tgt) ->
+              let newctx = Ctx.remove_locks_weakened ctx (Hidden_variable `Lock) plus_tgt in
+              let (Checked_letonly_clauses (tmenv, venv, bodyctx)) =
+                check_letonly_clauses newctx k clauses in
+              let (Locked (plus, bodyctx)) = Ctx.lock bodyctx modality in
+              Checked_letonly_clauses
+                (lock_term_env tmenv plus_tgt plus, lock_env venv plus, bodyctx)
           | None ->
               let (Wrap ctx_lock) = Ctx.total_locks ctx in
               fatal ?loc:lock.loc (Letonly_lock_mismatch (modality, ctx_lock))))
@@ -1398,30 +1405,6 @@ and check_letonly_clauses : type mode a b k e.
               let (Wrap ctx_lock) = Ctx.total_locks ctx in
               fatal ?loc:keyname.loc (Key_mismatch (cell, ctx_lock)))
       | Error e -> modalcell_fatal "let-only key" (e :> modality_error))
-
-(* Check the clauses of a let-only to the left of a lock, one generator of its modality at a time: we strip the outermost lock of that generator off the ambient context, check the clauses to the left in what remains, and then lock their environments and body context by it. *)
-and check_letonly_lock : type mode mu tgt a b k e.
-    (mode, a, b) Ctx.t ->
-    k D.t ->
-    (mode, mu, tgt) Modality.t ->
-    (a, e) Raw.letonly_clauses ->
-    (mode, b, k, e) checked_letonly_clauses =
- fun ctx k modality clauses ->
-  match modality with
-  | Path (Zero, _) -> check_letonly_clauses ctx k clauses
-  | Path (Suc (rest, gen), tgt) -> (
-      match find_plus_with_locks (Ctx.tctx ctx) (Modality.of_gen gen) with
-      | None -> fatal (Anomaly "let-only lock doesn't match context")
-      | Some (Found_plus_with_locks plus_tgt) -> (
-          let ctx = Ctx.remove_locks_weakened ctx (Hidden_variable `Lock) plus_tgt in
-          let (Checked_letonly_clauses (tmenv, venv, bodyctx)) =
-            check_letonly_lock ctx k (Path (rest, tgt)) clauses in
-          let (Locked (plus, bodyctx)) = Ctx.lock bodyctx (Modality.of_gen gen) in
-          match plus with
-          | Plus_lock (Suc (Zero _, Inject (Lock_lock _), Suc (Zero, Lock _)), Suc (Zero, Lock _))
-            ->
-              Checked_letonly_clauses
-                (Lock { env = tmenv; gen; plus_tgt }, lock_env venv plus, bodyctx)))
 
 (* Check an ordinary clause of a let-only: first the type, in the context of the previous variables only, and then the bound term, in the ambient context, at an instantiation of that type evaluated at the previous bound terms.  The new variable is free in the body context, but its bindings record the occurrence-analysis verdict of its bound term as their "dirt", as for an ordinary let-bound variable, so that occurrences of currently-being-defined constants in the bound term are detected if the variable is used. *)
 and check_letonly_clause : type mode a b ea eb k.
