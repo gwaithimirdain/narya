@@ -689,13 +689,6 @@ let env_ext : type dom modality mode b n.
 module Ordered_ctx = struct
   include Ordered_ctx
 
-  (* Unfold the identity environment of a context by one entry, so that it can be traversed like any other environment. *)
-  let rec unfold : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = function
-    | Emp mode -> Emp (mode, D.zero)
-    | Snoc (ctx, { bindings; filter; _ }, _) -> env_ext (Ctx ctx) filter bindings
-    | Lock (ctx, g) -> Lock (Ctx ctx, g)
-    | Weaken (ctx, _) -> unfold ctx
-
   let rec mode : type mode a b. (mode, a, b) t -> mode Mode.t = function
     | Emp m -> m
     | Snoc (ctx, _, _) -> mode ctx
