@@ -338,20 +338,22 @@ module Ordered = struct
         let Zero = pf in
         pop_lookup modality (CubeOf.dim bindings) filter (lookup ctx k)
 
-  (* Look up a De Bruijn level in a context and find the corresponding possibly-invisible index, if one exists. *)
-  let rec find_level : type mode a b. (mode, a, b) t -> level -> (mode, b, Empty.t) lookup option =
+  (* Look up a De Bruijn level, or the identity of a let-bound variable's binding, in a context and find the corresponding possibly-invisible index, if one exists. *)
+  let rec find_binding : type mode a b.
+      (mode, a, b) t -> [ `Level of level | `Id of Binding.id ] -> (mode, b, Empty.t) lookup option
+      =
    fun ctx i ->
     match ctx with
     | Emp _ -> None
-    | Snoc (ctx, { bindings; filter; _ }, _) -> find_level_in_cube ctx bindings filter i
-    | Lock (ctx, mu) -> Option.map (lock_lookup mu) (find_level ctx i)
-    | Weaken (ctx, _) -> find_level ctx i
+    | Snoc (ctx, { bindings; filter; _ }, _) -> find_binding_in_cube ctx bindings filter i
+    | Lock (ctx, mu) -> Option.map (lock_lookup mu) (find_binding ctx i)
+    | Weaken (ctx, _) -> find_binding ctx i
 
-  and find_level_in_cube : type dom modality mode a b n.
+  and find_binding_in_cube : type dom modality mode a b n.
       (mode, a, b) t ->
       (n, dom Binding.t) CubeOf.t ->
       (dom, modality, mode, n, n) Modality.filter_dim ->
-      level ->
+      [ `Level of level | `Id of Binding.id ] ->
       (mode, (b, (modality, n) dim_entry) snoc, Empty.t) lookup option =
    fun ctx vars filter i ->
     let modality = Modality.filter_modality filter in
@@ -360,13 +362,19 @@ module Ordered = struct
       {
         it =
           (fun fa [ x ] ->
-            if Binding.level x = Some i then
+            (* A binding whose value is not yet determined can't be found by its identity, just as it has no level. *)
+            let found =
+              match i with
+              | `Level i -> Binding.level x = Some i
+              | `Id i -> Binding.equal_id (Binding.id x) i && Option.is_some (Binding.value_opt x)
+            in
+            if found then
               result :=
                 Some
                   (Lookup
                      {
                        insert = Now;
-                       result = `Var (Some i, fa);
+                       result = `Var (Binding.level x, fa);
                        value = Binding.value x;
                        dirt = Binding.dirt x;
                        modality;
@@ -377,7 +385,9 @@ module Ordered = struct
       [ vars ];
     match !result with
     | Some v -> Some v
-    | None -> Option.map (pop_lookup modality (CubeOf.dim vars) filter) (find_level ctx i)
+    | None -> Option.map (pop_lookup modality (CubeOf.dim vars) filter) (find_binding ctx i)
+
+  let find_level ctx i = find_binding ctx (`Level i)
 
   (* Every context has an underlying environment that substitutes each (level) variable for itself (index).  This environment ALWAYS HAS DIMENSION ZERO, and therefore in particular the variables don't need to come with any boundaries.  It is represented by the context itself (see Value.env), so computing it takes constant time. *)
   let env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = fun ctx -> Ctx ctx
@@ -394,7 +404,7 @@ module Ordered = struct
     let b = Binding.make (Some (n, 0)) { tm = var modality (n, 0) ty; ty = Lazy.from_val ty } in
     (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
 
-  (* Extend a context by one new variable with an assigned value.  The optional ?dirt records whether that value contains occurrences of currently-being-defined constants. *)
+  (* Extend a context by one new variable with an assigned value.  The optional ?dirt records whether that value contains occurrences of currently-being-defined constants.  The value is wrapped as a let-bound variable (see Value.letvar), so that it can be read back as that variable while in scope; except that a metavariable is already read back as the let-bound variable whose value it is (see Readback.let_var_of_meta). *)
   let ext_let : type dom modality mode a b.
       ?dirt:Positivity.recursion ->
       (mode, a, b) t ->
@@ -404,6 +414,9 @@ module Ordered = struct
       (mode, a N.suc, (b, (modality, D.zero) dim_entry) snoc) t * dom Binding.t =
    fun ?dirt ctx modality x v ->
     let b = Binding.make ?dirt None v in
+    (match v.tm with
+    | Neu { head = Live (Meta _); args = Emp; _ } -> ()
+    | _ -> Binding.specify b None (letvar modality (Binding.id b) v));
     (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
 
   (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields.  We also return the dimension and filter of that entry. *)
@@ -670,6 +683,7 @@ let apps (Permute { ctx; _ }) = Ordered.apps ctx
 (* Lookup is the only place where the permutations are used nontrivially: we apply the permutation to the raw index before looking it up. *)
 let lookup (Permute { perm; ctx; _ }) i = Ordered.lookup ctx (N.perm_apply perm (fst i), snd i)
 let find_level (Permute { ctx; _ }) x = Ordered.find_level ctx x
+let find_binding (Permute { ctx; _ }) x = Ordered.find_binding ctx x
 let env (Permute { ctx; _ }) = Ordered.env ctx
 
 let ext (Permute { perm; level; ctx }) modality xs ty =

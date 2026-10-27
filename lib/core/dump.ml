@@ -187,6 +187,7 @@ module F = struct
    fun ppf h ->
     match h with
     | Var { level = l; key; _ } -> level ppf l key
+    | Letvar { key; _ } -> fprintf ppf "Letvar (%s)" (Modalcell.to_string key)
     | Const { name; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Const (%s, %s)" (print_to_string (PConstant name)) (string_of_deg p)

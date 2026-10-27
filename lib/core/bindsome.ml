@@ -237,8 +237,14 @@ module Ordered = struct
                   let oldnf = Binding.value b in
                   match eval_readback_nf ~level ~oldctx ~newctx oldnf with
                   | Some newnf ->
-                      (* Now we allow this variable to be used when reading back other variables, and specify the newly evaluated version to be used in the new context. *)
+                      (* Now we allow this variable to be used when reading back other variables, and specify the newly evaluated version to be used in the new context.  If the old value was wrapped as the variable itself, we wrap the new one likewise.  (Its old delayed copy has the same identity, so that later variables that refer to it are read back to refer to it, but since that copy isn't yet available when reading back its own value, its own value was unfolded.) *)
                       Binding.force oldb;
+                      let newnf =
+                        match oldnf.tm with
+                        | Neu { head = Live (Letvar { id; _ }); args = Emp; _ }
+                          when Binding.equal_id id (Binding.id b) ->
+                            letvar modality (Binding.id newb) newnf
+                        | _ -> newnf in
                       Binding.specify newb None newnf
                   | None -> raise_notrace Short_circuit)
               | Some old_level -> (

@@ -59,6 +59,7 @@ module rec Value : sig
 
   module Binding : sig
     type 'mode t
+    type id
 
     val make : ?dirt:Positivity.recursion -> level option -> 'mode Value.normal -> 'mode t
     val level : 'mode t -> level option
@@ -70,6 +71,8 @@ module rec Value : sig
     val specify : 'mode t -> level option -> 'mode Value.normal -> unit
     val delay : 'mode t -> 'mode t
     val force : 'mode t -> unit
+    val id : 'mode t -> id
+    val equal_id : id -> id -> bool
   end
 
   module Ctx_entry : sig
@@ -109,6 +112,12 @@ module rec Value : sig
   type 'mode head =
     | Var : {
         level : level;
+        deg : ('m, 'n) deg;
+        key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
+      }
+        -> 'mode head
+    | Letvar : {
+        id : Binding.id;
         deg : ('m, 'n) deg;
         key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
       }
@@ -321,6 +330,8 @@ end = struct
 
   (* The binding of each variable in a context is a "level option * normal".  But instead of exposing this literally as a product type, we use an abstract type with a constructor "Binding.make" and accessors "Binding.level" and "Binding.value".  The reason is that in the "bind_some" machinery, we work with contexts where the binding of a variable is "known but not yet available" or "not yet computed".  So the internal implementation of Binding is actually a reference cell that usually stores a "Known" "level option * normal", but sometimes is Unknown or other times a Delayed "level option * normal".
 
+     A binding also has an identity, which is shared by its delayed copies (since they stand for the same variable) but is fresh for every other binding.  A let-bound variable's value remembers the identity of its binding (see Letvar), so that readback can refer to it by name when it is in scope.
+
      A binding also carries a mutable "dirt" verdict recording whether its value contains occurrences of constants currently being defined (see Positivity).  This applies only to let-bound variables, whose values were typechecked, and to the free variables in the body of a let-only, which inherit the verdicts of their bound terms; other free variables are always clean.  It is mutable, separately from the state reference, so that letrec can pre-mark its bindings as recursive while checking their bodies and update them to the real verdict afterwards.  (Note that bind_some's "specify" installs computed values without computing their dirt; free pattern variables are clean in practice, but this could be revisited along with strict positivity.) *)
   module Binding = struct
     type 'mode state =
@@ -328,9 +339,16 @@ end = struct
       | Unknown
       | Delayed of level option * 'mode Value.normal
 
-    type 'mode t = { state : 'mode state ref; mutable dirt : Positivity.recursion }
+    type id = int
+    type 'mode t = { state : 'mode state ref; mutable dirt : Positivity.recursion; id : id }
 
-    let make ?(dirt = `Nonrecursive) i x = { state = ref (Known (i, x)); dirt }
+    let counter = ref 0
+
+    let fresh_id () =
+      incr counter;
+      !counter
+
+    let make ?(dirt = `Nonrecursive) i x = { state = ref (Known (i, x)); dirt; id = fresh_id () }
 
     let level b =
       match !(b.state) with
@@ -349,14 +367,17 @@ end = struct
 
     let dirt b = b.dirt
     let set_dirt b d = b.dirt <- d
-    let unknown () = { state = ref Unknown; dirt = `Nonrecursive }
+    let unknown () = { state = ref Unknown; dirt = `Nonrecursive; id = fresh_id () }
     let specify b i x = b.state := Known (i, x)
-    let delay b = { state = ref (Delayed (level b, value b)); dirt = b.dirt }
+    let delay b = { state = ref (Delayed (level b, value b)); dirt = b.dirt; id = b.id }
 
     let force b =
       match !(b.state) with
       | Known _ | Unknown -> ()
       | Delayed (i, x) -> b.state := Known (i, x)
+
+    let id b = b.id
+    let equal_id (i : id) (j : id) = i = j
   end
 
   module Ctx_entry = struct
@@ -397,11 +418,18 @@ end = struct
         * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
         -> ('n, 'mode, 'a) modal_value_cube
 
-  (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  *)
+  (* The head of an elimination spine is a variable, a let-bound variable, a constant, or a substituted metavariable.  *)
   type 'mode head =
     (* A variable is determined by a De Bruijn LEVEL, and stores a neutral degeneracy applied to it, as well as a modal key 2-cell.  The vertical domain of the key is the modality annotating the variable in the context, and the vertical codomain is the composite of all the locks between that variable and the (rightmost) end of the context.  Accordingly, the horizontal codomain is the mode of the context at the time when the variable was added, and the horizontal domain is the mode of the current context. *)
     | Var : {
         level : level;
+        deg : ('m, 'n) deg;
+        key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
+      }
+        -> 'mode head
+    (* A let-bound variable is determined by the identity of its binding in the context, and stores a degeneracy and key just like a free variable.  Its value is always realized, as the value of that binding acted on by the degeneracy and key, so it is only a "head" for the purposes of readback: it lets a let-bound variable be read back as itself when it is in scope, rather than as its value. *)
+    | Letvar : {
+        id : Binding.id;
         deg : ('m, 'n) deg;
         key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
       }
@@ -793,6 +821,25 @@ let var : type dom modality mode.
       value = ready Unrealized;
       ty = Lazy.from_val ty;
     }
+
+(* Given the identity of the binding of a let-bound variable, wrap its value as a neutral headed by that variable, so that it can be read back as the variable itself while in scope.  A failed value is left alone, since it has no value to realize. *)
+let letvar : type dom modality mode.
+    (dom, modality, mode) Modality.t -> Binding.id -> dom normal -> dom normal =
+ fun modality id v ->
+  match v.tm with
+  | Neu { head = Failed _; _ } -> v
+  | _ ->
+      {
+        tm =
+          Neu
+            {
+              head = Live (Letvar { id; deg = id_deg D.zero; key = Modalcell.id modality });
+              args = Emp;
+              value = ready (Realize v.tm);
+              ty = v.ty;
+            };
+        ty = v.ty;
+      }
 
 (* Project out a cube or tube of values from a cube or tube of normals *)
 let val_of_norm_cube : type mode n. (n, mode normal) CubeOf.t -> (n, (mode, kinetic) value) CubeOf.t

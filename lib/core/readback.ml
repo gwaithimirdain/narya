@@ -88,6 +88,9 @@ let rec canonical_head : type mode a s. (mode, a, s) term -> [ `Canonical | `Oth
   | Key { tm; _ } -> canonical_head tm
   | _ -> `Other
 
+(* Raised when reading back a let-bound variable that is not in scope, so that its value is read back instead. *)
+exception Letvar_out_of_scope
+
 module ValuePair = struct
   type ('mode, 'a, 'b) t = ('mode, 'a) Value.value * ('mode, 'a) Value.value
 end
@@ -371,6 +374,24 @@ and readback_at : type mode a z s.
 
 (* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value for display (reading back the forced value of a neutral); in particular, that's the only way a comatch (a no-eta struct) reaches the readback-at-Codata branch.  All other callers read back only kinetic values, with neutral resulting in application spines. *)
 and readback_at_type : type mode a z s.
+    ?eta:bool ->
+    (mode, s) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (mode, s) value ->
+    (mode, kinetic) value ->
+    (mode, a, s) term =
+ fun ?(eta = false) status ctx tm ty ->
+  (* When displaying, a let-bound variable that is in scope is read back as itself, rather than viewed as its value. *)
+  let folded : (mode, a, s) term option =
+    match tm with
+    | Neu { head = Live (Letvar _ as head); args; _ } when Displaying.read () -> (
+        try Some (readback_neu ctx head args) with Letvar_out_of_scope -> None)
+    | _ -> None in
+  match folded with
+  | Some tm -> tm
+  | None -> readback_at_view ~eta status ctx tm ty
+
+and readback_at_view : type mode a z s.
     ?eta:bool ->
     (mode, s) readback_status ->
     (mode, z, a) Ctx.t ->
@@ -682,9 +703,13 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
   (* A failed term is read back as Failed, without forcing its value (which would fail). *)
   | Neu { head = Failed _; _ } -> Failed Kinetic
   | Neu { head = Live head; args; value; ty } -> (
-      match (force_eval value, Displaying.read ()) with
-      | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
-      | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
+      match (force_eval value, Displaying.read (), head) with
+      (* A let-bound variable is read back as itself if it is in scope, and otherwise as its value. *)
+      | Realize v, _, Letvar _ -> (
+          try readback_neu ~canonical:`Other ctx head args
+          with Letvar_out_of_scope -> readback_at Kinetic ctx v (Lazy.force ty))
+      | Realize v, true, _ -> readback_at Kinetic ctx v (Lazy.force ty)
+      | Val (Canonical _), _, _ -> readback_neu ~canonical:`Canonical ctx head args
       | _ -> readback_neu ~canonical:`Other ctx head args)
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
@@ -700,17 +725,19 @@ and readback_neu : type hmode mode a z any.
  fun ?(canonical = `Other) ctx head apps ->
   (* The degeneracies appearing on the spine of a neutral are all *permutations*, which are never displayed with a name like "refl" or "Id" that depends on the sort of their argument.  Thus the only place the sort matters is at the head, where it is computed from the type of the head itself (see readback_head).  Here we only pass along whether the whole neutral is a canonical type, which determines whether a reflexivity at the head is displayed as a superscript. *)
   let sort = (`Other, canonical) in
+  (* We always read back the function before its arguments, so that if its head is a let-bound variable that is out of scope, we find that out before doing any work on the arguments.  Otherwise, reading back the arguments and then again the value of the whole application, which contains them, could take exponential time. *)
   match (apps, head) with
   | Emp, _ -> readback_head ~canonical ctx head
   | Arg (apps, filter, args, ins), _ ->
       let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+      let fn = readback_neu ~canonical ctx head apps in
       Term.Act
         ( Kinetic,
           App
             ( Kinetic,
-              readback_neu ~canonical ctx head apps,
+              fn,
               cod_left_ins ins,
               filter,
               Modal
@@ -744,44 +771,17 @@ and readback_neu : type hmode mode a z any.
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
       Inst (Kinetic, readback_head ~canonical ctx head, args)
   | Inst (apps, _, args), _ ->
+      let fn = readback_neu ~canonical ctx head apps in
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-      Inst (Kinetic, readback_neu ~canonical ctx head apps, args)
+      Inst (Kinetic, fn, args)
 
 and readback_head : type mode c z.
     ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
     =
  fun ?(canonical = `Other) ctx h ->
   match h with
-  | Var { level; deg; key } -> (
-      (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context. *)
-      let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt key) in
-      (* Now we look for the level variable in the remaining context. *)
-      let (Lookup
-             { result; value; dirt = _; modality; filter; insert; plus = Plus_with_locks (c, _) }) =
-        Ctx.find_level ctx level <|> No_such_level (PLevel level) in
-      (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
-      match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
-      | Eq, `Var (_, fa), Zero -> (
-          (* We put the source/annotation modality back onto the context as a lock, as the "Var" term expects. *)
-          let (Has_plus_lock plus_src) = plus_lock modality in
-          (* If there's a nontrivial degeneracy, we act by it; otherwise we leave it off. *)
-          let iplus = plus_with_locks_of_plus_lock plus_src in
-          let tm =
-            match is_id_deg deg with
-            | Some _ -> Term.Var (Index (insert, fa, filter, iplus))
-            | None ->
-                (* The degeneracy acts on the variable itself, so its display name is determined by the sort of the variable's own type. *)
-                let sort = sort_of_val (Modality.src modality) (Lazy.force value.ty) in
-                Act (Kinetic, Term.Var (Index (insert, fa, filter, iplus)), deg, (sort, canonical))
-          in
-          (* And if the key is nontrivial, we act by it; otherwise we leave it off. *)
-          match (Modality.compare_id modality, plus_src, plus_tgt) with
-          | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
-          | _ -> Key { tm; cell = key; plus_tgt; plus_src })
-      | Neq, _, _ ->
-          fatal (Modality_mismatch (`Internal, "reading back var", Modalcell.vsrc key, modality))
-      | _, _, Suc _ -> fatal (Anomaly "reading back var: key has insufficient codomain")
-      | _, `Field _, _ -> .)
+  | Var { level; deg; key } -> readback_var ~canonical ctx (`Level level) deg key
+  | Letvar { id; deg; key } -> readback_var ~canonical ctx (`Id id) deg key
   | Const { name; ins } -> (
       let dim = cod_left_ins ins in
       let (To perm) = deg_of_ins ins in
@@ -816,6 +816,59 @@ and readback_head : type mode c z.
           Act (Kinetic, tm, perm, (`Other, canonical)))
   | UU (mode, n) -> UU (mode, n)
   | Pi args -> readback_pi ctx args
+
+(* Read back a variable, free or let-bound, with a degeneracy and key.  A let-bound variable might not be in scope (e.g. if we are reading back its own value, or if it is read back in a context that doesn't contain it), in which case we raise Letvar_out_of_scope so that the caller can read back its value instead. *)
+and readback_var : type mode c z m n modality lock cod.
+    canonical:[ `Canonical | `Other ] ->
+    (mode, z, c) Ctx.t ->
+    [ `Level of level | `Id of Ctx.Binding.id ] ->
+    (m, n) deg ->
+    (mode, modality, lock, cod) Modalcell.t ->
+    (mode, c, kinetic) term =
+ fun ~canonical ctx var deg key ->
+  (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context.  For a let-bound variable, this can fail if the variable is out of scope. *)
+  let (Remove_lock (ctx, plus_tgt)) =
+    match (var, Modality.compare_id (Modalcell.vtgt key)) with
+    | `Id _, Neq ->
+        Reporter.try_with ~fatal:(fun _ -> raise Letvar_out_of_scope) @@ fun () ->
+        Ctx.remove_lock ctx (Modalcell.vtgt key)
+    | _ -> Ctx.remove_lock ctx (Modalcell.vtgt key) in
+  (* Now we look for the variable in the remaining context. *)
+  let (Lookup { result; value; dirt = _; modality; filter; insert; plus = Plus_with_locks (c, _) })
+      =
+    match (var, Ctx.find_binding ctx var) with
+    | _, Some lookup -> lookup
+    | `Level level, None -> fatal (No_such_level (PLevel level))
+    | `Id _, None -> raise Letvar_out_of_scope in
+  (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
+  match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
+  | Eq, `Var (_, fa), Zero -> (
+      (* We put the source/annotation modality back onto the context as a lock, as the "Var" term expects. *)
+      let (Has_plus_lock plus_src) = plus_lock modality in
+      (* If there's a nontrivial degeneracy, we act by it; otherwise we leave it off. *)
+      let iplus = plus_with_locks_of_plus_lock plus_src in
+      let tm =
+        match is_id_deg deg with
+        | Some _ -> Term.Var (Index (insert, fa, filter, iplus))
+        | None ->
+            (* The degeneracy acts on the variable itself, so its display name is determined by the sort of the variable's own type. *)
+            let sort = sort_of_val (Modality.src modality) (Lazy.force value.ty) in
+            Act (Kinetic, Term.Var (Index (insert, fa, filter, iplus)), deg, (sort, canonical))
+      in
+      (* And if the key is nontrivial, we act by it; otherwise we leave it off. *)
+      match (Modality.compare_id modality, plus_src, plus_tgt) with
+      | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
+      | _ -> Key { tm; cell = key; plus_tgt; plus_src })
+  | Neq, _, _ -> (
+      match var with
+      | `Level _ ->
+          fatal (Modality_mismatch (`Internal, "reading back var", Modalcell.vsrc key, modality))
+      | `Id _ -> raise Letvar_out_of_scope)
+  | _, _, Suc _ -> (
+      match var with
+      | `Level _ -> fatal (Anomaly "reading back var: key has insufficient codomain")
+      | `Id _ -> raise Letvar_out_of_scope)
+  | _, `Field _, _ -> .
 
 and readback_pi : type c z dom modality mode k n.
     (mode, z, c) Ctx.t -> (dom, modality, mode, k, n) pi_args -> (mode, c, kinetic) term =

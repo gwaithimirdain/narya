@@ -323,6 +323,16 @@ and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> 
       else
         Some
           (Error (Variables (PTerm (ctx, readback_head ctx x), PTerm (ctx, readback_head ctx y))))
+  (* The same goes for let-bound variables.  But a let-bound variable always unfolds to its value, so if they differ, our caller will go on to compare their values, and this error will never be seen; we return it rather than None so that it doesn't need to read back the heads. *)
+  | Letvar { id = i1; deg = d1; key = k1 }, Letvar { id = i2; deg = d2; key = k2 }
+    when Ctx.Binding.equal_id i1 i2
+         && Option.is_some (deg_equiv d1 d2)
+         &&
+         match Modalcell.compare k1 k2 with
+         | Eq -> true
+         | Neq -> false -> return ()
+  | Letvar _, _ | _, Letvar _ ->
+      Some (Error (Variables (PString "let-bound variable", PString "let-bound variable")))
   | Const { name = c1; ins = i1 }, Const { name = c2; ins = i2 } -> (
       let* () = Some (guard (c1 = c2) (Unequal.Constants (c1, c2))) in
       match D.compare (cod_left_ins i1) (cod_left_ins i2) with

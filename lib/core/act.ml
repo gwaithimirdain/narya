@@ -133,6 +133,13 @@ let act_cube : type mode mu1 mu2 cod a b m n.
           actor.act (CubeOf.find xs fd) fc cell);
     }
 
+(* A variable head, free or let-bound, with its degeneracy and key replaced. *)
+type 'mode make_var_head = {
+  make :
+    'm 'n 'modality 'lock 'cod.
+    ('m, 'n) deg -> ('mode, 'modality, 'lock, 'cod) Modalcell.t -> 'mode head;
+}
+
 module Act = struct
   (* When acting on a cube of variables that's at least partially split up into ordinary variables, we have a problem if the degeneracy mixes up the dimensions that are ordinary with the dimensions that are cube.  We could get around this by storing an 'insertion' rather than a D.plus in a 'variables', but we wouldn't be able to *use* that usefully anywhere, since there's no way to create a partially-cube variable in syntax.  So instead, if the dimensions get mixed up we just give up the split and make it fully-cube using only the previous top variable.  *)
   let act_variables : type m n. n variables -> (m, n) deg -> m variables =
@@ -532,23 +539,11 @@ module Act = struct
       mode head -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> mode head =
    fun ne s c ->
     match ne with
-    (* To act on a variable, we accumulate the delayed actions, extending if necessary to match. *)
-    | Var { level; deg; key } -> (
-        let (DegExt (_, _, deg)) = comp_deg_extending deg s in
-        match Modalcell.compare_id c with
-        | Eq -> Var { level; deg; key }
-        | Neq -> (
-            match Modality.factor (Modalcell.vtgt key) (Modalcell.vsrc c) with
-            | Some (Factor (k, comp)) ->
-                let (Wrap key) = Modalcell.vcomp_extending k comp c key in
-                Var { level; deg; key }
-            | None ->
-                fatal
-                  (Anomaly
-                     ("act_head: codomain of "
-                     ^ Modalcell.to_string key
-                     ^ " doesn't factor through domain of "
-                     ^ Modalcell.to_string c))))
+    (* To act on a variable, free or let-bound, we accumulate the delayed actions, extending if necessary to match. *)
+    | Var { level; deg; key } ->
+        act_var_head deg key s c { make = (fun deg key -> Var { level; deg; key }) }
+    | Letvar { id; deg; key } ->
+        act_var_head deg key s c { make = (fun deg key -> Letvar { id; deg; key }) }
     (* To act on a constant, we push as much of the degeneracy through the insertion as possible.  The actual degeneracy that gets pushed through doesn't matter, since it just raises the constant to an even higher dimension, and that dimension is stored in the insertion.  The key is actually completely ignored, since keys act by simply pushing through to variables, and constant have no variables in them. *)
     | Const { name; ins } ->
         let (Insfact_comp_ext (_, ins, _, _)) = insfact_comp_ext ins s in
@@ -565,6 +560,30 @@ module Act = struct
         let (Of fa) = deg_plus_to s (BindCube.dim cods) ~on:"pi-type head" in
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa c in
         Pi { x = act_variables x fb; filter; doms; cods }
+
+  and act_var_head : type mode mu1 mu2 cod a b m n modality lock vcod.
+      (m, n) deg ->
+      (mode, modality, lock, vcod) Modalcell.t ->
+      (a, b) deg ->
+      (mode, mu1, mu2, cod) Modalcell.t ->
+      mode make_var_head ->
+      mode head =
+   fun deg key s c { make } ->
+    let (DegExt (_, _, deg)) = comp_deg_extending deg s in
+    match Modalcell.compare_id c with
+    | Eq -> make deg key
+    | Neq -> (
+        match Modality.factor (Modalcell.vtgt key) (Modalcell.vsrc c) with
+        | Some (Factor (k, comp)) ->
+            let (Wrap key) = Modalcell.vcomp_extending k comp c key in
+            make deg key
+        | None ->
+            fatal
+              (Anomaly
+                 ("act_head: codomain of "
+                 ^ Modalcell.to_string key
+                 ^ " doesn't factor through domain of "
+                 ^ Modalcell.to_string c)))
 
   and act_pi : type dom modality mode mu1 mu2 cod m n k.
       (dom, modality, mode, k, n) Modality.filter_dim ->
