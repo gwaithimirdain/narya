@@ -620,8 +620,9 @@ let rec merge_tree : type t1 s1 t2 s2.
     (t2, s2, t1, s1) No.Interval.subset -> (t1, s1) tree -> (t2, s2) tree -> (t1, s1) tree =
  fun sub xs ys ->
   match (xs, ys) with
-  | Lazy (lazy xs), _ -> merge_tree sub xs ys
-  | _, Lazy (lazy ys) -> merge_tree sub xs ys
+  (* A lazy subtree is merged lazily, since it might be infinite, like a recursive grammar. *)
+  | Lazy xs, _ -> Lazy (lazy (merge_tree sub (Lazy.force xs) ys))
+  | _, Lazy ys -> Lazy (lazy (merge_tree sub xs (Lazy.force ys)))
   | Inner xb, Inner yb -> Inner (merge_branch sub xb yb)
   (* As a special case, if a left-open notation is a prefix of one or more left-closed notations, we resolve the ambiguity in favor of the left-open one. *)
   | Done_open _, _ when all_closed ys -> xs
