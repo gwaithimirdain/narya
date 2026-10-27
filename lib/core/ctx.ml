@@ -40,30 +40,28 @@ let all_free : type mode n. (n, mode Binding.t) CubeOf.t -> bool =
 include Value.Ctx_entry
 
 let raw_entry : type dom modality mode f n. (dom, modality, mode, f, n) entry -> f N.t = function
-  | Vis { vars; fplus; _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
-  | Invis _ -> N.zero
+  | { vis = Vis { vars; fplus; _ }; _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
+  | { vis = Invis; _ } -> N.zero
 
 let modality_entry : type dom modality mode f n.
     (dom, modality, mode, f, n) entry -> (dom, modality, mode) Modality.t = function
-  | Vis { filter; _ } -> Modality.filter_modality filter
-  | Invis { filter; _ } -> Modality.filter_modality filter
+  | { filter; _ } -> Modality.filter_modality filter
 
 let dim_entry : type dom modality mode f n. (dom, modality, mode, f, n) entry -> n D.t = function
-  | Vis { bindings; _ } | Invis { bindings; _ } -> CubeOf.dim bindings
+  | { bindings; _ } -> CubeOf.dim bindings
 
 let filter_entry : type dom modality mode f n.
     (dom, modality, mode, f, n) entry -> (dom, modality, mode, n, n) Modality.filter_dim = function
-  | Vis { filter; _ } | Invis { filter; _ } -> filter
+  | { filter; _ } -> filter
 
 let bindings_entry : type dom modality mode f n.
     (dom, modality, mode, f, n) entry -> (n, dom Binding.t) CubeOf.t = function
-  | Vis { bindings; _ } -> bindings
-  | Invis { bindings; _ } -> bindings
+  | { bindings; _ } -> bindings
 
 let variables_entry : type dom modality mode f n. (dom, modality, mode, f, n) entry -> n variables =
   function
-  | Vis { dim; plusdim; vars; _ } -> Variables (dim, plusdim, vars)
-  | Invis { bindings; _ } ->
+  | { vis = Vis { dim; plusdim; vars; _ }; _ } -> Variables (dim, plusdim, vars)
+  | { vis = Invis; bindings; _ } ->
       (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
       let hints =
         Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
@@ -75,22 +73,15 @@ let app_entry : type hmode dom modality mode f n any.
     (hmode, mode, any, live) apps ->
     (dom, modality, mode, f, n) entry ->
     (hmode, mode, noninst, live) apps =
- fun apps e ->
-  match e with
-  | Vis { bindings; filter; _ } | Invis { filter; bindings; _ } ->
-      if all_free bindings then
-        let n = CubeOf.dim bindings in
-        Arg
-          ( apps,
-            filter,
-            CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ],
-            ins_zero n )
-      else fatal (Anomaly "let-bound variable in Ctx.apps")
+ fun apps { bindings; filter; _ } ->
+  if all_free bindings then
+    let n = CubeOf.dim bindings in
+    Arg
+      (apps, filter, CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ], ins_zero n)
+  else fatal (Anomaly "let-bound variable in Ctx.apps")
 
 module Ordered = struct
-  include Value.Ordered_ctx
-
-  let mode = mode_ordered_ctx
+  include Ordered_ctx
 
   let vis : type dom modality mode a b f af m n mn.
       (mode, a, b) t ->
@@ -104,17 +95,11 @@ module Ordered = struct
    fun ctx filter dim plusdim vars bindings af ->
     Snoc
       ( ctx,
-        Vis
-          {
-            dim;
-            filter;
-            plusdim;
-            vars;
-            bindings;
-            hasfields = No_fields;
-            fields = Emp;
-            fplus = Zero;
-          },
+        {
+          filter;
+          bindings;
+          vis = Vis { dim; plusdim; vars; hasfields = No_fields; fields = Emp; fplus = Zero };
+        },
         af )
 
   let cube_vis : type dom modality mode a b n.
@@ -140,7 +125,11 @@ module Ordered = struct
     let filter = Modality.filter_id (mode ctx) (CubeOf.dim bindings) in
     Snoc
       ( ctx,
-        Vis { dim = D.zero; filter; plusdim; vars; bindings; hasfields = Has_fields; fields; fplus },
+        {
+          filter;
+          bindings;
+          vis = Vis { dim = D.zero; plusdim; vars; hasfields = Has_fields; fields; fplus };
+        },
         af )
 
   let invis : type dom modality mode a b n.
@@ -148,7 +137,7 @@ module Ordered = struct
       (dom, modality, mode, n, n) Modality.filter_dim ->
       (n, dom Binding.t) CubeOf.t ->
       (mode, a, (b, (modality, n) dim_entry) snoc) t =
-   fun ctx filter bindings -> Snoc (ctx, Invis { bindings; filter }, Zero)
+   fun ctx filter bindings -> Snoc (ctx, { bindings; filter; vis = Invis }, Zero)
 
   let rec checked_length : type mode a b. (mode, a, b) t -> (mode, b) Tctx.t = function
     | Emp mode -> Tctx.emp mode
@@ -279,11 +268,11 @@ module Ordered = struct
       (a, f, af) N.plus ->
       af Raw.index ->
       (mode, (b, (modality, mn) dim_entry) snoc, level * D.zero Field.t) lookup =
-   fun ctx e pf k ->
-    match e with
+   fun ctx { bindings; filter; vis } pf k ->
+    match vis with
     | Vis
         (type m n f1 f2)
-        ({ dim; filter; plusdim; vars; bindings; hasfields = _; fields; fplus } :
+        ({ dim; plusdim; vars; hasfields = _; fields; fplus } :
           (dom, modality, mode, m, n, mn, f1, f2, f) vis_data) -> (
         let modality = Modality.filter_modality filter in
         let (Plus pf1) = N.plus (NICubeOf.out N.zero vars) in
@@ -351,7 +340,7 @@ module Ordered = struct
                     plus = plus_with_no_locks (Modality.tgt modality);
                   }))
     (* By definition, an invisible entry can't be looked up into, and doesn't increment the raw indices. *)
-    | Invis { filter; bindings } ->
+    | Invis ->
         let modality = Modality.filter_modality filter in
         let Zero = pf in
         pop_lookup modality (CubeOf.dim bindings) filter (lookup ctx k)
@@ -361,8 +350,7 @@ module Ordered = struct
    fun ctx i ->
     match ctx with
     | Emp _ -> None
-    | Snoc (ctx, Vis { bindings; filter; _ }, _) -> find_level_in_cube ctx bindings filter i
-    | Snoc (ctx, Invis { bindings; filter }, _) -> find_level_in_cube ctx bindings filter i
+    | Snoc (ctx, { bindings; filter; _ }, _) -> find_level_in_cube ctx bindings filter i
     | Lock (ctx, mu) -> Option.map (lock_lookup mu) (find_level ctx i)
     | Weaken (ctx, _) -> find_level ctx i
 
@@ -445,10 +433,10 @@ module Ordered = struct
     | Emp _ -> tree
     | Weaken (ctx, _) -> lam ctx tree
     | Lock _ -> fatal (Anomaly "context lock in Ctx.lam")
-    | Snoc (ctx, Vis { dim; plusdim; vars; filter; bindings; fplus = Zero; _ }, _)
+    | Snoc (ctx, { bindings; filter; vis = Vis { dim; plusdim; vars; fplus = Zero; _ } }, _)
       when all_free bindings ->
         lam ctx (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, tree))
-    | Snoc (ctx, Invis { bindings; filter; _ }, _) when all_free bindings ->
+    | Snoc (ctx, { bindings; filter; vis = Invis }, _) when all_free bindings ->
         (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
         let hints =
           Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
@@ -480,9 +468,7 @@ module Ordered = struct
     | Emp mode -> Emp mode
     | Lock (ctx, lock) -> Lock (forget_levels ctx forget, lock)
     | Weaken (ctx, code) -> Weaken (forget_levels ctx forget, code)
-    | Snoc (ctx, Vis e, af) -> Snoc (ctx, Vis { e with bindings = forget_bindings e.bindings }, af)
-    | Snoc (ctx, Invis e, af) ->
-        Snoc (ctx, Invis { e with bindings = forget_bindings e.bindings }, af)
+    | Snoc (ctx, e, af) -> Snoc (ctx, { e with bindings = forget_bindings e.bindings }, af)
 
   (* Weaken the raw length by any specified amount. *)
   let rec weaken : type mode a x ax b.

@@ -1082,12 +1082,12 @@ and readback_bindings : type mode a b n.
 and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx
     = function
   | Emp mode -> Emp mode
-  | Snoc (rest, e, af) as ctx -> (
+  | Snoc (rest, { bindings; filter; vis }, af) as ctx -> (
       let ctx = Ctx.of_ordered ctx in
-      match e with
-      | Vis { dim; plusdim; vars; bindings; hasfields; fields; fplus; filter } ->
-          let modality = Modality.filter_modality filter in
-          let top = Binding.value (CubeOf.find_top bindings) in
+      let modality = Modality.filter_modality filter in
+      let top = Binding.value (CubeOf.find_top bindings) in
+      match vis with
+      | Vis { dim; plusdim; vars; hasfields; fields; fplus } ->
           (* Fields as illusory variables are only used when typechecking records, which have substitution dimension 0 and can have no higher fields, so as field insertion we can use the identity on zero. *)
           let fins = ins_zero D.zero in
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
@@ -1108,12 +1108,11 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
             ( readback_ordered_ctx rest,
               Vis { dim; plusdim; plus_lock; vars; bindings; hasfields; fields; fplus; filter },
               af )
-      | Invis { filter; bindings; _ } ->
-          let modality = Modality.filter_modality filter in
+      | Invis ->
           (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type we just skip the hints (though internal errors are still reported). *)
           let hints =
             Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
-            View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
+            View.hints_of_ty (Lazy.force top.ty) in
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
           let value = readback_let_value rest modality plus_lock bindings in
           Ext

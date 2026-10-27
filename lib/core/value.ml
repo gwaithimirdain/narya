@@ -73,28 +73,25 @@ module rec Value : sig
   end
 
   module Ctx_entry : sig
-    type (_, _, _, _, _) entry =
+    type ('dom, 'modality, 'mode, 'f, 'mn) entry = {
+      filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
+      bindings : ('mn, 'dom Binding.t) CubeOf.t;
+      vis : ('dom, 'modality, 'mode, 'f, 'mn) visibility;
+    }
+
+    and (_, _, _, _, _) visibility =
       | Vis :
           ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data
-          -> ('dom, 'modality, 'mode, 'f, 'mn) entry
-      | Invis :
-          ('dom, 'modality, 'mode, 'n) invis_data
-          -> ('dom, 'modality, 'mode, N.zero, 'n) entry
+          -> ('dom, 'modality, 'mode, 'f, 'mn) visibility
+      | Invis : ('dom, 'modality, 'mode, N.zero, 'n) visibility
 
     and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
       dim : 'm D.t;
       plusdim : ('m, 'n, 'mn) D.plus;
-      filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
       vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
-      bindings : ('mn, 'dom Binding.t) CubeOf.t;
       hasfields : ('m, 'f2) has_fields;
       fields : (D.zero Field.t * string, 'f2) Bwv.t;
       fplus : ('f1, 'f2, 'f) N.plus;
-    }
-
-    and ('dom, 'modality, 'mode, 'n) invis_data = {
-      filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
-      bindings : ('n, 'dom Binding.t) CubeOf.t;
     }
   end
 
@@ -373,36 +370,33 @@ end = struct
 
   module Ctx_entry = struct
     (* A context is a list of "entries", which can be either visible or invisible in the raw world.  An (f,n) entry contains f raw variables and an n-dimensional cube of checked variables. *)
-    type (_, _, _, _, _) entry =
-      (* Add a cube of internal variables that are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn. *)
+    type ('dom, 'modality, 'mode, 'f, 'mn) entry = {
+      filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
+      bindings : ('mn, 'dom Binding.t) CubeOf.t;
+      vis : ('dom, 'modality, 'mode, 'f, 'mn) visibility;
+    }
+
+    and (_, _, _, _, _) visibility =
       | Vis :
           ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data
-          -> ('dom, 'modality, 'mode, 'f, 'mn) entry
-      (* Add a cube of internal variables that are not visible to the parser.  We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable. *)
-      | Invis :
-          ('dom, 'modality, 'mode, 'n) invis_data
-          -> ('dom, 'modality, 'mode, N.zero, 'n) entry
+          -> ('dom, 'modality, 'mode, 'f, 'mn) visibility
+      | Invis : ('dom, 'modality, 'mode, N.zero, 'n) visibility
 
+    (* Vis means the cube of internal variables are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn.  If vis is omitted,  *)
     and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
       dim : 'm D.t;
       plusdim : ('m, 'n, 'mn) D.plus;
-      filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
-      (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
+          (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
       vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
-      bindings : ('mn, 'dom Binding.t) CubeOf.t;
-      (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'vars' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
+          (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'vars' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
       hasfields : ('m, 'f2) has_fields;
+          (* We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable. *)
       fields : (D.zero Field.t * string, 'f2) Bwv.t;
       fplus : ('f1, 'f2, 'f) N.plus;
     }
-
-    and ('dom, 'modality, 'mode, 'n) invis_data = {
-      filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
-      bindings : ('n, 'dom Binding.t) CubeOf.t;
-    }
   end
 
-  (* An ordered context: a context without a permutation of its raw indices.  See Ctx for more explanation. *)
+  (* An ordered context: a context without a permutation of its raw indices.  See Ctx for more explanation.  We define this in a submodule so that it can be included later in Ctx.Ordered. *)
   module Ordered_ctx = struct
     type ('mode, _, _) t =
       | Emp : 'mode Mode.t -> ('mode, N.zero, 'mode emp) t
@@ -692,21 +686,29 @@ let env_ext : type dom modality mode b n.
       values = `Lazy (env_entry (Modality.src (Modality.filter_modality filter)) bindings);
     }
 
-(* Unfold the identity environment of a context by one entry, so that it can be traversed like any other environment. *)
-let rec unfold_ctx : type mode a b. (mode, a, b) Ordered_ctx.t -> (mode, D.zero, b) env = function
-  | Ordered_ctx.Emp mode -> Emp (mode, D.zero)
-  | Ordered_ctx.Snoc (ctx, Ctx_entry.Vis { bindings; filter; _ }, _) ->
-      env_ext (Ctx ctx) filter bindings
-  | Ordered_ctx.Snoc (ctx, Ctx_entry.Invis { bindings; filter }, _) ->
-      env_ext (Ctx ctx) filter bindings
-  | Ordered_ctx.Lock (ctx, g) -> Lock (Ctx ctx, g)
-  | Ordered_ctx.Weaken (ctx, _) -> unfold_ctx ctx
+module Ordered_ctx = struct
+  include Ordered_ctx
 
-let rec mode_ordered_ctx : type mode a b. (mode, a, b) Ordered_ctx.t -> mode Mode.t = function
-  | Ordered_ctx.Emp mode -> mode
-  | Ordered_ctx.Snoc (ctx, _, _) -> mode_ordered_ctx ctx
-  | Ordered_ctx.Lock (_, modality) -> Modality.src (Modality.of_gen modality)
-  | Ordered_ctx.Weaken (ctx, _) -> mode_ordered_ctx ctx
+  (* Unfold the identity environment of a context by one entry, so that it can be traversed like any other environment. *)
+  let rec unfold : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = function
+    | Emp mode -> Emp (mode, D.zero)
+    | Snoc (ctx, { bindings; filter; _ }, _) -> env_ext (Ctx ctx) filter bindings
+    | Lock (ctx, g) -> Lock (Ctx ctx, g)
+    | Weaken (ctx, _) -> unfold ctx
+
+  let rec mode : type mode a b. (mode, a, b) t -> mode Mode.t = function
+    | Emp m -> m
+    | Snoc (ctx, _, _) -> mode ctx
+    | Lock (_, modality) -> Modality.src (Modality.of_gen modality)
+    | Weaken (ctx, _) -> mode ctx
+
+  let rec length : type mode a b. (mode, a, b) t -> (mode, b) Tctx.t = function
+    | Emp m -> Tctx.emp m
+    | Snoc (ctx, { filter; bindings; _ }, _) ->
+        Tctx.suc (length ctx) (Dim (CubeOf.dim bindings, filter))
+    | Lock (ctx, g) -> Tctx.suc (length ctx) (Lock g)
+    | Weaken (ctx, _) -> length ctx
+end
 
 (* Every context morphism has a valid dimension. *)
 let rec dim_env : type mode n b. (mode, n, b) env -> n D.t = function
@@ -737,7 +739,7 @@ let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
   | Permute (_, e) -> mode_env e
   | Shift (e, _, _) -> mode_env e
   | Unshift (e, _, _) -> mode_env e
-  | Ctx ctx -> mode_ordered_ctx ctx
+  | Ctx ctx -> Ordered_ctx.mode ctx
 
 (* let dim_canonical : type mode m n mn. (mode, m, n, mn) canonical -> mn D.t = function
      | UU dim -> dim
@@ -748,16 +750,14 @@ let rec mode_env : type mode n b. (mode, n, b) env -> mode Mode.t = function
 (* The length of an environment is a tctx. *)
 let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = function
   | Emp (mode, _) -> Tctx.emp mode
-  | Ext { env; plus; filtered; _ } ->
-      let le = length_env env in
-      Tctx.suc le (Dim (D.plus_right plus, filtered))
+  | Ext { env; plus; filtered; _ } -> Tctx.suc (length_env env) (Dim (D.plus_right plus, filtered))
   | Act (env, _) -> length_env env
   | Lock (env, g) -> Tctx.suc (length_env env) (Lock g)
   | Prekey (env, _) -> length_env env
   | Permute (p, env) -> perm_dom p (length_env env)
   | Shift (_, mn, nb) -> Plusmap.cod (D.plus_right mn) nb
   | Unshift (_, _, nb) -> Plusmap.dom nb
-  | Ctx ctx -> length_env (unfold_ctx ctx)
+  | Ctx ctx -> Ordered_ctx.length ctx
 
 (* Smart constructor that composes actions and cancels identities *)
 let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) opt_op -> (mode, m, b) env =
@@ -810,9 +810,16 @@ let remove_top : type mode a modality k n.
     | Unshift (env, mn, nb), _ ->
         let (Uninsert (_, _, v', na)) = Plusmap.uninsert v nb in
         Unshift (remove_ins env v', mn, na)
-    (* Removing the top entry of the identity environment of a context needs no unfolding. *)
-    | Ctx (Ordered_ctx.Snoc (ctx, _, _)), Now -> Ctx ctx
-    | Ctx ctx, _ -> remove_ins (unfold_ctx ctx) v in
+    | Ctx ctx, _ -> remove_ins_ctx ctx v
+  and remove_ins_ctx : type mode modality a k b c.
+      (mode, c, b) Ordered_ctx.t -> (a, modality, k, b) insert -> (mode, D.zero, a) env =
+   fun ctx v ->
+    match (ctx, v) with
+    | Snoc (ctx, _, _), Now -> Ctx ctx
+    | Snoc (ctx, { filter; bindings; _ }, _), Later v ->
+        env_ext (remove_ins_ctx ctx v) filter bindings
+    | Weaken (ctx, _), _ -> remove_ins_ctx ctx v
+    | Lock (_, _), _ | Emp _, _ -> . in
   remove_ins env Now
 
 (* A prekey action is a key cell with a given mode as vertical source but existential vertical target (and horizontal target). *)
@@ -896,7 +903,7 @@ let rec restrict_keys : type mode mu cod k b bc.
   | Suc _, _, Act (env, op) ->
       let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
       Restrict_keys (Act (env, op), pre)
-  | Suc _, _, Ctx ctx -> restrict_keys (unfold_ctx ctx) (Plus_with_locks (bc, llc))
+  | Suc _, _, Ctx ctx -> restrict_keys (Ordered_ctx.unfold ctx) (Plus_with_locks (bc, llc))
 
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =

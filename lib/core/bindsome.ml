@@ -276,22 +276,16 @@ module Ordered = struct
       newctx:(mode, i, a) Ctx.Ordered.t ->
       (dom, modality, mode, f, n) Ctx.entry ->
       (dom, modality, mode, f, n) Ctx.entry option =
-   fun ~level binder ~oldctx ~newctx e ->
+   fun ~level binder ~oldctx ~newctx { filter; bindings; vis } ->
     let open Monad.Ops (Monad.Maybe) in
-    match e with
-    | Vis ({ filter; bindings; fplus = Zero; _ } as v) ->
-        let* bindings =
-          bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings in
-        return (Ctx.Vis { v with bindings })
-    | Invis { filter; bindings } ->
-        let* bindings =
-          bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings in
-        return (Ctx.Invis { filter; bindings })
-    | Vis ({ filter; bindings; _ } as v) ->
-        (* A variable that has views of its fields can't be bound. *)
-        let* bindings =
-          bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings in
-        return (Ctx.Vis { v with bindings })
+    let* bindings =
+      match vis with
+      | Vis { fplus = Zero; _ } ->
+          bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings
+          (* A variable that has views of its fields can't be bound. *)
+      | Vis _ -> bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings
+      | Invis -> bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings in
+    return ({ bindings; filter; vis } : _ Ctx_entry.entry)
 
   (* This seems an appropriate place to comment about the "insert" and "bplus_permute" data being returned from (go_)go_bind_some.  The issue is that in addition to a permuted context, we need to compute the permutation relating it to the original context.  In fact we need *two* permutations, one for the raw indices and one for the checked indices.
 

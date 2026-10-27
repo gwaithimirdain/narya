@@ -137,24 +137,15 @@ module Ordered = struct
         let (Degctx (kb, newctx', env)) = degenerate ctx' l in
         let mn = Ctx.dim_entry entry in
         let modality = Ctx.modality_entry entry in
+        let bindings, filter_mn = (entry.bindings, entry.filter) in
         let (Has_filter filter_k_l) = Modality.filter modality l in
         let k = Modality.filtered l filter_k_l in
         let (Plus k_mn) = D.plus mn in
         let newentry, newenv, filter_kmn, filter_mn =
-          match entry with
+          match entry.vis with
           | Vis { hasfields = Has_fields; _ } ->
               fatal (Anomaly "attempt to degenerate a context containing illusory variables")
-          | Vis
-              {
-                dim;
-                filter = filter_mn;
-                plusdim;
-                vars;
-                bindings;
-                hasfields = No_fields;
-                fields;
-                fplus;
-              } ->
+          | Vis { dim; plusdim; vars; hasfields = No_fields; fields; fplus } ->
               let (Plus km) = D.plus dim in
               let plusdim = D.plus_assocl km plusdim k_mn in
               let bindings, newval =
@@ -164,17 +155,12 @@ module Ordered = struct
               let filter_kmn =
                 Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn
               in
-              ( Ctx.Vis
-                  {
-                    dim = D.plus_out k km;
-                    filter = filter_kmn;
-                    plusdim;
-                    vars;
-                    bindings;
-                    hasfields;
-                    fields;
-                    fplus;
-                  },
+              ( ({
+                   bindings;
+                   filter = filter_kmn;
+                   vis = Ctx.Vis { dim = D.plus_out k km; plusdim; vars; hasfields; fields; fplus };
+                 }
+                  : _ Ctx_entry.entry),
                 Ext
                   {
                     env;
@@ -185,13 +171,14 @@ module Ordered = struct
                   },
                 filter_kmn,
                 filter_mn )
-          | Invis { filter = filter_mn; bindings = xs } ->
+          | Invis ->
               let newxs, newval =
-                degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn xs ctx env in
+                degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn bindings ctx env
+              in
               let filter_kmn =
                 Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn
               in
-              ( Invis { filter = filter_kmn; bindings = newxs },
+              ( { filter = filter_kmn; bindings = newxs; vis = Invis },
                 Ext
                   {
                     env;

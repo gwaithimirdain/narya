@@ -1647,18 +1647,25 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
               Looked_up
                 { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); op; entry; pre }
           | _, Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu))))
-  (* In the identity environment of a context, we skip the variables that aren't ours without unfolding them, and unfold only the one that is. *)
-  | Ctx (Snoc (ctx, _, _) as octx) -> (
-      match v with
-      | Later v -> lookup_cube (Ctx ctx) nk mu pretr v op
-      | Now -> lookup_cube (unfold_ctx octx) nk mu pretr v op)
-  | Ctx (Weaken (ctx, _)) -> lookup_cube (Ctx ctx) nk mu pretr v op
-  | Ctx (Emp _) -> (
-      match v with
-      | _ -> .)
-  | Ctx (Lock _) -> (
-      match v with
-      | _ -> .)
+  | Ctx ctx -> lookup_cube_ctx ctx nk mu pretr v op
+
+(* In the identity environment of a context, we skip the variables that aren't ours without unfolding them, and unfold only the one that is. *)
+and lookup_cube_ctx : type dom mu munu mode a b k mk nk c.
+    (mode, c, b) Ordered_ctx.t ->
+    (D.zero, k, nk) D.plus ->
+    (dom, mu, mode) Modality.t ->
+    (dom, munu, mode) Modality.t ->
+    (a, mu, k, b) insert ->
+    (mk, nk) opt_op ->
+    (dom, mk) looked_up_cube =
+ fun ctx nk mu pretr v op ->
+  match (ctx, v) with
+  | Snoc (ctx, _, _), Later v -> lookup_cube (Ctx ctx) nk mu pretr v op
+  | Snoc (_, { bindings; filter; _ }, _), Now ->
+      (* TODO: Factor out the Ext/Now case from lookup_cube so we don't have to go through env_ext here? *)
+      lookup_cube (env_ext (Ctx ctx) filter bindings) nk mu pretr Now op
+  | Weaken (ctx, _), _ -> lookup_cube (Ctx ctx) nk mu pretr v op
+  | Emp _, _ | Lock _, _ -> .
 
 and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
  fun env (Index (v, fa, _, (Plus_with_locks (_, locks) as plus))) ->
@@ -2022,9 +2029,10 @@ let eval_entry : type dom modality mode a b f n bm.
   | Vis { dim; plus_lock; filter; plusdim; vars; bindings; hasfields; fields; fplus } ->
       let bindings = eval_bindings ctx filter plus_lock bindings in
       let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
-      Vis { dim; filter; plusdim; vars; bindings; hasfields; fields; fplus }
+      { filter; bindings; vis = Vis { dim; plusdim; vars; hasfields; fields; fplus } }
   | Invis { plus_lock; bindings; filter; _ } ->
-      Invis { filter; bindings = eval_bindings ctx filter plus_lock bindings }
+      let bindings = eval_bindings ctx filter plus_lock bindings in
+      { filter; bindings; vis = Invis }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function
