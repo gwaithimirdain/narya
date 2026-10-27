@@ -5,6 +5,7 @@ open Printable
 open Dim
 open Term
 open Value
+open Env
 open Tctx
 open Domvars
 open Norm

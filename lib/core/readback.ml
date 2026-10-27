@@ -7,6 +7,7 @@ open Dim
 open Tctx
 open Term
 open Value
+open Env
 open Domvars
 open Act
 open Norm

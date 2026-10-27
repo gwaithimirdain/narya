@@ -6,6 +6,7 @@ open Tbwd
 open Reporter
 open Term
 open Value
+open Env
 open Domvars
 open Raw
 open Dim
