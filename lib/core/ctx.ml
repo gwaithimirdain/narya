@@ -425,6 +425,22 @@ module Ordered = struct
     | Snoc (ctx, _, Suc Zero) -> Some (Pop (ctx, Eq, Eq))
     | _ -> None
 
+  type (_, _) remove_top = Removed : ('mode, 'a, 'b) t -> ('mode, 'b) remove_top
+
+  let rec remove_top : type mode modality a k b c.
+      (mode, c, b) t -> (a, modality, k, b) insert -> (mode, a) remove_top =
+   fun ctx v ->
+    match (ctx, v) with
+    | Snoc (ctx, _, _), Now -> Removed ctx
+    | Snoc (ctx, e, ax), Later v ->
+        let (Removed ctx) = remove_top ctx v in
+        let (Plus bx) = N.plus (N.plus_right ax) in
+        Removed (Snoc (ctx, e, bx))
+    | Weaken (ctx, _), _ ->
+        let (Removed ctx) = remove_top ctx v in
+        Removed ctx
+    | Lock (_, _), _ | Emp _, _ -> .
+
   (* Generate a case tree consisting of a sequence of abstractions corresponding to the (checked) variables in a context.  The context must contain NO LET-BOUND VARIABLES, including field-access variables, since abstracting over them would not be well-defined.  (In general, we couldn't just omit them, because some of the variables in a cube could be bound but not others, and cubes in the context yield cube abstractions.  However, at least when this comment was written, this function was only used for contexts consisting entirely of 0-dimensional cubes without let-bound variables.)  Likewise it must contain NO MODAL LOCKS. *)
   let rec lam : type mode a b.
       (mode, a, b) t -> (mode, b, potential) term -> (mode, mode emp, potential) term =

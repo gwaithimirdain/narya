@@ -5,7 +5,6 @@ open Dim
 open Value
 open Tctx
 open Reporter
-open Ctx
 
 (* For prekeys, all a smart constructor can do is ignore identities (on any modality). *)
 let prekey_env : type mode mu nu cod n b.
@@ -36,16 +35,9 @@ let remove_top : type mode a modality k n.
     | Unshift (env, mn, nb), _ ->
         let (Uninsert (_, _, v', na)) = Plusmap.uninsert v nb in
         Unshift (remove_ins env v', mn, na)
-    | Ctx ctx, _ -> remove_ins_ctx ctx v
-  and remove_ins_ctx : type mode modality a k b c.
-      (mode, c, b) Ordered_ctx.t -> (a, modality, k, b) insert -> (mode, D.zero, a) env =
-   fun ctx v ->
-    match (ctx, v) with
-    | Snoc (ctx, _, _), Now -> Ctx ctx
-    | Snoc (ctx, { filter; bindings; _ }, _), Later v ->
-        env_ext (remove_ins_ctx ctx v) filter bindings
-    | Weaken (ctx, _), _ -> remove_ins_ctx ctx v
-    | Lock (_, _), _ | Emp _, _ -> . in
+    | Ctx ctx, _ ->
+        let (Removed ctx) = Ctx.Ordered.remove_top ctx v in
+        Ctx ctx in
   remove_ins env Now
 
 (* A prekey action is a key cell with a given mode as vertical source but existential vertical target (and horizontal target). *)
@@ -80,7 +72,7 @@ type (_, _, _, _) restrict_keys =
 
 let rec restrict_keys : type mode mu cod k b bc.
     (mode, k, bc) env -> (b, cod, mu, mode, bc) plus_with_locks -> (mode, cod, k, b) restrict_keys =
- fun env (Plus_with_locks (bc, llc)) ->
+ fun env (Plus_with_locks (bc, llc) as pwl) ->
   match (bc, llc, env) with
   (* If we're out of locks to strip off, we bottom out the recursion, returning an identity prekey cell. *)
   | Zero, Zero _, _ -> Restrict_keys (env, Modalcell.id2 (mode_env env))
@@ -129,4 +121,7 @@ let rec restrict_keys : type mode mu cod k b bc.
   | Suc _, _, Act (env, op) ->
       let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
       Restrict_keys (Act (env, op), pre)
-  | Suc _, _, Ctx ctx -> restrict_keys (Ordered_ctx.unfold ctx) (Plus_with_locks (bc, llc))
+  | Suc _, _, Ctx ctx ->
+      let cell = Modalcell.id2 (Ctx.Ordered.mode ctx) in
+      let (Any (ctx, _)) = Ctx.Ordered.remove_locks ctx pwl in
+      Restrict_keys (Ctx ctx, cell)
