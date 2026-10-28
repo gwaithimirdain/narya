@@ -124,13 +124,13 @@ module F = struct
     else
       match !v with
       | Ready v -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (evaluation 0) v l
-      | Deferred _ -> fprintf ppf "(%s%s, (Deferred), %s)" (Field.to_string f) p l
-      | Deferred_eval (e, tm, ins, cell, args) ->
-          fprintf ppf "(%s%s, Deferred_eval (?(%s), %a, %s(%s), %a, %s), %s)"
+      | Deferred_eval (e, tm, ins, cell) ->
+          fprintf ppf "(%s%s, Deferred_eval (?(%s), %a, %s(%s), %s), %s)"
             (string_of_dim (dim_env e))
             (Field.to_string f) p term tm (string_of_ins ins)
             (string_of_dim (dom_ins ins))
-            apps args (Modalcell.to_string cell) l
+            (Modalcell.to_string cell) l
+      | _ -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (lazy_eval 0) v l
 
   and lazy_eval : type mode s. int -> formatter -> (mode, s) lazy_eval -> unit =
    fun depth ppf v ->
@@ -138,7 +138,12 @@ module F = struct
     else
       match !v with
       | Ready v -> (evaluation (depth - 1)) ppf v
-      | _ -> fprintf ppf "(Deferred)"
+      | Deferred_eval _ -> fprintf ppf "(Deferred_eval)"
+      | Deferred _ -> fprintf ppf "(Deferred)"
+      | Applied (inner, Apps e) -> fprintf ppf "Applied (%a, %a)" (lazy_eval 0) inner apps_entry e
+      | Applied (inner, Action (s, c)) ->
+          fprintf ppf "Acted (%a, %s, %s)" (lazy_eval 0) inner (string_of_deg s)
+            (Modalcell.to_string c)
 
   and evaluation : type mode s. int -> formatter -> (mode, s) evaluation -> unit =
    fun depth ppf v ->
@@ -147,16 +152,20 @@ module F = struct
     | Realize v -> fprintf ppf "Realize (%a)" (dvalue depth) v
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 
-  (* TODO: display the outer insertion *)
   and apps : type hmode mode any fail. formatter -> (hmode, mode, any, fail) apps -> unit =
    fun ppf args ->
     match args with
     | Emp -> fprintf ppf "Emp"
-    | Arg (rest, _, xs, _) -> fprintf ppf "%a <: %a" apps rest (cubeof normal) xs
-    | Field (rest, _, fld, plus, ins) -> (
+    | Snoc (rest, e) -> fprintf ppf "%a <: %a" apps rest apps_entry e
+
+  (* TODO: display the outer insertion *)
+  and apps_entry : type mode1 mode2 any inst.
+      formatter -> (mode1, mode2, any, inst) apps_entry -> unit =
+   fun ppf e ->
+    match e with
+    | Arg (_, xs, _) -> cubeof normal ppf xs
+    | Field (_, fld, plus, ins) -> (
         (* 'ins' is an *outer* insertion, not the field insertion.  The field insertion has been pushed inside and become the 'plus'. *)
-        apps ppf rest;
-        fprintf ppf " <: ";
         (* Intrinsic dimension *)
         let i = D.plus_right plus in
         (* result dimension *)
@@ -169,10 +178,7 @@ module F = struct
             fprintf ppf ".%s%s(%s)" (Field.to_string fld)
               (string_of_ins (ins_of_plus t plus))
               (string_of_dim n))
-    | Inst (rest, d, args) ->
-        apps ppf rest;
-        fprintf ppf " <: ";
-        fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
+    | Inst (d, args) -> fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
 
   and level : type a b m n. formatter -> level -> (a, m, n, b) Modalcell.t -> unit =
    fun ppf l key -> fprintf ppf "LVar (%d,%d,%s)" (fst l) (snd l) (Modalcell.to_string key)

@@ -57,9 +57,9 @@ let if_known (test : 'a Err.t option) err =
 let rec nonmodal_apps : type hmode mode any.
     (hmode, mode, any, live) apps -> (hmode, mode) Eq.t option = function
   | Emp -> Some Eq
-  | Arg (rest, _, _, _) -> nonmodal_apps rest
-  | Inst (rest, _, _) -> nonmodal_apps rest
-  | Field (rest, filter, _, _, _) -> (
+  | Snoc (rest, Arg _) -> nonmodal_apps rest
+  | Snoc (rest, Inst _) -> nonmodal_apps rest
+  | Snoc (rest, Field (filter, _, _, _)) -> (
       match Modality.compare_id (Modality.filter_modality filter) with
       | Eq -> nonmodal_apps rest
       | Neq -> None)
@@ -399,7 +399,7 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
           | None ->
               let t1, t2 = (readback_head ctx head1, readback_head ctx head2) in
               Some (Error (Unequal.Heads (Terms (PTerm (ctx, t1), PTerm (ctx, t2)))))))
-  | Arg (rest1, filter1, a1, i1), Arg (rest2, filter2, a2, i2) -> (
+  | Snoc (rest1, Arg (filter1, a1, i1)), Snoc (rest2, Arg (filter2, a2, i2)) -> (
       let modality1 = Modality.filter_modality filter1 in
       let modality2 = Modality.filter_modality filter2 in
       match Modality.compare modality1 modality2 with
@@ -419,7 +419,7 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
               fatal
                 (Dimension_mismatch ("application in equality-check", CubeOf.dim a1, CubeOf.dim a2))
           ))
-  | Field (rest1, filter1, f1, _, i1), Field (rest2, filter2, f2, _, i2) -> (
+  | Snoc (rest1, Field (filter1, f1, _, i1)), Snoc (rest2, Field (filter2, f2, _, i2)) -> (
       (* The spines inside a modal field projection live behind a lock by the left adjoint, so we compare them in the locked context.  Comparing the field modalities suffices; the filters are then determined by the (equal) result dimensions of the two spines. *)
       let fm1 = Modality.filter_modality filter1 in
       let fm2 = Modality.filter_modality filter2 in
@@ -434,7 +434,7 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
           match Field.equal f1 f2 with
           | Eq -> Some (Ok ())
           | Neq -> Some (Error (Unequal.Fields (f1, f2)))))
-  | Inst (rest1, _, a1), Inst (rest2, _, a2) ->
+  | Snoc (rest1, Inst (_, a1)), Snoc (rest2, Inst (_, a2)) ->
       let* () = equal_apps ctx rest1 rest2 ?heads in
       equal_tyargs ctx a1 a2
   | _, _ -> None
