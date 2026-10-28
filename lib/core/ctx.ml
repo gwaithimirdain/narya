@@ -139,14 +139,6 @@ module Ordered = struct
       (mode, a, (b, (modality, n) dim_entry) snoc) t =
    fun ctx filter bindings -> Snoc (ctx, { bindings; filter; vis = Invis }, Zero)
 
-  let rec checked_length : type mode a b. (mode, a, b) t -> (mode, b) Tctx.t = function
-    | Emp mode -> Tctx.emp mode
-    | Snoc (ctx, e, _) -> Tctx.suc (checked_length ctx) (Dim (dim_entry e, filter_entry e))
-    | Lock (ctx, l) -> Tctx.suc (checked_length ctx) (Lock l)
-    | Weaken (ctx, _) -> checked_length ctx
-
-  let tctx = checked_length
-
   let rec raw_length : type mode a b. (mode, a, b) t -> a N.t = function
     | Emp _ -> N.zero
     | Snoc (ctx, _, ax) -> N.plus_out (raw_length ctx) ax
@@ -670,7 +662,7 @@ let empty mode = Permute { perm = N.perm_id N.zero; level = 0; ctx = Ordered.emp
 let total_locks : type mode a b. (mode, a, b) t -> mode Modality.tgt_wrapped =
  fun (Permute { ctx; _ }) -> Ordered.total_locks ctx
 
-let tctx (Permute { ctx; _ }) = Ordered.tctx ctx
+let tctx (Permute { ctx; _ }) = Ordered.checked_length ctx
 let apps (Permute { ctx; _ }) = Ordered.apps ctx
 
 (* Lookup is the only place where the permutations are used nontrivially: we apply the permutation to the raw index before looking it up. *)

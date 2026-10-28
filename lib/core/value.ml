@@ -674,12 +674,12 @@ module Ordered_ctx = struct
     | Lock (_, modality) -> Modality.src (Modality.of_gen modality)
     | Weaken (ctx, _) -> mode ctx
 
-  let rec length : type mode a b. (mode, a, b) t -> (mode, b) Tctx.t = function
+  let rec checked_length : type mode a b. (mode, a, b) t -> (mode, b) Tctx.t = function
     | Emp m -> Tctx.emp m
     | Snoc (ctx, { filter; bindings; _ }, _) ->
-        Tctx.suc (length ctx) (Dim (CubeOf.dim bindings, filter))
-    | Lock (ctx, g) -> Tctx.suc (length ctx) (Lock g)
-    | Weaken (ctx, _) -> length ctx
+        Tctx.suc (checked_length ctx) (Dim (CubeOf.dim bindings, filter))
+    | Lock (ctx, g) -> Tctx.suc (checked_length ctx) (Lock g)
+    | Weaken (ctx, _) -> checked_length ctx
 end
 
 (* Every context morphism has a valid dimension. *)
@@ -729,7 +729,7 @@ let rec length_env : type mode n b. (mode, n, b) env -> (mode, b) Tctx.t = funct
   | Permute (p, env) -> perm_dom p (length_env env)
   | Shift (_, mn, nb) -> Plusmap.cod (D.plus_right mn) nb
   | Unshift (_, _, nb) -> Plusmap.dom nb
-  | Ctx ctx -> Ordered_ctx.length ctx
+  | Ctx ctx -> Ordered_ctx.checked_length ctx
 
 (* Smart constructor that composes actions and cancels identities *)
 let rec act_env : type mode m n b. (mode, n, b) env -> (m, n) opt_op -> (mode, m, b) env =
