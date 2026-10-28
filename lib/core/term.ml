@@ -300,26 +300,39 @@ module rec Term : sig
     | No_fields : ('m, N.zero) has_fields
     | Has_fields : (D.zero, 'f2) has_fields
 
-  and (_, _, _, _, _, _, _) entry =
-    | Vis : {
-        dim : 'm D.t;
-        plus_lock : (('b, ('modality, 'mn) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
-        plusdim : ('m, 'n, 'mn) D.plus;
-        filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
-        vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
-        bindings : ('mn, ('dom, 'bm) binding) CubeOf.t;
-        hasfields : ('m, 'f2) has_fields;
-        fields : (D.zero Field.t * string * ('dom, 'bm, kinetic) term, 'f2) Bwv.t;
-        fplus : ('f1, 'f2, 'f) N.plus;
-      }
-        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) entry
-    | Invis : {
-        plus_lock : (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
-        filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
-        bindings : ('n, ('dom, 'bm) binding) CubeOf.t;
-        hints : hints;
-      }
-        -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) entry
+  and ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'n) entry = {
+    plus_lock : (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
+    filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
+    bindings : ('n, ('dom, 'bm) binding) CubeOf.t;
+    vis : ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'n) visibility;
+  }
+
+  and (_, _, _, _, _, _, _) visibility =
+    | Vis :
+        ( 'dom,
+          'modality,
+          'mode,
+          'b,
+          'bm,
+          'm,
+          'n,
+          'mn,
+          'f1,
+          'f2,
+          'f,
+          ('dom, 'bm, kinetic) term )
+        vis_data
+        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) visibility
+    | Invis : { hints : hints } -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) visibility
+
+  and ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data = {
+    dim : 'm D.t;
+    plusdim : ('m, 'n, 'mn) D.plus;
+    vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
+    hasfields : ('m, 'f2) has_fields;
+    fields : (D.zero Field.t * string * 'fldty, 'f2) Bwv.t;
+    fplus : ('f1, 'f2, 'f) N.plus;
+  }
 
   and (_, _, _) ordered_termctx =
     | Emp : 'mode Mode.t -> ('mode, N.zero, (unit id, 'mode proj) suc) ordered_termctx
@@ -669,27 +682,44 @@ end = struct
     | No_fields : ('m, N.zero) has_fields
     | Has_fields : (D.zero, 'f2) has_fields
 
-  and (_, _, _, _, _, _, _) entry =
-    | Vis : {
-        dim : 'm D.t;
-        (* The reason for the dimension "snoc" here is so that some of the terms and types in these bindings can refer to other ones.  Of course it should really be only the *later* ones that can refer to the *earlier* ones, but we don't have a way to specify that in the type parameters. *)
-        plus_lock : (('b, ('modality, 'mn) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
-        plusdim : ('m, 'n, 'mn) D.plus;
-        filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
-        vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
-        bindings : ('mn, ('dom, 'bm) binding) CubeOf.t;
-        hasfields : ('m, 'f2) has_fields;
-        fields : (D.zero Field.t * string * ('dom, 'bm, kinetic) term, 'f2) Bwv.t;
-        fplus : ('f1, 'f2, 'f) N.plus;
-      }
-        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) entry
-    | Invis : {
-        plus_lock : (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
-        filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
-        bindings : ('n, ('dom, 'bm) binding) CubeOf.t;
-        hints : hints;
-      }
-        -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) entry
+  and ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'n) entry = {
+    (* The reason for the dimension "snoc" here is so that some of the terms and types in these bindings can refer to other ones.  Of course it should really be only the *later* ones that can refer to the *earlier* ones, but we don't have a way to specify that in the type parameters. *)
+    plus_lock : (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock;
+    filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
+    bindings : ('n, ('dom, 'bm) binding) CubeOf.t;
+    vis : ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'n) visibility;
+  }
+
+  and (_, _, _, _, _, _, _) visibility =
+    | Vis :
+        ( 'dom,
+          'modality,
+          'mode,
+          'b,
+          'bm,
+          'm,
+          'n,
+          'mn,
+          'f1,
+          'f2,
+          'f,
+          ('dom, 'bm, kinetic) term )
+        vis_data
+        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) visibility
+    | Invis : { hints : hints } -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) visibility
+
+  (* Vis means the cube of internal variables are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn.  If vis is omitted,  *)
+  and ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data = {
+    dim : 'm D.t;
+    plusdim : ('m, 'n, 'mn) D.plus;
+    (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
+    vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
+    (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'vars' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
+    hasfields : ('m, 'f2) has_fields;
+    (* We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable.  Each of them also stores its type as a term, but we allow an arbitrary object to also be stored here so we can use the same record type for value contexts. *)
+    fields : (D.zero Field.t * string * 'fldty, 'f2) Bwv.t;
+    fplus : ('f1, 'f2, 'f) N.plus;
+  }
 
   and (_, _, _) ordered_termctx =
     | Emp : 'mode Mode.t -> ('mode, N.zero, (unit id, 'mode proj) suc) ordered_termctx
@@ -881,14 +911,12 @@ let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
 
 let dim_entry : type dom modality mode b f n bm. (dom, modality, mode, b, bm, f, n) entry -> n D.t =
   function
-  | Vis { bindings; _ } -> CubeOf.dim bindings
-  | Invis { bindings; _ } -> CubeOf.dim bindings
+  | { bindings; _ } -> CubeOf.dim bindings
 
 let plus_lock_entry : type dom modality mode b f n bm.
     (dom, modality, mode, b, bm, f, n) entry ->
     ((b, (modality, n) dim_entry) snoc, mode, modality, dom, bm) plus_lock = function
-  | Vis { plus_lock; _ } -> plus_lock
-  | Invis { plus_lock; _ } -> plus_lock
+  | { plus_lock; _ } -> plus_lock
 
 let modality_entry : type dom modality mode b f n bm.
     (dom, modality, mode, b, bm, f, n) entry -> (dom, modality, mode) Modality.t =
@@ -897,8 +925,7 @@ let modality_entry : type dom modality mode b f n bm.
 let filter_entry : type dom modality mode b f n bm.
     (dom, modality, mode, b, bm, f, n) entry -> (dom, modality, mode, n, n) Modality.filter_dim =
   function
-  | Vis { filter; _ } -> filter
-  | Invis { filter; _ } -> filter
+  | { filter; _ } -> filter
 
 module Termctx = struct
   type ('mode, 'a, 'b) ordered = ('mode, 'a, 'b) ordered_termctx
@@ -921,18 +948,21 @@ module Termctx = struct
    fun ctx x plus_lock b ->
     Ext
       ( ctx,
-        Vis
-          {
-            dim = D.zero;
-            plus_lock;
-            plusdim = D.plus_zero D.zero;
-            filter = Modality.filter_zero (plus_lock_modality plus_lock);
-            vars = NICubeOf.singleton x;
-            bindings = CubeOf.singleton b;
-            hasfields = No_fields;
-            fields = Emp;
-            fplus = Zero;
-          },
+        {
+          plus_lock;
+          filter = Modality.filter_zero (plus_lock_modality plus_lock);
+          bindings = CubeOf.singleton b;
+          vis =
+            Vis
+              {
+                dim = D.zero;
+                plusdim = D.plus_zero D.zero;
+                vars = NICubeOf.singleton x;
+                hasfields = No_fields;
+                fields = Emp;
+                fplus = Zero;
+              };
+        },
         Suc Zero )
 
   let ext_let (Permute (p, ctx)) al xs b =
@@ -1002,7 +1032,7 @@ let rec ordered_hole_vars : type mode a b.
   | Ext (ctx, entry, af) -> (
       let vars, xs = Bwv.unappend af vars in
       let rest = ordered_hole_vars ctx vars in
-      match entry with
+      match entry.vis with
       | Invis _ ->
           let Zero = af in
           rest

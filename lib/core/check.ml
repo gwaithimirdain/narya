@@ -3012,7 +3012,7 @@ and check_record : type mode a f1 f2 f af d acd b n.
     hints ->
     (D.zero, n, n, mode normal) TubeOf.t ->
     (N.zero, n, binder_name, f1) NICubeOf.t ->
-    (D.zero Field.t * string, f2) Bwv.t ->
+    (D.zero Field.t * string * unit, f2) Bwv.t ->
     (f1, f2, f) N.plus ->
     (a, f, af) N.plus ->
     (mode * b * D.zero * n * has_eta) Term.CodatafieldAbwd.t ->
@@ -3067,7 +3067,7 @@ and check_record_field : type mode a f1 f2 f af d acd b n.
     hints ->
     (D.zero, n, n, mode normal) TubeOf.t ->
     (N.zero, n, binder_name, f1) NICubeOf.t ->
-    (D.zero Field.t * string, f2) Bwv.t ->
+    (D.zero Field.t * string * unit, f2) Bwv.t ->
     (f1, f2, f) N.plus ->
     (a, f, af) N.plus ->
     (mode * b * D.zero * n * has_eta) Term.CodatafieldAbwd.t ->
@@ -3098,7 +3098,7 @@ and check_record_field : type mode a f1 f2 f af d acd b n.
     let newctx = Ctx.vis_fields ctx vars selfvars ctx_fields fplus af in
     add_field (field_ty newctx) in
   check_record status dim ctx opacity hints tyargs vars
-    (Bwv.Snoc (ctx_fields, (fld, name)))
+    (Bwv.Snoc (ctx_fields, (fld, name, ())))
     (Suc fplus) (Suc af) checked_fields fibrancy (Some cty) raw_fields
 
 and check_struct : type mode a b c s m n mn et.

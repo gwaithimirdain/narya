@@ -112,11 +112,11 @@ module Ordered = struct
     let m = CubeOf.dim vars in
     vis ctx filter m (D.plus_zero m) (NICubeOf.singleton (binder_name_of_option x)) vars (Suc Zero)
 
-  let vis_fields : type mode a b f1 f2 f af n.
+  let vis_fields : type mode a b f1 f2 f af n fldty.
       (mode, a, b) t ->
       (N.zero, n, binder_name, f1) NICubeOf.t ->
       (n, mode Binding.t) CubeOf.t ->
-      (D.zero Field.t * string, f2) Bwv.t ->
+      (D.zero Field.t * string * fldty, f2) Bwv.t ->
       (f1, f2, f) N.plus ->
       (a, f, af) N.plus ->
       (mode, af, (b, (mode id, n) dim_entry) snoc) t =
@@ -271,9 +271,9 @@ module Ordered = struct
    fun ctx { bindings; filter; vis } pf k ->
     match vis with
     | Vis
-        (type m n f1 f2)
+        (type m n f1 f2 c cm fldty)
         ({ dim; plusdim; vars; hasfields = _; fields; fplus } :
-          (dom, modality, mode, m, n, mn, f1, f2, f) vis_data) -> (
+          (dom, modality, mode, c, cm, m, n, mn, f1, f2, f, fldty) vis_data) -> (
         let modality = Modality.filter_modality filter in
         let (Plus pf1) = N.plus (NICubeOf.out N.zero vars) in
         let pf12 = N.plus_assocl pf1 fplus pf in
@@ -282,9 +282,10 @@ module Ordered = struct
             let b = CubeOf.find_top bindings in
             match Binding.level b with
             | Some level ->
+                let x, _, _ = Bwv.nth i fields in
                 Lookup
                   {
-                    result = `Field (level, fst (Bwv.nth i fields));
+                    result = `Field (level, x);
                     value = Binding.value b;
                     dirt = Binding.dirt b;
                     insert = Now;

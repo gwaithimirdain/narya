@@ -191,27 +191,15 @@ and entry : type dom modality mode b f mn bm.
     (dom, modality, mode, b, bm, f, mn) entry ->
     (dom, modality, mode, b, bm, f, mn) entry =
  fun f e ->
-  match e with
-  | Vis v ->
-      let bindings =
-        CubeOf.mmap
-          {
-            map =
-              (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
-                { ty = term f b.ty; tm = Option.map (term f) b.tm });
-          }
-          [ v.bindings ] in
-      Vis { v with bindings }
-  | Invis v ->
-      let bindings =
-        CubeOf.mmap
-          {
-            map =
-              (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
-                { ty = term f b.ty; tm = Option.map (term f) b.tm });
-          }
-          [ v.bindings ] in
-      Invis { v with bindings }
+  let bindings =
+    CubeOf.mmap
+      {
+        map =
+          (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
+            { ty = term f b.ty; tm = Option.map (term f) b.tm });
+      }
+      [ e.bindings ] in
+  { e with bindings }
 
 and termctx_ordered : type mode a b.
     (File.t -> File.t) -> (mode, a, b) ordered_termctx -> (mode, a, b) ordered_termctx =

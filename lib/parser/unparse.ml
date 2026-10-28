@@ -324,7 +324,7 @@ let letonly_all_hidden : type mode i b s. (mode, i, b) ordered_termctx -> (mode,
   let sib = letonly_sib body in
   let rec go : type i b. (mode, i, b) ordered_termctx -> bool = function
     | Emp _ -> true
-    | Ext (ctx, (Vis { bindings; _ } | Invis { bindings; _ }), _) -> (
+    | Ext (ctx, { bindings; _ }, _) -> (
         match (CubeOf.find_top bindings).tm with
         | Some tm -> Option.is_some (letrec_meta_name ~sib tm) && go ctx
         | None -> false)
@@ -862,21 +862,22 @@ and unparse_letonly_clauses_pending : type mode n i k b.
  fun ~sib vars ctx tmenv ->
   match (ctx, tmenv) with
   | Emp _, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty)
-  | Ext (ctx, entry, _), Ext { env; values = Modal (modality, plus, tms); _ } -> (
+  | ( Ext (ctx, { bindings; plus_lock; filter = _; vis }, _),
+      Ext { env; values = Modal (modality, plus, tms); _ } ) -> (
+      let top = CubeOf.find_top bindings in
       let acc, names = unparse_letonly_clauses ?sib vars ctx env in
       (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
-      let bindings, plus_lock, name =
-        match entry with
-        | Vis { vars = xs; plus_lock; bindings; _ } -> (bindings, plus_lock, NICubeOf.find_top xs)
-        | Invis { plus_lock; bindings; hints; _ } -> (bindings, plus_lock, `Anon hints) in
+      let name =
+        match vis with
+        | Vis { vars = xs; _ } -> NICubeOf.find_top xs
+        | Invis { hints } -> `Anon hints in
       let n = CubeOf.dim bindings in
-      match Option.bind (CubeOf.find_top bindings).tm (letrec_meta_name ~sib) with
+      match Option.bind top.tm (letrec_meta_name ~sib) with
       | Some name -> (acc, No_letonly_lock, add_named_var names n name)
       | None ->
           let x, names = Names.add_cube n names name in
           let ty =
-            unparse (Names.add_lock names plus_lock)
-              (uninst_letonly_type n (CubeOf.find_top bindings).ty)
+            unparse (Names.add_lock names plus_lock) (uninst_letonly_type n top.ty)
               No.Interval.entire No.Interval.entire in
           let tm =
             unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
@@ -2074,18 +2075,18 @@ let rec unparse_ctx : type dom modality mode a b.
             } ) )
   | Ext
       (type edom emod a' x b' bm n)
-      ((ctx, entry, af) :
+      ((ctx, { plus_lock; bindings; filter = _; vis }, af) :
         (mode, a', b') ordered_termctx
         * (edom, emod, mode, b', bm, x, n) Term.entry
         * (a', x, a) N.plus) -> (
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
-      match entry with
-      | Invis { bindings; hints; _ } ->
+      match vis with
+      | Invis { hints; _ } ->
           (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device: the self-variable of a datatype's constructors, or a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
           let _, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           (names, result)
-      | Vis { dim; plusdim; vars; plus_lock; bindings; hasfields; fields; fplus; filter = _ } ->
+      | Vis { dim; plusdim; vars; hasfields; fields; fplus } ->
           let modality = Modality.name (plus_lock_modality plus_lock) in
           (* First we split off the field variables, if any. *)
           let xs, fs = Bwv.unappend fplus xs in

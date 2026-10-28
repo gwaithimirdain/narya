@@ -81,18 +81,9 @@ module rec Value : sig
 
     and (_, _, _, _, _) visibility =
       | Vis :
-          ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data
+          ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
           -> ('dom, 'modality, 'mode, 'f, 'mn) visibility
       | Invis : ('dom, 'modality, 'mode, N.zero, 'n) visibility
-
-    and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
-      dim : 'm D.t;
-      plusdim : ('m, 'n, 'mn) D.plus;
-      vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
-      hasfields : ('m, 'f2) has_fields;
-      fields : (D.zero Field.t * string, 'f2) Bwv.t;
-      fplus : ('f1, 'f2, 'f) N.plus;
-    }
   end
 
   module Ordered_ctx : sig
@@ -378,22 +369,10 @@ end = struct
 
     and (_, _, _, _, _) visibility =
       | Vis :
-          ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data
+          (* We allow the "field type" to be anything, so it could be either the terms if they are present, or trivial if not. *)
+          ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
           -> ('dom, 'modality, 'mode, 'f, 'mn) visibility
       | Invis : ('dom, 'modality, 'mode, N.zero, 'n) visibility
-
-    (* Vis means the cube of internal variables are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn.  If vis is omitted,  *)
-    and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
-      dim : 'm D.t;
-      plusdim : ('m, 'n, 'mn) D.plus;
-          (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
-      vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
-          (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'vars' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
-      hasfields : ('m, 'f2) has_fields;
-          (* We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable. *)
-      fields : (D.zero Field.t * string, 'f2) Bwv.t;
-      fplus : ('f1, 'f2, 'f) N.plus;
-    }
   end
 
   (* An ordered context: a context without a permutation of its raw indices.  See Ctx for more explanation.  We define this in a submodule so that it can be included later in Ctx.Ordered. *)

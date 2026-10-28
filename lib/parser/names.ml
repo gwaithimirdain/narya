@@ -350,7 +350,7 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
       let used = ref used in
       let fields =
         Mbwd.map
-          (fun (f, x) ->
+          (fun (f, x, _) ->
             let x, _, new_used = uniquify x !used in
             used := new_used;
             (Field.to_string f, x))

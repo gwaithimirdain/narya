@@ -2025,15 +2025,11 @@ let eval_entry : type dom modality mode a b f n bm.
     (mode, a, b) Ctx.Ordered.t ->
     (dom, modality, mode, b, bm, f, n) entry ->
     (dom, modality, mode, f, n) Ctx.entry =
- fun ctx e ->
-  match e with
-  | Vis { dim; plus_lock; filter; plusdim; vars; bindings; hasfields; fields; fplus } ->
-      let bindings = eval_bindings ctx filter plus_lock bindings in
-      let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
-      { filter; bindings; vis = Vis { dim; plusdim; vars; hasfields; fields; fplus } }
-  | Invis { plus_lock; bindings; filter; _ } ->
-      let bindings = eval_bindings ctx filter plus_lock bindings in
-      { filter; bindings; vis = Invis }
+ fun ctx { plus_lock; filter; bindings; vis } ->
+  let bindings = eval_bindings ctx filter plus_lock bindings in
+  match vis with
+  | Vis v -> { filter; bindings; vis = Vis v }
+  | Invis _ -> { filter; bindings; vis = Invis }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function
