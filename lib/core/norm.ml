@@ -601,9 +601,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus mn) = D.plus n in
       eval (Unshift (env, mn, plusmap)) tm
   | Weaken (plus, tm, newplus) ->
-      (* We strip off the locks, remove the weakened variable, put the locks back, and re-apply any prekey action stripped along the way. *)
-      let (Restrict_keys (env, pre)) = restrict_keys env (plus_with_locks_of_plus_lock newplus) in
-      eval (prekey_env (lock_env (remove_top env) plus) pre) tm
+      (* We strip off the weakened variables and the locks among them, put the locks back, and re-apply any prekey action stripped along the way. *)
+      let (Restrict_keys (env, pre)) = restrict_keys env newplus in
+      eval (prekey_env (lock_env env plus) pre) tm
   (* A term that failed to typecheck has already reported its error, so it evaluates to a failed value, which fails silently if it is ever inspected.  We don't know its type, so that is failed too.  A failed case tree realizes to such a value. *)
   | Failed energy -> (
       let tm = failed_untyped (mode_env env) in

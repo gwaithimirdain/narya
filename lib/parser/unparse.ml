@@ -815,9 +815,9 @@ let rec unparse : type mode n lt ls rt rs s.
   (* An Unact only changes the dimension/action, not which variables are in scope, so for display we can simply unparse its body. *)
   | Unact (_, tm) -> unparse vars tm li ri
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
-  | Weaken (plus_lock, tm, Plus_lock (_, comp)) ->
-      (* We remove the names of the locks, then the weakened variable, and then put back the locks. *)
-      unparse (Names.add_lock (Names.remove (Names.split vars comp) Now) plus_lock) tm li ri
+  | Weaken (plus_lock, tm, Plus_with_locks (comp, _)) ->
+      (* We remove the names of the weakened variables and the locks among them, and then put back the locks. *)
+      unparse (Names.add_lock (Names.split vars comp) plus_lock) tm li ri
   (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
   | Failed _ -> fatal (Dependent "unparsing failed component")
 
@@ -1973,7 +1973,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
                 ( lamvars,
                   App
                     ( Kinetic,
-                      weaken (Modality.tgt modality) nonlam,
+                      weaken_dim (dom_sface fb) sfilter' nonlam,
                       dom_tface s,
                       sfilter,
                       Modal (modality, plusm, lamargs) ) )) in

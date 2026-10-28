@@ -44,8 +44,11 @@ let realize : type mode b s. (mode, b, s) status -> (mode, b, kinetic) term -> (
   | Potential _ -> Realize tm
   | Kinetic _ -> tm
 
-let pop_status : type mode b n modality s.
-    mode Mode.t -> (mode, (b, (modality, n) dim_entry) snoc, s) status -> (mode, b, s) status =
- fun mode -> function
+let pop_status : type mode b dom n modality s.
+    n D.t ->
+    (dom, modality, mode, n, n) Modality.filter_dim ->
+    (mode, (b, (modality, n) dim_entry) snoc, s) status ->
+    (mode, b, s) status =
+ fun n f -> function
   | Kinetic l -> Kinetic l
-  | Potential (head, apps, hyp) -> Potential (head, apps, fun x -> hyp (weaken mode x))
+  | Potential (head, apps, hyp) -> Potential (head, apps, fun x -> hyp (weaken_dim n f x))

@@ -998,9 +998,8 @@ let rec check : type mode a b s.
         | Error err -> fatal err)
     | Weaken (body, Eq), _ -> (
         match Ctx.pop ctx with
-        | Ok (Pop (ctx, Eq, Eq)) ->
-            weaken (Ctx.mode ctx)
-              (check (pop_status (Ctx.mode ctx) status) ctx (locate_opt tm.loc body) ty)
+        | Ok (Pop (ctx, Eq, Eq, n, f)) ->
+            weaken_dim n f (check (pop_status n f status) ctx (locate_opt tm.loc body) ty)
         | Error e -> fatal (Anomaly ("failed to weaken raw term: " ^ e))) in
   with_loc tm.loc @@ fun () ->
   Annotate.ctx status ctx tm;
@@ -3749,7 +3748,12 @@ and synth : type mode a b s.
               | x :: xs ->
                   let newctx = Ctx.ext ctx modality x.value edom in
                   let (Locked (newplus, _)) = Ctx.lock newctx modality in
-                  let newcdom : (dom, _, kinetic) term = Weaken (plus, cdom, newplus) in
+                  let newcdom : (dom, _, kinetic) term =
+                    Weaken
+                      ( plus,
+                        cdom,
+                        plus_with_locks_of_dim_plus_lock D.zero (Modality.filter_zero modality)
+                          newplus ) in
                   pi
                     (singleton_variables D.zero (View.hinted x.value edom))
                     (Modal (modality, plus, cdom))
@@ -3796,12 +3800,13 @@ and synth : type mode a b s.
                           let _, binds = dom_vars ctx modality edoms in
                           let newctx = Ctx.cube_vis ctx kfilter x binds in
                           let (Locked (newplus, _)) = Ctx.lock newctx modality in
+                          let wplus = plus_with_locks_of_dim_plus_lock k kfilter newplus in
                           let newcdoms =
                             CubeOf.mmap
                               {
                                 map =
                                   (fun _ [ d ] ->
-                                    (Weaken (plus, d, newplus) : (dom, _, kinetic) term));
+                                    (Weaken (plus, d, wplus) : (dom, _, kinetic) term));
                               }
                               [ cdoms ] in
                           let ccod, codty = bind newctx newplus newcdoms xs cod in
@@ -5005,7 +5010,9 @@ and check_tel_ext : type mode a b c ac.
     match tys with
     | Same _ ->
         let (Locked (newplus, _)) = Ctx.lock newctx modality in
-        Some (Tel_prev (modality, newplus, Weaken (plus, cty, newplus), ety))
+        let wplus =
+          plus_with_locks_of_dim_plus_lock D.zero (Modality.filter_zero modality) newplus in
+        Some (Tel_prev (modality, newplus, Weaken (plus, cty, wplus), ety))
     | _ -> None in
   let (Checked_tel (ctys, ctx)) = check_tel newctx ?prev:next tys in
   Checked_tel (Ext (x, Modal (modality, plus, cty), ctys), ctx)

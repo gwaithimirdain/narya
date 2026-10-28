@@ -194,7 +194,7 @@ module rec Term : sig
     | Weaken :
         ('b, 'tgt, 'mu, 'src, 'bmu) plus_lock
         * ('src, 'bmu, 's) term
-        * (('b, ('modality, 'n) dim_entry) snoc, 'tgt, 'mu, 'src, 'bnmu) plus_lock
+        * ('b, 'tgt, 'mu, 'src, 'bnmu) plus_with_locks
         -> ('src, 'bnmu, 's) term
     | Failed : 's energy -> ('mode, 'a, 's) term
 
@@ -545,11 +545,11 @@ end = struct
         -> ('mode, 'b, 's) term
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
-    (* Weakening by one variable, which may lie behind a lock: the term lives in a context 'b locked by 'mu, and the result in 'b extended by a variable and then locked by 'mu.  Most often the lock is trivial (see "weaken" below). *)
+    (* Weakening by some variables, which may be interleaved with locks: the term lives in a context 'b locked by 'mu, and the result in 'b extended by the variables and locks, the latter composing to 'mu.  Most often there is one variable and no locks (see "weaken" below). *)
     | Weaken :
         ('b, 'tgt, 'mu, 'src, 'bmu) plus_lock
         * ('src, 'bmu, 's) term
-        * (('b, ('modality, 'n) dim_entry) snoc, 'tgt, 'mu, 'src, 'bnmu) plus_lock
+        * ('b, 'tgt, 'mu, 'src, 'bnmu) plus_with_locks
         -> ('src, 'bnmu, 's) term
     (* A term that failed to typecheck, such as a component of a structure (a field of a struct, or a constructor of a datatype), allowing the rest of the term or structure to be checked and used.  Evaluating it produces a failed value (see Value.Failed), which fails silently when it is inspected. *)
     | Failed : 's energy -> ('mode, 'a, 's) term
@@ -813,10 +813,22 @@ let modal_id : type mode a s.
 
 let field mode tm f ins = Field (Kinetic, modal_id mode tm, f, ins)
 
-(* Weakening by one variable with no lock in between. *)
-let weaken : type mode b modality n s.
-    mode Mode.t -> (mode, b, s) term -> (mode, (b, (modality, n) dim_entry) snoc, s) term =
- fun mode tm -> Weaken (plus_no_lock mode, tm, plus_no_lock mode)
+(* Weakening by one variable, of a given dimension and filter, with no lock in between. *)
+let weaken_dim : type mode b dom annote n s.
+    n D.t ->
+    (dom, annote, mode, n, n) Modality.filter_dim ->
+    (mode, b, s) term ->
+    (mode, (b, (annote, n) dim_entry) snoc, s) term =
+ fun n f tm ->
+  let mode = Modality.tgt (Modality.filter_modality f) in
+  Weaken (plus_no_lock mode, tm, plus_with_locks_dim (plus_with_no_locks mode) n f)
+
+(* Most often, the variable is zero-dimensional with the identity modality. *)
+let weaken : type mode b s.
+    mode Mode.t ->
+    (mode, b, s) term ->
+    (mode, (b, (mode Modality.id, D.zero) dim_entry) snoc, s) term =
+ fun mode tm -> weaken_dim D.zero (Modality.filter_id mode D.zero) tm
 
 (* Lock a term environment by a modality, given the extensions of its domain and codomain by locks for that modality.  Each generator of the modality yields a Lock, whose domain extension consists of the corresponding lock in the given domain extension together with the dimension entries after it.  Any dimension entries before the innermost lock are accounted for by an identity Prekey. *)
 let rec lock_term_env : type dom mu cod a amu m b bmu.

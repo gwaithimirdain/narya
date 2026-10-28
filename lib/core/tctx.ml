@@ -322,6 +322,20 @@ let plus_with_locks_dim : type a cod modality mode dom ac annote n.
  fun (Plus_with_locks (c, l)) n f ->
   Plus_with_locks (Suc (c, Dim (n, f)), Suc (l, Locks_dim (n, f), Zero))
 
+(* The context extension consisting of one dimension entry followed by the locks of a plus_lock, as when weakening by one variable that lies behind those locks. *)
+let rec plus_with_locks_of_dim_plus_lock : type a cod modality mode dom ac annote n.
+    n D.t ->
+    (dom, annote, cod, n, n) Modality.filter_dim ->
+    ((a, (annote, n) dim_entry) snoc, cod, modality, mode, ac) plus_lock ->
+    (a, cod, modality, mode, ac) plus_with_locks =
+ fun n f (Plus_lock (lock, comp)) ->
+  match (lock, comp) with
+  | Zero (Eq cod), Zero -> plus_with_locks_dim (plus_with_no_locks cod) n f
+  | Suc (lock, Inject (Lock_lock g), Suc (Zero, Lock _)), Suc (comp, Lock g') ->
+      let Eq = Modality.Gen.src_uniq g g' in
+      let Eq = Modality.Gen.tgt_uniq g g' in
+      plus_with_locks_lock (plus_with_locks_of_dim_plus_lock n f (Plus_lock (lock, comp))) g
+
 (* A plus_with_locks with existentially quantified composite modality. *)
 type (_, _, _, _) wrapped_plus_with_locks =
   | Wrap_plus_with_locks :

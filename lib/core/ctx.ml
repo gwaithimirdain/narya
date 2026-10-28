@@ -406,16 +406,18 @@ module Ordered = struct
     let b = Binding.make ?dirt None v in
     (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
 
-  (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields. *)
+  (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields.  We also return the dimension and filter of that entry. *)
   type ('mode, _, _) pop =
     | Pop :
         ('mode, 'a, 'b) t
         * ('a N.suc, 'asuc) Eq.t
         * (('b, ('modality, 'n) dim_entry) snoc, 'bn) Eq.t
+        * 'n D.t
+        * ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim
         -> ('mode, 'asuc, 'bn) pop
 
   let pop : type mode a b. (mode, a, b) t -> (mode, a, b) pop option = function
-    | Snoc (ctx, _, Suc Zero) -> Some (Pop (ctx, Eq, Eq))
+    | Snoc (ctx, entry, Suc Zero) -> Some (Pop (ctx, Eq, Eq, dim_entry entry, filter_entry entry))
     | _ -> None
 
   type (_, _) remove_top = Removed : ('mode, 'a, 'b) t -> ('mode, 'b) remove_top
@@ -684,18 +686,23 @@ let ext_failed_let ctx modality xs =
   ext_let ctx modality xs
     { tm = failed (Modality.src modality) (Lazy.from_val ty); ty = Lazy.from_val ty }
 
-(* Remove the last cube entry in a context.  This only works if it is a pure cube variable with no fields and the context has not been permuted after its addition. *)
+(* Remove the last cube entry in a context.  This only works if it is a pure cube variable with no fields and the context has not been permuted after its addition.  We also return the dimension and filter of that entry. *)
 type (_, _, _) pop =
   | Pop :
-      ('mode, 'a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, ('modality, 'n) dim_entry) snoc, 'bn) Eq.t
+      ('mode, 'a, 'b) t
+      * ('a N.suc, 'asuc) Eq.t
+      * (('b, ('modality, 'n) dim_entry) snoc, 'bn) Eq.t
+      * 'n D.t
+      * ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim
       -> ('mode, 'asuc, 'bn) pop
 
 let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
  fun (Permute { ctx; perm; level }) ->
   match (Ordered.pop ctx, perm) with
-  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top) -> Ok (Pop (Permute { ctx; perm; level }, Eq, Eq))
-  | Some (Pop (ctx, Eq, Eq)), Id -> Ok (Pop (Permute { ctx; perm = Id; level }, Eq, Eq))
-  | Some (Pop (_, Eq, Eq)), Insert (_, Pop _) -> Error "nonidentity permutation"
+  | Some (Pop (ctx, Eq, Eq, n, f)), Insert (perm, Top) ->
+      Ok (Pop (Permute { ctx; perm; level }, Eq, Eq, n, f))
+  | Some (Pop (ctx, Eq, Eq, n, f)), Id -> Ok (Pop (Permute { ctx; perm = Id; level }, Eq, Eq, n, f))
+  | Some (Pop (_, Eq, Eq, _, _)), Insert (_, Pop _) -> Error "nonidentity permutation"
   | None, _ -> Error "empty or locked"
 
 let lam (Permute { ctx; _ }) tm = Ordered.lam ctx tm
