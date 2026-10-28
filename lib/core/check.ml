@@ -3655,10 +3655,8 @@ and synth : type mode a b s.
         (* Any keys supplied explicitly by the user have been stripped off already, but we can insert an identity key or a unique key as well. *)
         match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
         | Eq, _ ->
-            (* If the two modalities are equal, we still technically need an "identity key" substitution to replace the lock-containing context with a lock-only context. *)
-            ( realize status
-                (Term.Key { tm; cell = Modalcell.id modality; plus_tgt; plus_src }
-                  : (mode, b, kinetic) term),
+            (* If the two modalities are equal, we still technically need an "identity key" substitution to replace the lock-containing context with a lock-only context -- otherwise known as generalized weakening. *)
+            ( realize status (weaken_gen plus_src tm plus_tgt : (mode, b, kinetic) term),
               (act_value (Lazy.force ty) (id_deg D.zero) (Modalcell.id2 mode)
                 : (mode, kinetic) value) )
         | _, Some (Unique cell) ->
@@ -3742,21 +3740,19 @@ and synth : type mode a b s.
                 (a, c, ac) Raw.Namevec.t ->
                 ac check located ->
                 (mode, b, kinetic) term =
-             fun ctx plus cdom xs cod ->
+             fun ctx plus_src cdom xs cod ->
               match xs with
               | [] -> check (Kinetic `Nolet) ctx cod (universe mode D.zero)
               | x :: xs ->
                   let newctx = Ctx.ext ctx modality x.value edom in
                   let (Locked (newplus, _)) = Ctx.lock newctx modality in
-                  let newcdom : (dom, _, kinetic) term =
-                    Weaken
-                      ( plus,
-                        cdom,
-                        plus_with_locks_of_dim_plus_lock D.zero (Modality.filter_zero modality)
-                          newplus ) in
+                  let plus_tgt =
+                    plus_with_locks_of_dim_plus_lock D.zero (Modality.filter_zero modality) newplus
+                  in
+                  let newcdom = weaken_gen plus_src cdom plus_tgt in
                   pi
                     (singleton_variables D.zero (View.hinted x.value edom))
-                    (Modal (modality, plus, cdom))
+                    (Modal (modality, plus_src, cdom))
                     (bind newctx newplus newcdom xs cod) in
             (realize status (bind ctx plus cdom xs cod), universe mode D.zero))
     | HigherPi (xs, modality, dom, cod), _ -> (
@@ -3800,14 +3796,10 @@ and synth : type mode a b s.
                           let _, binds = dom_vars ctx modality edoms in
                           let newctx = Ctx.cube_vis ctx kfilter x binds in
                           let (Locked (newplus, _)) = Ctx.lock newctx modality in
-                          let wplus = plus_with_locks_of_dim_plus_lock k kfilter newplus in
+                          let plus_tgt = plus_with_locks_of_dim_plus_lock k kfilter newplus in
                           let newcdoms =
                             CubeOf.mmap
-                              {
-                                map =
-                                  (fun _ [ d ] ->
-                                    (Weaken (plus, d, wplus) : (dom, _, kinetic) term));
-                              }
+                              { map = (fun _ [ tm ] -> weaken_gen plus tm plus_tgt) }
                               [ cdoms ] in
                           let ccod, codty = bind newctx newplus newcdoms xs cod in
                           match view_type codty "higher pi codomain" with
@@ -5010,9 +5002,9 @@ and check_tel_ext : type mode a b c ac.
     match tys with
     | Same _ ->
         let (Locked (newplus, _)) = Ctx.lock newctx modality in
-        let wplus =
+        let plus_tgt =
           plus_with_locks_of_dim_plus_lock D.zero (Modality.filter_zero modality) newplus in
-        Some (Tel_prev (modality, newplus, Weaken (plus, cty, wplus), ety))
+        Some (Tel_prev (modality, newplus, weaken_gen plus cty plus_tgt, ety))
     | _ -> None in
   let (Checked_tel (ctys, ctx)) = check_tel newctx ?prev:next tys in
   Checked_tel (Ext (x, Modal (modality, plus, cty), ctys), ctx)

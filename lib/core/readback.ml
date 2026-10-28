@@ -224,10 +224,10 @@ let id_weakening : type mode b. mode Mode.t -> (b, mode, mode, b, b) weakening =
 (* Apply a weakening to a term, omitting the Weaken if it is trivial. *)
 let weaken_by : type a amode mode d b s.
     (a, amode, mode, d, b) weakening -> (mode, d, s) term -> (mode, b, s) term =
- fun (Weakening (plus, newplus)) tm ->
-  match (plus, newplus) with
+ fun (Weakening (plus_src, plus_tgt)) tm ->
+  match (plus_src, plus_tgt) with
   | Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
-  | _ -> Weaken (plus, tm, newplus)
+  | _ -> weaken_gen plus_src tm plus_tgt
 
 (* Weaken further by a variable at the end. *)
 let weaken_weakening : type a amode mode d b dom modality n.
@@ -1122,10 +1122,10 @@ and readback_let_value : type mode a b dom modality n bm.
   let n = CubeOf.dim bindings in
   match D.compare n D.zero with
   | Eq ->
-      let (Locked (rplus, lrest)) =
-        Ctx.lock (Ctx.of_ordered rest) (Modality.filter_modality filter) in
-      let newplus = plus_with_locks_of_dim_plus_lock n filter plus_lock in
-      Some (fun nf -> Weaken (rplus, readback_nf lrest nf, newplus))
+      let modality = Modality.filter_modality filter in
+      let (Locked (plus_src, lrest)) = Ctx.lock (Ctx.of_ordered rest) modality in
+      let plus_tgt = plus_with_locks_of_dim_plus_lock n filter plus_lock in
+      Some (fun nf -> weaken_gen plus_src (readback_nf lrest nf) plus_tgt)
   | Neq -> None
 
 and readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = function

@@ -75,7 +75,6 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
   | Unact (o, tm) -> Unact (o, term f tm)
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
-  | Weaken (plus, tm, newplus) -> Weaken (plus, term f tm, newplus)
   | Failed energy -> Failed energy
 
 and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, a, n) branch =

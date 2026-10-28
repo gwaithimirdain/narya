@@ -304,7 +304,7 @@ let rec letrec_meta_name : type mode b s.
  fun ~sib tm ->
   match (sib, tm) with
   | Some (Wrap w), Meta (v, _) when Meta.letrec_siblings w v -> Some (meta_var_name v)
-  | _, Weaken (_, tm, _) -> letrec_meta_name ~sib tm
+  | _, Key { tm; cell; _ } when Modalcell.is_id cell -> letrec_meta_name ~sib tm
   | _ -> None
 
 (* Add a variable to a context of names, displayed as a given string. *)
@@ -357,7 +357,6 @@ let rec synths : type mode n s. ?visiting:Meta.WrapSet.t -> (mode, n, s) term ->
   | Unshift (_, _, tm) -> go tm
   | Unact (_, tm) -> go tm
   | Shift (_, _, tm) -> go tm
-  | Weaken (_, tm, _) -> go tm
   | Failed _ -> false
   (* Of the potential terms, a leaf synthesizes if its term does, while canonical types don't synthesize.  A match synthesizes if its discriminee does, and either it has an explicit motive or it is non-dependent and one of its branches synthesizes (giving the type of the match).  An implicitly dependent match doesn't synthesize, since its branches may have different types. *)
   | Realize tm -> go tm
@@ -815,9 +814,6 @@ let rec unparse : type mode n lt ls rt rs s.
   (* An Unact only changes the dimension/action, not which variables are in scope, so for display we can simply unparse its body. *)
   | Unact (_, tm) -> unparse vars tm li ri
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
-  | Weaken (plus_lock, tm, Plus_with_locks (comp, _)) ->
-      (* We remove the names of the weakened variables and the locks among them, and then put back the locks. *)
-      unparse (Names.add_lock (Names.split vars comp) plus_lock) tm li ri
   (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
   | Failed _ -> fatal (Dependent "unparsing failed component")
 
@@ -1475,9 +1471,9 @@ and unparse_field_var : type mode n lt ls rt rs s.
   | _ -> None
 
 (* Unparse a key operation applied postfix to a synthesizing term.  The body is unparsed in the context locked by the key's source, obtained from the ambient names by splitting off the target locks ('comp') and re-adding the source lock ('plus_src').  We always omit printing keys that are identities, since those can always be reconstructed on parse.  Keys that are the unique one between their endpoints are also omittable, and are omitted unless the user has enabled 'display unique keys'.  Otherwise, we ask the mode theory for a normal form of the cell, as a vertical composite (outer list) of horizontal composites / whiskerings (inner list), and emit one syntactic key application "#a.b.c" for each entry of the vertical composite. *)
-and unparse_key : type mode n am mu nu cod b c lt ls rt rs.
+and unparse_key : type mode n am mu nu cod b c lt ls rt rs s.
     n Names.t ->
-    (mode, am, kinetic) term ->
+    (mode, am, s) term ->
     (mode, mu, nu, cod) Modalcell.t ->
     (mode, c, cod, b, unit, n) Tctx.comp ->
     (b, cod, mu, mode, am) plus_lock ->
@@ -1495,9 +1491,9 @@ and unparse_key : type mode n am mu nu cod b c lt ls rt rs.
       unparse_keys vars body (Bwd.of_list (Modalcell.name cell)) li ri
 
 (* Apply a sequence of syntactic key applications (the vertical composite, innermost first) to an unparsed body, as a postfix application spine at tightness +ω, mirroring the argument-application logic of unparse_spine. *)
-and unparse_keys : type mode n lt ls rt rs.
+and unparse_keys : type mode n lt ls rt rs s.
     n Names.t ->
-    (mode, n, kinetic) term ->
+    (mode, n, s) term ->
     string list Bwd.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->

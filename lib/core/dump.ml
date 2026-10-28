@@ -290,7 +290,6 @@ module F = struct
     | Unshift (n, _, tm) -> fprintf ppf "Unshift (%s, %a)" (string_of_dim n) term tm
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
-    | Weaken (_, tm, _) -> fprintf ppf "Weaken (%a)" term tm
     | Failed _ -> fprintf ppf "Failed"
 
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =

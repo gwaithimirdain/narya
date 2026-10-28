@@ -150,12 +150,12 @@ module rec Term : sig
         * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
         -> ('mode, 'a, 's) term
     | Key : {
-        tm : ('mode, 'am, kinetic) term;
+        tm : ('mode, 'am, 's) term;
         cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
         plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
         plus_src : ('a, 'cod, 'mu, 'mode, 'am) plus_lock;
       }
-        -> ('mode, 'ac, kinetic) term
+        -> ('mode, 'ac, 's) term
     | Let :
         string option
         * ('mode, 'modality, 'a, kinetic) modal_term
@@ -191,11 +191,6 @@ module rec Term : sig
         -> ('mode, 'b, 's) term
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
-    | Weaken :
-        ('b, 'tgt, 'mu, 'src, 'bmu) plus_lock
-        * ('src, 'bmu, 's) term
-        * ('b, 'tgt, 'mu, 'src, 'bnmu) plus_with_locks
-        -> ('src, 'bnmu, 's) term
     | Failed : 's energy -> ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
@@ -494,14 +489,14 @@ end = struct
         * ('m, 'n) deg
         * ([ `Type | `Function | `Other ] * [ `Canonical | `Other ])
         -> ('mode, 'a, 's) term
-    (* A keyed term strips off part of the context that contains locks adding up to the codomain of the key cell, then replaces them by the domain of that cell for the body term. *)
+    (* A keyed term strips off part of the context that contains locks adding up to the codomain of the key cell, then replaces them by the domain of that cell for the body term.  Note that this includes weakening by multiple variables behind locks, as the special case when the cell is the identity (see "weaken_dim" and "weaken" below). *)
     | Key : {
-        tm : ('mode, 'am, kinetic) term;
+        tm : ('mode, 'am, 's) term;
         cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
         plus_tgt : ('a, 'cod, 'nu, 'mode, 'ac) plus_with_locks;
         plus_src : ('a, 'cod, 'mu, 'mode, 'am) plus_lock;
       }
-        -> ('mode, 'ac, kinetic) term
+        -> ('mode, 'ac, 's) term
     (* The term being bound in a 'let' is always kinetic.  Thus, if the supplied bound term is potential, the "bound term" here must be the metavariable whose value is set to that term rather than to the (potential) term itself.  We don't need a term-level "letrec" since recursion is implemented in the typechecker by creating a new global metavariable. *)
     | Let :
         string option
@@ -545,12 +540,6 @@ end = struct
         -> ('mode, 'b, 's) term
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
-    (* Weakening by some variables, which may be interleaved with locks: the term lives in a context 'b locked by 'mu, and the result in 'b extended by the variables and locks, the latter composing to 'mu.  Most often there is one variable and no locks (see "weaken" below). *)
-    | Weaken :
-        ('b, 'tgt, 'mu, 'src, 'bmu) plus_lock
-        * ('src, 'bmu, 's) term
-        * ('b, 'tgt, 'mu, 'src, 'bnmu) plus_with_locks
-        -> ('src, 'bnmu, 's) term
     (* A term that failed to typecheck, such as a component of a structure (a field of a struct, or a constructor of a datatype), allowing the rest of the term or structure to be checked and used.  Evaluating it produces a failed value (see Value.Failed), which fails silently when it is inspected. *)
     | Failed : 's energy -> ('mode, 'a, 's) term
 
@@ -813,6 +802,15 @@ let modal_id : type mode a s.
 
 let field mode tm f ins = Field (Kinetic, modal_id mode tm, f, ins)
 
+(* Weakening as a special case of keys *)
+let weaken_gen : type mode mu cod a am ac s.
+    (a, cod, mu, mode, am) plus_lock ->
+    (mode, am, s) term ->
+    (a, cod, mu, mode, ac) plus_with_locks ->
+    (mode, ac, s) term =
+ fun plus_src tm plus_tgt ->
+  Key { plus_src; tm; plus_tgt; cell = Modalcell.id (plus_lock_modality plus_src) }
+
 (* Weakening by one variable, of a given dimension and filter, with no lock in between. *)
 let weaken_dim : type mode b dom annote n s.
     n D.t ->
@@ -821,7 +819,7 @@ let weaken_dim : type mode b dom annote n s.
     (mode, (b, (annote, n) dim_entry) snoc, s) term =
  fun n f tm ->
   let mode = Modality.tgt (Modality.filter_modality f) in
-  Weaken (plus_no_lock mode, tm, plus_with_locks_dim (plus_with_no_locks mode) n f)
+  weaken_gen (plus_no_lock mode) tm (plus_with_locks_dim (plus_with_no_locks mode) n f)
 
 (* Most often, the variable is zero-dimensional with the identity modality. *)
 let weaken : type mode b s.
@@ -861,7 +859,6 @@ let rec is_failed : type mode a s. (mode, a, s) term -> bool = function
   | Unshift (_, _, tm) -> is_failed tm
   | Unact (_, tm) -> is_failed tm
   | Shift (_, _, tm) -> is_failed tm
-  | Weaken (_, tm, _) -> is_failed tm
   | _ -> false
 
 (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
