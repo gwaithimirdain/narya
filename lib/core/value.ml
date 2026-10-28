@@ -1174,3 +1174,11 @@ let get_full_tube : type n k nk a any.
       | Zero ->
           let Eq = D.plus_uniq (TubeOf.plus args) (D.zero_plus (TubeOf.inst args)) in
           TubeOf.Full_tube args)
+
+(* Whether a value is literally the variable with a given level, with no degeneracy, key, or arguments. *)
+let is_plain_var : type mode s. level -> (mode, s) value -> bool =
+ fun level x ->
+  match x with
+  | Neu { head = Live (Var v); args = Emp; _ } ->
+      v.level = level && Option.is_some (is_id_deg v.deg) && Modalcell.is_id v.key
+  | _ -> false

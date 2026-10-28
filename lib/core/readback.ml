@@ -110,14 +110,6 @@ let apply_status : type mode s dom modality k n.
   | Kinetic -> Kinetic
   | Potential neutral -> Potential (apply_term neutral filter args)
 
-(* Whether a value is literally the variable with a given level, with no degeneracy, key, or arguments. *)
-let is_plain_var : type mode s. level -> (mode, s) value -> bool =
- fun level x ->
-  match x with
-  | Neu { head = Live (Var v); args = Emp; _ } ->
-      v.level = level && Option.is_some (is_id_deg v.deg) && Modalcell.is_id v.key
-  | _ -> false
-
 (* Whether the top entry of an environment is the identity environment of a context entry with the given modality and bindings, because the environment is a context whose top entry has those very bindings. *)
 let rec is_top_bindings : type mode n d dom modality k.
     (mode, n, d) env -> (dom, modality, mode) Modality.t -> (k, dom Binding.t) CubeOf.t -> bool =
