@@ -137,77 +137,56 @@ let rec is_identity_ordered_env : type mode a b c d.
   | Weaken (ctx, _), _ -> is_identity_ordered_env ctx env envctx
   | _, Weaken (envctx, _) -> is_identity_ordered_env ctx env envctx
   | Emp _, Emp _ -> Some Eq
+  (* Locks we test for equality and then remove from both contexts and the environment. *)
   | Lock (ctx, g), Lock (envctx, g') -> (
       match Modality.Gen.compare g g' with
       | Neq -> None
-      | Eq -> (
+      | Eq ->
           let (Restrict_keys (env, pre)) =
             restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g)
           in
-          if not (Modalcell.is_id pre) then None
-          else
+          (* Any nonidentity prekey encountered in the environment means it is not an identity. *)
+          if Modalcell.is_id pre then
             match is_identity_ordered_env ctx env envctx with
             | Some Eq -> Some Eq
-            | None -> None))
+            | None -> None
+          else None)
   | Snoc (ctx, entry, _), Ext (envctx, tentry, _) -> (
       let modality = Ctx.modality_entry entry in
       let bindings = Ctx.bindings_entry entry in
       let k = CubeOf.dim bindings in
       match (Modality.compare modality (modality_entry tentry), D.compare k (dim_entry tentry)) with
-      | Eq, Eq when is_top_bindings env modality bindings -> (
-          (* If the environment's top entry is literally this entry of the context, there is nothing to look up. *)
-          match is_identity_ordered_env ctx (remove_top env) envctx with
-          | Some Eq -> Some Eq
-          | None -> None)
       | Eq, Eq -> (
-          let (* We first check that all the variables in this entry are determined, so that we don't force any of them that are undetermined (such as those in a let rec whose values are still being computed). *)
-            exception
-            Not_identity
-            in
+          let exception Not_identity in
           try
-            let expected =
-              CubeOf.mmap
-                {
-                  map =
-                    (fun _ [ b ] ->
-                      match Binding.level b with
-                      | Some level -> `Var level
-                      | None -> (
-                          match Binding.value_opt b with
-                          | Some v -> `Value v.tm
-                          | None -> raise_notrace Not_identity));
-                }
-                [ bindings ] in
-            (* Now we look up the top entry as in readback_ordered_env, but with the environment dimension zero. *)
-            let (Has_filter filter) = Modality.filter modality D.zero in
-            let m = Modality.filtered D.zero filter in
-            let (Plus m_k) = D.plus k in
-            let mk = D.plus_out m m_k in
-            let aenv = act_env env (opt_op_of_opt_sface (Modality.sface_of_filter D.zero filter)) in
-            let (Looked_up { act; op; entry = xs; pre }) =
-              lookup_cube aenv m_k modality modality Now (id_opt_op mk) in
-            let (Op (fc, fd)) =
-              match op_of_opt op with
-              | Some op -> op
-              | None -> raise_notrace Not_identity in
-            let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
-            match D.compare (CubeOf.dim xs) k with
-            | Neq -> None
-            | Eq -> (
-                CubeOf.miter
-                  {
-                    it =
-                      (fun _ [ x; e ] ->
-                        let ok =
-                          match e with
-                          | `Var level -> is_plain_var level x
-                          | `Value v -> x == v in
-                        if not ok then raise_notrace Not_identity);
-                  }
-                  [ xs; expected ];
-                match is_identity_ordered_env ctx (remove_top env) envctx with
-                | Some Eq -> Some Eq
-                | None -> None)
+            (* If the environment's top entry is itself physically equal to this entry of the context, there is nothing to look up. *)
+            (if is_top_bindings env modality bindings then ()
+             else
+               (* Otherwise we look up the top entry in the environment and check whether it is "the same as" the one in the context in a weaker sense. *)
+               let (Looked_up { act; op; entry = xs; pre }) =
+                 lookup_cube env (D.zero_plus k) modality modality Now (id_opt_op k) in
+               (* For free variables, we check that they have the same level and identity degeneracies and keys; for let-bound variables we check that their defined values are physically equal (skipping a costly semantic-equality check).  Neither of these can succeed if the looked up value has a nonidentity operation or key on it, since the act functions only return physically equal values if they short-circuit; so we wait to force the value with "act" until checking those.  (We do still need to call "act" even though the actions are identities, because lookup_cube returns an abstract type that we have to force into a value.) *)
+               match (is_id_opt_op op, Modalcell.is_id pre) with
+               | Some Eq, true ->
+                   let s = id_deg k in
+                   CubeOf.miter2
+                     {
+                       it2 =
+                         (fun _ x b ->
+                           if
+                             not
+                               (match (Binding.level b, Binding.value_opt b) with
+                               | Some level, _ -> is_plain_var level (act x s pre)
+                               | None, Some v -> v.tm == act x s pre
+                               | None, None -> false)
+                           then raise_notrace Not_identity);
+                     }
+                     xs bindings
+               | _ -> raise_notrace Not_identity);
+            (* If we get here, the top environment entry succeded in matching the context entry, so we recurse. *)
+            match is_identity_ordered_env ctx (remove_top env) envctx with
+            | Some Eq -> Some Eq
+            | None -> None
           with Not_identity -> None)
       | _ -> None)
   | _ -> None
