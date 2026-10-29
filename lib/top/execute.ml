@@ -17,6 +17,9 @@ let __COMPILE_VERSION__ =
 (* The modification time of a file.  We follow symlinks, since a file loaded through a symlink is modified when its target is.  (The tests in FileUtil.test, such as Is_older_than, compare against the modification time of a symlink itself.) *)
 let mtime file = (FileUtil.stat ~dereference:true file).modification_time
 
+(* Sets of filenames, used to add each file only once to the transitive imports of a file. *)
+module Filenames = Set.Make (String)
+
 (* Normalize a file path, relative to a given directory, to a reduced absolute one, so we can use it as a hashtable key.  Symlinks are not resolved: a file loaded through a symlink is identified by the path of the symlink, has its compiled version stored next to the symlink, and resolves its imports relative to the symlink's directory.  Consistently with this, ".." is reduced lexically, so that "a/c/../b.ny" is the same file as "a/b.ny" even if "a/c" is a symlink. *)
 let normalize_filename cwd filename =
   let filename =
@@ -32,6 +35,8 @@ module Loadstate = struct
     parents : FilePath.filename Bwd.t;
     (* All the files imported so far by the current file, *transitively* (that is, files it imports, and files *they* import, etc.).  Stored in compiled files to ensure they are recompiled whenever any dependencies change, and for linking purposes. *)
     imports : (File.t * FilePath.filename) Bwd.t;
+    (* The filenames in imports, so that we add each file only once however many import paths reach it. *)
+    imported : Filenames.t;
     (* Whether the current file has performed any effectual actions like 'echo'.  Stored in compiled files to produce a warning. *)
     actions : bool;
   }
@@ -39,6 +44,15 @@ end
 
 module Loading = struct
   include State.Make (Loadstate)
+
+  (* Add files to the transitive imports of the current file, skipping those that are already there. *)
+  let add_imports more =
+    modify (fun s ->
+        Bwd.fold_left
+          (fun (s : Loadstate.t) ((_, f) as x) ->
+            if Filenames.mem f s.imported then s
+            else { s with imports = Snoc (s.imports, x); imported = Filenames.add f s.imported })
+          s more)
 
   let run ~init f =
     run ~init @@ fun () ->
@@ -247,8 +261,8 @@ and load_file filename top =
         (* Ensure that it's marked as having been loaded explicitly. *)
         Loaded.add_to_files filename trie globals file old_imports true);
       (* We also add it, and the files it imports, to the list of things imported by the current ambient file, since that list is supposed to be transitive.  (The other branch appends the same thing, in the same order, after loading the file.)  TODO: Should that go in execute_command Import? *)
-      Loading.modify (fun s ->
-          { s with imports = Bwd_extra.append (Snoc (s.imports, (file, filename))) old_imports });
+      Loading.add_imports (Snoc (Emp, (file, filename)));
+      Loading.add_imports old_imports;
       (* Return its saved export namespace. *)
       trie
   | None ->
@@ -259,7 +273,7 @@ and load_file filename top =
       (* We make a name for it *)
       let file = File.make (`File filename) in
       (* Now we record it as a file that was imported by the current file. *)
-      Loading.modify (fun s -> { s with imports = Snoc (s.imports, (file, filename)) });
+      Loading.add_imports (Snoc (Emp, (file, filename)));
       (* Then we load it, in its directory and with itself added to the list of parents. *)
       let rename i = (fst (Loaded.get_file i <|> Anomaly "missing file in load_file")).file in
       let trie, imports =
@@ -269,6 +283,7 @@ and load_file filename top =
               cwd = FilePath.dirname filename;
               parents = Snoc ((Loading.get ()).parents, filename);
               imports = Emp;
+              imported = Filenames.empty;
               actions = false;
             }
         @@ fun () ->
@@ -325,7 +340,7 @@ and load_file filename top =
         if top then Loaded.add_to_scope trie;
         (trie, (Loading.get ()).imports) in
       (* We add the files that it imports to those of the current file, since the imports list is supposed to be transitive. *)
-      Loading.modify (fun s -> { s with imports = Bwd_extra.append s.imports imports });
+      Loading.add_imports imports;
       trie
 
 (* Load an -e string or stdin. *)
