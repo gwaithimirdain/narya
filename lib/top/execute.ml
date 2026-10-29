@@ -201,19 +201,20 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
               let old_file = (Istream.unmarshal chan : File.t) in
               (* Now we make sure none of the files *it* imports (transitively) have been modified more recently than the compilation, and that they have all been compiled. *)
               let old_imports = (Istream.unmarshal chan : (File.t * FilePath.filename) Bwd.t) in
+              let omtime = mtime ofile in
               if
                 Bwd.for_all
                   (fun (_, ifile) ->
                     let oifile = FilePath.replace_extension ifile "nyo" in
                     FileUtil.test Is_file oifile
                     && mtime oifile >= mtime ifile
-                    && mtime ifile <= mtime ofile)
+                    && mtime ifile <= omtime)
                   old_imports
               then (
-                (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file. *)
+                (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file.  Since the list is transitive and we load every file in it, a file that was already loaded only needs to check itself, not its own imports. *)
                 Mbwd.miter
                   (fun [ (_, ifile) ] ->
-                    let _ = load_file ifile false in
+                    let _ = load_file ~check_imports:false ifile false in
                     ())
                   [ old_imports ];
                 (* We create a hashtable mapping the old files to new ones. *)
@@ -241,19 +242,20 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
   else None
 
 (* Load a file, possibly one specified on the command line, either from source or from a compiled version. *)
-and load_file filename top =
+and load_file ?(check_imports = true) filename top =
   if not (FilePath.check_extension filename "ny") then fatal (Invalid_filename filename);
   let filename = normalize_filename (Loading.get ()).cwd filename in
   match Loaded.get_file filename with
   | Some ({ trie; globals; file; old_imports; explicit = top' }, loaded_mtime) ->
       (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded.  Each file is compared against its own loading time; an import is quite normally newer than the file that imports it. *)
       if mtime filename > loaded_mtime then fatal (Library_modified filename);
-      Bwd.iter
-        (fun (_, f) ->
-          match Loaded.get_file f with
-          | Some (_, fmtime) -> if mtime f > fmtime then fatal (Library_modified f)
-          | None -> ())
-        old_imports;
+      if check_imports then
+        Bwd.iter
+          (fun (_, f) ->
+            match Loaded.get_file f with
+            | Some (_, fmtime) -> if mtime f > fmtime then fatal (Library_modified f)
+            | None -> ())
+          old_imports;
       (* We add it back into Global, and to the 'all' namespace if it wasn't already there. *)
       Global.add_file file globals;
       if top && not top' then (
