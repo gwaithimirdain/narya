@@ -1002,47 +1002,33 @@ and readback_bindings : type mode a b n.
 and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx
     = function
   | Emp mode -> Emp mode
-  | Snoc (rest, { bindings; filter; vis }, af) as ctx -> (
+  | Snoc (rest, { bindings; filter; vis }, af) as ctx ->
       let ctx = Ctx.of_ordered ctx in
       let modality = Modality.filter_modality filter in
       let top = Binding.value (CubeOf.find_top bindings) in
-      match vis with
-      | Vis { dim; plusdim; vars; hasfields; fields; fplus } ->
-          (* Fields as illusory variables are only used when typechecking records, which have substitution dimension 0 and can have no higher fields, so as field insertion we can use the identity on zero. *)
-          let fins = ins_zero D.zero in
-          let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
-          let fields =
-            Bwv.map
-              (fun (f, x, _) ->
-                let fldty =
-                  readback_val lctx
-                    (tyof_field (Modality.id (Ctx.mode lctx)) top.tm (Lazy.force top.ty) f fins)
-                in
-                (f, x, fldty))
-              fields in
-          let bindings =
-            readback_bindings
-              ?value:(readback_let_value rest filter plus_lock bindings)
-              lctx bindings in
-          Ext
-            ( readback_ordered_ctx rest,
-              {
-                plus_lock;
-                bindings;
-                filter;
-                vis = Vis { dim; plusdim; vars; hasfields; fields; fplus };
-              },
-              af )
-      | Invis ->
-          (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type we just skip the hints (though internal errors are still reported). *)
-          let hints =
-            Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
-            View.hints_of_ty (Lazy.force top.ty) in
-          let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
-          let value = readback_let_value rest filter plus_lock bindings in
-          let bindings = readback_bindings ?value lctx bindings in
-          Ext (readback_ordered_ctx rest, { plus_lock; bindings; filter; vis = Invis { hints } }, af)
-      )
+      let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
+      let value = readback_let_value rest filter plus_lock bindings in
+      let bindings = readback_bindings ?value lctx bindings in
+      let vis =
+        match vis with
+        | Vis { dim; plusdim; vars; hasfields; fields; fplus } ->
+            (* Fields as illusory variables are only used when typechecking records, which have substitution dimension 0 and can have no higher fields, so as field insertion we can use the identity on zero. *)
+            let idm = Modality.id (Ctx.mode lctx) in
+            let fins = ins_zero D.zero in
+            let fields =
+              Bwv.map
+                (fun (f, x, _) ->
+                  let fldty = readback_val lctx (tyof_field idm top.tm (Lazy.force top.ty) f fins) in
+                  (f, x, fldty))
+                fields in
+            Vis { dim; plusdim; vars; hasfields; fields; fplus }
+        | Invis ->
+            (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type we just skip the hints (though internal errors are still reported). *)
+            let hints =
+              Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
+              View.hints_of_ty (Lazy.force top.ty) in
+            Invis { hints } in
+      Ext (readback_ordered_ctx rest, { plus_lock; bindings; filter; vis }, af)
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
 
