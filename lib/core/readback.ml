@@ -191,44 +191,14 @@ let rec is_identity_ordered_env : type mode a b c d.
       | _ -> None)
   | _ -> None
 
-(* A weakening of a context 'd by some variables, which may be interleaved with locks: 'd is a base context 'a (at mode 'amode) locked by a modality, and the weakened context 'b is 'a extended by the variables and locks, the latter composing to that modality.  This is exactly the data of a Weaken term. *)
-type (_, _, _, _, _) weakening =
-  | Weakening :
-      ('a, 'amode, 'mu, 'mode, 'd) plus_lock * ('a, 'amode, 'mu, 'mode, 'b) plus_with_locks
-      -> ('a, 'amode, 'mode, 'd, 'b) weakening
-
-let id_weakening : type mode b. mode Mode.t -> (b, mode, mode, b, b) weakening =
- fun mode -> Weakening (plus_no_lock mode, plus_with_no_locks mode)
-
-(* Apply a weakening to a term, omitting the Weaken if it is trivial. *)
-let weaken_by : type a amode mode d b s.
-    (a, amode, mode, d, b) weakening -> (mode, d, s) term -> (mode, b, s) term =
- fun (Weakening (plus_src, plus_tgt)) tm ->
-  match (plus_src, plus_tgt) with
-  | Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
-  | _ -> weaken_gen plus_src tm plus_tgt
-
-(* Weaken further by a variable at the end. *)
-let weaken_weakening : type a amode mode d b dom modality n.
-    n D.t ->
-    (dom, modality, mode, n, n) Modality.filter_dim ->
-    (a, amode, mode, d, b) weakening ->
-    (a, amode, mode, d, (b, (modality, n) dim_entry) snoc) weakening =
- fun n f (Weakening (plus, newplus)) -> Weakening (plus, plus_with_locks_dim newplus n f)
-
-(* Put a weakening behind a lock. *)
-let lock_weakening : type a amode dom g cod d b.
-    (a, amode, cod, d, b) weakening ->
-    (dom, g, cod) Modality.gen ->
-    (a, amode, dom, (d, g lock_entry) snoc, (b, g lock_entry) snoc) weakening =
- fun (Weakening (plus, newplus)) g ->
-  Weakening (plus_lock_suc plus g, plus_with_locks_lock newplus g)
-
 (* The ways we can read back a metavariable whose environment is the identity, possibly weakened: either as the metavariable itself, or as a let-bound variable whose value is that metavariable, behind some locks.  In the latter case, the base of the weakening is the context ending with that variable, whose dimension and filter we record, so the locks behind which the variable lies are those of the weakening. *)
 type (_, _, _) meta_readback =
-  | Weakened_meta : ('a, 'amode, 'mode, 'd, 'b) weakening -> ('mode, 'd, 'b) meta_readback
+  | Weakened_meta :
+      ('a, 'amode, 'mu, 'mode, 'd) plus_lock * ('a, 'amode, 'mu, 'mode, 'b) plus_with_locks
+      -> ('mode, 'd, 'b) meta_readback
   | Let_var :
-      (('a, ('modality, 'k) dim_entry) snoc, 'xmode, 'mode, 'x, 'b) weakening
+      (('a, ('modality, 'k) dim_entry) snoc, 'xmode, 'mu, 'mode, 'x) plus_lock
+      * (('a, ('modality, 'k) dim_entry) snoc, 'xmode, 'mu, 'mode, 'b) plus_with_locks
       * 'k D.t
       * ('dom, 'modality, 'xmode, 'k, 'k) Modality.filter_dim
       -> ('mode, 'd, 'b) meta_readback
@@ -240,8 +210,8 @@ let weaken_meta_readback : type mode d b dom modality n.
     (mode, d, (b, (modality, n) dim_entry) snoc) meta_readback =
  fun n f r ->
   match r with
-  | Weakened_meta w -> Weakened_meta (weaken_weakening n f w)
-  | Let_var (w, k, filter) -> Let_var (weaken_weakening n f w, k, filter)
+  | Weakened_meta (plus, newplus) -> Weakened_meta (plus, plus_with_locks_dim newplus n f)
+  | Let_var (plus, newplus, k, filter) -> Let_var (plus, plus_with_locks_dim newplus n f, k, filter)
 
 let lock_meta_readback : type dom g cod d b.
     (cod, d, b) meta_readback ->
@@ -249,20 +219,24 @@ let lock_meta_readback : type dom g cod d b.
     (dom, (d, g lock_entry) snoc, (b, g lock_entry) snoc) meta_readback =
  fun r g ->
   match r with
-  | Weakened_meta w -> Weakened_meta (lock_weakening w g)
-  | Let_var (w, k, filter) -> Let_var (lock_weakening w g, k, filter)
+  | Weakened_meta (plus, newplus) ->
+      Weakened_meta (plus_lock_suc plus g, plus_with_locks_lock newplus g)
+  | Let_var (plus, newplus, k, filter) ->
+      Let_var (plus_lock_suc plus g, plus_with_locks_lock newplus g, k, filter)
 
 let term_of_meta_readback : type mode d b x s.
     (mode, x, d, s) Meta.t -> (mode, d, b) meta_readback -> (mode, b, kinetic) term option =
  fun meta r ->
   match r with
-  | Weakened_meta w -> Some (weaken_by w (Meta (meta, Kinetic)))
-  | Let_var ((Weakening (plus, _) as w), k, filter) -> (
+  | Weakened_meta (plus, newplus) -> Some (weaken_gen plus (Meta (meta, Kinetic)) newplus)
+  | Let_var (plus, newplus, k, filter) -> (
       (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
       match Modality.compare (Modality.filter_modality filter) (plus_lock_modality plus) with
       | Eq ->
           Some
-            (weaken_by w (Var (Index (Now, id_sface k, filter, plus_with_locks_of_plus_lock plus))))
+            (weaken_gen plus
+               (Var (Index (Now, id_sface k, filter, plus_with_locks_of_plus_lock plus)))
+               newplus)
       | Neq -> None)
 
 (* Test whether a context entry is a variable that is let-bound to a given metavariable (whose full context is given) in an environment that is the identity on the context to its left locked by the modality of the variable, and whether the given environment for that metavariable (with the locks to the right of the variable stripped off) is the identity on the context to its left. *)
@@ -303,11 +277,12 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
     (mode, d, b) meta_readback option =
  fun meta fullctx ctx env envctx ->
   let open Monad.Ops (Monad.Maybe) in
+  let mode = Ctx.Ordered.mode ctx in
   (* We first test whether the environment is exactly the identity of the whole context. *)
   match is_identity_ordered_env ctx env envctx with
   | Some Eq ->
       (* If so, we read back as a Term.Meta, which will have to be weakened by any entries that were stripped off before this.  Note that this case can never be a variable let-bound to the metavariable, since in that case the meta is defined in a shorter context (everything before the variable). *)
-      Some (Weakened_meta (id_weakening (Ctx.Ordered.mode ctx)))
+      Some (Weakened_meta (plus_no_lock mode, plus_with_no_locks mode))
   | None -> (
       (* If not, and the context ends with a variable, we check whether that variable is let-bound to the metavariable, and if so whether the rest of the environment is also an identity. *)
       match (ctx, envctx) with
@@ -315,7 +290,7 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
           let k = Ctx.dim_entry entry in
           let filter = Ctx.filter_entry entry in
           if let_var_of_meta meta fullctx rest entry env envctx then
-            Some (Let_var (id_weakening (Ctx.Ordered.mode ctx), k, filter))
+            Some (Let_var (plus_no_lock mode, plus_with_no_locks mode, k, filter))
           else
             (* If not, we remove it from the context and try again, weakening the result if successful. *)
             let* x = find_meta_readback meta fullctx rest env envctx in

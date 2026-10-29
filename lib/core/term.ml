@@ -809,7 +809,10 @@ let weaken_gen : type mode mu cod a am ac s.
     (a, cod, mu, mode, ac) plus_with_locks ->
     (mode, ac, s) term =
  fun plus_src tm plus_tgt ->
-  Key { plus_src; tm; plus_tgt; cell = Modalcell.id (plus_lock_modality plus_src) }
+  (* We short-circuit null weakenings. *)
+  match (plus_src, plus_tgt) with
+  | Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
+  | _ -> Key { plus_src; tm; plus_tgt; cell = Modalcell.id (plus_lock_modality plus_src) }
 
 (* Weakening by one variable, of a given dimension and filter, with no lock in between. *)
 let weaken_dim : type mode b dom annote n s.
