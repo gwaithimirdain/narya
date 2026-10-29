@@ -60,4 +60,6 @@ val unsafe_add :
   (string, string) Abwd.t ->
   ('b, ('modality, 'n) dim_entry) snoc t
 
+val unsafe_add_named_var : 'b t -> 'n D.t -> string -> ('b, ('k, 'n) dim_entry) snoc t
+
 type _ named_term = Named : 'a t * ('mode, 'a, kinetic) term -> 'mode named_term

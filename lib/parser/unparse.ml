@@ -326,11 +326,6 @@ let rec letrec_meta_name : type mode b s.
   | _, Key { tm; cell; _ } when Modalcell.is_id cell -> letrec_meta_name ~sib tm
   | _ -> None
 
-(* Add a variable to a context of names, displayed as a given string. *)
-let add_named_var : type b k n. b Names.t -> n D.t -> string -> (b, (k, n) dim_entry) snoc Names.t =
- fun vars n name ->
-  Names.unsafe_add vars (Variables (n, D.plus_zero n, NICubeOf.singleton name)) Abwd.empty
-
 (* The metavariable whose "let rec" siblings are hidden in the clauses of a let-only, if its body is one. *)
 let letonly_sib : type mode b s. (mode, b, s) term -> Meta.wrapped option = function
   | Meta (v, _) -> Some (Wrap v)
@@ -841,7 +836,9 @@ and unparse_meta_definition : type mode n lt ls rt rs s.
   match tm with
   | Let (_, Modal (modality, _, value), body) -> (
       match (Modality.compare_id modality, letrec_meta_name ~sib:(Some sib) value) with
-      | Eq, Some name -> unparse_meta_definition ~sib (add_named_var vars D.zero name) body li ri
+      | Eq, Some name ->
+          (* We insert the metavariable's name into the context of names as the name for its corresponding variable.  This is correct and safe to do without uniquification because a metavariable name can never be a valid local variable name. *)
+          unparse_meta_definition ~sib (Names.unsafe_add_named_var vars D.zero name) body li ri
       | _ -> unparse vars tm li ri)
   | _ -> unparse vars tm li ri
 
@@ -877,8 +874,8 @@ and unparse_letonly_clauses_pending : type mode n i k b.
       let n = CubeOf.dim bindings in
       match Option.bind top.tm (letrec_meta_name ~sib) with
       | Some name ->
-          (* A let-rec variable is bound in a context that includes some of its siblings. We omit those from a displayed let-only, but we add them to the context of names so that local variables won't shadow them. *)
-          (acc, No_letonly_lock, add_named_var names n name)
+          (* A let-rec variable is bound in a context that includes some of its siblings. We omit those from a displayed let-only, but we add their metavariable names to the context of names as the names for their corresponding variable.  This is correct and safe to do without uniquification because a metavariable name can never be a valid local variable name. *)
+          (acc, No_letonly_lock, Names.unsafe_add_named_var names n name)
       | None ->
           (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
           let name =

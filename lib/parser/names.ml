@@ -393,10 +393,15 @@ let degenerate : type r b kb mode. r D.t -> (r, b, kb, mode) plusmap -> b t -> k
         | Suc (pm, Inject (Plus_lock _), Suc (Zero, Lock _)) -> Lock (go pm ctx)) in
   { ctx = go pm ctx; used; hidden }
 
-(* Add a cube of variables WITHOUT replacing them by fresh versions.  Should only be used when the variables have already been so replaced, as in the output of uniquify_vars below. *)
+(* Add a cube of variables WITHOUT replacing them by fresh versions.  Should only be used when the variables have already been so replaced, as in the output of uniquify_vars below, or are otherwise guaranteed to be conflict-free. *)
 let unsafe_add : type k n b.
     b t -> (n, string) gvariables -> (string, string) Abwd.t -> (b, (k, n) dim_entry) snoc t =
  fun { ctx; used; hidden } vars fields -> { ctx = Snoc (ctx, vars, fields); used; hidden }
+
+(* Add a single variable to a context of names, displayed as a given string, WITHOUT replacing it by a fresh version. *)
+let unsafe_add_named_var : type b k n. b t -> n D.t -> string -> (b, (k, n) dim_entry) snoc t =
+ fun vars n name ->
+  unsafe_add vars (Variables (n, D.plus_zero n, NICubeOf.singleton name)) Abwd.empty
 
 (* Given a Bwv of variables, proceed through from the *right* to mark them as visible or shadowed, accumulating a list of the visible names in a map.  Anonymous variables are marked as shadowed. *)
 let rec used_vars : type n.
