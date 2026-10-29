@@ -206,7 +206,7 @@ The elided form can't be re-entered, but gives a helpful error message.
   
   [1]
 
-The first case-tree-only construct in a displayed definition is marked with the attribute #(gen).  When entered, it is accepted on any case tree construct, with a warning that the construct is generative.
+Each outermost case-tree-only construct in a displayed definition is marked with the attribute #(gen).  When entered, it is accepted on any case tree construct, with a warning that the construct is generative.
 
   $ cat >gen.ny <<EOF
   > def B : Type ≔ data [ true. | false. ]
@@ -261,6 +261,18 @@ The first case-tree-only construct in a displayed definition is marked with the 
    ￭ $TESTCASE_ROOT/gen.ny
    10 | def C : Type ≔ codata #(gen) [ x .h : B ]
       ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+  
+
+A definition can have more than one outermost case-tree-only construct, such as in different fields of a tuple, and then all of them are marked.  The case-tree-only constructs nested inside them are not.
+
+  $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  def prod (A B : Type) : Type ≔ sig ( fst : A, snd : B )' -e 'def h (k : ℕ) : prod (ℕ → ℕ) (ℕ → ℕ) ≔ let p : prod (ℕ → ℕ) (ℕ → ℕ) ≔ ( fst ≔ [ zero. ↦ zero. | suc. n ↦ n ], snd ≔ [ zero. ↦ k | suc. n ↦ match n [ zero. ↦ k | suc. _ ↦ n ] ] ) in p' -e 'axiom k : ℕ' -e 'display let ≔ definitions' -e 'echo h k'
+  let only k : ℕ ≔ k in
+  ((fst ≔ 𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ],
+    snd ≔ 𝑥 ↦ match #(gen) 𝑥 [
+    | suc. n ↦ match n [ suc. 𝑦 ↦ n | zero. ↦ k ]
+    | zero. ↦ k])
+   : prod (ℕ → ℕ) (ℕ → ℕ))
+    : prod (ℕ → ℕ) (ℕ → ℕ)
   
 
 Other attributes aren't allowed on matches and comatches.

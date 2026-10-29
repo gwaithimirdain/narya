@@ -253,31 +253,50 @@ let rec get_bwd : type mode n.
       | _ -> None)
   | _ -> None
 
-(* The metavariables whose definitions we are currently unparsing. *)
-let unparsing_metas : Meta.WrapSet.t ref = ref Meta.WrapSet.empty
+(* Data about metavariables we are currently unparsing *)
 
-(* Whether we are unparsing the definition of a metavariable and haven't yet reached its first case-tree-only construct.  We mark that construct with the attribute #(gen), so that if the user copies and re-enters it they will be warned that it is generative, and hence won't be equal to the original metavariable. *)
-let pending_gen : bool ref = ref false
+module MetaDefsData = struct
+  type t = {
+    (* The metavariables whose definitions we are currently unparsing. *)
+    unparsing : Meta.WrapSet.t;
+    (* Whether we are unparsing the definition of a metavariable and aren't yet inside any of its case-tree-only constructs.  We mark each outermost such construct (there can be more than one, e.g. in different fields of a tuple) with the attribute #(gen), so that if the user copies and re-enters it they will be warned that it is generative, and hence won't be equal to the original metavariable. *)
+    pending_gen : bool;
+  }
 
-(* Add the attribute #(gen) to the observations of a case-tree-only construct, if it is the first one in the definition of a metavariable.  This must be called before unparsing the subterms of the construct, which might contain other such constructs. *)
-let gen_attribute (acc : observation Bwd.t) : observation Bwd.t =
-  if !pending_gen then (
-    pending_gen := false;
-    acc
-    <: mktok (Op "#")
-    <: mktok LParen
-    <: Term (unlocated (Ident ([ "gen" ], [])))
-    <: mktok RParen)
-  else acc
+  let empty : t = { unparsing = Meta.WrapSet.empty; pending_gen = false }
+end
+
+module MetaDefs = struct
+  include Algaeff.Reader.Make (MetaDefsData)
+
+  let unparsing v = Meta.WrapSet.mem (Wrap v) (read ()).unparsing
+  let run_empty f = run ~env:MetaDefsData.empty f
+
+  (* Descend into the definition of a metavariable, adding it to the list of those whose definitions we are unparsing, and remembering that we are pending a "gen" attribute on its outermost case-tree-only constructs. *)
+  let while_unparsing v f =
+    scope (fun d -> { unparsing = Meta.WrapSet.add (Wrap v) d.unparsing; pending_gen = true }) f
+
+  (* Add the attribute #(gen) to the observations of a case-tree-only construct, if it is an outermost one in the definition of a metavariable, and clear the pending flag for its subterms.  This must be wrapped around the unparsing of the subterms of the construct, since those might contain other such constructs, which should not be marked. *)
+  let with_gen : type a. (observation Bwd.t -> a) -> a =
+   fun f ->
+    if (read ()).pending_gen then
+      scope (fun d -> { d with pending_gen = false }) @@ fun () ->
+      f
+        (Emp
+        <: mktok (Op "#")
+        <: mktok LParen
+        <: Term (unlocated (Ident ([ "gen" ], [])))
+        <: mktok RParen)
+    else f Emp
+end
+
+let () = MetaDefs.register_printer (function `Read -> Some "unhandled MetaDefs effect")
 
 (* A metavariable inserted automatically to hold a bare case tree construct is displayed as its definition, which lives in the context of the metavariable.  So are other metavariables (such as those bound by let-bindings), if the user asks for it with "display let ≔ definitions".  If it has no definition (e.g. a hole, or because we are displaying an error that occurred while checking it), we fall back to its name.  We also use its name for occurrences inside its own definition, as in the constructor types of a datatype or a recursive let-binding. *)
-let displayed_definition : type mode x b s.
-    (mode, x, b, s) Meta.t -> (mode, x, b, s) Metadef.t option =
+let displayed_metadef : type mode x b s. (mode, x, b, s) Meta.t -> (mode, x, b, s) Metadef.t option
+    =
  fun v ->
-  if
-    (Meta.is_bare v || Display.lets () = `Definitions)
-    && not (Meta.WrapSet.mem (Wrap v) !unparsing_metas)
-  then
+  if (Meta.is_bare v || Display.lets () = `Definitions) && not (MetaDefs.unparsing v) then
     match
       Reporter.discard_errors ~fallback:(fun () -> None) (fun () -> Some (Global.find_meta v))
     with
@@ -293,7 +312,7 @@ let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
 let meta_var_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
  fun v -> if Display.metas () == `Numbered then meta_name v else "?"
 
-(* The name of a metavariable. *)
+(* That name as an unparsed Ident. *)
 let unparse_meta_name : type mode x b s lt ls rt rs.
     (mode, x, b, s) Meta.t -> (lt, ls, rt, rs) parse located =
  fun v -> unlocated (Ident ([ meta_var_name v ], []))
@@ -333,43 +352,43 @@ let letonly_all_hidden : type mode i b s. (mode, i, b) ordered_termctx -> (mode,
   Option.is_some sib && go ctx
 
 (* Whether we expect a given term to synthesize, after being unparsed.  This applies to potential terms as well as kinetic ones, since a metavariable can be displayed as its definition, which is a potential term.  The set ~visiting contains the metavariables whose definitions we are inside of, whose occurrences are displayed by name. *)
-let rec synths : type mode n s. ?visiting:Meta.WrapSet.t -> (mode, n, s) term -> bool =
- fun ?(visiting = Meta.WrapSet.empty) tm ->
-  let go tm = synths ~visiting tm in
+let rec synths : type mode n s. (mode, n, s) term -> bool =
+ fun tm ->
   match tm with
   (* A metavariable displayed as its definition synthesizes if that definition does, while one displayed as its name synthesizes. *)
   | Meta (v, _) -> (
-      match displayed_definition v with
-      | Some { tm = `Defined def; _ } when not (Meta.WrapSet.mem (Wrap v) visiting) ->
-          synths ~visiting:(Meta.WrapSet.add (Wrap v) visiting) def
+      match displayed_metadef v with
+      | Some { tm = `Defined def; _ } ->
+          (* When asking whether the definition synthesizes, we assume temporarily that we're unparsing that metavariable, so it doesn't again get displayed as its definition. *)
+          MetaDefs.while_unparsing v @@ fun () -> synths def
       | _ -> true)
   | Var _ | Const _ | Field _ | UU _ | Inst _ | Pi _ -> true
   (* A let-only always synthesizes, since its body is ascribed if necessary. *)
   | Letonly _ -> true
   | Constr _ | Lam _ | Struct _ -> false
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
-  | App (_, fn, _, _, _) -> go fn
-  | Act (_, tm, _, _) -> go tm
-  | Let (_, _, body) -> go body
+  | App (_, fn, _, _, _) -> synths fn
+  | Act (_, tm, _, _) -> synths tm
+  | Let (_, _, body) -> synths body
   (* A key is either omitted from the display, or applied to its body as a postfix that requires the body to synthesize. *)
-  | Key { tm; _ } -> go tm
+  | Key { tm; _ } -> synths tm
   (* These are just context-manipulating wrappers. *)
-  | Unshift (_, _, tm) -> go tm
-  | Unact (_, tm) -> go tm
-  | Shift (_, _, tm) -> go tm
+  | Unshift (_, _, tm) -> synths tm
+  | Unact (_, tm) -> synths tm
+  | Shift (_, _, tm) -> synths tm
   | Failed _ -> false
   (* Of the potential terms, a leaf synthesizes if its term does, while canonical types don't synthesize.  A match synthesizes if its discriminee does, and either it has an explicit motive or it is non-dependent and one of its branches synthesizes (giving the type of the match).  An implicitly dependent match doesn't synthesize, since its branches may have different types. *)
-  | Realize tm -> go tm
+  | Realize tm -> synths tm
   | Canonical _ -> false
   | Match { tm; motive; branches; _ } -> (
-      go tm
+      synths tm
       &&
       match motive with
       | `Explicit _ -> true
       | `Nondep ->
           Constr.Map.exists
             (fun _ -> function
-              | Branch { tm; _ } -> go tm
+              | Branch { tm; _ } -> synths tm
               | Failed_branch -> false)
             branches
       | `Implicit -> false)
@@ -592,18 +611,11 @@ let rec unparse : type mode n lt ls rt rs s.
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (constant_name vars (Scope.name_of c), [])))
   | Meta (v, _) -> (
-      (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_definition). *)
-      match displayed_definition v with
+      (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
+      match displayed_metadef v with
       | Some { tm = `Defined def; _ } ->
-          let outer = !unparsing_metas in
-          let outer_gen = !pending_gen in
-          unparsing_metas := Meta.WrapSet.add (Wrap v) outer;
-          pending_gen := true;
-          Fun.protect
-            ~finally:(fun () ->
-              unparsing_metas := outer;
-              pending_gen := outer_gen)
-            (fun () -> unparse_meta_definition ~sib:(Wrap v) vars def li ri)
+          MetaDefs.while_unparsing v @@ fun () ->
+          unparse_meta_definition ~sib:(Wrap v) vars def li ri
       | _ -> unparse_meta_name v)
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
@@ -1056,6 +1068,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
       match eta with
       | Noeta -> (Token.Codata, codata, mktok LBracket, wstok RBracket)
       | Eta -> (Token.Sig, record, mktok LParen, wstok RParen) in
+    MetaDefs.with_gen @@ fun gen ->
     let inner, _ =
       Bwd.fold_left
         (fun (acc, tok) { self_var; Instance.adj = Any_adjunction adj; name; suffix; ty } ->
@@ -1067,7 +1080,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
             match tok with
             | [] -> [ mktok (Op ",") ]
             | _ :: _ -> tok ))
-        ( gen_attribute Emp <: ldelim,
+        ( gen <: ldelim,
           match eta with
           | Noeta -> [ mktok (Op "|") ]
           | Eta -> [] )
@@ -1094,6 +1107,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
                 (fun v ->
                   fst (Names.add_fields selfdim v field_names <|> Anomaly "field name clash"));
             } in
+          MetaDefs.with_gen @@ fun gen ->
           let inner, _, _ =
             Bwd.fold_left
               (fun (acc, first, var_names) { Instance.ty; _ } ->
@@ -1108,7 +1122,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
                   <: Term (ty self),
                   false,
                   var_names ))
-              (gen_attribute Emp <: mktok LParen, true, var_names)
+              (gen <: mktok LParen, true, var_names)
               instances in
           unlocated
             (outfix ~notn:record ~inner:(Multiple (dimtok Sig evaldim, inner, wstok RParen))))
@@ -1143,13 +1157,14 @@ and unparse_data : type mode a m lt ls rt rs.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars evaldim constrs ~outputs _li _ri ->
+  MetaDefs.with_gen @@ fun gen ->
   let inner =
     Bwd.fold_left
       (fun acc (c, ty) ->
         let cterm =
           unparse_dataconstr vars c ty ~output:outputs No.Interval.entire No.Interval.entire in
         acc <: mktok (Op "|") <: Term cterm)
-      (gen_attribute Emp <: mktok LBracket)
+      (gen <: mktok LBracket)
       constrs in
   unlocated (outfix ~notn:data ~inner:(Multiple (dimtok Data evaldim, inner, wstok RBracket)))
 
@@ -1216,13 +1231,13 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
     | Eq -> disc
     | Neq -> unparse_modal_ascription disc window in
   (* An explicit motive is displayed in a "return" clause, which is the explicit match notation; it is an abstraction over the datatype's indices, the boundary of the discriminee, and the discriminee itself, so it unparses in the ambient context.  A match without one is displayed as an implicit match. *)
+  MetaDefs.with_gen @@ fun gen ->
   let notn, start =
     match motive with
     | `Explicit motive ->
         let umotive = unparse vars motive No.Interval.entire No.Interval.entire in
-        ( explicit_mtch,
-          gen_attribute Emp <: Term disc <: mktok Return <: Term umotive <: mktok LBracket )
-    | `Implicit | `Nondep -> (implicit_mtch, gen_attribute Emp <: Term disc <: mktok LBracket) in
+        (explicit_mtch, gen <: Term disc <: mktok Return <: Term umotive <: mktok LBracket)
+    | `Implicit | `Nondep -> (implicit_mtch, gen <: Term disc <: mktok LBracket) in
   let ubranches =
     Constr.Map.fold
       (fun c br acc ->
@@ -1309,7 +1324,7 @@ and unparse_comatch : type mode n a s et lt ls rt rs.
             acc <: mktok (Op "|") <: Term pat <: mktok Mapsto <: Term ubody)
       acc
       (all_pbij_between dim (Field.dim fld)) in
-  let attr = gen_attribute Emp in
+  MetaDefs.with_gen @@ fun attr ->
   match fields with
   | Emp ->
       unlocated

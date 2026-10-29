@@ -113,6 +113,7 @@ let print (tm : string) : unit =
 let run f =
   Lexer.Specials.run @@ fun () ->
   Parser.Unparse.install ();
+  Unparse.MetaDefs.run_empty @@ fun () ->
   Display.run ~init:Display.default @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->

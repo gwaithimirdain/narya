@@ -1677,7 +1677,7 @@ let rec with_attributes : type t s. (t, s) tree -> (t, s) tree = function
   | Lazy t -> Lazy (lazy (with_attributes (Lazy.force t)))
   | t -> t
 
-(* When the unparser displays the definition of a metavariable, it marks the first case-tree-only construct (such as a match, comatch, or canonical type) with the attribute #(gen), since if the user copies and re-enters it, it will be generative and won't be equal to the original.  The only effect of this attribute when parsing is a warning. *)
+(* When the unparser displays the definition of a metavariable, it marks the outermost case-tree-only constructs (such as matches, comatches, or canonical types) with the attribute #(gen), since if the user copies and re-enters it, it will be generative and won't be equal to the original.  The only effect of this attribute when parsing is a warning. *)
 let process_gen_attribute (strs : string list) vals loc : bool =
   match (strs, vals) with
   | [ "gen" ], None ->

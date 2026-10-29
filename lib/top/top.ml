@@ -76,6 +76,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
   Origin.run @@ fun () ->
   Parser.Builtins.install ();
   Parser.Scope.Mod.run @@ fun () ->
+  Unparse.MetaDefs.run_empty @@ fun () ->
   Display.run
     ~init:
       {
