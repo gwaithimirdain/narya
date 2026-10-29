@@ -164,6 +164,9 @@ let rec is_identity_ordered_env : type mode a b c d.
           try
             (* If the environment's top entry is itself physically equal to this entry of the context, there is nothing to look up. *)
             (if is_top_bindings env modality bindings then ()
+             else if Option.is_none (Binding.value_opt (CubeOf.find_top bindings)) then
+               (* If the entry is not yet determined (as while reading back its own bindings in readback_entry), it can't match, so we don't bother looking anything up. *)
+               raise_notrace Not_identity
              else
                (* Otherwise we look up the top entry in the environment and check whether it is "the same as" the one in the context in a weaker sense. *)
                let (Looked_up { act; op; entry = xs; pre }) =
@@ -200,14 +203,14 @@ type (_, _, _) meta_readback =
   | Weakened_meta :
       ('a, 'amode, 'mu, 'mode, 'd) plus_lock * ('a, 'amode, 'mu, 'mode, 'b) plus_with_locks
       -> ('mode, 'd, 'b) meta_readback
-  (* A let-bound variable whose value is the metavariable, in which case we only need the plus_with_locks to supply to Var, but also the dimension and filter. *)
+  (* A let-bound variable, in some face of a cube, whose value is the metavariable, in which case we only need the plus_with_locks to supply to Var, but also the face and filter. *)
   | Let_var :
       (('a, ('modality, 'k) dim_entry) snoc, 'xmode, 'mu, 'mode, 'b) plus_with_locks
-      * 'k D.t
+      * ('m, 'k) sface
       * ('dom, 'modality, 'xmode, 'k, 'k) Modality.filter_dim
       -> ('mode, 'd, 'b) meta_readback
 
-(* Test whether a context entry is a variable that is let-bound to a given metavariable (whose full context is given) in an environment that is the identity on the context to its left locked by the modality of the variable, and whether the given environment for that metavariable (with the locks to the right of the variable stripped off) is the identity on the context to its left. *)
+(* Test whether some face of a context entry is a variable that is let-bound to a given metavariable (whose full context is given) in an environment that is the identity on the context to its left locked by the modality of the variable, and whether the given environment for that metavariable (with the locks to the right of the variable stripped off) is the identity on the context to its left.  If so, return that face. *)
 let let_var_of_meta : type mode a b c d x s mmode cfull dfull dom modality f k.
     (mmode, x, dfull, s) Meta.t ->
     (mmode, cfull, dfull) ordered_termctx ->
@@ -215,25 +218,34 @@ let let_var_of_meta : type mode a b c d x s mmode cfull dfull dom modality f k.
     (dom, modality, mode, f, k) Ctx.entry ->
     (mode, D.zero, d) env ->
     (mode, c, d) ordered_termctx ->
-    bool =
+    k sface_of option =
  fun meta fullctx ctx entry env envctx ->
   let modality = Ctx.modality_entry entry in
-  (* TODO: Perhaps we should be looking at the whole cube, not just the top. *)
-  let b = CubeOf.find_top (Ctx.bindings_entry entry) in
-  match (Binding.level b, Binding.value_opt b) with
-  | ( None,
-      Some { tm = Neu { head = Live (Meta { meta = meta'; env = xenv; ins }); args = Emp; _ }; _ } )
-    -> (
-      (* The variable is let-bound to a metavariable, so we compare it to our given one.  We also check whether its environment is 0-dimensional and it has no insertion. *)
-      match (Meta.compare meta' meta, D.compare (dim_env xenv) D.zero, is_id_ins ins) with
-      | Eq, Eq, Some _ ->
-          (* The value of the variable lives in the context locked by its modality. *)
-          let (Locked (_, lctx)) = Ctx.Ordered.lock ctx modality in
-          (* Both environments also have to be identities on what's left for this sort of readback to be possible. *)
-          Option.is_some (is_identity_ordered_env lctx xenv fullctx)
-          && Option.is_some (is_identity_ordered_env ctx env envctx)
-      | _ -> false)
-  | _ -> false
+  let is_let_var : dom Binding.t -> bool =
+   fun b ->
+    match (Binding.level b, Binding.value_opt b) with
+    | ( None,
+        Some { tm = Neu { head = Live (Meta { meta = meta'; env = xenv; ins }); args = Emp; _ }; _ }
+      ) -> (
+        (* The variable is let-bound to a metavariable, so we compare it to our given one.  We also check whether its environment is 0-dimensional and it has no insertion. *)
+        match (Meta.compare meta' meta, D.compare (dim_env xenv) D.zero, is_id_ins ins) with
+        | Eq, Eq, Some _ ->
+            (* The value of the variable lives in the context locked by its modality. *)
+            let (Locked (_, lctx)) = Ctx.Ordered.lock ctx modality in
+            (* Both environments also have to be identities on what's left for this sort of readback to be possible. *)
+            Option.is_some (is_identity_ordered_env lctx xenv fullctx)
+            && Option.is_some (is_identity_ordered_env ctx env envctx)
+        | _ -> false)
+    | _ -> false in
+  let result = ref None in
+  CubeOf.miter
+    {
+      it =
+        (fun fa [ b ] ->
+          if Option.is_none !result && is_let_var b then result := Some (SFace_of fa));
+    }
+    [ Ctx.bindings_entry entry ];
+  !result
 
 (* Search for a way to read back a metavariable whose environment is the identity on the context we are reading back in, possibly weakened by some variables, each of which may lie behind locks. *)
 let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
@@ -257,16 +269,16 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
       | Snoc (rest, entry, _), _ -> (
           let k = Ctx.dim_entry entry in
           let filter = Ctx.filter_entry entry in
-          if let_var_of_meta meta fullctx rest entry env envctx then
-            Some (Let_var (plus_with_no_locks mode, k, filter))
-          else
-            (* If not, we remove it from the context and try again, weakening the result if successful. *)
-            match find_meta_readback meta fullctx rest env envctx with
-            | Some (Weakened_meta (plus, newplus)) ->
-                Some (Weakened_meta (plus, plus_with_locks_dim newplus k filter))
-            | Some (Let_var (newplus, n, f)) ->
-                Some (Let_var (plus_with_locks_dim newplus k filter, n, f))
-            | None -> None)
+          match let_var_of_meta meta fullctx rest entry env envctx with
+          | Some (SFace_of fa) -> Some (Let_var (plus_with_no_locks mode, fa, filter))
+          | None -> (
+              (* If not, we remove it from the context and try again, weakening the result if successful. *)
+              match find_meta_readback meta fullctx rest env envctx with
+              | Some (Weakened_meta (plus, newplus)) ->
+                  Some (Weakened_meta (plus, plus_with_locks_dim newplus k filter))
+              | Some (Let_var (newplus, fa, f)) ->
+                  Some (Let_var (plus_with_locks_dim newplus k filter, fa, f))
+              | None -> None))
       | Weaken (rest, _), _ -> find_meta_readback meta fullctx rest env envctx
       | Lock _, Weaken (envctx, _) -> find_meta_readback meta fullctx ctx env envctx
       (* If the context ends with a lock that matches one at the end of the metavariable's context, we remove both and search behind them. *)
@@ -283,8 +295,8 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
                 match find_meta_readback meta fullctx ctx env envctx with
                 | Some (Weakened_meta (plus, newplus)) ->
                     Some (Weakened_meta (plus_lock_suc plus g, plus_with_locks_lock newplus g))
-                | Some (Let_var (newplus, k, filter)) ->
-                    Some (Let_var (plus_with_locks_lock newplus g, k, filter))
+                | Some (Let_var (newplus, fa, filter)) ->
+                    Some (Let_var (plus_with_locks_lock newplus g, fa, filter))
                 | None -> None
               else None)
       | _ -> None)
@@ -303,12 +315,12 @@ let readback_meta_at_idenv : type mode a b n c d x s.
    fun (Permute { ctx; _ }) env ->
     match find_meta_readback meta envctx ctx env envctx with
     | Some (Weakened_meta (plus, newplus)) -> Some (weaken_gen plus (Meta (meta, Kinetic)) newplus)
-    | Some (Let_var (newplus, k, filter)) -> (
+    | Some (Let_var (newplus, fa, filter)) -> (
         (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
         match
           Modality.compare (Modality.filter_modality filter) (plus_with_locks_modality newplus)
         with
-        | Eq -> Some (Var (Index (Now, id_sface k, filter, newplus)))
+        | Eq -> Some (Var (Index (Now, fa, filter, newplus)))
         | Neq -> None)
     | None -> None in
   Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
@@ -333,6 +345,14 @@ let readback_meta_at_idenv : type mode a b n c d x s.
    In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible.  A case tree that is stuck, however, is not reconstructed: it is displayed as the application spine of the neutral whose value it is. *)
 
 (* ********** Primary readback functions ********** *)
+
+(* The result of reading back the bindings in the last entry of a context (see readback_entry): the bindings live in the whole context locked by the modality of the entry. *)
+type (_, _, _, _, _, _) readback_entry =
+  | Readback_entry :
+      (('b, ('modality, 'n) dim_entry) snoc, 'mode, 'modality, 'dom, 'bm) plus_lock
+      * ('dom, 'ax, 'bm) Ctx.t
+      * ('n, ('dom, 'bm) binding) CubeOf.t
+      -> ('mode, 'ax, 'b, 'modality, 'dom, 'n) readback_entry
 
 (* These functions deal primarily with kinetic values, and with the value types that are shared between kinetic and potential values, but they include hooks to detect when readback of potential values is called for and pass off to those functions defined later. *)
 
@@ -1028,40 +1048,40 @@ and readback_ordered_env : type mode n a b c d.
 
 (* Read back a context of values into a context of terms. *)
 
-(* If ~value is given, it is used to read back the values of let-bound variables. *)
-and readback_bindings : type mode a b n.
-    ?value:(mode normal -> (mode, b, kinetic) term) ->
-    (mode, a, b) Ctx.t ->
-    (n, mode Binding.t) CubeOf.t ->
-    (n, (mode, b) binding) CubeOf.t =
- fun ?value ctx vbs ->
-  let value = Option.value value ~default:(readback_nf ctx) in
-  CubeOf.mmap
-    {
-      map =
-        (fun _ [ b ] ->
-          match Binding.level b with
-          | Some _ ->
-              ({ tm = None; ty = readback_val ctx (Lazy.force (Binding.value b).ty) }
-                : (mode, b) binding)
-          | None ->
-              {
-                tm = Some (value (Binding.value b));
-                ty = readback_val ctx (Lazy.force (Binding.value b).ty);
-              });
-    }
-    [ vbs ]
+(* Read back the bindings in the last entry of a context, which live in the whole context locked by the modality of the entry.  Each value or type in the cube of bindings can refer to the variables that come before it in the cube (which include its faces), but not to itself or those that come after it.  So we read them back in the context to the left of the entry extended by delayed copies of its bindings, which have the same identities but can't be found (by level or identity) until they are forced, and we force each one after reading back its value and type.  In particular, this prevents a let-bound variable from being read back as itself while reading back its own value, either because the value remembers its binding (see Value.letvar) or because it is a metavariable (see let_var_of_meta). *)
+and readback_entry : type mode a x ax b dom modality n.
+    (mode, a, b) Ctx.Ordered.t ->
+    (dom, modality, mode, x, n) Ctx.entry ->
+    (a, x, ax) N.plus ->
+    (mode, ax, b, modality, dom, n) readback_entry =
+ fun rest { bindings; filter; vis } ax ->
+  let modality = Modality.filter_modality filter in
+  let delayed = CubeOf.mmap { map = (fun _ [ b ] -> Binding.delay b) } [ bindings ] in
+  let ctx = Ctx.of_ordered (Snoc (rest, { bindings = delayed; filter; vis }, ax)) in
+  let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
+  let bindings =
+    CubeOf.mmap
+      {
+        map =
+          (fun _ [ b; d ] ->
+            let nf = Binding.value b in
+            let ty = readback_val lctx (Lazy.force nf.ty) in
+            let tm =
+              match Binding.level b with
+              | Some _ -> None
+              | None -> Some (readback_nf lctx nf) in
+            Binding.force d;
+            ({ tm; ty } : (dom, _) binding));
+      }
+      [ bindings; delayed ] in
+  Readback_entry (plus_lock, lctx, bindings)
 
 and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx
     = function
   | Emp mode -> Emp mode
-  | Snoc (rest, { bindings; filter; vis }, af) as ctx ->
-      let ctx = Ctx.of_ordered ctx in
-      let modality = Modality.filter_modality filter in
+  | Snoc (rest, ({ bindings; filter; vis } as entry), af) ->
       let top = Binding.value (CubeOf.find_top bindings) in
-      let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
-      let value = readback_let_value rest filter plus_lock bindings in
-      let bindings = readback_bindings ?value lctx bindings in
+      let (Readback_entry (plus_lock, lctx, bindings)) = readback_entry rest entry af in
       let vis =
         match vis with
         | Vis { dim; plusdim; vars; hasfields; fields; fplus } ->
@@ -1084,23 +1104,6 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
       Ext (readback_ordered_ctx rest, { plus_lock; bindings; filter; vis }, af)
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
-
-(* The value of a zero-dimensional let-bound variable can't depend on that variable itself, so we read it back in the context to its left and weaken it.  This prevents it from being read back as the variable itself, if its value is a metavariable (see let_var_of_meta).  The values in a higher-dimensional cube can depend on the lower-dimensional ones, so we read them back in the whole context. *)
-and readback_let_value : type mode a b dom modality n bm.
-    (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, n, n) Modality.filter_dim ->
-    ((b, (modality, n) dim_entry) snoc, mode, modality, dom, bm) plus_lock ->
-    (n, dom Binding.t) CubeOf.t ->
-    (dom normal -> (dom, bm, kinetic) term) option =
- fun rest filter plus_lock bindings ->
-  let n = CubeOf.dim bindings in
-  match D.compare n D.zero with
-  | Eq ->
-      let modality = Modality.filter_modality filter in
-      let (Locked (plus_src, lrest)) = Ctx.lock (Ctx.of_ordered rest) modality in
-      let plus_tgt = plus_with_locks_of_dim_plus_lock n filter plus_lock in
-      Some (fun nf -> weaken_gen plus_src (readback_nf lrest nf) plus_tgt)
-  | Neq -> None
 
 and readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx = function
   | Permute { perm; ctx; _ } -> Permute (perm, readback_ordered_ctx ctx)

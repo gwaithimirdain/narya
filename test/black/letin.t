@@ -658,3 +658,41 @@ Error messages also display it as itself.
          suc. n
   
   [1]
+
+A let-bound variable can be degenerated, as in the context of a higher codatatype field.  Its degenerated faces are not read back as themselves while reading back their own values.
+
+  $ narya kinlet.ny -v -e 'def t4 (A : Type) (a : A) : Type ≔ let b : A ≔ a in codata [ x .f.e : ? ]'
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0001]
+   ￮ axiom P assumed
+  
+   ￫ info[I0001]
+   ￮ axiom R assumed
+  
+   ￫ info[I0000]
+   ￮ constant t4 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     A.0 : Type
+     A.1 : Type
+     A.2 : Type⁽ᵉ⁾ A.0 A.1
+     a.0 : A.0
+     a.1 : A.1
+     a.2 : A.2 a.0 a.1
+     b.0 ≔ a.0 : A.0
+     b.1 ≔ a.1 : A.1
+     b.2 ≔ a.2 : A.2 a.0 a.1
+     x.0 : t4 A.0 a.0
+     x.1 : t4 A.1 a.1
+     x.2 : t4⁽ᵉ⁾ A.2 a.2 x.0 x.1
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]

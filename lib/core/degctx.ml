@@ -1,5 +1,3 @@
-open Util
-open Tbwd
 open Dim
 open Modal
 open Tctx
@@ -22,28 +20,14 @@ module Ordered = struct
       (k, n, kn) D.plus ->
       (dom, modality, mode, k, l) Modality.filter_dim ->
       (dom, modality, mode, n, n) Modality.filter_dim ->
-      (n, dom Binding.t) CubeOf.t ->
-      (* Because the values and types of variables in one cube can refer to other variables in the same cube, we need to be given the extended context with this binding included at the end in order to readback. *)
-      (mode, ax, (b, (modality, n) dim_entry) snoc) t ->
+      (* Because the values and types of variables in one cube can refer to other variables in the same cube, we need to be given the readback of the binding at the end of the original context (see Readback.readback_entry). *)
+      (mode, ax, b, modality, dom, n) readback_entry ->
       (* But we are building the degenerating environment as we go, so we don't have the extended version of that yet. *)
       (mode, l, b) env ->
       (kn, dom Binding.t) CubeOf.t * (kn, (dom, kinetic) value) CubeOf.t =
-   fun i k l k_n filter filtered xs ctx env ->
+   fun i k l k_n filter filtered (Readback_entry (plus, _, readbacks)) env ->
     let kn = D.plus_out k k_n in
-    let ctx = Ctx.of_ordered ctx in
     let modality = Modality.filter_modality filter in
-    let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-    let readbacks =
-      CubeOf.mmap
-        {
-          map =
-            (fun _ [ x ] ->
-              let nf = Binding.value x in
-              match Binding.level x with
-              | None -> (Some (readback_nf lctx nf), readback_val lctx (Lazy.force nf.ty))
-              | Some _ -> (None, readback_val lctx (Lazy.force nf.ty)));
-        }
-        [ xs ] in
     let j = ref 0 in
     let xstbl = Hashtbl.create 20 in
     let newxs =
@@ -72,7 +56,7 @@ module Ordered = struct
                      (comp_opt_sface (Modality.sface_of_filter l filter) (opt_of_sface fa))) in
               let m = dom_sface fb in
               match CubeOf.find readbacks fb with
-              | None, ty ->
+              | { tm = None; ty } ->
                   let level = (i, !j) in
                   j := !j + 1;
                   let ty = Norm.eval_term alenv ty in
@@ -93,7 +77,7 @@ module Ordered = struct
                   let v = { tm = var modality level ty; ty = Lazy.from_val ty } in
                   Hashtbl.add xstbl (SFace_of fab) v;
                   Binding.make (Some level) v
-              | Some tm, ty ->
+              | { tm = Some tm; ty } ->
                   (* Incrementing the level isn't really necessary since we aren't going to use it in this case, but we do it anyway for consistency. *)
                   j := !j + 1;
                   let tm = Norm.eval_term alenv tm in
@@ -137,7 +121,8 @@ module Ordered = struct
         let (Degctx (kb, newctx', env)) = degenerate ctx' l in
         let mn = Ctx.dim_entry entry in
         let modality = Ctx.modality_entry entry in
-        let bindings, filter_mn = (entry.bindings, entry.filter) in
+        let filter_mn = entry.filter in
+        let readbacks = readback_entry ctx' entry ax in
         let (Has_filter filter_k_l) = Modality.filter modality l in
         let k = Modality.filtered l filter_k_l in
         let (Plus k_mn) = D.plus mn in
@@ -149,7 +134,7 @@ module Ordered = struct
               let (Plus km) = D.plus dim in
               let plusdim = D.plus_assocl km plusdim k_mn in
               let bindings, newval =
-                degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn bindings ctx env
+                degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn readbacks env
               in
               let hasfields = Term.No_fields in
               let filter_kmn =
@@ -173,7 +158,7 @@ module Ordered = struct
                 filter_mn )
           | Invis ->
               let newxs, newval =
-                degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn bindings ctx env
+                degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn readbacks env
               in
               let filter_kmn =
                 Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn
