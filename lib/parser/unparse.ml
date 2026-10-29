@@ -289,14 +289,14 @@ let displayed_definition : type mode x b s.
 let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
  fun v -> Meta.name ~owner_name:(fun c -> String.concat "." (Scope.name_of c)) v
 
-(* The name of a metavariable. *)
-let unparse_meta_name : type mode x b s lt ls rt rs.
-    (mode, x, b, s) Meta.t -> (lt, ls, rt, rs) parse located =
- fun v -> unlocated (Ident ([ (if Display.metas () == `Numbered then meta_name v else "?") ], []))
-
 (* The name with which a variable whose value is a metavariable is displayed in place of being bound. *)
 let meta_var_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
  fun v -> if Display.metas () == `Numbered then meta_name v else "?"
+
+(* The name of a metavariable. *)
+let unparse_meta_name : type mode x b s lt ls rt rs.
+    (mode, x, b, s) Meta.t -> (lt, ls, rt, rs) parse located =
+ fun v -> unlocated (Ident ([ meta_var_name v ], []))
 
 (* The variables bound to the other metavariables in a mutual "let rec" block, in the contexts and definitions of those metavariables, are not displayed as bindings; instead the variables are displayed as the names of those metavariables.  (Variables bound to metavariables from other "let rec" blocks, such as enclosing ones, are displayed as usual.)  This tests whether a term bound to a variable is a metavariable from the same block as a given one, if any (possibly weakened, as the value of a let-bound variable in a context is), and if so returns its name. *)
 let rec letrec_meta_name : type mode b s.
@@ -862,15 +862,17 @@ and unparse_letonly_clauses_pending : type mode n i k b.
       Ext { env; values = Modal (modality, plus, tms); _ } ) -> (
       let top = CubeOf.find_top bindings in
       let acc, names = unparse_letonly_clauses ?sib vars ctx env in
-      (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
-      let name =
-        match vis with
-        | Vis { vars = xs; _ } -> NICubeOf.find_top xs
-        | Invis { hints } -> `Anon hints in
       let n = CubeOf.dim bindings in
       match Option.bind top.tm (letrec_meta_name ~sib) with
-      | Some name -> (acc, No_letonly_lock, add_named_var names n name)
+      | Some name ->
+          (* A let-rec variable is bound in a context that includes some of its siblings. We omit those from a displayed let-only, but we add them to the context of names so that local variables won't shadow them. *)
+          (acc, No_letonly_lock, add_named_var names n name)
       | None ->
+          (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
+          let name =
+            match vis with
+            | Vis { vars = xs; _ } -> NICubeOf.find_top xs
+            | Invis { hints } -> `Anon hints in
           let x, names = Names.add_cube n names name in
           let ty =
             unparse (Names.add_lock names plus_lock) (uninst_letonly_type n top.ty)
