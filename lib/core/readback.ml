@@ -191,53 +191,18 @@ let rec is_identity_ordered_env : type mode a b c d.
       | _ -> None)
   | _ -> None
 
-(* The ways we can read back a metavariable whose environment is the identity, possibly weakened: either as the metavariable itself, or as a let-bound variable whose value is that metavariable, behind some locks.  In the latter case, the base of the weakening is the context ending with that variable, whose dimension and filter we record, so the locks behind which the variable lies are those of the weakening. *)
+(* The ways we can read back a metavariable whose environment is the identity, possibly weakened. *)
 type (_, _, _) meta_readback =
+  (* The metavariable itself weakened, in which case we have to reconstruct both parts of a weaken operation. *)
   | Weakened_meta :
       ('a, 'amode, 'mu, 'mode, 'd) plus_lock * ('a, 'amode, 'mu, 'mode, 'b) plus_with_locks
       -> ('mode, 'd, 'b) meta_readback
+  (* A let-bound variable whose value is the metavariable, in which case we only need the plus_with_locks to supply to Var, but also the dimension and filter. *)
   | Let_var :
-      (('a, ('modality, 'k) dim_entry) snoc, 'xmode, 'mu, 'mode, 'x) plus_lock
-      * (('a, ('modality, 'k) dim_entry) snoc, 'xmode, 'mu, 'mode, 'b) plus_with_locks
+      (('a, ('modality, 'k) dim_entry) snoc, 'xmode, 'mu, 'mode, 'b) plus_with_locks
       * 'k D.t
       * ('dom, 'modality, 'xmode, 'k, 'k) Modality.filter_dim
       -> ('mode, 'd, 'b) meta_readback
-
-let weaken_meta_readback : type mode d b dom modality n.
-    n D.t ->
-    (dom, modality, mode, n, n) Modality.filter_dim ->
-    (mode, d, b) meta_readback ->
-    (mode, d, (b, (modality, n) dim_entry) snoc) meta_readback =
- fun n f r ->
-  match r with
-  | Weakened_meta (plus, newplus) -> Weakened_meta (plus, plus_with_locks_dim newplus n f)
-  | Let_var (plus, newplus, k, filter) -> Let_var (plus, plus_with_locks_dim newplus n f, k, filter)
-
-let lock_meta_readback : type dom g cod d b.
-    (cod, d, b) meta_readback ->
-    (dom, g, cod) Modality.gen ->
-    (dom, (d, g lock_entry) snoc, (b, g lock_entry) snoc) meta_readback =
- fun r g ->
-  match r with
-  | Weakened_meta (plus, newplus) ->
-      Weakened_meta (plus_lock_suc plus g, plus_with_locks_lock newplus g)
-  | Let_var (plus, newplus, k, filter) ->
-      Let_var (plus_lock_suc plus g, plus_with_locks_lock newplus g, k, filter)
-
-let term_of_meta_readback : type mode d b x s.
-    (mode, x, d, s) Meta.t -> (mode, d, b) meta_readback -> (mode, b, kinetic) term option =
- fun meta r ->
-  match r with
-  | Weakened_meta (plus, newplus) -> Some (weaken_gen plus (Meta (meta, Kinetic)) newplus)
-  | Let_var (plus, newplus, k, filter) -> (
-      (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
-      match Modality.compare (Modality.filter_modality filter) (plus_lock_modality plus) with
-      | Eq ->
-          Some
-            (weaken_gen plus
-               (Var (Index (Now, id_sface k, filter, plus_with_locks_of_plus_lock plus)))
-               newplus)
-      | Neq -> None)
 
 (* Test whether a context entry is a variable that is let-bound to a given metavariable (whose full context is given) in an environment that is the identity on the context to its left locked by the modality of the variable, and whether the given environment for that metavariable (with the locks to the right of the variable stripped off) is the identity on the context to its left. *)
 let let_var_of_meta : type mode a b c d x s mmode cfull dfull dom modality f k.
@@ -286,15 +251,19 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
   | None -> (
       (* If not, and the context ends with a variable, we check whether that variable is let-bound to the metavariable, and if so whether the rest of the environment is also an identity. *)
       match (ctx, envctx) with
-      | Snoc (rest, entry, _), _ ->
+      | Snoc (rest, entry, _), _ -> (
           let k = Ctx.dim_entry entry in
           let filter = Ctx.filter_entry entry in
           if let_var_of_meta meta fullctx rest entry env envctx then
-            Some (Let_var (plus_no_lock mode, plus_with_no_locks mode, k, filter))
+            Some (Let_var (plus_with_no_locks mode, k, filter))
           else
             (* If not, we remove it from the context and try again, weakening the result if successful. *)
-            let* x = find_meta_readback meta fullctx rest env envctx in
-            return (weaken_meta_readback k filter x)
+            match find_meta_readback meta fullctx rest env envctx with
+            | Some (Weakened_meta (plus, newplus)) ->
+                Some (Weakened_meta (plus, plus_with_locks_dim newplus k filter))
+            | Some (Let_var (newplus, n, f)) ->
+                Some (Let_var (plus_with_locks_dim newplus k filter, n, f))
+            | None -> None)
       | Weaken (rest, _), _ -> find_meta_readback meta fullctx rest env envctx
       | Lock _, Weaken (envctx, _) -> find_meta_readback meta fullctx ctx env envctx
       (* If the context ends with a lock that matches one at the end of the metavariable's context, we remove both and search behind them. *)
@@ -308,8 +277,12 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
               in
               (* If removing that lock encounters a prekey, then the environment is not a weakened identity.  Otherwise, we can try again with the locks removed, re-locking the result. *)
               if Modalcell.is_id pre then
-                let* r = find_meta_readback meta fullctx ctx env envctx in
-                return (lock_meta_readback r g)
+                match find_meta_readback meta fullctx ctx env envctx with
+                | Some (Weakened_meta (plus, newplus)) ->
+                    Some (Weakened_meta (plus_lock_suc plus g, plus_with_locks_lock newplus g))
+                | Some (Let_var (newplus, k, filter)) ->
+                    Some (Let_var (plus_with_locks_lock newplus g, k, filter))
+                | None -> None
               else None)
       | _ -> None)
 
@@ -325,8 +298,16 @@ let readback_meta_at_idenv : type mode a b n c d x s.
   let search : type a b.
       (mode, a, b) Ctx.t -> (mode, D.zero, d) env -> (mode, b, kinetic) term option =
    fun (Permute { ctx; _ }) env ->
-    let* x = find_meta_readback meta envctx ctx env envctx in
-    term_of_meta_readback meta x in
+    match find_meta_readback meta envctx ctx env envctx with
+    | Some (Weakened_meta (plus, newplus)) -> Some (weaken_gen plus (Meta (meta, Kinetic)) newplus)
+    | Some (Let_var (newplus, k, filter)) -> (
+        (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
+        match
+          Modality.compare (Modality.filter_modality filter) (plus_with_locks_modality newplus)
+        with
+        | Eq -> Some (Var (Index (Now, id_sface k, filter, newplus)))
+        | Neq -> None)
+    | None -> None in
   Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
   match (D.compare (dim_env env) D.zero, envctx) with
   | Eq, Lock (_, g) ->

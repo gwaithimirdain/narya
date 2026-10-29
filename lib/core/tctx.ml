@@ -322,6 +322,10 @@ let plus_with_locks_dim : type a cod modality mode dom ac annote n.
  fun (Plus_with_locks (c, l)) n f ->
   Plus_with_locks (Suc (c, Dim (n, f)), Suc (l, Locks_dim (n, f), Zero))
 
+let plus_with_locks_modality : type ctx mode modality dom newctx.
+    (ctx, mode, modality, dom, newctx) plus_with_locks -> (dom, modality, mode) Modality.t =
+ fun (Plus_with_locks (_, l)) -> Locks.cod l
+
 (* The context extension consisting of one dimension entry followed by the locks of a plus_lock, as when weakening by one variable that lies behind those locks. *)
 let rec plus_with_locks_of_dim_plus_lock : type a cod modality mode dom ac annote n.
     n D.t ->
