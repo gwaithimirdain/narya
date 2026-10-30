@@ -143,3 +143,26 @@ In a hole, a let-rec-bound variable whose value is its metavariable is displayed
    ￮ command-line exec string contains open holes
   
   [1]
+
+In a higher field of a let-rec-bound codatatype, the context is degenerated, including the variable bound to the codatatype itself.
+
+  $ narya -v -e 'def foo : Type ≔ let rec T : Type ≔ codata [ x .f.e : ? ] in T'
+   ￫ info[I0000]
+   ￮ constant foo defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     T.0 ≔ foo._T : Type
+     T.1 ≔ foo._T : Type
+     T.2 ≔ refl foo._T : Type⁽ᵉ⁾ foo._T foo._T
+     x.0 : foo._T
+     x.1 : foo._T
+     x.2 : refl foo._T x.0 x.1
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]

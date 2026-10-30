@@ -371,6 +371,14 @@ let readback_meta_at_idenv : type mode a b n c d x s.
   | Eq, _ -> search ctx env
   | Neq, _ -> None
 
+(* Whether a term context has no checked variables, but only aliases and weakenings. *)
+let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mode emp) Eq.t option =
+  function
+  | Emp _ -> Some Eq
+  | Ext (ctx, _, _, Zero) -> no_checked_vars ctx
+  | Weaken (ctx, _) -> no_checked_vars ctx
+  | Ext _ | Lock _ -> None
+
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
@@ -855,19 +863,33 @@ and readback_head : type mode c z.
           Act (Kinetic, Const name, deg, (sort, canonical)))
   | Meta { meta; env; ins } -> (
       let { termctx; ty; _ } : _ Metadef.t = Global.find_meta meta in
-      (* If the environment is the identity, possibly weakened, we can omit it.  Otherwise, we bind the variables of the metavariable's context with a let-only. *)
-      let tm : (mode, c, kinetic) term =
-        match readback_meta_at_idenv ctx meta env termctx with
-        | Some tm -> tm
+      let with_perm (tm : (mode, c, kinetic) term) : (mode, c, kinetic) term =
+        match is_id_ins ins with
+        | Some _ -> tm
         | None ->
-            Letonly { termctx; env = readback_env ctx env termctx; tm = Meta (meta, Kinetic); ty }
-      in
-      match is_id_ins ins with
-      | Some _ -> tm
-      | None ->
-          (* A degeneracy on a metavariable is always a permutation, whose display doesn't depend on the sort. *)
-          let (To perm) = deg_of_ins ins in
-          Act (Kinetic, tm, perm, (`Other, canonical)))
+            (* A degeneracy on a metavariable with a zero-dimensional environment is always a permutation, whose display doesn't depend on the sort. *)
+            let (To perm) = deg_of_ins ins in
+            Act (Kinetic, tm, perm, (`Other, canonical)) in
+      let letonly () =
+        Letonly { termctx; env = readback_env ctx env termctx; tm = Meta (meta, Kinetic); ty } in
+      (* If the environment is the identity, possibly weakened, we can omit it. *)
+      match readback_meta_at_idenv ctx meta env termctx with
+      | Some tm -> with_perm tm
+      | None -> (
+          let (Permute (_, octx)) = termctx in
+          match no_checked_vars octx with
+          (* If the context of the metavariable has no variables, an environment for it of positive dimension carries no information, so the metavariable is just degenerated, possibly with a permutation. *)
+          | Some Eq -> (
+              match readback_meta_at_idenv ctx meta (Emp (Ctx.mode ctx, D.zero)) termctx with
+              | Some tm -> (
+                  let (To perm) = deg_of_ins ins in
+                  let (DegExt (_, _, deg)) = comp_deg_extending (deg_zero (cod_left_ins ins)) perm in
+                  match is_id_deg deg with
+                  | Some _ -> tm
+                  | None -> Act (Kinetic, tm, deg, (`Other, canonical)))
+              | None -> with_perm (letonly ()))
+          (* Otherwise, we bind the variables of the metavariable's context with a let-only. *)
+          | None -> with_perm (letonly ())))
   | UU (mode, n) -> UU (mode, n)
   | Pi args -> readback_pi ctx args
 
