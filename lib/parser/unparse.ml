@@ -804,8 +804,13 @@ and unparse_canonical : type mode n lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun vars c li ri ->
   match c with
-  | Data { indices = _; evaldim; constrs; recursive = _; tyfam = _; hints = _ } ->
-      unparse_data vars evaldim constrs li ri
+  | Data { indices; evaldim; constrs; recursive = _; tyfam = _; hints = _ } ->
+      (* If the datatype has no indices and evaluation dimension zero, the output types of its constructors carry no information, so we omit them.  A positive evaluation dimension makes the constructors' types higher-dimensional, with the instantiation boundary of their outputs behaving like an index, so then we display them. *)
+      let outputs =
+        match (indices, D.compare_zero evaldim) with
+        | Zero, Zero -> false
+        | Suc _, _ | _, Pos _ -> true in
+      unparse_data vars evaldim constrs ~outputs li ri
   | Codata { eta; evaldim; plusdim; fields; _ } ->
       (* The self-variable has the sum of the evaluation and intrinsic dimensions; the instances of a higher field are indexed by the evaluation dimension alone. *)
       unparse_codata vars eta evaldim (D.plus_out evaldim plusdim) fields li ri
@@ -975,28 +980,31 @@ and unparse_data : type mode a m lt ls rt rs.
     a Names.t ->
     m D.t ->
     (Constr.t, (mode, a, kinetic) term) Abwd.t ->
+    outputs:bool ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars evaldim constrs _li _ri ->
+ fun vars evaldim constrs ~outputs _li _ri ->
   let inner =
     Bwd.fold_left
       (fun acc (c, ty) ->
-        let cterm = unparse_dataconstr vars c ty No.Interval.entire No.Interval.entire in
+        let cterm =
+          unparse_dataconstr vars c ty ~output:outputs No.Interval.entire No.Interval.entire in
         acc <: mktok (Op "|") <: Term cterm)
       (Snoc (Emp, mktok LBracket))
       constrs in
   unlocated (outfix ~notn:data ~inner:(Multiple (dimtok Data evaldim, inner, wstok RBracket)))
 
-(* Display a constructor from its stored function-type: its arguments as pi-domains, "constr. (x : A) (y : B) : D …", with the output type after the colon.  A constructor that declares no output type stores the self-variable as its codomain, and displays without an ascription, as "constr. (x : A)": that output can only be the datatype applied to its parameters, so it carries no information.  Each domain displays exactly as the domain of a dependent pi-type does. *)
+(* Display a constructor from its stored function-type: its arguments as pi-domains, "constr. (x : A) (y : B) : D …", with the output type after the colon if ~output is true.  Otherwise (as is the case for a zero-dimensional datatype with no indices, where the output can only be the datatype itself) it displays without an ascription, as "constr. (x : A)".  Each domain displays exactly as the domain of a dependent pi-type does. *)
 and unparse_dataconstr : type mode a lt ls rt rs.
     a Names.t ->
     Constr.t ->
     (mode, a, kinetic) term ->
+    output:bool ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars c ty li ri ->
+ fun vars c ty ~output:show_output li ri ->
   let rec go : type b.
       b Names.t -> unparser Bwd.t -> (mode, b, kinetic) term -> (lt, ls, rt, rs) parse located =
    fun vars accum tm ->
@@ -1025,8 +1033,9 @@ and unparse_dataconstr : type mode a lt ls rt rs.
   and output : type b.
       b Names.t -> unparser Bwd.t -> (mode, b, kinetic) term -> (lt, ls, rt, rs) parse located =
    fun vars accum tm ->
-    unparse_constr_display c accum (Some { unparse = (fun li ri -> unparse vars tm li ri) }) li ri
-  in
+    let output =
+      if show_output then Some { unparse = (fun li ri -> unparse vars tm li ri) } else None in
+    unparse_constr_display c accum output li ri in
   go vars Emp ty
 
 (* Unparse a match "match tm [ | constr. x ... |-> body | ... ]", or "match tm return x ... |-> M [ ... ]" if it stores a dependent motive.  *)
