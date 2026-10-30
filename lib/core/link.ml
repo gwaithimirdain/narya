@@ -185,10 +185,10 @@ and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a
   | Lock k -> Lock { k with env = env f k.env }
   | Prekey k -> Prekey { k with env = env f k.env }
 
-and entry : type dom modality mode b f mn bm.
+and entry : type dom modality mode b f mn bm b2.
     (File.t -> File.t) ->
-    (dom, modality, mode, b, bm, f, mn) entry ->
-    (dom, modality, mode, b, bm, f, mn) entry =
+    (dom, modality, mode, b, bm, f, mn, b2) entry ->
+    (dom, modality, mode, b, bm, f, mn, b2) entry =
  fun f e ->
   let bindings =
     CubeOf.mmap
@@ -205,7 +205,7 @@ and termctx_ordered : type mode a b.
  fun f ctx ->
   match ctx with
   | Emp mode -> Emp mode
-  | Ext (ctx, e, ax) -> Ext (termctx_ordered f ctx, entry f e, ax)
+  | Ext (ctx, e, ax, comp) -> Ext (termctx_ordered f ctx, entry f e, ax, comp)
   | Lock (ctx, lock) -> Lock (termctx_ordered f ctx, lock)
   | Weaken (ctx, code) -> Weaken (termctx_ordered f ctx, code)
 

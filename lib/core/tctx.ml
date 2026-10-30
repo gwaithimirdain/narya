@@ -230,6 +230,18 @@ let rec locks_lock : type a m b tm. (a, m, b, a, tm, b) Lock.t -> (a, tm, b, a, 
 
 (* Witness that a tctx doesn't end with a lock *)
 
+(* The shape of the extension of a checked context by a context entry: either a cube of variables, or nothing for an alias.  Matching on this refines the types of the extension and the extended checked context. *)
+type (_, _, _, _, _, _) ext_kind =
+  | Ext_dim :
+      ( 'mode,
+        'modality,
+        'n,
+        ('mode id, ('modality, 'n) dim_entry) snoc,
+        'b,
+        ('b, ('modality, 'n) dim_entry) snoc )
+      ext_kind
+  | Ext_alias : ('mode, 'modality, 'n, 'mode id, 'b, 'b) ext_kind
+
 type _ ends_without_lock =
   | Without_lock_id : 'x id ends_without_lock
   | Without_lock_proj : ('x id, 'm proj) snoc ends_without_lock

@@ -1662,10 +1662,14 @@ and lookup_cube_ctx : type dom mu munu mode a b k mk nk c.
     (dom, mk) looked_up_cube =
  fun ctx nk mu pretr v op ->
   match (ctx, v) with
-  | Snoc (ctx, _, _), Later v -> lookup_cube (Ctx ctx) nk mu pretr v op
-  | Snoc (_, { bindings; filter; _ }, _), Now ->
-      (* TODO: Factor out the Ext/Now case from lookup_cube so we don't have to go through env_ext here? *)
-      lookup_cube (env_ext (Ctx ctx) filter bindings) nk mu pretr Now op
+  | Snoc (ctx', ({ bindings; filter; _ } as e), _, comp), _ -> (
+      match (Ordered_ctx.ext_kind e comp, v) with
+      | Ext_dim, Later v -> lookup_cube (Ctx ctx') nk mu pretr v op
+      | Ext_dim, Now ->
+          (* TODO: Factor out the Ext/Now case from lookup_cube so we don't have to go through env_ext here? *)
+          lookup_cube (env_ext (Ctx ctx') filter bindings) nk mu pretr Now op
+      (* An alias has no checked variables. *)
+      | Ext_alias, _ -> lookup_cube (Ctx ctx') nk mu pretr v op)
   | Weaken (ctx, _), _ -> lookup_cube (Ctx ctx) nk mu pretr v op
   | Emp _, _ | Lock _, _ -> .
 
@@ -2022,22 +2026,52 @@ let eval_bindings : type dom modality mode a b n bm.
       [ cbs; vbs ] in
   vbs
 
-let eval_entry : type dom modality mode a b f n bm.
+(* The bindings of an alias don't extend the context, so they can't refer to each other, and they must all be let-bound. *)
+let eval_alias_bindings : type dom modality mode a b n bm.
     (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, b, bm, f, n) entry ->
-    (dom, modality, mode, f, n) Ctx.entry =
- fun ctx { plus_lock; filter; bindings; vis } ->
-  let bindings = eval_bindings ctx filter plus_lock bindings in
-  match vis with
-  | Vis v -> { filter; bindings; vis = Vis v }
-  | Invis _ -> { filter; bindings; vis = Invis }
+    (dom, modality, mode, n, n) Modality.filter_dim ->
+    (b, mode, modality, dom, bm) plus_lock ->
+    (n, (dom, bm) binding) CubeOf.t ->
+    (n, dom Ctx.Binding.t) CubeOf.t =
+ fun ctx filter al cbs ->
+  let modality = Modality.filter_modality filter in
+  let tempctx = Ctx.Ordered.lock_to ctx modality al in
+  CubeOf.mmap
+    {
+      map =
+        (fun _ [ ({ ty = cty; tm = ctm } : (dom, bm) binding) ] ->
+          let ety = eval_term (Ctx.Ordered.env tempctx) cty in
+          match ctm with
+          | Some ctm ->
+              Ctx.Binding.make None
+                { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety }
+          | None -> fatal (Anomaly "alias without a value"));
+    }
+    [ cbs ]
+
+let eval_entry : type dom modality mode a b bb f n bm b2.
+    (mode, a, b) Ctx.Ordered.t ->
+    (dom, modality, mode, bb, bm, f, n, b2) entry ->
+    (mode, b2, mode, b, unit, bb) Tctx.comp ->
+    (dom, modality, mode, f, n, b2) Ctx.entry =
+ fun ctx ({ plus_lock; filter; bindings; vis } as e) comp ->
+  match (ext_kind e comp, vis) with
+  | Ext_dim, Vis v ->
+      let bindings = eval_bindings ctx filter plus_lock bindings in
+      { filter; bindings; vis = Vis v }
+  | Ext_dim, Invis _ ->
+      let bindings = eval_bindings ctx filter plus_lock bindings in
+      { filter; bindings; vis = Invis }
+  | Ext_alias, Alias v ->
+      let bindings = eval_alias_bindings ctx filter plus_lock bindings in
+      { filter; bindings; vis = Alias v }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function
   | Emp mode -> Emp mode
-  | Ext (ctx, e, af) ->
+  | Ext (ctx, e, af, comp) ->
       let ectx = eval_ordered_ctx ctx in
-      Snoc (ectx, eval_entry ectx e, af)
+      Snoc (ectx, eval_entry ectx e comp, af, comp)
   | Lock (ctx, lock) -> Lock (eval_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (eval_ordered_ctx ctx, code)
 

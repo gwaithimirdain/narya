@@ -500,56 +500,61 @@ and equal_ordered_env : type mode a b n c d.
   | Emp _ -> Ok ()
   (* A weakening entry contributes nothing to the environment, so we skip it. *)
   | Weaken (envctx, _) -> equal_ordered_env ctx env1 env2 envctx
-  | Ext (envctx, ({ plus_lock = dplus; bindings; _ } as entry), _) ->
-      let modality = plus_lock_modality dplus in
-      let n = dim_env env1 in
-      let (Has_filter filter) = Modality.filter modality n in
-      let m = Modality.filtered n filter in
-      let k = dim_entry entry in
-      let (Plus m_k) = D.plus k in
-      let mk = D.plus_out m m_k in
-      (* 1 *)
-      let aenv1 = act_env env1 (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
-      let (Looked_up { act = act1; op = op1; entry = xs1; pre = pre1 }) =
-        lookup_cube aenv1 m_k modality modality Now (id_opt_op mk) in
-      let (Op (fc1, fd1)) =
-        op_of_opt op1 <|> Anomaly "unexpected missing endpoint 1 in equal_ordered_env" in
-      let xs1 = act_cube { act = act1 } (CubeOf.subcube fc1 xs1) fd1 pre1 in
-      (* 2 *)
-      let aenv2 = act_env env2 (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
-      let (Looked_up { act = act2; op = op2; entry = xs2; pre = pre2 }) =
-        lookup_cube aenv2 m_k modality modality Now (id_opt_op mk) in
-      let (Op (fc2, fd2)) =
-        op_of_opt op2 <|> Anomaly "unexpected missing endpoint 1 in equal_ordered_env" in
-      let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 pre2 in
-      (* compare *)
-      let (Locked (_, lctx)) = Ctx.lock ctx modality in
-      let lenv = lock_env aenv1 dplus in
-      let env1' = remove_top env1 in
-      let env2' = remove_top env2 in
-      let* () = equal_ordered_env ctx env1' env2' envctx in
-      let xtytbl = Hashtbl.create 10 in
-      short_circuit_err (fun check ->
-          CubeOf.miter
-            {
-              it =
-                (fun fab [ tm1; tm2 ] ->
-                  let (SFace_of_plus (_, fb, fa)) = sface_of_plus m_k fab in
-                  let ty = (CubeOf.find bindings fa).ty in
-                  let ety = eval_term (act_env lenv (opt_op_of_sface fb)) ty in
-                  let ty =
-                    inst ety
-                      (TubeOf.build D.zero
-                         (D.zero_plus (dom_sface fb))
-                         {
-                           build =
-                             (fun fc ->
-                               Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
-                         }) in
-                  Hashtbl.add xtytbl (SFace_of fb) { tm = tm1; ty = Lazy.from_val ty };
-                  check (equal_at lctx tm1 tm2 ty));
-            }
-            [ xs1; xs2 ])
+  | Ext (envctx, ({ plus_lock = dplus; bindings; _ } as entry), _, comp) -> (
+      match ext_kind entry comp with
+      (* An alias contributes nothing to the environment, so we skip it. *)
+      | Ext_alias -> equal_ordered_env ctx env1 env2 envctx
+      | Ext_dim ->
+          let modality = plus_lock_modality dplus in
+          let n = dim_env env1 in
+          let (Has_filter filter) = Modality.filter modality n in
+          let m = Modality.filtered n filter in
+          let k = dim_entry entry in
+          let (Plus m_k) = D.plus k in
+          let mk = D.plus_out m m_k in
+          (* 1 *)
+          let aenv1 = act_env env1 (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
+          let (Looked_up { act = act1; op = op1; entry = xs1; pre = pre1 }) =
+            lookup_cube aenv1 m_k modality modality Now (id_opt_op mk) in
+          let (Op (fc1, fd1)) =
+            op_of_opt op1 <|> Anomaly "unexpected missing endpoint 1 in equal_ordered_env" in
+          let xs1 = act_cube { act = act1 } (CubeOf.subcube fc1 xs1) fd1 pre1 in
+          (* 2 *)
+          let aenv2 = act_env env2 (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
+          let (Looked_up { act = act2; op = op2; entry = xs2; pre = pre2 }) =
+            lookup_cube aenv2 m_k modality modality Now (id_opt_op mk) in
+          let (Op (fc2, fd2)) =
+            op_of_opt op2 <|> Anomaly "unexpected missing endpoint 1 in equal_ordered_env" in
+          let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 pre2 in
+          (* compare *)
+          let (Locked (_, lctx)) = Ctx.lock ctx modality in
+          let lenv = lock_env aenv1 dplus in
+          let env1' = remove_top env1 in
+          let env2' = remove_top env2 in
+          let* () = equal_ordered_env ctx env1' env2' envctx in
+          let xtytbl = Hashtbl.create 10 in
+          short_circuit_err (fun check ->
+              CubeOf.miter
+                {
+                  it =
+                    (fun fab [ tm1; tm2 ] ->
+                      let (SFace_of_plus (_, fb, fa)) = sface_of_plus m_k fab in
+                      let ty = (CubeOf.find bindings fa).ty in
+                      let ety = eval_term (act_env lenv (opt_op_of_sface fb)) ty in
+                      let ty =
+                        inst ety
+                          (TubeOf.build D.zero
+                             (D.zero_plus (dom_sface fb))
+                             {
+                               build =
+                                 (fun fc ->
+                                   Hashtbl.find xtytbl
+                                     (SFace_of (comp_sface fb (sface_of_tface fc))));
+                             }) in
+                      Hashtbl.add xtytbl (SFace_of fb) { tm = tm1; ty = Lazy.from_val ty };
+                      check (equal_at lctx tm1 tm2 ty));
+                }
+                [ xs1; xs2 ]))
   | Lock (envctx, g) ->
       let locks = plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g in
       let (Restrict_keys (env1, pre1)) = restrict_keys env1 locks in

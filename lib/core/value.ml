@@ -76,17 +76,33 @@ module rec Value : sig
   end
 
   module Ctx_entry : sig
-    type ('dom, 'modality, 'mode, 'f, 'mn) entry = {
+    type ('dom, 'modality, 'mode, 'f, 'mn, 'b2) entry = {
       filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
       bindings : ('mn, 'dom Binding.t) CubeOf.t;
-      vis : ('dom, 'modality, 'mode, 'f, 'mn) visibility;
+      vis : ('dom, 'modality, 'mode, 'f, 'mn, 'b2) visibility;
     }
 
-    and (_, _, _, _, _) visibility =
+    and (_, _, _, _, _, _) visibility =
       | Vis :
           ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
-          -> ('dom, 'modality, 'mode, 'f, 'mn) visibility
-      | Invis : ('dom, 'modality, 'mode, N.zero, 'n) visibility
+          -> ( 'dom,
+               'modality,
+               'mode,
+               'f,
+               'mn,
+               ('mode id, ('modality, 'mn) dim_entry) snoc )
+             visibility
+      | Invis :
+          ( 'dom,
+            'modality,
+            'mode,
+            N.zero,
+            'n,
+            ('mode id, ('modality, 'n) dim_entry) snoc )
+          visibility
+      | Alias :
+          ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
+          -> ('dom, 'modality, 'mode, 'f, 'mn, 'mode id) visibility
   end
 
   module Ordered_ctx : sig
@@ -94,9 +110,10 @@ module rec Value : sig
       | Emp : 'mode Mode.t -> ('mode, N.zero, 'mode emp) t
       | Snoc :
           ('mode, 'a, 'b) t
-          * ('dom, 'modality, 'mode, 'x, 'n) Ctx_entry.entry
+          * ('dom, 'modality, 'mode, 'x, 'n, 'b2) Ctx_entry.entry
           * ('a, 'x, 'ax) N.plus
-          -> ('mode, 'ax, ('b, ('modality, 'n) dim_entry) snoc) t
+          * ('mode, 'b2, 'mode, 'b, unit, 'newb) Tctx.comp
+          -> ('mode, 'ax, 'newb) t
       | Lock :
           ('cod, 'a, 'b) t * ('dom, 'modality, 'cod) Modality.gen
           -> ('dom, 'a, ('b, 'modality lock_entry) snoc) t
@@ -382,18 +399,36 @@ end = struct
 
   module Ctx_entry = struct
     (* A context is a list of "entries", which can be either visible or invisible in the raw world.  An (f,n) entry contains f raw variables and an n-dimensional cube of checked variables. *)
-    type ('dom, 'modality, 'mode, 'f, 'mn) entry = {
+    type ('dom, 'modality, 'mode, 'f, 'mn, 'b2) entry = {
       filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
       bindings : ('mn, 'dom Binding.t) CubeOf.t;
-      vis : ('dom, 'modality, 'mode, 'f, 'mn) visibility;
+      vis : ('dom, 'modality, 'mode, 'f, 'mn, 'b2) visibility;
     }
 
-    and (_, _, _, _, _) visibility =
+    (* The last parameter 'b2 is the extension of the checked context contributed by the entry: one cube of variables for a visible or invisible entry, and nothing for an alias. *)
+    and (_, _, _, _, _, _) visibility =
       | Vis :
           (* We allow the "field type" to be anything, so it could be either the terms if they are present, or trivial if not. *)
           ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
-          -> ('dom, 'modality, 'mode, 'f, 'mn) visibility
-      | Invis : ('dom, 'modality, 'mode, N.zero, 'n) visibility
+          -> ( 'dom,
+               'modality,
+               'mode,
+               'f,
+               'mn,
+               ('mode id, ('modality, 'mn) dim_entry) snoc )
+             visibility
+      | Invis :
+          ( 'dom,
+            'modality,
+            'mode,
+            N.zero,
+            'n,
+            ('mode id, ('modality, 'n) dim_entry) snoc )
+          visibility
+      (* An alias is visible to the raw world like a visible entry, but it doesn't extend the checked context: it is a cube of let-bound values, whose names refer directly to those values.  Thus a context containing aliases is a substitution from the checked context to the raw one that is not just a weakening. *)
+      | Alias :
+          ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
+          -> ('dom, 'modality, 'mode, 'f, 'mn, 'mode id) visibility
   end
 
   (* An ordered context: a context without a permutation of its raw indices.  See Ctx for more explanation.  We define this in a submodule so that it can be included later in Ctx.Ordered. *)
@@ -402,9 +437,10 @@ end = struct
       | Emp : 'mode Mode.t -> ('mode, N.zero, 'mode emp) t
       | Snoc :
           ('mode, 'a, 'b) t
-          * ('dom, 'modality, 'mode, 'x, 'n) Ctx_entry.entry
+          * ('dom, 'modality, 'mode, 'x, 'n, 'b2) Ctx_entry.entry
           * ('a, 'x, 'ax) N.plus
-          -> ('mode, 'ax, ('b, ('modality, 'n) dim_entry) snoc) t
+          * ('mode, 'b2, 'mode, 'b, unit, 'newb) Tctx.comp
+          -> ('mode, 'ax, 'newb) t
       | Lock :
           ('cod, 'a, 'b) t * ('dom, 'modality, 'cod) Modality.gen
           -> ('dom, 'a, ('b, 'modality lock_entry) snoc) t
@@ -696,16 +732,33 @@ let env_ext : type dom modality mode b n.
 module Ordered_ctx = struct
   include Ordered_ctx
 
+  (* See Tctx.ext_kind. *)
+  let ext_kind : type dom modality mode f n b2 b newb.
+      (dom, modality, mode, f, n, b2) Ctx_entry.entry ->
+      (mode, b2, mode, b, unit, newb) Tctx.comp ->
+      (mode, modality, n, b2, b, newb) ext_kind =
+   fun { vis; _ } comp ->
+    match (vis, comp) with
+    | Vis _, Suc (Zero, Dim _) -> Ext_dim
+    | Invis, Suc (Zero, Dim _) -> Ext_dim
+    | Alias _, Zero -> Ext_alias
+
+  (* The extension contributed by an entry can be added to any checked context. *)
+  let rebase : type mode b2 b newb b'.
+      mode Mode.t ->
+      (mode, b2, mode, b, unit, newb) Tctx.comp ->
+      (mode, b2, mode, b', unit) Tctx.has_comp =
+   fun mode comp -> Tctx.comp (Tctx.comp_right (Mode mode) comp)
+
   let rec mode : type mode a b. (mode, a, b) t -> mode Mode.t = function
     | Emp m -> m
-    | Snoc (ctx, _, _) -> mode ctx
+    | Snoc (ctx, _, _, _) -> mode ctx
     | Lock (_, modality) -> Modality.src (Modality.of_gen modality)
     | Weaken (ctx, _) -> mode ctx
 
   let rec checked_length : type mode a b. (mode, a, b) t -> (mode, b) Tctx.t = function
     | Emp m -> Tctx.emp m
-    | Snoc (ctx, { filter; bindings; _ }, _) ->
-        Tctx.suc (checked_length ctx) (Dim (CubeOf.dim bindings, filter))
+    | Snoc (ctx, _, _, comp) -> Tctx.comp_out (checked_length ctx) comp
     | Lock (ctx, g) -> Tctx.suc (checked_length ctx) (Lock g)
     | Weaken (ctx, _) -> checked_length ctx
 end

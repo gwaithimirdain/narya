@@ -407,10 +407,12 @@ let refutation_window : type mode a b.
  fun ctx tm window_name ->
   match (window_name, tm.value) with
   | None, Var ix -> (
-      let (Lookup { modality; plus = Plus_with_locks (comp, locks); _ }) = Ctx.lookup ctx ix in
-      match (comp, locks) with
-      | Zero, Zero _ -> Wrap modality
-      | _ -> get_window (Ctx.mode ctx) None)
+      match Ctx.lookup ctx ix with
+      | Found (Lookup { modality; plus = Plus_with_locks (comp, locks); _ }) -> (
+          match (comp, locks) with
+          | Zero, Zero _ -> Wrap modality
+          | _ -> get_window (Ctx.mode ctx) None)
+      | Aliased _ -> get_window (Ctx.mode ctx) None)
   | _ -> get_window (Ctx.mode ctx) window_name
 
 (* Refuting a discriminee is matching against it with no branches, so the window it is refuted under must be one that a match against an empty datatype could use.  The datatype, being empty, is nonrecursive and not single-constructor, so check_window_transparency's condition comes down to this. *)
@@ -1668,49 +1670,54 @@ and check_implicit_match : type mode a b.
   match tm with
   | { value = Var ix; loc } -> (
       (* If it is locked, invalidly modally annotated, a field-access variable, or let-bound, we will also fall back to a nondependent match, but with a hint message since the user may have been expecting a variable match. *)
+      let plain_fallback = fallback in
       let fallback reason arg =
         emit ?loc (Matching_wont_refine (reason, Some arg));
         fallback () in
-      let (Lookup { result; value = { tm = _; ty = varty }; dirt; modality; filter; insert; plus })
-          =
-        Ctx.lookup ctx ix in
-      (* This is a use of the variable, so we record its dirt for any active occurrence-analysis scope. *)
-      Positivity.record dirt;
-      let (Plus_with_locks (comp, locks)) = plus in
-      let lock = Locks.cod locks in
-      (* For a variable match, the variable cannot be locked. *)
-      match (comp, locks) with
-      | Suc _, Suc _ -> fallback "discriminee is locked" (PModality lock)
-      | Zero, Zero _ -> (
-          (* The modal annotation on the variable must match the window modality *if* that was given. *)
-          (match window_name with
-          | None -> ()
-          | Some w -> (
-              match Modality.of_name_tgt (Ctx.mode ctx) w.value with
-              | Error e -> modality_fatal "checking let-in" (e :> modality_error)
-              | Ok (Wrap window) -> (
-                  match Modality.compare window modality with
-                  | Eq -> ()
-                  | Neq ->
-                      fatal (Modality_mismatch (`User, "checking implicit match", window, modality))
-                  )));
-          let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-          let iplus = plus_with_locks_of_plus_lock plus in
-          (* For a variable match, the variable must not be let-bound to a value or be a field access variable. *)
-          match result with
-          | `Field (_, field) -> fallback "discriminee is record field" (PField field)
-          | `Var (None, fa) ->
-              fallback "discriminee is let-bound"
-                (PTerm (lctx, Var (Index (insert, fa, filter, iplus))))
-          | `Var (Some level, fa) ->
-              (* In this case we do have a valid variable match. *)
-              let index = Index (insert, fa, filter, iplus) in
-              with_loc loc (fun () ->
-                  Annotate.ctx status ctx (locate_opt loc (Synth (Var ix)));
-                  Annotate.ty lctx (Lazy.force varty);
-                  Annotate.tm lctx (Term.Var index));
-              check_var_match status ctx level index (Lazy.force varty) modality plus brs refutables
-                highers motive loc))
+      match Ctx.lookup ctx ix with
+      (* An alias isn't a variable, so it can't be matched against. *)
+      | Aliased _ -> plain_fallback ()
+      | Found
+          (Lookup { result; value = { tm = _; ty = varty }; dirt; modality; filter; insert; plus })
+        -> (
+          (* This is a use of the variable, so we record its dirt for any active occurrence-analysis scope. *)
+          Positivity.record dirt;
+          let (Plus_with_locks (comp, locks)) = plus in
+          let lock = Locks.cod locks in
+          (* For a variable match, the variable cannot be locked. *)
+          match (comp, locks) with
+          | Suc _, Suc _ -> fallback "discriminee is locked" (PModality lock)
+          | Zero, Zero _ -> (
+              (* The modal annotation on the variable must match the window modality *if* that was given. *)
+              (match window_name with
+              | None -> ()
+              | Some w -> (
+                  match Modality.of_name_tgt (Ctx.mode ctx) w.value with
+                  | Error e -> modality_fatal "checking let-in" (e :> modality_error)
+                  | Ok (Wrap window) -> (
+                      match Modality.compare window modality with
+                      | Eq -> ()
+                      | Neq ->
+                          fatal
+                            (Modality_mismatch (`User, "checking implicit match", window, modality))
+                      )));
+              let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+              let iplus = plus_with_locks_of_plus_lock plus in
+              (* For a variable match, the variable must not be let-bound to a value or be a field access variable. *)
+              match result with
+              | `Field (_, field) -> fallback "discriminee is record field" (PField field)
+              | `Var (None, fa) ->
+                  fallback "discriminee is let-bound"
+                    (PTerm (lctx, Var (Index (insert, fa, filter, iplus))))
+              | `Var (Some level, fa) ->
+                  (* In this case we do have a valid variable match. *)
+                  let index = Index (insert, fa, filter, iplus) in
+                  with_loc loc (fun () ->
+                      Annotate.ctx status ctx (locate_opt loc (Synth (Var ix)));
+                      Annotate.ty lctx (Lazy.force varty);
+                      Annotate.tm lctx (Term.Var index));
+                  check_var_match status ctx level index (Lazy.force varty) modality plus brs
+                    refutables highers motive loc)))
   | _ -> fallback ()
 
 (* This subroutine iterates through the branches of a non-refining match, checking them all in an appropriate context against the same motive.  Since a non-dependent match might be either checking or synthesizing, the motive can be obtained in two ways, either supplied by the caller directly, or deduced from a branch whose body synthesizes.  We abstract away from this variation by having the caller of this subroutine supply a callback (of type match_motive) that computes a motive from the list of merged branches (see merge_branches).  Since in the process it might also try synthesizing one or more of the branches, it has to also return a list of errors, a list of already-typechecked branches, and the list of branches remaining to check.  Moreover, in the case of a dependent match when the *user* has specified a dependent motive, that motive has to be specialized differently in each branch; we abstract away from that by having the callback return an abstract type which another callback can specialize in each branch. *)
@@ -3621,51 +3628,71 @@ and synth : type mode a b s.
     match (tm.value, status) with
     | Var i, _ -> (
         (* We look up the raw variable index in the context.  This returns its De Bruijn level (which we don't need), its value, its annotating modality, and the information that goes into its De Bruijn index (insertion and plus_with_locks). *)
-        let (Lookup { result; value; dirt; modality; filter; insert; plus = plus_tgt }) =
-          Ctx.lookup ctx i in
-        (* If this is a let-bound variable whose value contains occurrences of currently-being-defined constants, record that for any active occurrence-analysis scope. *)
-        Positivity.record dirt;
-        (* We extract the composite locking modality. *)
-        let (Any_ctx ctx) = Ctx.remove_locks ctx plus_tgt in
-        let (Plus_with_locks (_, locks)) = plus_tgt in
-        let lock = Locks.cod locks in
-        (* To produce its term as a variable (or illusory field access) we have to replace the lock-containing context by a single lock by its annotating modality. *)
-        let (Has_plus_lock plus_src) = plus_lock modality in
-        let tm, ty =
-          match result with
-          | `Var (_, fa) ->
-              ( Term.Var (Index (insert, fa, filter, plus_with_locks_of_plus_lock plus_src)),
-                value.ty )
-          | `Field (_, field) ->
-              (* TODO: Double-check that this zero is correct *)
-              let ins = ins_zero D.zero in
-              (* Illusory field-access variables always refer to the top face.  They are used only for record fields, which are never modal, so the projecting modality is the identity. *)
-              let (Inserted (n, _)) = inserted insert (Ctx.tctx ctx) in
-              (* The self-variable and its field projection live at the variable's own mode (its annotating modality's source); the ambient Key later transports to the context mode. *)
-              let dmode = Modality.src modality in
-              ( Term.Field
-                  ( Kinetic,
-                    modal_id dmode
-                      (Var
-                         (Index (insert, id_sface n, filter, plus_with_locks_of_plus_lock plus_src))),
-                    field,
-                    ins ),
-                Lazy.from_val
-                  (tyof_field (Modality.id dmode) value.tm (Lazy.force value.ty) field ins) ) in
-        (* Any keys supplied explicitly by the user have been stripped off already, but we can insert an identity key or a unique key as well. *)
-        match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
-        | Eq, _ ->
-            (* If the two modalities are equal, we still technically need an "identity key" substitution to replace the lock-containing context with a lock-only context -- otherwise known as generalized weakening. *)
-            ( realize status (weaken_gen plus_src tm plus_tgt : (mode, b, kinetic) term),
-              (act_value (Lazy.force ty) (id_deg D.zero) (Modalcell.id2 mode)
-                : (mode, kinetic) value) )
-        | _, Some (Unique cell) ->
-            (* And if the key is unique, we act by that key. *)
-            ( realize status (Term.Key { tm; cell; plus_tgt; plus_src }),
-              act_value (Lazy.force ty) (id_deg D.zero) cell )
-        | Neq, None ->
-            (* If the modalities are not equal, and the key is not unique, then the user should have given an explicit key. *)
-            fatal (Missing_key (modality, lock)))
+        match Ctx.lookup ctx i with
+        | Aliased (Alias_lookup { value; dirt; modality; plus = plus_tgt }) -> (
+            Positivity.record dirt;
+            (* An alias has no checked variable, so we read back its value, in the context at its position locked by its modality, and then weaken it to the current context, as we do for a variable below. *)
+            let (Any_ctx actx) = Ctx.remove_locks ctx plus_tgt in
+            let (Plus_with_locks (_, locks)) = plus_tgt in
+            let lock = Locks.cod locks in
+            let (Has_plus_lock plus_src) = plus_lock modality in
+            let lctx = Ctx.lock_to actx modality plus_src in
+            let tm = readback_nf lctx value in
+            match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
+            | Eq, _ ->
+                ( realize status (weaken_gen plus_src tm plus_tgt : (mode, b, kinetic) term),
+                  (act_value (Lazy.force value.ty) (id_deg D.zero) (Modalcell.id2 mode)
+                    : (mode, kinetic) value) )
+            | _, Some (Unique cell) ->
+                ( realize status (Term.Key { tm; cell; plus_tgt; plus_src }),
+                  act_value (Lazy.force value.ty) (id_deg D.zero) cell )
+            | Neq, None -> fatal (Missing_key (modality, lock)))
+        | Found (Lookup { result; value; dirt; modality; filter; insert; plus = plus_tgt }) -> (
+            (* If this is a let-bound variable whose value contains occurrences of currently-being-defined constants, record that for any active occurrence-analysis scope. *)
+            Positivity.record dirt;
+            (* We extract the composite locking modality. *)
+            let (Any_ctx ctx) = Ctx.remove_locks ctx plus_tgt in
+            let (Plus_with_locks (_, locks)) = plus_tgt in
+            let lock = Locks.cod locks in
+            (* To produce its term as a variable (or illusory field access) we have to replace the lock-containing context by a single lock by its annotating modality. *)
+            let (Has_plus_lock plus_src) = plus_lock modality in
+            let tm, ty =
+              match result with
+              | `Var (_, fa) ->
+                  ( Term.Var (Index (insert, fa, filter, plus_with_locks_of_plus_lock plus_src)),
+                    value.ty )
+              | `Field (_, field) ->
+                  (* TODO: Double-check that this zero is correct *)
+                  let ins = ins_zero D.zero in
+                  (* Illusory field-access variables always refer to the top face.  They are used only for record fields, which are never modal, so the projecting modality is the identity. *)
+                  let (Inserted (n, _)) = inserted insert (Ctx.tctx ctx) in
+                  (* The self-variable and its field projection live at the variable's own mode (its annotating modality's source); the ambient Key later transports to the context mode. *)
+                  let dmode = Modality.src modality in
+                  ( Term.Field
+                      ( Kinetic,
+                        modal_id dmode
+                          (Var
+                             (Index
+                                (insert, id_sface n, filter, plus_with_locks_of_plus_lock plus_src))),
+                        field,
+                        ins ),
+                    Lazy.from_val
+                      (tyof_field (Modality.id dmode) value.tm (Lazy.force value.ty) field ins) )
+            in
+            (* Any keys supplied explicitly by the user have been stripped off already, but we can insert an identity key or a unique key as well. *)
+            match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
+            | Eq, _ ->
+                (* If the two modalities are equal, we still technically need an "identity key" substitution to replace the lock-containing context with a lock-only context -- otherwise known as generalized weakening. *)
+                ( realize status (weaken_gen plus_src tm plus_tgt : (mode, b, kinetic) term),
+                  (act_value (Lazy.force ty) (id_deg D.zero) (Modalcell.id2 mode)
+                    : (mode, kinetic) value) )
+            | _, Some (Unique cell) ->
+                (* And if the key is unique, we act by that key. *)
+                ( realize status (Term.Key { tm; cell; plus_tgt; plus_src }),
+                  act_value (Lazy.force ty) (id_deg D.zero) cell )
+            | Neq, None ->
+                (* If the modalities are not equal, and the key is not unique, then the user should have given an explicit key. *)
+                fatal (Missing_key (modality, lock))))
     | Const name, _ -> (
         (* If this is one of the constants currently being defined, record the occurrence for any active occurrence-analysis scope (e.g. the argument telescope of a datatype constructor, or the value of a let binding). *)
         Positivity.record_const name;
@@ -4008,12 +4035,13 @@ and synth : type mode a b s.
                 let idm = Modality.id (Ctx.mode xctx) in
                 let newctx = Ctx.ext xctx idm x edom in
                 (* We also get and store the normal corresponding to this variable, for checking the tyargs of later domains. *)
-                let (Lookup { value; modality; plus = Plus_with_locks (_, locks); _ }) =
-                  Ctx.lookup newctx (Top, None) in
-                (* The modality and lock must be trivial since we just added it. *)
-                (match (Modality.compare_id modality, Modality.compare_id (Locks.cod locks)) with
-                | Eq, Eq -> Hashtbl.add varstbl (SFace_of s) value
-                | _ -> fatal (Anomaly "invalid modalities when checking InstHigherPi"));
+                (match Ctx.lookup newctx (Top, None) with
+                | Found (Lookup { value; modality; plus = Plus_with_locks (_, locks); _ }) -> (
+                    (* The modality and lock must be trivial since we just added it. *)
+                    match (Modality.compare_id modality, Modality.compare_id (Locks.cod locks)) with
+                    | Eq, Eq -> Hashtbl.add varstbl (SFace_of s) value
+                    | _ -> fatal (Anomaly "invalid modalities when checking InstHigherPi"))
+                | Aliased _ -> fatal (Anomaly "alias when checking InstHigherPi"));
                 Fwrap
                   ( NFamOf (View.hinted x edom),
                     State { xctx = newctx; plus = Suc ac; tele = rest; prev = Some (edom, domloc) }
@@ -4188,11 +4216,15 @@ and synth : type mode a b s.
             let newctx = Ctx.ext ctx modality x edom in
             (* We get the normal corresponding to the new variable.  The modality must be the one we added it with, and the lock must be trivial since we just added it. *)
             let xnf : dom normal =
-              let (Lookup { value; modality = xmod; plus = Plus_with_locks (_, xlocks); _ }) =
-                Ctx.lookup newctx (Top, None) in
-              match (Modality.compare xmod modality, Modality.compare_id (Locks.cod xlocks)) with
-              | Eq, Eq -> value
-              | _ -> fatal (Anomaly "invalid modalities when checking AscLam") in
+              match Ctx.lookup newctx (Top, None) with
+              | Found (Lookup { value; modality = xmod; plus = Plus_with_locks (_, xlocks); _ })
+                -> (
+                  match
+                    (Modality.compare xmod modality, Modality.compare_id (Locks.cod xlocks))
+                  with
+                  | Eq, Eq -> value
+                  | _ -> fatal (Anomaly "invalid modalities when checking AscLam"))
+              | Aliased _ -> fatal (Anomaly "alias when checking AscLam") in
             let xs = singleton_variables D.zero (View.hinted x edom) in
             let filter = Modality.filter_zero modality in
             let newstatus : (mode, (b, (modality, D.zero) dim_entry) snoc, s) status =

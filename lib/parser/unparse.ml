@@ -338,7 +338,8 @@ let letonly_all_hidden : type mode i b s. (mode, i, b) ordered_termctx -> (mode,
   let sib = letonly_sib body in
   let rec go : type i b. (mode, i, b) ordered_termctx -> bool = function
     | Emp _ -> true
-    | Ext (ctx, { bindings; _ }, _) -> (
+    | Ext (ctx, { vis = Alias _; _ }, _, Zero) -> go ctx
+    | Ext (ctx, { bindings; _ }, _, _) -> (
         match (CubeOf.find_top bindings).tm with
         | Some tm -> Option.is_some (letrec_meta_name ~sib tm) && go ctx
         | None -> false)
@@ -867,8 +868,12 @@ and unparse_letonly_clauses_pending : type mode n i k b.
  fun ~sib vars ctx tmenv ->
   match (ctx, tmenv) with
   | Emp _, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty)
-  | ( Ext (ctx, { bindings; plus_lock; filter = _; vis }, _),
+  (* An alias has no checked variables, so it isn't substituted for. *)
+  | Ext (ctx, { vis = Alias _; _ }, _, Zero), _ ->
+      unparse_letonly_clauses_pending ~sib vars ctx tmenv
+  | ( Ext (ctx, ({ bindings; plus_lock; filter = _; vis } as e), _, (Suc (Zero, Dim _) as comp)),
       Ext { env; values = Modal (modality, plus, tms); _ } ) -> (
+      let Ext_dim = ext_kind e comp in
       let top = CubeOf.find_top bindings in
       let acc, names = unparse_letonly_clauses ?sib vars ctx env in
       let n = CubeOf.dim bindings in
@@ -2084,19 +2089,62 @@ let rec unparse_ctx : type dom modality mode a b.
               ty = Wrap (unlocated (Placeholder []));
             } ) )
   | Ext
-      (type edom emod a' x b' bm n)
-      ((ctx, { plus_lock; bindings; filter = _; vis }, af) :
+      (type edom emod a' x b' bm n b2)
+      ((ctx, ({ plus_lock; bindings; filter = _; vis } as e), af, comp) :
         (mode, a', b') ordered_termctx
-        * (edom, emod, mode, b', bm, x, n) Term.entry
-        * (a', x, a) N.plus) -> (
+        * (edom, emod, mode, b, bm, x, n, b2) Term.entry
+        * (a', x, a) N.plus
+        * (mode, b2, mode, b', unit, b) Tctx.comp) -> (
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
-      match vis with
-      | Invis { hints; _ } ->
+      match (ext_kind e comp, vis) with
+      | Ext_alias, Alias { vars = cube; fplus = Zero; plusdim; _ } ->
+          (* An alias doesn't extend the checked context, so it adds nothing to the names, but we display its values like those of let-bound variables. *)
+          let modality = Modality.name (plus_lock_modality plus_lock) in
+          let module T = struct
+            type 'n t = (string * [ `Original | `Renamed ], 'n) Bwv.t
+          end in
+          let module Fold = NICubeOf.Traverse (T) in
+          let do_var : type left m n.
+              (m, n) sface ->
+              (left, m, binder_name) NFamOf.t ->
+              left N.suc T.t ->
+              left T.t * (left, m, string * [ `Original | `Renamed ]) NFamOf.t =
+           fun _ (NFamOf _) (Snoc (xs, x)) -> (xs, NFamOf x) in
+          let _, vardata = Fold.fold_map_right { foldmap = do_var } cube xs in
+          let xnames = Names.add_lock names plus_lock in
+          let lock = Modality.name lock in
+          let result = ref result in
+          CubeOf.miter
+            {
+              it =
+                (fun fab [ (b : (edom, bm) binding) ] ->
+                  let ty = Wrap (unparse xnames b.ty No.Interval.entire No.Interval.entire) in
+                  let tm =
+                    Option.map
+                      (fun t -> Wrap (unparse xnames t No.Interval.entire No.Interval.entire))
+                      b.tm in
+                  let (SFace_of_plus (_, fa, fb)) = sface_of_plus plusdim fab in
+                  let x, orig = NICubeOf.find vardata fb in
+                  let x =
+                    match D.compare (cod_sface fa) D.zero with
+                    | Eq -> x
+                    | Neq -> x ^ "." ^ string_of_sface fa in
+                  let renamed =
+                    match orig with
+                    | `Renamed -> true
+                    | `Original -> false in
+                  result :=
+                    Snoc (!result, { var = x; modality; renamed; hidden = false; lock; tm; ty }));
+            }
+            [ bindings ];
+          (names, !result)
+      | Ext_alias, Alias _ -> fatal (Anomaly "alias with fields")
+      | Ext_dim, Invis { hints; _ } ->
           (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device: the self-variable of a datatype's constructors, or a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
           let _, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           (names, result)
-      | Vis { dim; plusdim; vars; hasfields; fields; fplus } ->
+      | Ext_dim, Vis { dim; plusdim; vars; hasfields; fields; fplus } ->
           let modality = Modality.name (plus_lock_modality plus_lock) in
           (* First we split off the field variables, if any. *)
           let xs, fs = Bwv.unappend fplus xs in

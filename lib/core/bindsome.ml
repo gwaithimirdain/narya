@@ -84,10 +84,22 @@ module Ordered = struct
   type ('lmode, 'rmode, _, _, _) tel =
     | Nil : 'mode Mode.t -> ('mode, 'mode, Fwn.zero, nil, 'mode id) tel
     | Cons :
-        ('ldom, 'lmodality, 'lmode, 'x, 'n) Ctx.entry
+        ( 'ldom,
+          'lmodality,
+          'lmode,
+          'x,
+          'n,
+          ('lmode id, ('lmodality, 'n) dim_entry) Tbwd.snoc )
+        Ctx.entry
         * ('lmode, 'rmode, 'a, 'f, 'b) tel
         * ('x, 'a, 'xa) Fwn.fplus
         -> ('lmode, 'rmode, 'xa, ('x, 'f) cons, (('lmodality, 'n) dim_entry, 'b) cons) tel
+    (* An alias contributes raw variables but no checked entry. *)
+    | Alias_cons :
+        ('ldom, 'lmodality, 'lmode, 'x, 'n, 'lmode id) Ctx.entry
+        * ('lmode, 'rmode, 'a, 'f, 'b) tel
+        * ('x, 'a, 'xa) Fwn.fplus
+        -> ('lmode, 'rmode, 'xa, ('x, 'f) cons, 'b) tel
     | Lock :
         ('lmode, 'modality, 'cod) Modality.gen * ('lmode, 'rmode, 'i, 'f, 'a) tel
         -> ('cod, 'rmode, 'i, 'f, ('modality lock_entry, 'a) cons) tel
@@ -102,6 +114,7 @@ module Ordered = struct
     function
     | Nil _ -> Zero
     | Cons (e, tel, xa) -> Suc (Id (Ctx.raw_entry e), tel_flatten tel, xa)
+    | Alias_cons (e, tel, xa) -> Suc (Id (Ctx.raw_entry e), tel_flatten tel, xa)
     | Lock (_, tel) -> tel_flatten tel
     | Parametric_lock tel -> tel_flatten tel
     | Weaken (tel, _, xa) -> Suc (Id (Fwn.fplus_left xa), tel_flatten tel, xa)
@@ -109,6 +122,7 @@ module Ordered = struct
   let rec mode_tel : type lmode rmode i f a. (lmode, rmode, i, f, a) tel -> lmode Mode.t = function
     | Nil mode -> mode
     | Cons (_, tel, _) -> mode_tel tel
+    | Alias_cons (_, tel, _) -> mode_tel tel
     | Lock (modality, _) -> Modality.Gen.tgt modality
     | Parametric_lock tel -> mode_tel tel
     | Weaken (tel, _, _) -> mode_tel tel
@@ -132,12 +146,15 @@ module Ordered = struct
      fun ctx tel ij bc ->
       match ctx with
       | Emp _ -> To_tel (ij, bc, tel)
-      | Snoc (ctx, e, ax) ->
+      | Snoc (ctx, e, ax, comp) -> (
           let (Fplus xf) = Fwn.fplus (N.plus_right ax) in
-          go ctx
-            (Cons (e, tel, xf))
-            (Fwn.bfplus_assocr ax xf ij)
-            (Suc (Dim (Ctx.dim_entry e, Ctx.filter_entry e), bc))
+          match ext_kind e comp with
+          | Ext_dim ->
+              go ctx
+                (Cons (e, tel, xf))
+                (Fwn.bfplus_assocr ax xf ij)
+                (Suc (Dim (Ctx.dim_entry e, Ctx.filter_entry e), bc))
+          | Ext_alias -> go ctx (Alias_cons (e, tel, xf)) (Fwn.bfplus_assocr ax xf ij) bc)
       | Lock (ctx, modality) -> go ctx (Lock (modality, tel)) ij (Suc (Lock modality, bc))
       | Weaken (ctx, code) ->
           let (Fplus xf) = Fwn.fplus N.one in
@@ -275,13 +292,13 @@ module Ordered = struct
       Some newentry
     with Short_circuit -> None
 
-  let bind_some_entry : type dom modality mode bindmode f i a n.
+  let bind_some_entry : type dom modality mode bindmode f i a n b2.
       level:int ->
       bindmode var_binder ->
       oldctx:(mode, i, a) Ctx.Ordered.t ->
       newctx:(mode, i, a) Ctx.Ordered.t ->
-      (dom, modality, mode, f, n) Ctx.entry ->
-      (dom, modality, mode, f, n) Ctx.entry option =
+      (dom, modality, mode, f, n, b2) Ctx.entry ->
+      (dom, modality, mode, f, n, b2) Ctx.entry option =
    fun ~level binder ~oldctx ~newctx { filter; bindings; vis } ->
     let open Monad.Ops (Monad.Maybe) in
     let* bindings =
@@ -290,7 +307,10 @@ module Ordered = struct
           bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings
           (* A variable that has views of its fields can't be bound. *)
       | Vis _ -> bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings
-      | Invis -> bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings in
+      | Invis -> bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings
+      (* The variables of an alias are all let-bound, so they can't be bound. *)
+      | Alias _ -> bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings
+    in
     return ({ bindings; filter; vis } : _ Ctx_entry.entry)
 
   (* This seems an appropriate place to comment about the "insert" and "bplus_permute" data being returned from (go_)go_bind_some.  The issue is that in addition to a permuted context, we need to compute the permutation relating it to the original context.  In fact we need *two* permutations, one for the raw indices and one for the checked indices.
@@ -301,11 +321,33 @@ module Ordered = struct
 
   type (_, _, _, _, _) go_go_bind_some =
     | Found : {
-        oldentry : ('ldom, 'lmodality, 'lmode, 'f, 'n) Ctx.entry;
-        newentry : ('ldom, 'lmodality, 'lmode, 'f, 'n) Ctx.entry;
+        oldentry :
+          ( 'ldom,
+            'lmodality,
+            'lmode,
+            'f,
+            'n,
+            ('lmode id, ('lmodality, 'n) dim_entry) Tbwd.snoc )
+          Ctx.entry;
+        newentry :
+          ( 'ldom,
+            'lmodality,
+            'lmode,
+            'f,
+            'n,
+            ('lmode id, ('lmodality, 'n) dim_entry) Tbwd.snoc )
+          Ctx.entry;
         ins : ('b, 'lmodality, 'n, 'c, 'lmode) fwd_insert;
         fins : ('bf, 'f, 'cf) Tlist.insert;
         rest : ('lmode, 'rmode, 'i, 'bf, 'b) tel;
+      }
+        -> ('lmode, 'rmode, 'j, 'c, 'cf) go_go_bind_some
+    (* An alias found next contributes only to the raw permutation. *)
+    | Found_alias : {
+        oldentry : ('ldom, 'lmodality, 'lmode, 'f, 'n, 'lmode id) Ctx.entry;
+        newentry : ('ldom, 'lmodality, 'lmode, 'f, 'n, 'lmode id) Ctx.entry;
+        fins : ('bf, 'f, 'cf) Tlist.insert;
+        rest : ('lmode, 'rmode, 'i, 'bf, 'c) tel;
       }
         -> ('lmode, 'rmode, 'j, 'c, 'cf) go_go_bind_some
     | Lock :
@@ -353,6 +395,35 @@ module Ordered = struct
                     rest = Cons (entry, rest, newfaces);
                     fins = Later fins;
                   }
+            | Found_alias { oldentry; newentry; rest; fins } ->
+                let (Fplus newfaces) = Fwn.fplus (Ctx.raw_entry entry) in
+                Found_alias
+                  { oldentry; newentry; rest = Cons (entry, rest, newfaces); fins = Later fins }
+            | Nil | None | Lock _ | Parametric_lock _ | Weaken _ -> None))
+    | Alias_cons (entry, rest, _) -> (
+        match bind_some_entry ~level binder ~oldctx ~newctx entry with
+        | Some newentry -> Found_alias { fins = Now; oldentry = entry; newentry; rest }
+        | None -> (
+            match go_go_bind_some ~level binder ~oldctx ~newctx rest with
+            | Found { ins; oldentry; newentry; rest; fins } ->
+                let (Fplus newfaces) = Fwn.fplus (Ctx.raw_entry entry) in
+                Found
+                  {
+                    ins;
+                    oldentry;
+                    newentry;
+                    rest = Alias_cons (entry, rest, newfaces);
+                    fins = Later fins;
+                  }
+            | Found_alias { oldentry; newentry; rest; fins } ->
+                let (Fplus newfaces) = Fwn.fplus (Ctx.raw_entry entry) in
+                Found_alias
+                  {
+                    oldentry;
+                    newentry;
+                    rest = Alias_cons (entry, rest, newfaces);
+                    fins = Later fins;
+                  }
             | Nil | None | Lock _ | Parametric_lock _ | Weaken _ -> None))
     | Lock (lock, tel) -> Lock (lock, tel)
     | Parametric_lock tel -> Parametric_lock tel
@@ -382,8 +453,10 @@ module Ordered = struct
     | Found { ins; fins; oldentry; newentry; rest } -> (
         let k = Ctx.raw_entry oldentry in
         let (Plus faces) = N.plus k in
-        let oldctx = Snoc (oldctx, oldentry, faces) in
-        let newctx = Snoc (newctx, newentry, faces) in
+        let oldctx =
+          Snoc (oldctx, oldentry, faces, Ctx.dim_comp oldentry.filter oldentry.bindings) in
+        let newctx =
+          Snoc (newctx, newentry, faces, Ctx.dim_comp newentry.filter newentry.bindings) in
         match go_bind_some ~level binder ~oldctx ~newctx (Suc (af, Id k, faces)) rest with
         | Go_bind_some { raw_flat; raw_perm; checked_perm; oldctx; newctx } ->
             Go_bind_some
@@ -394,6 +467,14 @@ module Ordered = struct
                 oldctx;
                 newctx;
               }
+        | None -> None)
+    | Found_alias { fins; oldentry; newentry; rest } -> (
+        let k = Ctx.raw_entry oldentry in
+        let (Plus faces) = N.plus k in
+        let oldctx = Snoc (oldctx, oldentry, faces, Zero) in
+        let newctx = Snoc (newctx, newentry, faces, Zero) in
+        match go_bind_some ~level binder ~oldctx ~newctx (Suc (af, Id k, faces)) rest with
+        | Go_bind_some g -> Go_bind_some { g with raw_perm = Bp_insert (fins, g.raw_perm) }
         | None -> None)
     | Nil ->
         Go_bind_some { raw_flat = af; raw_perm = Bp_nil; checked_perm = Id Zero; oldctx; newctx }
