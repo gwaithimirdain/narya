@@ -35,7 +35,7 @@ module Loadstate = struct
     parents : FilePath.filename Bwd.t;
     (* All the files imported so far by the current file, *transitively* (that is, files it imports, and files *they* import, etc.).  Stored in compiled files to ensure they are recompiled whenever any dependencies change, and for linking purposes. *)
     imports : (File.t * FilePath.filename) Bwd.t;
-    (* The filenames in imports, so that we add each file only once however many import paths reach it. *)
+    (* The filenames in imports, so that we add each file only once however many import paths reach it.  We record this as a set to avoid duplicates, but we also keep the above list to maintain the order in which the files were loaded. *)
     imported : Filenames.t;
     (* Whether the current file has performed any effectual actions like 'echo'.  Stored in compiled files to produce a warning. *)
     actions : bool;
