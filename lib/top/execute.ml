@@ -211,7 +211,7 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
                     && mtime ifile <= omtime)
                   old_imports
               then (
-                (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file.  Since the list is transitive and we load every file in it, a file that was already loaded only needs to check itself, not its own imports. *)
+                (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file.  Since the list is transitive and we load every file in it, a file that was already loaded only needs to check its own modification time, not those of its imports. *)
                 Mbwd.miter
                   (fun [ (_, ifile) ] ->
                     let _ = load_file ~check_imports:false ifile false in
