@@ -80,6 +80,13 @@ type (_, _) tree =
   | Done_closed : (closed, 'tight, 'right) notation -> ('t, 's) tree
   (* Trees associated to notations of arbitrary length are infinite, so we allow them to be computed lazily as needed. *)
   | Lazy : ('t, 's) tree Lazy.t -> ('t, 's) tree
+  (* A lazy subtree tagged with the names of the notations that can be reached through it, and whether they are all left-closed, so that these can be inspected without forcing it.  Notation definitions use Lazy, which can only reach the notation being defined; when a notation is added to a situation its Lazy subtrees are tagged with it, and merging notation trees produces Tagged subtrees. *)
+  | Tagged : {
+      notations : string list;
+      all_closed : bool;
+      subtree : ('t, 's) tree Lazy.t;
+    }
+      -> ('t, 's) tree
   (* One notation is a prefix of another one.  Reported as an error when reached during parsing, but just saved when notations are created and merged. *)
   | Ambiguity : string list -> ('t, 's) tree
   (* The sub-case when all the ambiguous notations are closed *)
@@ -577,6 +584,8 @@ let rec lower_tree : type t1 s1 t2 s2.
   | Done_open (lt, n) -> Done_open (No.Interval.subset_contains sub lt, n)
   | Done_closed n -> Done_closed n
   | Lazy tr -> Lazy (lazy (lower_tree sub (Lazy.force tr)))
+  | Tagged { notations; all_closed; subtree } ->
+      Tagged { notations; all_closed; subtree = lazy (lower_tree sub (Lazy.force subtree)) }
   | Ambiguity strs -> Ambiguity strs
   | Ambiguity_closed strs -> Ambiguity_closed strs
 
@@ -601,27 +610,69 @@ let rec names : type t s. (t, s) tree -> string list = function
   | Done_open (_, n) -> [ (find n).name ]
   | Done_closed n -> [ (find n).name ]
   | Lazy _ -> []
+  | Tagged { notations; _ } -> notations
   | Ambiguity strs | Ambiguity_closed strs -> strs
 
 and names_tmap : type t s. (t, s) tokmap -> string list =
  fun trees -> TokMap.fold (fun _ (t, _) xs -> names t @ xs) trees []
 
-(* Whether all the notations reachable from a given tree are closed.  Returns false for lazy notations (otherwise it would diverge on infinite notation trees). *)
+(* Whether all the notations reachable from a given tree are closed.  Returns false for untagged lazy notations (otherwise it would diverge on infinite notation trees). *)
 let rec all_closed : type t s. (t, s) tree -> bool = function
   | Inner { ops; field; term } ->
       TokMap.for_all (fun _ (t, _) -> all_closed t) ops
       && Option.fold ~some:all_closed ~none:true field
       && Option.fold ~some:(TokMap.for_all (fun _ (t, _) -> all_closed t)) ~none:true term
+  | Tagged { all_closed; _ } -> all_closed
   | Lazy _ | Ambiguity _ | Done_open _ -> false
   | Done_closed _ | Ambiguity_closed _ -> true
+
+(* Force the top level of a tree, if it is lazy. *)
+let force_tree : type t s. (t, s) tree -> (t, s) tree = function
+  | Lazy tr -> Lazy.force tr
+  | Tagged { subtree; _ } -> Lazy.force subtree
+  | tr -> tr
+
+(* Tag the lazy subtrees of the tree of a notation with that notation, which is the only one they can reach. *)
+let rec tag_tree : type t s left tight right.
+    (left, tight, right) notation -> (t, s) tree -> (t, s) tree =
+ fun n tr ->
+  match tr with
+  | Inner { ops; field; term } ->
+      Inner
+        {
+          ops = tag_tmap n ops;
+          field = Option.map (tag_tree n) field;
+          term = Option.map (tag_tmap n) term;
+        }
+  | Lazy tr ->
+      let all_closed =
+        match left n with
+        | Closed -> true
+        | Open _ -> false in
+      Tagged
+        { notations = [ (find n).name ]; all_closed; subtree = lazy (tag_tree n (Lazy.force tr)) }
+  | Tagged _ | Done_open _ | Done_closed _ | Ambiguity _ | Ambiguity_closed _ -> tr
+
+and tag_tmap : type t s left tight right.
+    (left, tight, right) notation -> (t, s) tokmap -> (t, s) tokmap =
+ fun n trees -> TokMap.map (fun (tr, ss) -> (tag_tree n tr, ss)) trees
+
+let tag : type t s left tight right. (left, tight, right) notation -> (t, s) entry -> (t, s) entry =
+  tag_tmap
 
 (* We are not maximally tolerant of ambiguity in notations.  In principle, it is possible to have one mixfix notation that is a strict initial segment of the other, like the "if_then_" and "if_then_else_" discussed in Danielsson-Norell.  However, it seems very hard to parse such a setup without a significant amount of backtracking, so we forbid it.  This is detected here at merge time.  Note that this includes the case of two notations that are identical.  (It is, of course, possible to have two notations that start out the same but then diverge, like _⊢_⦂_ and _⊢_type -- this is the whole point of merging trees.)  However, because this could happen accidentally when importing many notations from different libraries, we don't raise the error unless it actually comes up during parsing, by wrapping it in a lazy branch of the notation tree. *)
 let rec merge_tree : type t1 s1 t2 s2.
     (t2, s2, t1, s1) No.Interval.subset -> (t1, s1) tree -> (t2, s2) tree -> (t1, s1) tree =
  fun sub xs ys ->
   match (xs, ys) with
-  | Lazy (lazy xs), _ -> merge_tree sub xs ys
-  | _, Lazy (lazy ys) -> merge_tree sub xs ys
+  (* A lazy subtree is merged lazily, since it might be infinite, like a recursive grammar.  The result is tagged with the notations that both sides can reach, which are visible without forcing either side. *)
+  | (Lazy _ | Tagged _), _ | _, (Lazy _ | Tagged _) ->
+      Tagged
+        {
+          notations = names xs @ names ys;
+          all_closed = all_closed xs && all_closed ys;
+          subtree = lazy (merge_tree sub (force_tree xs) (force_tree ys));
+        }
   | Inner xb, Inner yb -> Inner (merge_branch sub xb yb)
   (* As a special case, if a left-open notation is a prefix of one or more left-closed notations, we resolve the ambiguity in favor of the left-open one. *)
   | Done_open _, _ when all_closed ys -> xs

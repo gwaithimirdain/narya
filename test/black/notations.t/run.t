@@ -280,3 +280,11 @@
   f a | b
     : A
   
+
+  $ narya bracketpostfix.ny
+  a [
+    : A
+  
+  a
+    : A
+  

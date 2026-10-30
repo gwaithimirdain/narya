@@ -68,10 +68,11 @@ let add : type left tight right. (left, tight, right) notation -> t -> t =
             { strict; nonstrict }
         | _ -> fatal (Anomaly "Missing +ω in notation situation"))
       s.tighters in
-  (* Then we merge the new notation to all the tighter-trees in which it should lie. *)
+  (* Then we merge the new notation to all the tighter-trees in which it should lie, first tagging its lazy subtrees with it. *)
   let tighters =
     match (left, d.tree) with
     | Open _, Open_entry tr ->
+        let tr = tag n tr in
         EntryMap.map_compare
           {
             map_lt =
@@ -86,6 +87,7 @@ let add : type left tight right. (left, tight, right) notation -> t -> t =
           }
           tightness tighters
     | Closed, Closed_entry tr ->
+        let tr = tag n tr in
         EntryMap.map_compare
           {
             map_lt =

@@ -44,6 +44,12 @@ type (_, _) tree =
   | Done_open : ('t, 's, 'tight) No.lt * ('left opn, 'tight, 'right) notation -> ('t, 's) tree
   | Done_closed : (closed, 'tight, 'right) notation -> ('t, 's) tree
   | Lazy : ('t, 's) tree Lazy.t -> ('t, 's) tree
+  | Tagged : {
+      notations : string list;
+      all_closed : bool;
+      subtree : ('t, 's) tree Lazy.t;
+    }
+      -> ('t, 's) tree
   | Ambiguity : string list -> ('t, 's) tree
   | Ambiguity_closed : string list -> ('t, 's) tree
 
@@ -236,6 +242,7 @@ val eops : (TokMap.key * ('t, 's) tree) list -> ('t, 's) tokmap
 val empty_entry : 'a TokMap.t
 
 (* *)
+val tag : ('left, 'tight, 'right) notation -> ('t, 's) entry -> ('t, 's) entry
 val lower : ('t2, 's2, 't1, 's1) No.Interval.subset -> ('t2, 's2) entry -> ('t1, 's1) entry
 
 val merge :
