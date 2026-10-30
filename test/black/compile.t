@@ -532,3 +532,21 @@ The imports of a file loaded from its compiled version, which are copied into th
   _OUT_OF_SCOPE.X
     : Type
   
+
+A file reachable along several import paths is saved only once among the imports of a compiled file, so these lists don't grow exponentially with the depth of diamonds in the import graph.
+
+  $ echo 'axiom D0 : Type' > d0.ny
+  $ for i in $(seq 1 14); do
+  >   echo "import \"d$((i-1))\"" > l$i.ny
+  >   echo "import \"d$((i-1))\"" > r$i.ny
+  >   printf 'import "l%d"\nimport "r%d"\n' $i $i > d$i.ny
+  > done
+  $ echo 'import "d14"' > diamond.ny
+
+  $ narya diamond.ny
+
+  $ [ $(wc -c < d14.nyo) -lt 50000 ] && echo small
+  small
+
+  $ narya -v diamond.ny 2>&1 | grep -c compiled
+  43

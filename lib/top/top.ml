@@ -158,7 +158,15 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         }
     @@ fun () ->
     Execute.Loaded.run @@ fun () ->
-    Execute.Loading.run ~init:{ cwd = Sys.getcwd (); parents = Emp; imports = Emp; actions = false }
+    Execute.Loading.run
+      ~init:
+        {
+          cwd = Sys.getcwd ();
+          parents = Emp;
+          imports = Emp;
+          imported = Execute.Filenames.empty;
+          actions = false;
+        }
     @@ fun () ->
     Mbwd.miter
       (fun [ input ] ->
