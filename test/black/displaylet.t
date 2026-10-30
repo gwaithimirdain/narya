@@ -195,14 +195,14 @@ The elided form can't be re-entered, but gives a helpful error message.
    ￫ error[E0209]
    ￭ command-line exec string
    1 | echo let only … in z
-     ^ display-only syntax can't be parsed: 'let only … in' indicates a substitution whose bindings were elided when displaying a term; to display them together with definitions instead of names, use 'display let := definitions'
+     ^ display-only syntax can't be parsed: 'let only … in'. Use 'display let := definitions' to print bindings
   
   [1]
   $ narya dl.ny -e 'echo sq (let only ... in sq) z'
    ￫ error[E0209]
    ￭ command-line exec string
    1 | echo sq (let only ... in sq) z
-     ^ display-only syntax can't be parsed: 'let only … in' indicates a substitution whose bindings were elided when displaying a term; to display them together with definitions instead of names, use 'display let := definitions'
+     ^ display-only syntax can't be parsed: 'let only … in'. Use 'display let := definitions' to print bindings
   
   [1]
 
@@ -225,42 +225,42 @@ Each outermost case-tree-only construct in a displayed definition is marked with
    ￫ warning[W0210]
    ￭ $TESTCASE_ROOT/gen.ny
    2 | def f (x : B) : B ≔ match #(gen) x [ true. ↦ false. | false. ↦ true. ]
-     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+     ^ a term copied from a printed local case tree won't be equal to the original
   
    ￫ warning[W0210]
    ￭ $TESTCASE_ROOT/gen.ny
    3 | def f2 (x : B) : B ≔ match #(gen) x return _ ↦ B [ true. ↦ false. | false. ↦ true. ]
-     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+     ^ a term copied from a printed local case tree won't be equal to the original
   
    ￫ warning[W0210]
    ￭ $TESTCASE_ROOT/gen.ny
    4 | def g : B → B ≔ [ #(gen) true. ↦ false. | false. ↦ true. ]
-     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+     ^ a term copied from a printed local case tree won't be equal to the original
   
    ￫ warning[W0210]
    ￭ $TESTCASE_ROOT/gen.ny
    6 | def s : S ≔ [ #(gen) .h ↦ true. ]
-     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+     ^ a term copied from a printed local case tree won't be equal to the original
   
    ￫ warning[W0210]
    ￭ $TESTCASE_ROOT/gen.ny
    7 | def E : Type ≔ data #(gen) [ ]
-     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+     ^ a term copied from a printed local case tree won't be equal to the original
   
    ￫ warning[W0210]
    ￭ $TESTCASE_ROOT/gen.ny
    8 | def e : E → B ≔ [ #(gen) ]
-     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+     ^ a term copied from a printed local case tree won't be equal to the original
   
    ￫ warning[W0210]
    ￭ $TESTCASE_ROOT/gen.ny
    9 | def R : Type ≔ sig #(gen) (a : B)
-     ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+     ^ a term copied from a printed local case tree won't be equal to the original
   
    ￫ warning[W0210]
    ￭ $TESTCASE_ROOT/gen.ny
    10 | def C : Type ≔ codata #(gen) [ x .h : B ]
-      ^ the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors
+      ^ a term copied from a printed local case tree won't be equal to the original
   
 
 A definition can have more than one outermost case-tree-only construct, such as in different fields of a tuple, and then all of them are marked.  The case-tree-only constructs nested inside them are not.

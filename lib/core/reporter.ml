@@ -1221,8 +1221,7 @@ module Code = struct
       | Unrecognized_attribute -> textf "unrecognized attribute"
       | Display_only_syntax str -> textf "display-only syntax can't be parsed: %s" str
       | Generative_copy ->
-          textf
-            "the attribute #(gen) indicates that this was copied from the displayed definition of a local definition or case tree; since case trees are generative, it won't be equal to the original, which may cause typechecking errors"
+          textf "a term copied from a printed local case tree won't be equal to the original"
       | Invalid_degeneracy_action (str, nk, n) ->
           textf
             "invalid degeneracy action on %s: dimension '%s' doesn't factor through codomain '%s'"

@@ -577,8 +577,7 @@ let process_letonly ctx obs loc =
   match split_let obs with
   | Some (_, _, Token (Only, _) :: Token (Ellipsis, _) :: _) ->
       fatal ?loc
-        (Display_only_syntax
-           "'let only … in' indicates a substitution whose bindings were elided when displaying a term; to display them together with definitions instead of names, use 'display let := definitions'")
+        (Display_only_syntax "'let only … in'. Use 'display let := definitions' to print bindings")
   | Some (_, sup, Token (Only, _) :: obs) -> (
       let (Letonly_terms (clauses, body)) =
         process_letonly_terms ctx No_clauses Emp (Token (And, ([], None)) :: obs) in
@@ -1675,7 +1674,7 @@ and get_attribute_values : observation list -> wrapped_parse list * observation 
 let rec with_attributes : type t s. (t, s) tree -> (t, s) tree = function
   | Inner b -> Inner (attributes (fun () -> b) ())
   | Lazy t -> Lazy (lazy (with_attributes (Lazy.force t)))
-  | t -> t
+  | _ -> fatal (Anomaly "with_attributes requires an Inner tree")
 
 (* When the unparser displays the definition of a metavariable, it marks the outermost case-tree-only constructs (such as matches, comatches, or canonical types) with the attribute #(gen), since if the user copies and re-enters it, it will be generative and won't be equal to the original.  The only effect of this attribute when parsing is a warning. *)
 let process_gen_attribute (strs : string list) vals loc : bool =
@@ -1685,18 +1684,14 @@ let process_gen_attribute (strs : string list) vals loc : bool =
       true
   | _ -> false
 
-(* Process the attributes of a case tree construct that has no other attributes. *)
-let process_gen_attributes attrs =
-  List.iter
-    (fun (strs, vals, loc) ->
-      if not (process_gen_attribute strs vals loc) then fatal ?loc Unrecognized_attribute)
-    attrs
-
-(* Strip and process the attributes following the initial token of the observations of a case tree construct that has no other attributes. *)
+(* Strip and process the attributes following the initial token of the observations of a case tree construct that has no attributes other than 'gen'. *)
 let strip_gen_attributes : observation list -> observation list = function
   | first :: obs ->
       let attrs, obs = get_attributes obs in
-      process_gen_attributes attrs;
+      List.iter
+        (fun (strs, vals, loc) ->
+          if not (process_gen_attribute strs vals loc) then fatal ?loc Unrecognized_attribute)
+        attrs;
       first :: obs
   | [] -> []
 
