@@ -269,7 +269,12 @@ end
 module MetaDefs = struct
   include Algaeff.Reader.Make (MetaDefsData)
 
-  let unparsing v = Meta.WrapSet.mem (Wrap v) (read ()).unparsing
+  (* Whether we are unparsing the definition of a metavariable, or of one of its "let rec" siblings.  In the latter case it is referred to directly (by an alias, see Check.check_letrec_bindings), and we display it by name just like a recursive occurrence of the metavariable in its own definition. *)
+  let unparsing v =
+    let { MetaDefsData.unparsing; _ } = read () in
+    Meta.WrapSet.mem (Wrap v) unparsing
+    || Meta.WrapSet.exists (fun (Wrap w) -> Meta.letrec_siblings w v) unparsing
+
   let run_empty f = run ~env:MetaDefsData.empty f
 
   (* Descend into the definition of a metavariable, adding it to the list of those whose definitions we are unparsing, and remembering that we are pending a "gen" attribute on its outermost case-tree-only constructs. *)

@@ -848,6 +848,15 @@ let ext_let ?dirt (Permute { perm; level; ctx }) modality xs tm =
   let ctx, _ = Ordered.ext_let ?dirt ctx modality xs tm in
   Permute { perm = Insert (perm, Top); level = level + 1; ctx }
 
+(* Extend a context by an alias: a raw variable whose name refers directly to a given value, without extending the checked context.  Unlike with ext_let, the value is not wrapped as a let-bound variable, since there is no variable for it to be read back as. *)
+let ext_alias ?dirt (Permute { perm; level; ctx }) modality x v =
+  let b = Binding.make ?dirt None v in
+  let ctx =
+    Ordered.alias ctx (Modality.filter_zero modality) D.zero (D.plus_zero D.zero)
+      (NICubeOf.singleton (binder_name_of_option x))
+      (CubeOf.singleton b) (Suc Zero) in
+  Permute { perm = Insert (perm, Top); level; ctx }
+
 (* Extend a context by a let-bound variable whose value failed to typecheck, so that it is bound to a failed value, of a failed type since we don't know its type.  Anything that needs to inspect it then fails silently. *)
 let ext_failed_let ctx modality xs =
   let ty = failed_type (Modality.src modality) in

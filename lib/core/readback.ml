@@ -221,7 +221,27 @@ type (_, _, _) meta_readback =
       * ('dom, 'modality, 'xmode, 'k, 'k) Modality.filter_dim
       -> ('mode, 'd, 'b) meta_readback
 
-(* Test whether some face of a context entry is a variable that is let-bound to a given metavariable (whose full context is given) in an environment that is the identity on the context to its left locked by the modality of the variable, and whether the given environment for that metavariable (with the locks to the right of the variable stripped off) is the identity on the context to its left.  If so, return that face. *)
+(* Test whether a zero-dimensional environment for a metavariable's context is the identity on that context weakened by some entries of the given ordered context, each of which may lie behind locks matching ones in the metavariable's context.  This is the same search as in find_meta_readback below, except that we don't look for variables let-bound to the metavariable. *)
+let rec is_weakened_identity : type mode a b c d.
+    (mode, a, b) Ctx.Ordered.t -> (mode, D.zero, d) env -> (mode, c, d) ordered_termctx -> bool =
+ fun ctx env envctx ->
+  Option.is_some (is_identity_ordered_env ctx env envctx)
+  ||
+  match (ctx, envctx) with
+  | Snoc (rest, _, _, _), _ -> is_weakened_identity rest env envctx
+  | Weaken (rest, _), _ -> is_weakened_identity rest env envctx
+  | Lock _, Weaken (envctx, _) -> is_weakened_identity ctx env envctx
+  | Lock (ctx, g), Lock (envctx, g') -> (
+      match Modality.Gen.compare g g' with
+      | Neq -> false
+      | Eq ->
+          let (Restrict_keys (env, pre)) =
+            restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g)
+          in
+          Modalcell.is_id pre && is_weakened_identity ctx env envctx)
+  | _ -> false
+
+(* Test whether some face of a context entry is a variable that is let-bound to a given metavariable (whose full context is given) in an environment that is the identity, possibly weakened, on the context to its left locked by the modality of the variable, and whether the given environment for that metavariable (with the locks to the right of the variable stripped off) is also a weakened identity on the context to its left.  If so, return that face.  (The metavariable can be defined in a context shorter than the one to the left of the variable, as happens for the variables bound by a let-rec, whose metavariables all live in the context of the let-rec.) *)
 let let_var_of_meta : type mode a b c d x s mmode cfull dfull dom modality f k b2.
     (mmode, x, dfull, s) Meta.t ->
     (mmode, cfull, dfull) ordered_termctx ->
@@ -243,9 +263,8 @@ let let_var_of_meta : type mode a b c d x s mmode cfull dfull dom modality f k b
         | Eq, Eq, Some _ ->
             (* The value of the variable lives in the context locked by its modality. *)
             let (Locked (_, lctx)) = Ctx.Ordered.lock ctx modality in
-            (* Both environments also have to be identities on what's left for this sort of readback to be possible. *)
-            Option.is_some (is_identity_ordered_env lctx xenv fullctx)
-            && Option.is_some (is_identity_ordered_env ctx env envctx)
+            (* Both environments also have to be weakened identities on what's left for this sort of readback to be possible. *)
+            is_weakened_identity lctx xenv fullctx && is_weakened_identity ctx env envctx
         | _ -> false)
     | _ -> false in
   let result = ref None in
