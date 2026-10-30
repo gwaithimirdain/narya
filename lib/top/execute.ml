@@ -216,7 +216,9 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
                 let trie = Parser.Scope.from_istream chan find_in_table in
                 (* We check whether the compiled file had any actions, and issue a warning if so *)
                 if (Istream.unmarshal chan : bool) then emit (Actions_in_compiled_file ofile);
-                Some (trie, unit_entry, old_imports))
+                (* We return the imports with their *new* file identifiers, since they will be stored with this file and copied into the imports of any file that imports it, hence also into its compiled file.  The old identifiers are only meaningful relative to the run that compiled this file, and in the current run they could belong to different files. *)
+                Some
+                  (trie, unit_entry, Bwd.map (fun (_, ifile) -> (lookup ifile, ifile)) old_imports))
               else None
           | Error flags ->
               emit (Incompatible_flags (filename, flags));

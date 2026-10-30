@@ -506,3 +506,29 @@ Metavariables from compiled files work
   $ narya hasmeta.ny
 
   $ narya usesmeta.ny
+
+The imports of a file loaded from its compiled version, which are copied into the compiled versions of files that import it, refer to their files by the identifiers of the current run, not those of the run that compiled it.
+
+  $ echo 'axiom Y : Type → Type' >idy.ny
+  $ echo 'import "idy"' >idq.ny
+  $ echo 'axiom X : Type' >idx.ny
+  $ echo 'import "idq"' >idp.ny
+  $ cat >idg.ny <<EOF
+  > import "idx"
+  > import "idp"
+  > import "idq"
+  > def gx : Type ≔ X
+  > EOF
+  $ cat >idb.ny <<EOF
+  > import "idg"
+  > echo gx
+  > EOF
+
+  $ narya idq.ny
+
+  $ narya idg.ny
+
+  $ narya idb.ny
+  _OUT_OF_SCOPE.X
+    : Type
+  
