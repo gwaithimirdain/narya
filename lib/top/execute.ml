@@ -241,7 +241,7 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
         else None
   else None
 
-(* Load a file, possibly one specified on the command line, either from source or from a compiled version. *)
+(* Load a file, possibly one specified on the command line, either from source or from a compiled version.  If it was already loaded, check that the file (and its imports, unless check_imports is false) haven't been modified since then, and then add it back to Global and record it as imported. *)
 and load_file ?(check_imports = true) filename top =
   if not (FilePath.check_extension filename "ny") then fatal (Invalid_filename filename);
   let filename = normalize_filename (Loading.get ()).cwd filename in
