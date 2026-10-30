@@ -637,7 +637,7 @@ module Ordered = struct
     | Lock (ctx, lock) -> Lock (forget_levels ctx forget, lock)
     | Weaken (ctx, code) -> Weaken (forget_levels ctx forget, code)
     | Snoc (ctx, e, af, comp) ->
-        Snoc (ctx, { e with bindings = forget_bindings e.bindings }, af, comp)
+        Snoc (forget_levels ctx forget, { e with bindings = forget_bindings e.bindings }, af, comp)
 
   (* Weaken the raw length by any specified amount. *)
   let rec weaken : type mode a x ax b.

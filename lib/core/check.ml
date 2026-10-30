@@ -2096,7 +2096,7 @@ and check_var_match : type dom modality mode a b bm.
           match
             match d.message with
             | Matching_wont_refine (str, x) -> Some (str, x)
-            | No_such_level x -> Some ("index variable occurs in parameter", Some x)
+            | No_such_level _ -> Some ("index variable occurs in parameter", None)
             | _ -> None
           with
           | Some (msg, x) ->
@@ -2112,7 +2112,6 @@ and check_var_match : type dom modality mode a b bm.
       let inst_vars = TubeOf.mmap { map = (fun _ [ x ] -> is_fresh x) } [ inst_args ] in
       let constr_vars = TubeOf.plus_cube inst_vars (CubeOf.singleton level) in
       (* Now we also check that none of these free variables occur in the parameters.  We do this by altering the context to replace all these level variables with unknowns and doing a readback of the pre-indices type family into that context.  If the readback encounters one of the missing level variables, it fails with No_such_level; above we catch that, emit a hint, and fall back to matching against a term. *)
-      (* TODO: This doesn't seem to be catching things it should, like attempted proofs of Axiom K; they go on and get caught by No_permutation instead. *)
       let ctx_noindices = Ctx.forget_levels ctx (Hashtbl.mem seen) in
       let (Locked (_, ctx_noindices)) = Ctx.lock ctx_noindices window in
       ignore (readback_nf ctx_noindices tyfam);
