@@ -25,7 +25,7 @@ open Value
 
 (* The binding of each variable in a context is a "level option * normal".  But instead of exposing this literally as a product type, we use an abstract type with a constructor "Binding.make" and accessors "Binding.level" and "Binding.value".  The reason is that in the "bind_some" machinery below, we work with contexts where the binding of a variable is "known but not yet available" or "not yet computed".  So the internal implementation of Binding is actually a reference cell that usually stores a "Known" "level option * normal", but sometimes is Unknown or other times a Delayed "level option * normal".
 
-   A binding also carries a mutable "dirt" verdict recording whether its value contains occurrences of constants currently being defined (see Positivity).  This applies only to let-bound variables, whose values were typechecked; free variables are always clean.  It is mutable, separately from the state reference, so that letrec can pre-mark its bindings as recursive while checking their bodies and update them to the real verdict afterwards.  (Note that bind_some's "specify" installs computed values without computing their dirt; free pattern variables are clean in practice, but this could be revisited along with strict positivity.) *)
+   A binding also carries a mutable "dirt" verdict recording whether its value contains occurrences of constants currently being defined (see Positivity).  This applies only to let-bound variables, whose values were typechecked, and to the free variables in the body of a let-only, which inherit the verdicts of their bound terms; other free variables are always clean.  It is mutable, separately from the state reference, so that letrec can pre-mark its bindings as recursive while checking their bodies and update them to the real verdict afterwards.  (Note that bind_some's "specify" installs computed values without computing their dirt; free pattern variables are clean in practice, but this could be revisited along with strict positivity.) *)
 module Binding : sig
   type 'mode t
 
@@ -667,6 +667,13 @@ module Ordered = struct
         Any (Weaken (ctx, code), N.suc_plus_eq_suc a_x)
     | Suc (_, Proj _), Suc (_, _, _), _ -> .
 
+  (* Remove locks as for remove_locks, but keep the raw length, replacing the removed variables by weakenings that raise the given error. *)
+  let remove_locks_weakened : type cod mode modality a b bc.
+      (mode, a, bc) t -> Code.t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, a, b) t =
+   fun ctx code plus ->
+    let (Any (removed_ctx, raw_plus)) = remove_locks ctx plus in
+    weaken removed_ctx code raw_plus
+
   type (_, _, _, _, _) replaced_locks =
     | Replaced :
         ('mode, 'a, 'bs) t * ('b, 'cod, 'src, 'mode, 'bs) plus_lock
@@ -918,6 +925,12 @@ let remove_locks : type cod mode modality a b bc.
  fun (Permute { ctx; level; _ }) plus ->
   let (Any (ctx, _)) = Ordered.remove_locks ctx plus in
   Any_ctx (of_ordered ~level ctx)
+
+let remove_locks_weakened : type cod mode modality a b bc.
+    (mode, a, bc) t -> Code.t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, a, b) t =
+ fun (Permute { ctx; level; perm; _ }) code plus ->
+  let ctx = Ordered.remove_locks_weakened ctx code plus in
+  Permute { ctx; level; perm; env = Ordered.env ctx }
 
 type (_, _, _, _, _) replaced_locks =
   | Replaced :

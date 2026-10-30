@@ -487,7 +487,7 @@ module Parse = struct
           match tok with
           | Ident [ "all" ] -> Some (`All ws, state)
           | Ident [ "id" ] -> Some (`Id ws, state)
-          | Ident [ "only" ] -> Some (`Only ws, state)
+          | Only -> Some (`Only ws, state)
           | In -> Some (`In ws, state)
           | Ident [ "none" ] -> Some (`None ws, state)
           | Ident [ "except" ] -> Some (`Except ws, state)

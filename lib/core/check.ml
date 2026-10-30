@@ -51,7 +51,7 @@ let rec typefam : type mode a b. (mode, a, b) Ctx.t -> (mode, kinetic) value -> 
           fatal
             (Modality_mismatch
                (`Internal, "indices of datatype", modality, Modality.id (Modality.tgt modality))))
-  | _ -> fatal (Checking_canonical_at_nonuniverse ("datatype", PVal (ctx, ty)))
+  | _ -> fatal (Universe_expected (`Check, "datatype", PVal (ctx, ty)))
 
 (* Given a multi-argument type family, and the type *of* that type family, both as values, and a context for them, compute the type of type families dependent *on* that family, as a term.  For example, if the arguments are
 
@@ -300,6 +300,18 @@ type (_, _) tel_prev =
       * ('dom, 'bm, kinetic) term
       * ('dom, kinetic) value
       -> ('mode, 'b) tel_prev
+
+(* The output of checking the clauses of a let-only of dimension 'k: the term and value environments of the bound terms in the ambient context of checked length 'b, and the context of the body, of raw length 'e. *)
+type (_, _, _, _) checked_letonly_clauses =
+  | Checked_letonly_clauses :
+      ('mode, 'b, 'k, 'eb) Term.env * ('mode, 'k, 'eb) Value.env * ('mode, 'e, 'eb) Ctx.t
+      -> ('mode, 'b, 'k, 'e) checked_letonly_clauses
+
+(* The checked type of a let-only variable: an uninstantiated type of some dimension 'n, together with the instantiation arguments of its own type, which is a fully instantiated n-dimensional universe. *)
+type (_, _) letonly_type =
+  | Letonly_type :
+      ('mode, 'b, kinetic) term * (D.zero, 'n, 'n, 'mode normal) TubeOf.t
+      -> ('mode, 'b) letonly_type
 
 (* A telescope of metavariables instead of types.  Created from a telescope of types by make_letrec_metas. *)
 type (_, _, _, _) meta_tel =
@@ -792,7 +804,7 @@ let rec check : type mode a b s.
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Noeta
                      (readback_neu ctx (head_of_potential head) apps))
                   (Bwd.to_list fields))
-        | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
+        | _ -> fatal (Universe_expected (`Check, "codatatype", PVal (ctx, ty))))
     | SelfRecord (fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking self-record" with
         | Canonical (_, UU (_mode, dim), ins, tyargs) -> (
@@ -818,7 +830,7 @@ let rec check : type mode a b s.
                       (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                          (readback_neu ctx (head_of_potential head) apps))
                       (Bwd.to_list fields)))
-        | _ -> fatal (Checking_canonical_at_nonuniverse ("codatatype", PVal (ctx, ty))))
+        | _ -> fatal (Universe_expected (`Check, "codatatype", PVal (ctx, ty))))
     | Record (xs, fields, opacity, hints), Potential (head, apps, _) -> (
         match view_type ~severity ty "typechecking record" with
         | Canonical (_, UU (_mode, dim), ins, tyargs) -> (
@@ -833,7 +845,7 @@ let rec check : type mode a b s.
                   (Fibrancy.Codata.empty dim dim (Ctx.tctx ctx) Eta
                      (readback_neu ctx (head_of_potential head) apps))
                   None fields)
-        | _ -> fatal (Checking_canonical_at_nonuniverse ("record type", PVal (ctx, ty))))
+        | _ -> fatal (Universe_expected (`Check, "record type", PVal (ctx, ty))))
     | Data (constrs, hints), Potential (head, apps, _) ->
         (* For a datatype, the type to check against might not be a universe, it could include indices. *)
         let n = typefam ctx ty in
@@ -1371,6 +1383,198 @@ and make_letrec_metas : type mode x a b ab.
           (* And recurse. *)
           Ext (x, meta, make_letrec_metas ctx tel)
       | _ -> fatal (Unimplemented "modal let-rec variables"))
+
+(* A let-only is checked with all its parts kinetic: the bound terms, and the body, which must synthesize.  We check its clauses to get an environment of their values in the ambient context, of the dimension k given by the user, and a context of free variables for the body, which doesn't extend the ambient one.  The type of the body is then transported to the ambient context by reading it back and evaluating it, at that dimension, in that environment. *)
+and synth_letonly : type mode a b k e.
+    (mode, a, b) Ctx.t ->
+    k D.t ->
+    (a, e) Raw.letonly_clauses ->
+    e synth located ->
+    (mode, b, kinetic) term * (mode, kinetic) value =
+ fun ctx k clauses body ->
+  let (Checked_letonly_clauses (type eb) ((tmenv, venv, bodyctx) : _ * _ * (mode, e, eb) Ctx.t)) =
+    check_letonly_clauses ctx k clauses in
+  let status : (mode, _, kinetic) status = Kinetic `Nolet in
+  Annotate.ctx status bodyctx (locate_opt body.loc (Synth body.value));
+  let sbody, sbodyty = synth status bodyctx body in
+  let sbodyty = readback_val bodyctx sbodyty in
+  ( Letonly { termctx = readback_ctx bodyctx; env = tmenv; tm = sbody; ty = sbodyty },
+    type_of_eval venv sbody sbodyty )
+
+(* Check the clauses of a let-only.  The ambient context given is that of the rightmost bound term.  To get the ambient context of the bound terms to the left of a lock or key clause, we peel locks off it as for a key applied to a term, so we recurse through the clauses from right to left; but the actual checking happens as the recursion returns, from left to right. *)
+and check_letonly_clauses : type mode a b k e.
+    (mode, a, b) Ctx.t ->
+    k D.t ->
+    (a, e) Raw.letonly_clauses ->
+    (mode, b, k, e) checked_letonly_clauses =
+ fun ctx k clauses ->
+  match clauses with
+  | No_clauses ->
+      let mode = Ctx.mode ctx in
+      Checked_letonly_clauses (Emp (mode, k), Emp (mode, k), Ctx.empty mode)
+  | Clause (clauses, x, modality, rty, tm) ->
+      let (Checked_letonly_clauses (tmenv, venv, bodyctx)) = check_letonly_clauses ctx k clauses in
+      check_letonly_clause ctx bodyctx venv tmenv x modality rty tm
+  | Lock_clause (clauses, lock) -> (
+      (* The bound terms to the left of a lock are checked in the ambient context with a matching lock, and everything after it, removed.  Their environments and the body context are then locked by it. *)
+      match Modality.of_name_src lock.value (Ctx.mode ctx) with
+      | Error e -> modality_fatal "let-only lock" (e :> modality_error)
+      | Ok (Wrap modality) -> (
+          match find_plus_with_locks (Ctx.tctx ctx) modality with
+          | Some (Found_plus_with_locks plus_tgt) ->
+              let newctx = Ctx.remove_locks_weakened ctx (Hidden_variable `Lock) plus_tgt in
+              let (Checked_letonly_clauses (tmenv, venv, bodyctx)) =
+                check_letonly_clauses newctx k clauses in
+              let (Locked (plus, bodyctx)) = Ctx.lock bodyctx modality in
+              Checked_letonly_clauses
+                (lock_term_env tmenv plus_tgt plus, lock_env venv plus, bodyctx)
+          | None ->
+              let (Wrap ctx_lock) = Ctx.total_locks ctx in
+              fatal ?loc:lock.loc (Letonly_lock_mismatch (modality, ctx_lock))))
+  | Key_clause (clauses, keyname) -> (
+      (* As for a key applied to a term, the bound terms to the left of a key are checked in the ambient context with locks matching the key's vertical target replaced by its vertical source.  Their values are then acted on by the key. *)
+      match Modalcell.of_name (Ctx.mode ctx) keyname with
+      | Ok (Wrap cell) -> (
+          match find_plus_with_locks (Ctx.tctx ctx) (Modalcell.vtgt cell) with
+          | Some (Found_plus_with_locks plus_tgt) ->
+              let (Replaced (newctx, plus_src)) =
+                Ctx.replace_locks ctx (Hidden_variable `Key) plus_tgt (Modalcell.vsrc cell) in
+              let (Checked_letonly_clauses (tmenv, venv, bodyctx)) =
+                check_letonly_clauses newctx k clauses in
+              Checked_letonly_clauses
+                (Prekey { env = tmenv; cell; plus_src; plus_tgt }, prekey_env venv cell, bodyctx)
+          | None ->
+              let (Wrap ctx_lock) = Ctx.total_locks ctx in
+              fatal ?loc:keyname.loc (Key_mismatch (cell, ctx_lock)))
+      | Error e -> modalcell_fatal "let-only key" (e :> modality_error))
+
+(* Check an ordinary clause of a let-only: first the type, in the context of the previous variables only, and then the bound term, in the ambient context, at an instantiation of that type evaluated at the previous bound terms.  The new variable is free in the body context, but its bindings record the occurrence-analysis verdict of its bound term as their "dirt", as for an ordinary let-bound variable, so that occurrences of currently-being-defined constants in the bound term are detected if the variable is used. *)
+and check_letonly_clause : type mode a b ea eb k.
+    (mode, a, b) Ctx.t ->
+    (mode, ea, eb) Ctx.t ->
+    (mode, k, eb) Value.env ->
+    (mode, b, k, eb) Term.env ->
+    string option ->
+    string located list located ->
+    ea check located ->
+    a check located ->
+    (mode, b, k, ea N.suc) checked_letonly_clauses =
+ fun ctx bodyctx venv tmenv x modality rty tm ->
+  match Modality.of_name_tgt (Ctx.mode ctx) modality.value with
+  | Error e -> modality_fatal "checking let-only" (e :> modality_error)
+  | Ok (Wrap modality) -> (
+      if not (Modality.tangible modality) then fatal (Intangible_modality modality);
+      let (Locked (plus, lbodyctx)) = Ctx.lock bodyctx modality in
+      let (Letonly_type (cty, tyargs)) = check_letonly_type lbodyctx rty in
+      (* The variable is a cube whose dimension n is that of its type, which (as for a higher pi-type) must be stable under filtering by its modality. *)
+      let n = TubeOf.out tyargs in
+      let (Has_filter nfilter) = Modality.filter modality n in
+      match D.compare (Modality.filtered n nfilter) n with
+      | Neq ->
+          fatal ?loc:rty.loc
+            (Invalid_higher_letonly "dimension of variable is not stable under its modality")
+      | Eq ->
+          let ety = eval_term (Ctx.env lbodyctx) cty in
+          let edoms =
+            TubeOf.plus_cube
+              (TubeOf.mmap { map = (fun _ [ x ] -> x.tm) } [ tyargs ])
+              (CubeOf.singleton ety) in
+          (* The bound term lives in the ambient context locked by the modality.  Its dimension is that of the variable plus that of the environment filtered by the modality, and it belongs to an instantiation of the type evaluated in the environment of the previous bound terms reduced to that filtered dimension. *)
+          let (Locked (aplus, lctx)) = Ctx.lock ctx modality in
+          let k = dim_env venv in
+          let (Has_filter kfilter) = Modality.filter modality k in
+          let m = Modality.filtered k kfilter in
+          let (Plus m_n) = D.plus n in
+          let aenv = act_env venv (opt_op_of_opt_sface (Modality.sface_of_filter k kfilter)) in
+          let vty = eval_term (lock_env aenv plus) cty in
+          let (ctm, args), dirt =
+            Positivity.scope @@ fun () -> check_letonly_term lctx (D.plus_out m m_n) tm vty in
+          (* The boundary of the bound term, together with the term itself, form the cube in the environment. *)
+          let venv : (mode, k, (eb, _) snoc) Value.env =
+            Ext
+              {
+                env = venv;
+                plus = m_n;
+                filter = kfilter;
+                filtered = nfilter;
+                values =
+                  `Lazy
+                    (TubeOf.plus_cube
+                       (TubeOf.mmap { map = (fun _ [ x ] -> ready (Val x.tm)) } [ args ])
+                       (CubeOf.singleton (lazy_eval (Ctx.env lctx) ctm)));
+              } in
+          let tmenv : (mode, b, k, (eb, _) snoc) Term.env =
+            Ext
+              {
+                env = tmenv;
+                plus = m_n;
+                filter = kfilter;
+                filtered = nfilter;
+                values =
+                  Modal
+                    ( modality,
+                      aplus,
+                      TubeOf.plus_cube
+                        (TubeOf.mmap { map = (fun _ [ x ] -> readback_nf lctx x) } [ args ])
+                        (CubeOf.singleton ctm) );
+              } in
+          let _, newnfs = dom_vars bodyctx modality edoms in
+          CubeOf.miter { it = (fun _ [ b ] -> Ctx.Binding.set_dirt b dirt) } [ newnfs ];
+          let newbodyctx = Ctx.cube_vis bodyctx nfilter x newnfs in
+          Checked_letonly_clauses (tmenv, venv, newbodyctx))
+
+(* Check the type of a let-only variable.  If it synthesizes, its type can be any fully instantiated universe, of some dimension n, in which case the variable will be an n-dimensional cube; otherwise it must check against the 0-dimensional universe. *)
+and check_letonly_type : type mode a b.
+    (mode, a, b) Ctx.t -> a check located -> (mode, b) letonly_type =
+ fun ctx ty ->
+  let mode = Ctx.mode ctx in
+  match ty.value with
+  | Synth sty -> (
+      let cty, tyty = synth (Kinetic `Nolet) ctx { value = sty; loc = ty.loc } in
+      match view_type tyty "type of let-only variable" with
+      | Canonical (_, UU _, ins, tyargs) ->
+          let Eq = eq_of_ins_zero ins in
+          Letonly_type (cty, tyargs)
+      | _ -> (
+          match subtype_of ctx tyty (universe mode D.zero) with
+          | Ok () -> Letonly_type (cty, TubeOf.empty D.zero)
+          | Error _ ->
+              fatal ?loc:ty.loc (Universe_expected (`Synth, "let-only variable", PVal (ctx, tyty))))
+      )
+  | _ -> Letonly_type (check (Kinetic `Nolet) ctx ty (universe mode D.zero), TubeOf.empty D.zero)
+
+(* Check the bound term of a let-only clause, which must belong to an instantiation of the given uninstantiated type of dimension mn, returning it along with the instantiation arguments, which form its boundary.  If mn is zero, there are no instantiation arguments and we can just check it; but otherwise it must synthesize, and we read the arguments off its synthesized type. *)
+and check_letonly_term : type mode a b mn.
+    (mode, a, b) Ctx.t ->
+    mn D.t ->
+    a check located ->
+    (mode, kinetic) value ->
+    (mode, b, kinetic) term * (D.zero, mn, mn, mode normal) TubeOf.t =
+ fun ctx mn tm ty ->
+  match (D.compare_zero mn, tm.value) with
+  | Zero, _ -> (check (Kinetic `Nolet) ctx tm ty, TubeOf.empty D.zero)
+  | Pos _, Synth stm -> (
+      let ctm, sty = synth (Kinetic `Nolet) ctx { value = stm; loc = tm.loc } in
+      let (Full_tube tyargs) = get_tyargs sty "bound term of let-only" in
+      match D.factor (TubeOf.out tyargs) mn with
+      | None ->
+          fatal ?loc:tm.loc
+            (Invalid_higher_letonly
+               (Printf.sprintf
+                  "bound term has a type of dimension %s, which isn't an instantiation of a type of dimension %s"
+                  (string_of_dim0 (TubeOf.out tyargs))
+                  (string_of_dim0 mn)))
+      | Some (Factor mn_l) -> (
+          (* The instantiation arguments that we need are the last ones applied, which come first in the tube. *)
+          let args, _ = TubeOf.split (D.zero_plus mn) mn_l tyargs in
+          let expected = inst ty args in
+          match subtype_of ctx sty expected with
+          | Ok () -> (ctm, args)
+          | Error why ->
+              fatal ?loc:tm.loc
+                (Unequal_synthesized_type
+                   { got = PVal (ctx, sty); expected = PVal (ctx, expected); which = None; why })))
+  | Pos _, _ -> fatal ?loc:tm.loc (Nonsynthesizing "bound term of higher-dimensional let-only")
 
 and let_metas : type mode b c bc s.
     mode Modal.Mode.t -> (mode, b, c, bc) meta_tel -> (mode, bc, s) term -> (mode, b, s) term =
@@ -3350,7 +3554,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                 } in
             (* The shuffleable degenerates the codatatype's parameters; the self value and its boundary we degenerate here, since the field type is applied to them only after that degeneration.  The boundary is used to instantiate the field type, by projecting this field from it, so it stays in the ambient context; but the self value is substituted for the self *variable*, which lies behind the locks by the right and then the left adjoint, so we transport it there along the adjunction unit first and degenerate it in that doubly locked context.  (For an ordinary field the unit is an identity cell and both locks are trivial.) *)
             let dtyargs =
-              TubeOf.mmap { map = (fun _ [ nf ] -> degenerate_normal ctx degenv r nf) } [ tyargs ]
+              TubeOf.mmap { map = (fun _ [ nf ] -> degenerate_normal ctx degenv nf) } [ tyargs ]
             in
             let (Plus r_m) = D.plus m in
             let values =
@@ -3501,7 +3705,7 @@ and synth : type mode a b s.
             match find_plus_with_locks (Ctx.tctx ctx) tgt with
             | Some (Found_plus_with_locks plus_tgt) ->
                 let (Replaced (newctx, plus_src)) =
-                  Ctx.replace_locks ctx Hidden_variable plus_tgt src in
+                  Ctx.replace_locks ctx (Hidden_variable `Key) plus_tgt src in
                 let tm, sty = synth (Kinetic `Nolet) newctx tm in
                 ( realize status (Key { tm; cell; plus_tgt; plus_src }),
                   act_value sty (deg_zero D.zero) cell )
@@ -4019,6 +4223,9 @@ and synth : type mode a b s.
           synth_or_check_letrec ?nosynth ?synthed status ctx vtys vs body None in
         (* The synthesized type of the body is also correct for the whole let-expression, because it was synthesized in a context where the variable is bound not just to its type but to its value, so it doesn't include any extra level variables (i.e. it can be silently "strengthened"). *)
         (ctm, ety)
+    | Letonly (k, clauses, body), _ ->
+        let ctm, ety = synth_letonly ctx k clauses body in
+        (realize status ctm, ety)
     | Match _, Kinetic l -> (
         match l with
         | `Let -> raise Case_tree_construct_in_let
@@ -4894,6 +5101,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Synth (UU mode) -> Some (Wrap mode)
       | Synth (Let (_, _, _, body)) -> synth_mode body
       | Synth (Letrec (_, _, body)) -> synth_mode body
+      | Synth (Letonly (_, _, body)) -> synth_mode (locate_opt body.loc (Synth body.value))
       | Synth (Act (_, _, Some ({ value = Synth _; _ } as x))) -> synth_mode x
       | Synth (Act (_, _, Some x)) -> (
           match synth_mode x with

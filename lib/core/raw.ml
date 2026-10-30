@@ -57,6 +57,7 @@ module rec Make : functor (I : Indices) -> sig
         I.name * string located list located * 'a synth located * 'a I.suc check located
         -> 'a synth
     | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
+    | Letonly : 'k D.t * ('a, 'e) letonly_clauses * 'e synth located -> 'a synth
     | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
     | Match : {
         tm : 'a synth located;
@@ -155,6 +156,20 @@ module rec Make : functor (I : Indices) -> sig
         -> ('a, 'b Fwn.suc, 'ab) tel
     | Same : I.name * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
 
+  and (_, _) letonly_clauses =
+    | No_clauses : ('a, I.emp) letonly_clauses
+    | Clause :
+        ('a, 'e) letonly_clauses
+        * I.name
+        * string located list located
+        * 'e check located
+        * 'a check located
+        -> ('a, 'e I.suc) letonly_clauses
+    | Lock_clause :
+        ('a, 'e) letonly_clauses * string located list located
+        -> ('a, 'e) letonly_clauses
+    | Key_clause : ('a, 'e) letonly_clauses * string list located -> ('a, 'e) letonly_clauses
+
   val fwn_of_tel : ('a, 'b, 'c) tel -> 'b Fwn.t
   val mods_of_tel : ('a, 'b, 'c) tel -> string located list located list
 end =
@@ -217,6 +232,8 @@ functor
           -> 'a synth
       (* Letrec has a telescope of types, so that each can depend on the previous ones, and an equal-length vector of bound terms, all in the context extended by all the variables being bound, plus a body that is also in that context. *)
       | Letrec : ('a, 'b, 'ab) tel * ('ab check located, 'b) Vec.t * 'ab check located -> 'a synth
+      (* Letonly has a dimension, a list of clauses, and a body in the context of only the variables bound by the clauses.  The bound terms form a substitution of that dimension into the context of the types.  The body must synthesize, since the type of the whole let-only is obtained by substituting the bound terms into its type. *)
+      | Letonly : 'k D.t * ('a, 'e) letonly_clauses * 'e synth located -> 'a synth
       (* An Act can also often check, but can also synthesizes if its body does.  *)
       | Act : string located * ('m, 'n) deg * 'a check located option -> 'a synth
       (* A Match can also sometimes check, but synthesizes if it has an explicit return type or if it is nondependent and its first branch synthesizes. *)
@@ -347,6 +364,21 @@ functor
       (* Another variable with the same modality and type as the previous entry, such as y in "(x y : A)".  The type is stored only once, in the scope outside all the variables that share it, so it is processed and typechecked only once.  This can only follow an Ext or another Same. *)
       | Same : I.name * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
 
+    (* The clauses of a let-only in ambient context 'a, binding the variables of the body context 'e, as a backwards list.  An ordinary clause has a variable, a modality, a type in the body context so far, and a bound term in the ambient context.  A lock clause has a modality, by which the body context so far is locked; and a key clause has the name of a key, which acts on the bound terms so far.  When checking, we start from the right in the ambient context, peeling off its locks as we pass lock and key clauses. *)
+    and (_, _) letonly_clauses =
+      | No_clauses : ('a, I.emp) letonly_clauses
+      | Clause :
+          ('a, 'e) letonly_clauses
+          * I.name
+          * string located list located
+          * 'e check located
+          * 'a check located
+          -> ('a, 'e I.suc) letonly_clauses
+      | Lock_clause :
+          ('a, 'e) letonly_clauses * string located list located
+          -> ('a, 'e) letonly_clauses
+      | Key_clause : ('a, 'e) letonly_clauses * string list located -> ('a, 'e) letonly_clauses
+
     (* The length of a telescope is a forwards nat. *)
     let rec fwn_of_tel : type a b c. (a, b, c) tel -> b Fwn.t = function
       | Emp -> Zero
@@ -392,6 +424,9 @@ module type Resolver = sig
   (* We also need to be able to translate the 'scopes' that appear in Holes. *)
   val rescope : ('a1, 'a2) scope -> 'a1 I1.scope -> 'a2 I2.scope
 
+  (* This is how we pass to the empty scope, for the types and body of a let-only. *)
+  val empty : ('a1, 'a2) scope -> (I1.emp, I2.emp) scope
+
   (* This is how we extend a scope when passing under a binder. *)
   val snoc : ('a1, 'a2) scope -> I1.name -> ('a1 I1.suc, 'a2 I2.suc) scope
 
@@ -418,6 +453,12 @@ module Resolve (R : Resolver) = struct
     | Resolve_pv :
         ('a2, 'b, 'ab2) R.T2.Patternvars.t * ('ab1, 'ab2) R.scope
         -> ('a2, 'b, 'ab1) resolve_pv
+
+  (* The result of resolving the clauses of a let-only, along with the scope of its body. *)
+  type (_, _) resolve_letonly =
+    | Letonly_clauses :
+        ('a2, 'e2) R.T2.letonly_clauses * ('e1, 'e2) R.scope
+        -> ('a2, 'e1) resolve_letonly
 
   let rec append : type a1 a2 b ab1 ab2.
       (a1, a2) R.scope ->
@@ -490,6 +531,9 @@ module Resolve (R : Resolver) = struct
           let tys2, ctx2 = tel ctx tys ab in
           let tms2 = Vec.map (check ctx2) tms in
           Letrec (tys2, tms2, check ctx2 body)
+      | Letonly (k, clauses, body) ->
+          let (Letonly_clauses (clauses2, ctx2)) = letonly_clauses ctx clauses in
+          Letonly (k, clauses2, synth ctx2 body)
       | Act (s, fa, tm) -> Act (s, fa, Option.map (check ctx) tm)
       | Match { tm; window; sort; branches; refutables = r; highers } ->
           let tm = synth ctx tm in
@@ -617,6 +661,24 @@ module Resolve (R : Resolver) = struct
       let ctx2 = append ctx (R.T1.Namevec.none ab1) ab2 in
       List.map (fun (tm, window) -> (synth ctx2 tm, window)) (refutables ab1) in
     { refutables }
+
+  (* Resolve the clauses of a let-only, returning also the scope of its body. *)
+  and letonly_clauses : type a1 a2 e1.
+      (a1, a2) R.scope -> (a1, e1) R.T1.letonly_clauses -> (a2, e1) resolve_letonly =
+   fun ctx clauses ->
+    match clauses with
+    | No_clauses -> Letonly_clauses (No_clauses, R.empty ctx)
+    | Clause (clauses, x, modality, ty, tm) ->
+        let (Letonly_clauses (clauses2, bodyctx)) = letonly_clauses ctx clauses in
+        Letonly_clauses
+          ( Clause (clauses2, R.rename bodyctx x, modality, check bodyctx ty, check ctx tm),
+            R.snoc bodyctx x )
+    | Lock_clause (clauses, modality) ->
+        let (Letonly_clauses (clauses2, bodyctx)) = letonly_clauses ctx clauses in
+        Letonly_clauses (Lock_clause (clauses2, modality), bodyctx)
+    | Key_clause (clauses, key) ->
+        let (Letonly_clauses (clauses2, bodyctx)) = letonly_clauses ctx clauses in
+        Letonly_clauses (Key_clause (clauses2, key), bodyctx)
 
   and tel : type b a1 ab1 a2 ab2.
       (a1, a2) R.scope ->

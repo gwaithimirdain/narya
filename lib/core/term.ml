@@ -162,6 +162,13 @@ module rec Term : sig
         * ('mode, 'modality, 'a, kinetic) modal_term
         * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 's) term
         -> ('mode, 'a, 's) term
+    | Letonly : {
+        termctx : ('mode, 'c, 'b) termctx;
+        env : ('mode, 'a, 'k, 'b) env;
+        tm : ('mode, 'b, kinetic) term;
+        ty : ('mode, 'b, kinetic) term;
+      }
+        -> ('mode, 'a, kinetic) term
     | Lam :
         'k variables
         * 'n D.t
@@ -489,6 +496,14 @@ end = struct
         (* A let is also always zero-dimensional. *)
         * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 's) term
         -> ('mode, 'a, 's) term
+    (* A 'let only' binds some variables, forming a context that doesn't extend the ambient one, and whose values are given by a term environment in the ambient context, of some dimension 'k.  The body lives in that context of only those variables, without their values.  Evaluation just evaluates the environment and then the body in it.  The context, and the type of the body, are stored only for display (the latter so that a body that doesn't synthesize on its own can be displayed with an ascription).  A let-only is always kinetic, as are its bound terms and its body: a case tree in any of them is bound to a metavariable as usual. *)
+    | Letonly : {
+        termctx : ('mode, 'c, 'b) termctx;
+        env : ('mode, 'a, 'k, 'b) env;
+        tm : ('mode, 'b, kinetic) term;
+        ty : ('mode, 'b, kinetic) term;
+      }
+        -> ('mode, 'a, kinetic) term
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)
     | Lam :
         'k variables
@@ -770,6 +785,28 @@ let field mode tm f ins = Field (Kinetic, modal_id mode tm, f, ins)
 let weaken : type mode b modality n s.
     mode Mode.t -> (mode, b, s) term -> (mode, (b, (modality, n) dim_entry) snoc, s) term =
  fun mode tm -> Weaken (plus_no_lock mode, tm, plus_no_lock mode)
+
+(* Lock a term environment by a modality, given the extensions of its domain and codomain by locks for that modality.  Each generator of the modality yields a Lock, whose domain extension consists of the corresponding lock in the given domain extension together with the dimension entries after it.  Any dimension entries before the innermost lock are accounted for by an identity Prekey. *)
+let rec lock_term_env : type dom mu cod a amu m b bmu.
+    (cod, a, m, b) env ->
+    (a, cod, mu, dom, amu) plus_with_locks ->
+    (b, cod, mu, dom, bmu) plus_lock ->
+    (dom, amu, m, bmu) env =
+ fun env plus_tgt plus ->
+  match plus with
+  | Plus_lock (Zero (Eq mode), Zero) -> (
+      match plus_tgt with
+      | Plus_with_locks (Zero, Zero _) -> env
+      | _ ->
+          Prekey
+            { env; cell = Modalcell.id (Modality.id mode); plus_src = plus_no_lock mode; plus_tgt })
+  | Plus_lock (Suc (lock, Inject (Lock_lock g), Suc (Zero, Lock _)), Suc (comp, Lock g')) ->
+      let Eq = Modality.Gen.src_uniq g g' in
+      let Eq = Modality.Gen.tgt_uniq g g' in
+      let (Split_lock (rest, g'', last)) = split_lock plus_tgt in
+      let Eq = Modality.Gen.src_uniq g g'' in
+      let Eq = Modality.Gen.tgt_uniq g g'' in
+      Lock { env = lock_term_env env rest (Plus_lock (lock, comp)); gen = g; plus_tgt = last }
 
 (* Whether a term failed to typecheck.  We look through wrappers that act on a single subterm, such as weakenings and degeneracies, since such a wrapper of a failed term also evaluates to a failed value. *)
 let rec is_failed : type mode a s. (mode, a, s) term -> bool = function

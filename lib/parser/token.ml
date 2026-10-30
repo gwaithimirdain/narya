@@ -50,6 +50,10 @@ type t =
   | Option
   | Quit
   | Rec
+  | Only
+  | Lock
+  (* The keyword "key", as opposed to a Key operation "#…" above. *)
+  | Keyword_key
   | Return
   | Section
   | Fmt
@@ -210,6 +214,9 @@ let to_string = function
   | End -> "end"
   | Let -> "let"
   | Rec -> "rec"
+  | Only -> "only"
+  | Lock -> "lock"
+  | Keyword_key -> "key"
   | In -> "in"
   | Op s -> s
   | Ident s -> String.concat "." s
@@ -290,6 +297,9 @@ let word_like_edge (side : [ `Left | `Right ]) (tok : t) : bool =
   | Solve
   | Split
   | Synth
+  | Only
+  | Lock
+  | Keyword_key
   | Undo -> true
   | Field (_, strs) | Key strs -> (
       match side with

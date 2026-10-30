@@ -527,6 +527,10 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     { build = (fun fa -> lazy_eval (act_env flenv (opt_op_of_sface fa)) v) });
            })
         body
+  | Letonly { env = tmenv; tm = body; _ } ->
+      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment, as for MetaEnv. *)
+      let (Plus m_n) = D.plus (dim_term_env tmenv) in
+      eval (eval_env env m_n tmenv) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
   | Act (_, x, s, _) ->
       let k = dim_env env in
@@ -1849,6 +1853,24 @@ and norm_of_vals_tube : type mode n k nk.
   TubeOf.mmap
     { map = (fun fab [ tm; ty ] -> norm_of_val new_tm_tbl (sface_of_tface fab) tm ty) }
     [ tms; tys ]
+
+(* The type of a term evaluated in a possibly higher-dimensional environment: its type evaluated there, instantiated at the term evaluated at all the strict faces of that environment. *)
+and type_of_eval : type mode n b.
+    (mode, n, b) env -> (mode, b, kinetic) term -> (mode, b, kinetic) term -> (mode, kinetic) value
+    =
+ fun env tm ty ->
+  let tbl = Hashtbl.create 10 in
+  let tyargs =
+    TubeOf.build D.zero
+      (D.zero_plus (dim_env env))
+      {
+        build =
+          (fun fa ->
+            let fa = sface_of_tface fa in
+            let fenv = act_env env (opt_op_of_sface fa) in
+            norm_of_val tbl fa (eval_term fenv tm) (eval_term fenv ty));
+      } in
+  inst (eval_term env ty) tyargs
 
 (* Given a type belonging to the m+n dimensional universe instantiated at tyargs, compute the instantiation of the m-dimensional universe that its instantiation belongs to. *)
 and tyof_inst : type mode m n mn.

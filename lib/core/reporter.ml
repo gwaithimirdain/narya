@@ -133,6 +133,7 @@ module Code = struct
         -> t
     | Not_enough_domains : 'a D.t -> t
     | Invalid_higher_function : string -> t
+    | Invalid_higher_letonly : string -> t
     | Invalid_nullary_application : t
     | Expected_nullary_application : t
     | Checking_tuple_at_degenerated_record : printable -> t
@@ -227,6 +228,7 @@ module Code = struct
     | Unknown_modality : string -> t
     | Unknown_modalcell : string -> t
     | Key_mismatch : ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'p, 'd) Modality.t -> t
+    | Letonly_lock_mismatch : ('a, 'm, 'b) Modality.t * ('c, 'p, 'd) Modality.t -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
     | Intangible_modality : ('a, 'm, 'b) Modality.t -> t
     | Nontransparent_window_modality :
@@ -264,7 +266,7 @@ module Code = struct
     | Evaluating_display_term : string -> t
     | Show : string * printable -> t
     | Comment_end_in_string : t
-    | Checking_canonical_at_nonuniverse : string * printable -> t
+    | Universe_expected : [ `Check | `Synth ] * string * printable -> t
     | Bare_case_tree_construct : string -> t
     | Wrong_boundary_of_record : int -> t
     | Invalid_constructor_type : Constr.t * (string, Unequal.t) Either.t -> t
@@ -272,7 +274,7 @@ module Code = struct
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : t
     | Locked_constant : printable -> t
-    | Hidden_variable : t
+    | Hidden_variable : [ `Key | `Lock ] -> t
     | Missing_key : ('dom1, 'mu1, 'cod1) Modality.t * ('dom2, 'mu2, 'cod2) Modality.t -> t
     | Axiom_in_parametric_definition : printable -> t
     | Modality_not_sinister : ('dom, 'mu, 'cod) Modality.t -> t
@@ -363,6 +365,7 @@ module Code = struct
     | Unequal_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
+    | Invalid_higher_letonly _ -> Error
     | Invalid_nullary_application -> Error
     | Expected_nullary_application -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
@@ -427,6 +430,7 @@ module Code = struct
     | Unknown_modality _ -> Error
     | Unknown_modalcell _ -> Error
     | Key_mismatch _ -> Error
+    | Letonly_lock_mismatch _ -> Error
     | Modalcell_mismatch _ -> Error
     | Intangible_modality _ -> Error
     | Nontransparent_window_modality _ -> Error
@@ -455,7 +459,7 @@ module Code = struct
     | Notation_defined _ -> Info
     | Show _ -> Info
     | Comment_end_in_string -> Warning
-    | Checking_canonical_at_nonuniverse _ -> Error
+    | Universe_expected _ -> Error
     | Bare_case_tree_construct _ -> Hint
     | Wrong_boundary_of_record _ -> Error
     | Invalid_constructor_type _ -> Error
@@ -463,7 +467,7 @@ module Code = struct
     | Missing_constructor_type _ -> Error
     | Locked_variable -> Error
     | Locked_constant _ -> Error
-    | Hidden_variable -> Error
+    | Hidden_variable _ -> Error
     | Missing_key _ -> Error
     | Axiom_in_parametric_definition _ -> Error
     | Modality_not_sinister _ -> Error
@@ -555,7 +559,7 @@ module Code = struct
     | Locked_variable -> "E0310"
     | Locked_constant _ -> "E0311"
     | Axiom_in_parametric_definition _ -> "E0312"
-    | Hidden_variable -> "E0313"
+    | Hidden_variable _ -> "E0313"
     (* Bidirectional typechecking and case trees *)
     | Nonsynthesizing _ -> "E0400"
     | Unequal_synthesized_type _ -> "E0401"
@@ -590,6 +594,7 @@ module Code = struct
     | Invalid_higher_function _ -> "E0706"
     | Invalid_nullary_application -> "E0707"
     | Expected_nullary_application -> "E0708"
+    | Invalid_higher_letonly _ -> "E0709"
     (* Record fields *)
     | No_such_field _ -> "E0800"
     | Wrong_dimension_of_field _ -> "E0801"
@@ -637,7 +642,7 @@ module Code = struct
     | Duplicate_method_in_comatch _ -> "E1404"
     | Invalid_method_in_comatch -> "E1405"
     (* Canonical types *)
-    | Checking_canonical_at_nonuniverse _ -> "E1500"
+    | Universe_expected _ -> "E1500"
     | Duplicate_field_in_record _ -> "E1501"
     | Duplicate_method_in_codata _ -> "E1502"
     | Duplicate_constructor_in_data _ -> "E1503"
@@ -659,6 +664,7 @@ module Code = struct
     | Missing_key _ -> "E1705"
     | Unknown_modalcell _ -> "E1706"
     | Key_mismatch _ -> "E1707"
+    | Letonly_lock_mismatch _ -> "E1716"
     | Modality_not_sinister _ -> "E1711"
     | Wrong_locking_modality _ -> "E1712"
     | Modal_field_filtered_away _ -> "E1713"
@@ -803,6 +809,7 @@ module Code = struct
       | Not_enough_domains dim ->
           textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
       | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
+      | Invalid_higher_letonly str -> textf "invalid higher-dimensional let-only: %s" str
       | Invalid_nullary_application -> text "invalid nullary application"
       | Expected_nullary_application -> text "expected nullary application"
       | Checking_tuple_at_degenerated_record r ->
@@ -1031,6 +1038,9 @@ module Code = struct
           textf "vertical target %s of key %s doesn't match any suffix of context locks %s"
             (Modality.to_string (Modalcell.vtgt key))
             (Modalcell.to_string key) (Modality.to_string ctx_lock)
+      | Letonly_lock_mismatch (lock, ctx_lock) ->
+          textf "let-only lock %s doesn't match any suffix of context locks %s"
+            (Modality.to_string lock) (Modality.to_string ctx_lock)
       | Intangible_modality m -> textf "modality %s is not tangible" (Modality.to_string m)
       | Nontransparent_window_modality (m, _, `Recursive) ->
           textf "window modality %s must be pellucid since the datatype has recursive constructors"
@@ -1138,8 +1148,10 @@ module Code = struct
       | Show (str, x) -> textf "%s: %a" str pp_printed (print x)
       | Comment_end_in_string ->
           text "comment-end sequence `} in quoted string: cannot be commented out"
-      | Checking_canonical_at_nonuniverse (tm, ty) ->
-          textf "checking %s at non-universe %a" tm pp_printed (print ty)
+      | Universe_expected (`Check, str, ty) ->
+          textf "checking %s at non-universe %a" str pp_printed (print ty)
+      | Universe_expected (`Synth, str, ty) ->
+          textf "synthesizing %s gave non-universe %a" str pp_printed (print ty)
       | Bare_case_tree_construct str ->
           textf "%s encountered outside case tree, wrapping in implicit let-binding" str
       | Duplicate_method_in_codata fld ->
@@ -1179,7 +1191,8 @@ module Code = struct
           textf
             "constant %a is or uses a nonparametric axiom, can't appear inside an external degeneracy"
             pp_printed (print a)
-      | Hidden_variable -> text "variable hidden by key application"
+      | Hidden_variable `Key -> text "variable hidden by key application"
+      | Hidden_variable `Lock -> text "variable hidden by lock"
       | Axiom_in_parametric_definition a ->
           textf
             "constant %a is or uses a nonparametric axiom, can't be used in a parametric command"
