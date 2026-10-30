@@ -322,35 +322,12 @@ let unparse_meta_name : type mode x b s lt ls rt rs.
     (mode, x, b, s) Meta.t -> (lt, ls, rt, rs) parse located =
  fun v -> unlocated (Ident ([ meta_var_name v ], []))
 
-(* The variables bound to the other metavariables in a mutual "let rec" block, in the contexts and definitions of those metavariables, are not displayed as bindings; instead the variables are displayed as the names of those metavariables.  (Variables bound to metavariables from other "let rec" blocks, such as enclosing ones, are displayed as usual.)  This tests whether a term bound to a variable is a metavariable from the same block as a given one, if any (possibly weakened, as the value of a let-bound variable in a context is), and if so returns its name. *)
-let rec letrec_meta_name : type mode b s.
-    sib:Meta.wrapped option -> (mode, b, s) term -> string option =
- fun ~sib tm ->
-  match (sib, tm) with
-  | Some (Wrap w), Meta (v, _) when Meta.letrec_siblings w v -> Some (meta_var_name v)
-  | _, Key { tm; cell; _ } when Modalcell.is_id cell -> letrec_meta_name ~sib tm
-  | _ -> None
-
-(* The metavariable whose "let rec" siblings are hidden in the clauses of a let-only, if its body is one. *)
-let letonly_sib : type mode b s. (mode, b, s) term -> Meta.wrapped option = function
-  | Meta (v, _) -> Some (Wrap v)
-  | _ -> None
-
-(* Whether all the entries of the context of a let-only are variables bound to "let rec" siblings of its body, which are not displayed. *)
-let letonly_all_hidden : type mode i b s. (mode, i, b) ordered_termctx -> (mode, b, s) term -> bool
-    =
- fun ctx body ->
-  let sib = letonly_sib body in
-  let rec go : type i b. (mode, i, b) ordered_termctx -> bool = function
-    | Emp _ -> true
-    | Ext (ctx, { vis = Alias _; _ }, _, Zero) -> go ctx
-    | Ext (ctx, { bindings; _ }, _, _) -> (
-        match (CubeOf.find_top bindings).tm with
-        | Some tm -> Option.is_some (letrec_meta_name ~sib tm) && go ctx
-        | None -> false)
-    | Weaken (ctx, _) -> go ctx
-    | Lock _ -> false in
-  Option.is_some sib && go ctx
+(* Whether the context of a let-only has no clauses to display, because it contains only aliases and weakenings. *)
+let rec letonly_empty : type mode i b. (mode, i, b) ordered_termctx -> bool = function
+  | Emp _ -> true
+  | Ext (ctx, { vis = Alias _; _ }, _, Zero) -> letonly_empty ctx
+  | Weaken (ctx, _) -> letonly_empty ctx
+  | Ext _ | Lock _ -> false
 
 (* Whether we expect a given term to synthesize, after being unparsed.  This applies to potential terms as well as kinetic ones, since a metavariable can be displayed as its definition, which is a potential term.  The set ~visiting contains the metavariables whose definitions we are inside of, whose occurrences are displayed by name. *)
 let rec synths : type mode n s. (mode, n, s) term -> bool =
@@ -615,8 +592,7 @@ let rec unparse : type mode n lt ls rt rs s.
       (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
       match displayed_metadef v with
       | Some { tm = `Defined def; _ } ->
-          MetaDefs.while_unparsing v @@ fun () ->
-          unparse_meta_definition ~sib:(Wrap v) vars def li ri
+          MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
       | _ -> unparse_meta_name v)
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
@@ -684,10 +660,11 @@ let rec unparse : type mode n lt ls rt rs s.
                (prefix ~notn:letin
                   ~inner:(Multiple (wstok Let, binding, wstok In))
                   ~last:body ~right_ok)))
+  (* If a let-only has no clauses to display, we display just its body, without its ascription. *)
+  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; _ } when letonly_empty ctx ->
+      let _, bodyvars = unparse_letonly_clauses vars ctx tmenv in
+      unparse bodyvars body li ri
   (* A let-only whose body is a metavariable that isn't a bare one arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
-  | Letonly { termctx = Permute (_, ctx); tm = Meta (v, _) as body; _ }
-    when (not (Meta.is_bare v)) && Display.lets () = `Names && letonly_all_hidden ctx body ->
-      unparse_meta_name v
   | Letonly { env = tmenv; tm = Meta (v, _); _ }
     when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
       let inner =
@@ -702,14 +679,9 @@ let rec unparse : type mode n lt ls rt rs s.
             (unlocated
                (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v)
                   ~right_ok:No.minusomega_lt_minusomegaplusone)))
-  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; _ }
-    when letonly_all_hidden ctx body ->
-      (* If all the bound variables are hidden, so are the "let only" and its body's ascription. *)
-      let _, bodyvars = unparse_letonly_clauses ?sib:(letonly_sib body) vars ctx tmenv in
-      unparse bodyvars body li ri
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty } -> (
       (* The bound terms are unparsed in the ambient context, while the types and the body are unparsed in the context of only the bound variables. *)
-      let binding, bodyvars = unparse_letonly_clauses ?sib:(letonly_sib body) vars ctx tmenv in
+      let binding, bodyvars = unparse_letonly_clauses vars ctx tmenv in
       (* The body must synthesize, so if it wouldn't after unparsing, we ascribe it with its stored type. *)
       let unparse_body : type rt rs. (rt, rs) No.iinterval -> (_, _, rt, rs) parse located =
        fun ri ->
@@ -830,87 +802,60 @@ let rec unparse : type mode n lt ls rt rs s.
   (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
   | Failed _ -> fatal (Dependent "unparsing failed component")
 
-(* Unparse the definition of a metavariable.  The definition of a "let rec" metavariable is wrapped in let-bindings of the variables of its mutual block to their metavariables, which we don't display, instead displaying those variables as the names of the metavariables (see letrec_meta_name). *)
-and unparse_meta_definition : type mode n lt ls rt rs s.
-    sib:Meta.wrapped ->
-    n Names.t ->
-    (mode, n, s) term ->
-    (lt, ls) No.iinterval ->
-    (rt, rs) No.iinterval ->
-    (lt, ls, rt, rs) parse located =
- fun ~sib vars tm li ri ->
-  match tm with
-  | Let (_, Modal (modality, _, value), body) -> (
-      match (Modality.compare_id modality, letrec_meta_name ~sib:(Some sib) value) with
-      | Eq, Some name ->
-          (* We insert the metavariable's name into the context of names as the name for its corresponding variable.  This is correct and safe to do without uniquification because a metavariable name can never be a valid local variable name. *)
-          unparse_meta_definition ~sib (Names.unsafe_add_named_var vars D.zero name) body li ri
-      | _ -> unparse vars tm li ri)
-  | _ -> unparse vars tm li ri
-
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
  fun vars tm -> { unparse = (fun li ri -> unparse vars tm li ri) }
 
 (* Unparse the clauses of a let-only, walking its body context and its environment of bound terms together, and returning also the names of the body context.  The bound terms are unparsed in the ambient context, while each type is unparsed in the body context up to its variable.  The ambient context of the bound terms to the left of a lock or key is obtained by splitting off the locks it stripped, as for a key applied to a term. *)
 and unparse_letonly_clauses : type mode n i k b.
-    ?sib:Meta.wrapped ->
     n Names.t ->
     (mode, i, b) ordered_termctx ->
     (mode, n, k, b) env ->
     observation Bwd.t * b Names.t =
- fun ?sib vars ctx tmenv ->
-  let acc, pending, names = unparse_letonly_clauses_pending ~sib vars ctx tmenv in
+ fun vars ctx tmenv ->
+  let acc, pending, names = unparse_letonly_clauses_pending vars ctx tmenv in
   (flush_letonly_lock acc pending, names)
 
 (* Adjacent locks are displayed as a single lock clause by their composite modality, so while walking the clauses we keep track of the composite of the locks seen since the last other clause, whose source is the mode at which the walk has arrived. *)
 and unparse_letonly_clauses_pending : type mode n i k b.
-    sib:Meta.wrapped option ->
     n Names.t ->
     (mode, i, b) ordered_termctx ->
     (mode, n, k, b) env ->
     observation Bwd.t * mode letonly_lock * b Names.t =
- fun ~sib vars ctx tmenv ->
+ fun vars ctx tmenv ->
   match (ctx, tmenv) with
   | Emp _, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty)
   (* An alias has no checked variables, so it isn't substituted for. *)
-  | Ext (ctx, { vis = Alias _; _ }, _, Zero), _ ->
-      unparse_letonly_clauses_pending ~sib vars ctx tmenv
+  | Ext (ctx, { vis = Alias _; _ }, _, Zero), _ -> unparse_letonly_clauses_pending vars ctx tmenv
   | ( Ext (ctx, ({ bindings; plus_lock; filter = _; vis } as e), _, (Suc (Zero, Dim _) as comp)),
-      Ext { env; values = Modal (modality, plus, tms); _ } ) -> (
+      Ext { env; values = Modal (modality, plus, tms); _ } ) ->
       let Ext_dim = ext_kind e comp in
       let top = CubeOf.find_top bindings in
-      let acc, names = unparse_letonly_clauses ?sib vars ctx env in
+      let acc, names = unparse_letonly_clauses vars ctx env in
       let n = CubeOf.dim bindings in
-      match Option.bind top.tm (letrec_meta_name ~sib) with
-      | Some name ->
-          (* A let-rec variable is bound in a context that includes some of its siblings. We omit those from a displayed let-only, but we add their metavariable names to the context of names as the names for their corresponding variable.  This is correct and safe to do without uniquification because a metavariable name can never be a valid local variable name. *)
-          (acc, No_letonly_lock, Names.unsafe_add_named_var names n name)
-      | None ->
-          (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
-          let name =
-            match vis with
-            | Vis { vars = xs; _ } -> NICubeOf.find_top xs
-            | Invis { hints } -> `Anon hints in
-          let x, names = Names.add_cube n names name in
-          let ty =
-            unparse (Names.add_lock names plus_lock) (uninst_letonly_type n top.ty)
-              No.Interval.entire No.Interval.entire in
-          let tm =
-            unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
-              No.Interval.entire in
-          let acc = letonly_sep acc <: Term (unparse_var x) <: mktok Colon in
-          let acc =
-            match Modality.compare_id modality with
-            | Eq -> acc
-            | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
-          (acc <: Term ty <: mktok Coloneq <: Term tm, No_letonly_lock, names))
+      (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
+      let name =
+        match vis with
+        | Vis { vars = xs; _ } -> NICubeOf.find_top xs
+        | Invis { hints } -> `Anon hints in
+      let x, names = Names.add_cube n names name in
+      let ty =
+        unparse (Names.add_lock names plus_lock) (uninst_letonly_type n top.ty) No.Interval.entire
+          No.Interval.entire in
+      let tm =
+        unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
+          No.Interval.entire in
+      let acc = letonly_sep acc <: Term (unparse_var x) <: mktok Colon in
+      let acc =
+        match Modality.compare_id modality with
+        | Eq -> acc
+        | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
+      (acc <: Term ty <: mktok Coloneq <: Term tm, No_letonly_lock, names)
   (* A weakening entry, which can occur in the context of a metavariable, contributes nothing. *)
-  | Weaken (ctx, _), _ -> unparse_letonly_clauses_pending ~sib vars ctx tmenv
+  | Weaken (ctx, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
   | Lock (ctx, cgen), Lock { env; gen; plus_tgt = Plus_with_locks (comp, _) } ->
       let Eq = Modality.Gen.tgt_uniq cgen gen in
-      let acc, pending, names =
-        unparse_letonly_clauses_pending ~sib (Names.split vars comp) ctx env in
+      let acc, pending, names = unparse_letonly_clauses_pending (Names.split vars comp) ctx env in
       let pending =
         match pending with
         | No_letonly_lock -> Letonly_lock (Modality.of_gen gen)
@@ -918,7 +863,7 @@ and unparse_letonly_clauses_pending : type mode n i k b.
       (acc, pending, Names.add_gen_lock names)
   | _, Prekey { env; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } ->
       let acc, names =
-        unparse_letonly_clauses ?sib (Names.add_lock (Names.split vars comp) plus_src) ctx env in
+        unparse_letonly_clauses (Names.add_lock (Names.split vars comp) plus_src) ctx env in
       (* A key is displayed as a sequence of key clauses, one for each piece of its vertical composite, innermost first.  An identity key is omitted, since without it the bound terms to its left would be checked in the same context except for some variables that they don't use. *)
       ( List.fold_left
           (fun acc parts ->
