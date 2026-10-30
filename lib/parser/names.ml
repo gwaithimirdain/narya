@@ -18,11 +18,18 @@ type 'b ctx =
       -> ('b, ('modality, 'n) dim_entry) snoc ctx
   | Lock : 'b ctx -> ('b, 'modality lock_entry) snoc ctx
 
-(* We also store a set of which variables already exist, so that we can be sure of creating a new unused one, and a set of the names of variables that have been removed from the context but are still in textual scope (see "remove"). *)
-type 'b t = { ctx : 'b ctx; used : StringSet.t; hidden : StringSet.t }
+(* We also store a set of which variables already exist, so that we can be sure of creating a new unused one, and a set of the names of variables that have been removed from the context but are still in textual scope (see "remove").  Finally, we store the names of the aliases in scope that refer to metavariables, such as the variables of a let-rec in the definitions of its metavariables (see Check.check_letrec_bindings).  An alias doesn't extend the checked context, so it has no place in the list of cubes of names, but an occurrence of its metavariable is displayed with its name. *)
+type 'b t = {
+  ctx : 'b ctx;
+  used : StringSet.t;
+  hidden : StringSet.t;
+  aliases : string Meta.WrapMap.t;
+}
+
 type wrapped = Wrap : 'n t -> wrapped
 
-let empty : type mode. mode emp t = { ctx = Emp; used = StringSet.empty; hidden = StringSet.empty }
+let empty : type mode. mode emp t =
+  { ctx = Emp; used = StringSet.empty; hidden = StringSet.empty; aliases = Meta.WrapMap.empty }
 
 (* Extract the entry at an insertion position from a name-context, returning the rest of the context and the extracted variable-cube and field-map. *)
 let rec extract_ctx : type a x n b.
@@ -53,9 +60,9 @@ let entry_names : type n. (n, string) gvariables -> (string, string) Abwd.t -> s
 
 (* Remove an entry from a name-context, for displaying a term that doesn't depend on it, such as the domain of a pi-type whose variables are bound all at once.  Its variables are usually still in textual scope wherever that term is displayed, so we remember their names as hidden, so that a constant with one of those names will be displayed so as not to be captured by them. *)
 let remove : type a x n b. b t -> (a, x, n, b) insert -> a t =
- fun { ctx; used; hidden } i ->
+ fun { ctx; used; hidden; aliases } i ->
   let ctx, (vars, fields) = extract_ctx ctx i in
-  { ctx; used; hidden = List.fold_right StringSet.add (entry_names vars fields) hidden }
+  { ctx; used; hidden = List.fold_right StringSet.add (entry_names vars fields) hidden; aliases }
 
 (* Permute a name-context, e.g. to match the permutation stored in a match branch (which moves the new pattern variables before the existing variables now defined in terms of them).  Mirrors Tctx.perm_dom over the name context. *)
 let rec permute_ctx : type a b. (a, b) permute -> b ctx -> a ctx =
@@ -70,7 +77,7 @@ let rec permute_ctx : type a b. (a, b) permute -> b ctx -> a ctx =
       Lock (permute_ctx p ctx)
 
 let permute : type a b. (a, b) permute -> b t -> a t =
- fun p { ctx; used; hidden } -> { ctx = permute_ctx p ctx; used; hidden }
+ fun p { ctx; used; hidden; aliases } -> { ctx = permute_ctx p ctx; used; hidden; aliases }
 
 (* let rec bsplit_ctx : type a b ab x y z. ab ctx -> (x, b, y, a, z, ab) Tctx.bcomp -> a ctx =
     fun ctx ab ->
@@ -93,7 +100,7 @@ let rec split_ctx : type a b ab x y z. ab ctx -> (x, b, y, a, z, ab) Tctx.comp -
   | Lock ctx, Suc (ab, Lock _) -> split_ctx ctx ab
 
 let split : type a b ab x y z. ab t -> (x, b, y, a, z, ab) Tctx.comp -> a t =
- fun { ctx; used; hidden } ab -> { ctx = split_ctx ctx ab; used; hidden }
+ fun { ctx; used; hidden; aliases } ab -> { ctx = split_ctx ctx ab; used; hidden; aliases }
 
 let cubevar x fa : string list =
   let fa = string_of_sface fa in
@@ -101,7 +108,7 @@ let cubevar x fa : string list =
 
 (* Look up an index variable to find a name for it. *)
 let lookup : type mode a. a t -> (mode, a) index -> string list =
- fun { ctx; used = _; hidden = _ } (Index (x, fa, _, Plus_with_locks (comp, _))) ->
+ fun { ctx; used = _; hidden = _; aliases = _ } (Index (x, fa, _, Plus_with_locks (comp, _))) ->
   let rec lookup : type a modality k n an.
       an ctx -> (a, modality, n, an) insert -> (k, n) sface -> string list =
    fun ctx x fa ->
@@ -119,7 +126,7 @@ let lookup : type mode a. a t -> (mode, a) index -> string list =
 
 (* Look up an index variable together with a field, to find a name for the combination, if there is one. *)
 let lookup_field : type mode a. a t -> (mode, a) index -> string -> string list option =
- fun { ctx; used = _; hidden = _ } (Index (x, fa, _, Plus_with_locks (comp, _))) f ->
+ fun { ctx; used = _; hidden = _; aliases = _ } (Index (x, fa, _, Plus_with_locks (comp, _))) f ->
   let rec lookup : type a modality k n an.
       an ctx -> (a, modality, n, an) insert -> (k, n) sface -> string list option =
    fun ctx x fa ->
@@ -140,7 +147,7 @@ let primes = Unicode.primes
 
 (* Whether a name is currently that of a variable in textual scope (perhaps behind a lock), including a field variable and a hidden one.  This is what a raw identifier consisting of that name (perhaps with a face) would resolve to, so a constant displayed with that name would be captured by it. *)
 let bound : type b. b t -> string -> bool =
- fun { ctx; used = _; hidden } x ->
+ fun { ctx; used = _; hidden; aliases = _ } x ->
   let rec go : type b. b ctx -> bool = function
     | Emp -> false
     | Snoc (ctx, vars, fields) -> List.mem x (entry_names vars fields) || go ctx
@@ -149,11 +156,12 @@ let bound : type b. b t -> string -> bool =
 
 (* Whether a name has been used, so that it won't be given to a new bound variable. *)
 let is_used : type b. b t -> string -> bool =
- fun { ctx = _; used; hidden = _ } x -> StringSet.mem x used
+ fun { ctx = _; used; hidden = _; aliases = _ } x -> StringSet.mem x used
 
 (* Reserve some names, so that they won't be given to new bound variables. *)
 let reserve : type b. string list -> b t -> b t =
- fun xs { ctx; used; hidden } -> { ctx; used = List.fold_right StringSet.add xs used; hidden }
+ fun xs { ctx; used; hidden; aliases } ->
+  { ctx; used = List.fold_right StringSet.add xs used; hidden; aliases }
 
 (* Make a variable name unique, adding the new one to the list of used variables and returning it. *)
 let uniquify : string -> StringSet.t -> string * [ `Original | `Renamed ] * StringSet.t =
@@ -216,13 +224,14 @@ let uniquify_cube : type n left right a.
 
 (* Add a new cube variable at a specified dimension, generating a fresh version of its name if necessary to avoid conflicts, and assigning an autogenerated name if it is unnamed. *)
 let add_cube : type m n b. n D.t -> b t -> binder_name -> string * (b, (m, n) dim_entry) snoc t =
- fun n { ctx; used; hidden } name ->
+ fun n { ctx; used; hidden; aliases } name ->
   let name, _, used = uniquify_opt (fun x -> (x, "")) name used in
   ( name,
     {
       ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton name), Abwd.empty);
       used;
       hidden;
+      aliases;
     } )
 
 (* Add a cube of variables that are named individually by face, as for a pattern variable of a match branch whose boundary was given explicitly.  The names are taken from the given list, in face order with the top face last.  If there aren't enough of them the rest are anonymous, but that shouldn't happen since the checker verified that there is exactly one for each face. *)
@@ -231,7 +240,7 @@ let add_boundary : type m n b a c ac.
     b t ->
     (a, c, ac) Indices.IndexedNamevec.t ->
     (n, string) gvariables * (b, (m, n) dim_entry) snoc t =
- fun n { ctx; used; hidden } names ->
+ fun n { ctx; used; hidden; aliases } names ->
   let module Build = NICubeOf.Traverse (struct
     type 'b t = string option list
   end) in
@@ -246,7 +255,7 @@ let add_boundary : type m n b a c ac.
       (Indices.IndexedNamevec.to_list names) in
   let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
   let vars = Variables (D.zero, D.zero_plus n, vars) in
-  (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used; hidden })
+  (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used; hidden; aliases })
 
 (* The variables bound by one argument of a constructor in a match branch, as they are to be displayed: either a single (cube) variable, or a cube of variables naming all the faces of its boundary. *)
 type pattern_var =
@@ -274,7 +283,7 @@ let rec add_match_vars : type n mode annotations a b ab.
 (* Add a single (cube) self-variable for a record type, with its fields exposed as named variables (mirroring Ctx.vis_fields and of_ordered_ctx).  The self-variable itself is anonymous: its fields are exposed so that field-projections of the self read back as field variables.  Unlike other bound variables, the field variables are NOT uniquified: their names are exactly the record's field names, which cannot be renamed without changing the meaning.  Hence if any field name clashes with a name already in scope (so that displaying it as a field variable would shadow that name), we return None, and the caller falls back to self-variable syntax.  On success, returns the field variable names (= the field names, in order) for use as the field patterns. *)
 let add_fields : type b n m.
     n D.t -> b t -> string list -> ((b, (m, n) dim_entry) snoc t * string list) option =
- fun n { ctx; used; hidden } field_names ->
+ fun n { ctx; used; hidden; aliases } field_names ->
   let rec go used = function
     | [] -> Some (Abwd.empty, used)
     | f :: fs -> (
@@ -292,28 +301,29 @@ let add_fields : type b n m.
             ctx = Snoc (ctx, Variables (n, D.plus_zero n, NICubeOf.singleton self_name), fields);
             used;
             hidden;
+            aliases;
           },
           field_names )
 
 (* Add a cube of variables, generating a fresh version of each of their names, and assigning autogenerated names to unnamed ones. *)
 let add : type b m n. b t -> n variables -> (n, string) gvariables * (b, (m, n) dim_entry) snoc t =
- fun { ctx; used; hidden } (Variables (m, mn, names)) ->
+ fun { ctx; used; hidden; aliases } (Variables (m, mn, names)) ->
   let names, used = uniquify_cube (fun x -> (x, "")) names used in
   let vars = Variables (m, mn, names) in
-  (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used; hidden })
+  (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used; hidden; aliases })
 
 (* Add a cube of already-named variables, generating a fresh version of each of their names. *)
 let add_strings : type b m n.
     b t -> (n, string) gvariables -> (n, string) gvariables * (b, (m, n) dim_entry) snoc t =
- fun { ctx; used; hidden } (Variables (m, mn, names)) ->
+ fun { ctx; used; hidden; aliases } (Variables (m, mn, names)) ->
   let names, used = uniquify_cube (fun x -> (`Named x, "")) names used in
   let vars = Variables (m, mn, names) in
-  (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used; hidden })
+  (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used; hidden; aliases })
 
 (* Add a partially-cube variable as a full cube of non-cube variables, with face names explicitly concatenated with the variable names, making all variables named. *)
 let add_full : type b k mn.
     b t -> mn variables -> (mn, string) gvariables * (b, (k, mn) dim_entry) snoc t =
- fun { ctx; used; hidden } (Variables (m, m_n, xs)) ->
+ fun { ctx; used; hidden; aliases } (Variables (m, m_n, xs)) ->
   let (Wrap (newxs, _)) =
     NICubeOf.NFold.build_left (D.plus_out m m_n)
       {
@@ -326,7 +336,7 @@ let add_full : type b k mn.
       N.zero in
   let names, used = uniquify_cube (fun x -> x) newxs used in
   let vars = Variables (D.zero, D.zero_plus (D.plus_out m m_n), names) in
-  (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used; hidden })
+  (vars, { ctx = Snoc (ctx, vars, Abwd.empty); used; hidden; aliases })
 
 let rec add_lock : type a dom modality mode am.
     a t -> (a, mode, modality, dom, am) plus_lock -> am t =
@@ -334,20 +344,53 @@ let rec add_lock : type a dom modality mode am.
   | Plus_lock (Zero _, Zero) -> ctx
   | Plus_lock (Suc (lock, Inject (Lock_lock _), Suc (Zero, Lock g1)), Suc (comp, Lock g2)) ->
       let Eq = Modality.Gen.tgt_uniq g1 g2 in
-      let { ctx; used; hidden } = add_lock ctx (Plus_lock (lock, comp)) in
-      { ctx = Lock ctx; used; hidden }
+      let { ctx; used; hidden; aliases } = add_lock ctx (Plus_lock (lock, comp)) in
+      { ctx = Lock ctx; used; hidden; aliases }
 
 (* Add a single lock for a generating modality. *)
 let add_gen_lock : type a g. a t -> (a, g lock_entry) snoc t =
- fun { ctx; used; hidden } -> { ctx = Lock ctx; used; hidden }
+ fun { ctx; used; hidden; aliases } -> { ctx = Lock ctx; used; hidden; aliases }
+
+(* The metavariable that a term is, possibly weakened (as is the value of an alias that lies behind other entries). *)
+let rec meta_of_term : type mode b s. (mode, b, s) term -> Meta.wrapped option = function
+  | Meta (v, _) -> Some (Meta.Wrap v)
+  | Key { tm; cell; _ } when Modalcell.is_id cell -> meta_of_term tm
+  | _ -> None
+
+(* Record the (already uniquified) name of an alias, if its value is a metavariable. *)
+let add_alias : type b mode a s. b t -> string -> (mode, a, s) term -> b t =
+ fun names x tm ->
+  match meta_of_term tm with
+  | Some v -> { names with aliases = Meta.WrapMap.add v x names.aliases }
+  | None -> names
+
+(* The name of an alias in scope for a metavariable, if there is one. *)
+let alias_name : type b mode x a s. b t -> (mode, x, a, s) Meta.t -> string option =
+ fun names v -> Meta.WrapMap.find_opt (Meta.Wrap v) names.aliases
 
 (* Extract all the names in a context, generating a fresh version of each name from left to right, including field access variables, and assigning autogenerated names to unnamed variables. *)
 let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = function
   | Emp _ -> empty
-  (* An alias has no checked variables, so it contributes no names. *)
-  | Snoc (ctx, { vis = Alias _; _ }, _, Zero) -> of_ordered_ctx ctx
+  (* An alias has no checked variables, so it contributes nothing to the list of cubes of names.  But if it is zero-dimensional and its value is a metavariable, we record its name for that metavariable, reserving the name like that of a variable. *)
+  | Snoc (ctx, { vis = Alias { vars; _ }; bindings; filter }, _, Zero) -> (
+      let names = of_ordered_ctx ctx in
+      match D.compare_zero (CubeOf.dim bindings) with
+      | Pos _ -> names
+      | Zero -> (
+          let x, _, used = uniquify_opt (fun x -> (x, "")) (NICubeOf.find_top vars) names.used in
+          let names = { names with used } in
+          (* Since this is only for display, if anything goes wrong reading back the value we just don't record it. *)
+          match
+            Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
+            (* Its value lives in the context locked by its modality. *)
+            let (Locked (_, lctx)) =
+              Ctx.lock (Ctx.of_ordered ctx) (Modality.filter_modality filter) in
+            meta_of_term (Readback.readback_nf lctx (Ctx.Binding.value (CubeOf.find_top bindings)))
+          with
+          | Some v -> { names with aliases = Meta.WrapMap.add v x names.aliases }
+          | None -> names))
   | Snoc (ctx, { vis = Vis { dim; plusdim; vars; fields; _ }; _ }, _, Suc (Zero, Dim _)) ->
-      let { ctx; used; hidden } = of_ordered_ctx ctx in
+      let { ctx; used; hidden; aliases } = of_ordered_ctx ctx in
       let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
       let used = ref used in
       let fields =
@@ -357,7 +400,7 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
             used := new_used;
             (Field.to_string f, x))
           (Bwv.to_bwd fields) in
-      { ctx = Snoc (ctx, Variables (dim, plusdim, vars), fields); used = !used; hidden }
+      { ctx = Snoc (ctx, Variables (dim, plusdim, vars), fields); used = !used; hidden; aliases }
   | Snoc (ctx, { bindings; vis = Invis; _ }, _, Suc (Zero, Dim _)) ->
       (* Invisible variables are anonymous, but we can still give them hints from their types.  Since this is only for display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
       let hints =
@@ -365,8 +408,8 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
         View.hints_of_ty (Lazy.force (Ctx.Binding.value (CubeOf.find_top bindings)).ty) in
       snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) (`Anon hints))
   | Lock (ctx, _) ->
-      let { ctx; used; hidden } = of_ordered_ctx ctx in
-      { ctx = Lock ctx; used; hidden }
+      let { ctx; used; hidden; aliases } = of_ordered_ctx ctx in
+      { ctx = Lock ctx; used; hidden; aliases }
   (* A weakening entry has no checked variable, so it contributes no name. *)
   | Weaken (ctx, _) -> of_ordered_ctx ctx
 
@@ -375,7 +418,7 @@ let of_ctx : type mode a b. (mode, a, b) Ctx.t -> b t = function
 
 (* Degenerate a name-context by a dimension r, mirroring Degctx.degctx: each variable cube is re-dimensioned from its intrinsic n-cube up to a (r+n)-cube, keeping the same base names (Variables.plus_variables changes only the substitution dimension, not the stored name cube).  This reproduces exactly the names that "of_ctx" would produce for the degenerated context, so it lets the renderer name the (degenerated) variables of a non-projectable higher codata field instance without rebuilding the value-level degenerate context.  We drive the transformation by walking the plus-map (a Tctx.Plusmap.t = Path.Fmap, whose entries are Plus_proj at the empty base, Plus_dim for a variable, Plus_lock for a lock) in parallel with the name-context. *)
 let degenerate : type r b kb mode. r D.t -> (r, b, kb, mode) plusmap -> b t -> kb t =
- fun r pm { ctx; used; hidden } ->
+ fun r pm { ctx; used; hidden; aliases } ->
   (* The name-context is mode-agnostic, but the plus-map's mode changes across a lock, so we quantify over the mode in the recursion.  We drive the recursion by the name-context, which pins down the dom object 'c and hence the outermost plus-map edge. *)
   let rec go : type c kc m. (r, c, kc, m) plusmap -> c ctx -> kc ctx =
    fun pm ctx ->
@@ -393,12 +436,13 @@ let degenerate : type r b kb mode. r D.t -> (r, b, kb, mode) plusmap -> b t -> k
     | Lock ctx -> (
         match pm with
         | Suc (pm, Inject (Plus_lock _), Suc (Zero, Lock _)) -> Lock (go pm ctx)) in
-  { ctx = go pm ctx; used; hidden }
+  { ctx = go pm ctx; used; hidden; aliases }
 
 (* Add a cube of variables WITHOUT replacing them by fresh versions.  Should only be used when the variables have already been so replaced, as in the output of uniquify_vars below, or are otherwise guaranteed to be conflict-free. *)
 let unsafe_add : type k n b.
     b t -> (n, string) gvariables -> (string, string) Abwd.t -> (b, (k, n) dim_entry) snoc t =
- fun { ctx; used; hidden } vars fields -> { ctx = Snoc (ctx, vars, fields); used; hidden }
+ fun { ctx; used; hidden; aliases } vars fields ->
+  { ctx = Snoc (ctx, vars, fields); used; hidden; aliases }
 
 (* Given a Bwv of variables, proceed through from the *right* to mark them as visible or shadowed, accumulating a list of the visible names in a map.  Anonymous variables are marked as shadowed. *)
 let rec used_vars : type n.
@@ -420,7 +464,8 @@ let rec used_vars : type n.
 
 type uniquified_vars = StringSet.t
 
-let of_uniquified_vars used = { ctx = Emp; used; hidden = StringSet.empty }
+let of_uniquified_vars used =
+  { ctx = Emp; used; hidden = StringSet.empty; aliases = Meta.WrapMap.empty }
 
 (* Uniquify the names in a bwv from the *right*, thus leaving unchanged those that are still in lexical scope.  Also assigns an autogenerated name to previously unnamed variables.  Returns a Names object in the empty context that can then be used to build up a new one including those variables.  Since those variables have already been uniquified, they should be added in with unsafe_add.  (TODO: Can we avoid having to expose unsafe_add?) *)
 let uniquify_vars : type a.

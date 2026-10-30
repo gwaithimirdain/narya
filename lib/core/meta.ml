@@ -226,6 +226,7 @@ module Wrapped = struct
 end
 
 module WrapSet = Set.Make (Wrapped)
+module WrapMap = Map.Make (Wrapped)
 
 (* Representation of holes for interacting with ProofGeneral. *)
 let hole_number : type mode a b s. (mode, a, b, s) t -> int =

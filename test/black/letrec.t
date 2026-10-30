@@ -166,3 +166,34 @@ In a higher field of a let-rec-bound codatatype, the context is degenerated, inc
    ￮ command-line exec string contains open holes
   
   [1]
+
+In a hole in the definition of a let-rec variable, the other variables of its block, which refer directly to their metavariables, are also displayed as themselves.
+
+  $ narya -v -e 'def bool : Type ≔ data [ false. | true. ]  def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]' -e 'def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]' -e 'def eo (m : ℕ) : bool ≔ let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ ((p ↦ odd n) : J bool (even n) (odd m) → bool) ? ] and odd : ℕ → bool ≔ [ zero. ↦ false. | suc. n ↦ even n ] in even m'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ info[I0000]
+   ￮ constant eo defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     m : ℕ
+     even ≔ eo._even : ℕ → bool
+     odd ≔ eo._odd : ℕ → bool
+     n : ℕ
+     𝑥 ≔ suc. n : ℕ (not in scope)
+     ----------------------------------------------------------------------
+     J bool (even n) (odd m)
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]

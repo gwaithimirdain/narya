@@ -589,11 +589,15 @@ let rec unparse : type mode n lt ls rt rs s.
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (constant_name vars (Scope.name_of c), [])))
   | Meta (v, _) -> (
-      (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
-      match displayed_metadef v with
-      | Some { tm = `Defined def; _ } ->
-          MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
-      | _ -> unparse_meta_name v)
+      (* A metavariable to which an alias in scope refers, such as the metavariable of a let-rec variable in a hole in the definition of one of its siblings, is displayed as the name of that alias, just as a variable let-bound to it would be. *)
+      match Names.alias_name vars v with
+      | Some x -> unlocated (Ident ([ x ], []))
+      | None -> (
+          (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
+          match displayed_metadef v with
+          | Some { tm = `Defined def; _ } ->
+              MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
+          | _ -> unparse_meta_name v))
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
@@ -2049,7 +2053,7 @@ let rec unparse_ctx : type dom modality mode a b.
       let names, result = unparse_ctx names lock vars ctx in
       match (ext_kind e comp, vis) with
       | Ext_alias, Alias { vars = cube; fplus = Zero; plusdim; _ } ->
-          (* An alias doesn't extend the checked context, so it adds nothing to the names, but we display its values like those of let-bound variables. *)
+          (* An alias doesn't extend the checked context, so it adds nothing to the list of cubes of names, but we display its values like those of let-bound variables.  If it is zero-dimensional and its value is a metavariable, we record its name for that metavariable (see Names.add_alias). *)
           let modality = Modality.name (plus_lock_modality plus_lock) in
           let module T = struct
             type 'n t = (string * [ `Original | `Renamed ], 'n) Bwv.t
@@ -2088,6 +2092,10 @@ let rec unparse_ctx : type dom modality mode a b.
                     Snoc (!result, { var = x; modality; renamed; hidden = false; lock; tm; ty }));
             }
             [ bindings ];
+          let names =
+            match (D.compare_zero (CubeOf.dim bindings), (CubeOf.find_top bindings).tm) with
+            | Zero, Some tm -> Names.add_alias names (fst (NICubeOf.find_top vardata)) tm
+            | _ -> names in
           (names, !result)
       | Ext_alias, Alias _ -> fatal (Anomaly "alias with fields")
       | Ext_dim, Invis { hints; _ } ->

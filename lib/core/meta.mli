@@ -50,6 +50,7 @@ module Wrapped : sig
 end
 
 module WrapSet : module type of Set.Make (Wrapped)
+module WrapMap : module type of Map.Make (Wrapped)
 
 val hole_number : ('mode, 'a, 'b, 's) t -> int
 
