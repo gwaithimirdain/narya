@@ -1047,17 +1047,15 @@ module Code = struct
             (Modality.to_string m)
       | Nontransparent_window_modality (m, _, `Unknown) ->
           textf
-            "window modality %s must be pellucid since it is not yet known whether the datatype has recursive constructors, due to unsolved holes in its constructor types"
-            (Modality.to_string m)
-      | Nonrefutable_modal_variable m ->
-          textf
-            "a pattern variable of empty type is annotated by modality %s, which a match cannot use as a window, so refuting it is not allowed either"
+            "window modality %s must be pellucid since the datatype might have recursive constructors"
             (Modality.to_string m)
       | Nontransparent_window_modality (m, false, `Nonrecursive) ->
           textf "window modality %s must be pellucid or transparent" (Modality.to_string m)
       | Nontransparent_window_modality (m, true, `Nonrecursive) ->
-          textf
-            "window modality %s must be pellucid or transparent, or translucent since the datatype has only one constructor"
+          textf "window modality %s must be pellucid, transparent, or translucent"
+            (Modality.to_string m)
+      | Nonrefutable_modal_variable m ->
+          textf "refutation window modality %s must be pellucid or transparent"
             (Modality.to_string m)
       | Missing_key (vdom, vcod) ->
           textf "use of %a variable behind %a lock requires a key" pp_printed
@@ -1065,9 +1063,7 @@ module Code = struct
             pp_printed
             (print (PString (Modality.to_string vcod)))
       | Modality_not_sinister m ->
-          textf
-            "modality %s is not sinister: it has no declared right adjoint, so it cannot parametrize a modal field"
-            (Modality.to_string m)
+          textf "modal field annotation %s is not sinister" (Modality.to_string m)
       | Wrong_locking_modality { field; expected; got } -> (
           match (expected, got) with
           | Some expected, Some got ->
@@ -1083,12 +1079,10 @@ module Code = struct
                 (Modality.to_string got)
           | None, None -> textf "field %s has mismatched locking modalities" field)
       | Modal_field_filtered_away (field, m) ->
-          textf
-            "field %s does not exist at this dimension: its modality %s is nonparametric and filters this dimension away"
-            field (Modality.to_string m)
+          textf "field %s does not exist at this dimension: its modality %s is discrete there" field
+            (Modality.to_string m)
       | Extra_filtered_field_in_tuple (field, m) ->
-          textf
-            "field %s must be omitted at this dimension: its modality %s is nonparametric and filters this dimension away"
+          textf "field %s must be omitted at this dimension: its modality %s is discrete there"
             field (Modality.to_string m)
       | Anomaly str -> textf "anomaly: %s" str
       | Self_used -> text "uncaught use of self-variable in a field-variable record display"
@@ -1240,9 +1234,7 @@ module Code = struct
       | Library_has_extension file -> textf "putative library name '%s' has extension" file
       | Invalid_filename file -> textf "filename '%s' does not have 'ny' extension" file
       | Library_modified file ->
-          textf
-            "library '%s'@ was@ already@ loaded@ in@ this@ session@ but@ has@ been@ modified@ since@ then:@ you@ must@ restart@ Narya@ to@ reload@ it"
-            file
+          textf "library '%s' was already loaded this session but has been modified since then" file
       | Directory_changed dir -> textf "current directory changed to@ %s" dir
       | No_such_file file -> textf "error opening file: %s" file
       | Cant_write_compiled_file file -> textf "can't write compiled file: %s" file

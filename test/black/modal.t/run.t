@@ -256,7 +256,7 @@ But a ♯-annotated variable cannot be matched against, so it cannot refute a br
    ￫ hint[E1102]
    ￭ command-line exec string
    1 | def g (x : D) : N ≔ match x [ c0. ↦ zero. ]
-     ^ a pattern variable of empty type is annotated by modality ♯, which a match cannot use as a window, so refuting it is not allowed either
+     ^ refutation window modality ♯ must be pellucid or transparent
   
    ￫ error[E1300]
    ￭ command-line exec string
@@ -455,7 +455,7 @@ not sinister.
    ￫ error[E1711]
    ￭ command-line exec string
    1 | def Bad : Type ≔ codata [ | (x :♯| _) .f : Type ]
-     ^ modality ♯ is not sinister: it has no declared right adjoint, so it cannot parametrize a modal field
+     ^ modal field annotation ♯ is not sinister
   
   [1]
 
@@ -548,7 +548,7 @@ Projecting a disappeared field (from a 1-dimensional element) is an error.
    ￫ error[E1713]
    ￭ command-line exec string
    1 | echo (refl c :♭| _) .fld
-     ^ field fld does not exist at this dimension: its modality ♭ is nonparametric and filters this dimension away
+     ^ field fld does not exist at this dimension: its modality ♭ is discrete there
   
   [1]
 
@@ -558,7 +558,7 @@ Supplying a disappeared field in a tuple/comatch is an error.
    ￫ error[E1714]
    ￭ command-line exec string
    1 | def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]
-     ^ field fld must be omitted at this dimension: its modality ♭ is nonparametric and filters this dimension away
+     ^ field fld must be omitted at this dimension: its modality ♭ is discrete there
   
   [1]
 
