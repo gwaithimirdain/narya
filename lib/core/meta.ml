@@ -135,15 +135,22 @@ let make_def : type mode a b s.
   let identity = `Def (number, sort) in
   (origin, { identity; mode; raw; len; energy })
 
-(* We just use one global hole counter, so that a hole can be represented by a single number to communicate with the user and ProofGeneral.  But to make up for that, we have to remember the origin of each hole as a function of its global number.  And then, since the next number is just the length of this array, we don't need a separate counter for hole autonumbers.  Note that this dynarray never shrinks, so old holes that have gone away are still here.  There wouldn't be any easy way to do that, since solving an old hole can create new holes that have to be at the end of the array, so the origins don't appear here in order. *)
+(* We just use one global hole counter, so that a hole can be represented by a single number to communicate with the user and ProofGeneral.  But to make up for that, we have to remember the origin of each hole as a function of its global number.  Note that this dynarray never shrinks, so old holes that have gone away are still here.  There wouldn't be any easy way to do that, since solving an old hole can create new holes that have to be at the end of the array, so the origins don't appear here in order. *)
 let hole_origins : Origin.t Dynarray.t = Dynarray.create ()
+
+(* We record the next hole number separately with a Speculable, so that speculatively created holes don't increment it. *)
+let next_hole : int Speculable.t = Speculable.make 0
 
 let make_hole : type mode a b s.
     mode Mode.t -> a N.t -> (mode, b) Tctx.t -> s energy -> (mode, a, b, s) t =
  fun mode raw len energy ->
   let origin = Origin.current () in
-  let number = Dynarray.length hole_origins in
-  Dynarray.add_last hole_origins origin;
+  let number = Speculable.get next_hole in
+  Speculable.set next_hole (number + 1);
+  while Dynarray.length hole_origins <= number do
+    Dynarray.add_last hole_origins origin
+  done;
+  Dynarray.set hole_origins number origin;
   let identity = `Hole number in
   (origin, { identity; mode; raw; len; energy })
 
