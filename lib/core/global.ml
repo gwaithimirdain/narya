@@ -320,7 +320,10 @@ let end_command (offset, make_msg) =
 (* Run a command.  If it reports any errors, even if it returns, it fails with a silent fatal error.  This has to happen inside the Origin command functions, so that in interactive mode they undo its effects, such as definitions with failed parts or partially failed hole solutions. *)
 let in_command init f =
   Reporter.failing_on_errors ~why:"command" @@ fun () ->
+  (* A command can run other commands, as when an import loads a file, so afterwards we restore the state of the command that was running before. *)
+  let old = Speculable.get current_command in
   Speculable.set current_command init;
+  Fun.protect ~finally:(fun () -> Speculable.set current_command old) @@ fun () ->
   end_command (f ())
 
 (* The different versions correspond to the Origin command functions that they call. *)
