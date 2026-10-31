@@ -20,7 +20,6 @@ open Degctx
 open Printable
 open Unact
 open Asai.Range
-open Origin
 include Status
 
 module OracleData = struct
@@ -286,7 +285,7 @@ let merge_branches : type hmode dom a m.
          (c, Checkable_branch { xs; body = None; env; ty }))
        leftovers)
 
-type Reporter.backtrack += Case_tree_construct_in_let
+type Control.backtrack += Case_tree_construct_in_let
 
 (* The output of checking a telescope includes an extended context. *)
 type (_, _, _, _, _) checked_tel =
@@ -991,7 +990,7 @@ let rec check : type mode a b s.
           let check_alt () = check status ctx (locate_opt tm.loc alt) ty in
           if passthru then
             (* A failed alternative is backtracked, since we go on to try others. *)
-            match Origin.speculate (fun () -> Reporter.capture check_alt) with
+            match Control.capture check_alt with
             | Ok result -> result
             | Error alt_errs -> go (Bwd.append errs (Bwd.to_list alt_errs)) alts
           else check_alt () in
@@ -1088,8 +1087,7 @@ and check_ascription : type mode a b.
     ((mode, b, kinetic) term, Reporter.pending Bwd.t) Result.t =
  fun ctx aty ->
   match
-    Origin.speculate @@ fun () ->
-    Reporter.speculate (fun () -> check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero))
+    Control.speculate (fun () -> check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero))
   with
   | Ok (cty, ps) ->
       Reporter.release ps;
@@ -1113,9 +1111,7 @@ and check_of_synth : type mode a b s.
       match check_ascription ctx aty with
       | Error asc_errs -> (
           (* If the ascription fails to check, we can proceed to check the ascribed term against the supplied type instead.  If that succeeds, we report the errors in the ascription but can go on to other parts of the program using the term so checked. *)
-          match
-            Origin.speculate (fun () -> Reporter.speculate (fun () -> check status ctx ctm ty))
-          with
+          match Control.speculate (fun () -> check status ctx ctm ty) with
           | Ok (tm, ps) ->
               Reporter.release asc_errs;
               Reporter.release ps;
@@ -1134,12 +1130,8 @@ and check_of_synth : type mode a b s.
                   { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why } in
               (* If the ascription is a valid type that disagrees with the checking type, we don't know which of them is wrong.  Thus, we check the term against both. *)
               (* We only use the diagnostics from checking against the ascription, not the resulting term, so we always backtrack its effects on the state. *)
-              let asc_result =
-                Origin.speculate_discard (fun () ->
-                    Reporter.speculate (fun () -> check status ctx ctm ety)) in
-              let result =
-                Origin.speculate (fun () -> Reporter.speculate (fun () -> check status ctx ctm ty))
-              in
+              let asc_result = Control.trial (fun () -> check status ctx ctm ety) in
+              let result = Control.speculate (fun () -> check status ctx ctm ty) in
               match (asc_result, result) with
               | Ok (_, asc_ps), Ok (tm, _) ->
                   (* If both succeed, then we report the mismatch, but can go on with the rest of the term.  We report any other diagnostics relative to the ascription, since that's the check the user will really expect to happen. *)
@@ -1180,7 +1172,7 @@ and kinetic_of_potential : type mode a b.
     (mode, b, kinetic) term =
  fun l ctx tm ty sort ->
   match l with
-  | `Let -> raise (Reporter.Backtrack Case_tree_construct_in_let)
+  | `Let -> raise (Control.Backtrack Case_tree_construct_in_let)
   | `Nolet ->
       emit (Bare_case_tree_construct sort);
       (* We create a metavariable to store the potential value. *)
@@ -1224,14 +1216,12 @@ and synth_or_check_let : type mode a b s p.
         @@
           try
             (* We first try checking the bound term first as an ordinary kinetic term. *)
-            let sv, svty =
-              Reporter.backtrackable @@ fun () ->
-              Origin.speculate_exn @@ fun () -> synth (Kinetic `Let) lctx v in
+            let sv, svty = Control.backtrackable @@ fun () -> synth (Kinetic `Let) lctx v in
             let ev = eval_at (Ctx.env lctx) sv svty in
             (sv, { tm = ev; ty = Lazy.from_val svty })
           with
           (* If that encounters case-tree constructs, then we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
-          | Reporter.Backtrack Case_tree_construct_in_let ->
+          | Control.Backtrack Case_tree_construct_in_let ->
             (* First we make the metavariable. *)
             let local = Meta.local_name name in
             let meta =
@@ -2108,7 +2098,7 @@ and check_var_match : type dom modality mode a b bm.
             fatal (Matching_wont_refine ("index is not a free variable", Some (PNormal (lctx, x))))
       in
       (* The branches are checked inside this, so if we fall back to a non-dependent match they will be checked again.  Thus we check them speculatively, so that the effects of checking them the first time, such as creating holes, are discarded, and we discard the diagnostics reported the first time as well. *)
-      Reporter.recovering ~recover:(fun d ->
+      Control.recovering ~recover:(fun d ->
           match
             match d.message with
             | Matching_wont_refine (str, x) -> Some (str, x)
@@ -2122,8 +2112,7 @@ and check_var_match : type dom modality mode a b bm.
                   check_nondep_match status ctx (Term.Var index) varty window plus brs None highers
                     motive loc)
           | None -> None)
-      @@ fun () ->
-      Origin.speculate_exn @@ fun () : (mode, b, potential) term ->
+      @@ fun () : (mode, b, potential) term ->
       let index_vars =
         Vec.mmap
           (fun [ tm ] -> CubeOf.mmap { map = (fun _ [ x ] -> is_fresh x) } [ tm ])
@@ -4188,10 +4177,7 @@ and synth : type mode a b s.
             (* If the ascribed type doesn't typecheck, *and* if the term itself happens to already be synthesizing, we can proceed to try to synthesize it.  If that succeeds, we report the errors in the ascription but can go on with the entire rest of the term using the type thereby synthesized.  This will rarely happen in normal use, since there is no need to ascribe a term that's already synthesizing, but with some alternative frontends it may. *)
             match tm.value with
             | Synth stm -> (
-                match
-                  Origin.speculate (fun () ->
-                      Reporter.speculate (fun () -> synth status ctx (locate_opt tm.loc stm)))
-                with
+                match Control.speculate (fun () -> synth status ctx (locate_opt tm.loc stm)) with
                 | Ok (result, ps) ->
                     Reporter.release asc_errs;
                     Reporter.release ps;
@@ -4264,7 +4250,7 @@ and synth : type mode a b s.
         (realize status ctm, ety)
     | Match _, Kinetic l -> (
         match l with
-        | `Let -> raise (Reporter.Backtrack Case_tree_construct_in_let)
+        | `Let -> raise (Control.Backtrack Case_tree_construct_in_let)
         | `Nolet ->
             emit (Bare_case_tree_construct "match");
             (* A match in a kinetic synthesizing position, we can treat like a let-binding that returns the bound (metavariable) value.  Of course we can shortcut the binding by just inserting the metavariable as the result.  This code is copied and modified from synth_or_check_let.  Note that in this case there is no evident way to give the metavariable a type before defining it, which means that with_meta_definition won't be able to set it to anything; but this shouldn't be a problem since there is also no name for this metavariable and hence no way for the user to refer to it in the body, so it doesn't need to have a type or a value. *)
@@ -4408,7 +4394,7 @@ and synth : type mode a b s.
           let check_alt () = synth status ctx (locate_opt tm.loc alt) in
           if passthru then
             (* A failed alternative is backtracked, since we go on to try others. *)
-            match Origin.speculate (fun () -> Reporter.capture check_alt) with
+            match Control.capture check_alt with
             | Ok result -> result
             | Error alt_errs -> go (Bwd.append errs (Bwd.to_list alt_errs)) alts
           else check_alt () in
@@ -4498,13 +4484,11 @@ and synth : type mode a b s.
                             (* A step marked as reversed is checked only in the reversed orientation. *)
                             | `Reversed -> reversed ()
                             | `Plain -> (
-                                match Origin.speculate (fun () -> Reporter.capture forward) with
+                                match Control.capture forward with
                                 | Ok result -> result
                                 (* If that didn't work, we backtrack and try reversing the equality and checking that instead. *)
                                 | Error errs -> (
-                                    match
-                                      Origin.speculate (fun () -> Reporter.capture reversed)
-                                    with
+                                    match Control.capture reversed with
                                     | Ok result -> result
                                     (* But if that also fails, we report only the errors from the forwards direction (unless the reversed check hit a bug, which [capture] passes through). *)
                                     | Error _ -> Reporter.replay errs)))

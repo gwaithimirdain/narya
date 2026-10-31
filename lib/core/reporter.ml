@@ -1475,7 +1475,7 @@ let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
        (fun () -> diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
        ~fatal:(fun d -> if is_dependent d then d else fatal_diagnostic d))
 
-(* Exceptions are used both for reporting errors and for nonlocal control flow.  For the latter we use this exception, with an extensible payload, to abandon an attempt at doing something, such as a typechecking attempt that will be redone in a different way.  The diagnostics reported during an abandoned attempt belong to it, so they are discarded along with it: in particular, [collect] discards rather than releases them when a [Backtrack] passes through it. *)
+(* Exceptions are used both for reporting errors and for nonlocal control flow.  For the latter we use this exception, with an extensible payload, to abandon an attempt at doing something, such as a typechecking attempt that will be redone in a different way.  The diagnostics reported during an abandoned attempt belong to it, so they are discarded along with it: in particular, [collect] discards rather than releases them when a [Backtrack] passes through it.  (See also Control.) *)
 type backtrack = ..
 
 exception Backtrack of backtrack
@@ -1532,18 +1532,6 @@ let uncollect (result, ps) =
   match result with
   | Result.Ok x -> x
   | Error d -> fatal_diagnostic d
-
-(* Run a callback, holding back the diagnostics it reports until it finishes and then passing them on as if nothing had happened, unless it is abandoned by a [Backtrack], in which case they are discarded along with it. *)
-let backtrackable (f : unit -> 'a) : 'a = uncollect (collect f)
-
-(* Run a callback that might fail with a fatal error from which the caller recovers by redoing its work in a different way, holding back the diagnostics it reports.  If it fails with a fatal error for which [recover] supplies a recovery, the diagnostics are discarded along with the failed attempt and the recovery is run instead.  Otherwise they are passed on as if nothing had happened. *)
-let recovering ~(recover : Code.t Asai.Diagnostic.t -> (unit -> 'a) option) (f : unit -> 'a) : 'a =
-  match collect f with
-  | (Error d, _) as result -> (
-      match recover d with
-      | Some g -> g ()
-      | None -> uncollect result)
-  | result -> uncollect result
 
 (* Run a callback that should fail if it reports any mortal errors, even if it returns a result.  This is appropriate for a unit of work, such as a command, that shouldn't take effect if it had any errors.  All errors are passed on outwards immediately, and if any such errors occurred, a (silent) fatal error is raised at the end.  Inside the callback, [moribund] refers only to the errors it has reported. *)
 let failing_on_errors ?(why = "failing_on_errors") f =
