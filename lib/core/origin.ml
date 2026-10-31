@@ -97,8 +97,15 @@ module Origin = struct
 
   let rewinds : rewinder list ref = ref []
 
+  (* Callbacks for speculating and backtracking. *)
+  let speculates : (unit -> unit) list ref = ref []
+  let successes : (unit -> unit) list ref = ref []
+  let backtracks : (unit -> unit) list ref = ref []
+  let speculating = ref 0
+
   (* Switch to interactive mode.  Only works in top-level (after all files and exec-strings are completed). *)
   let set_interactive () =
+    if !speculating > 0 then raise (Failure "Origin: can't set interactive while speculating");
     match S.get () with
     | Top ->
         List.iter (fun f -> f ()) !nexts;
@@ -107,6 +114,7 @@ module Origin = struct
 
   (* Move to the next instant. *)
   let next () =
+    if !speculating > 0 then raise (Failure "Origin: time can't pass while speculating");
     match S.get () with
     | Present _ ->
         List.iter (fun f -> f ()) !nexts;
@@ -115,6 +123,7 @@ module Origin = struct
 
   (* Undo permanently to the previous instant. *)
   let undo () =
+    if !speculating > 0 then raise (Failure "Origin: can't undo while speculating");
     match S.get () with
     | Present _ -> (
         List.iter (fun f -> f ()) !prevs;
@@ -128,6 +137,7 @@ module Origin = struct
 
   (* Every undoable command (e.g. def, axiom, notation, import, export, option) should be wrapped in this. *)
   let do_command f =
+    if !speculating > 0 then raise (Failure "Origin: can't start command while speculating");
     match S.get () with
     | Present _ -> (
         (* We move to the next instant, if we're in interactive mode. *)
@@ -135,12 +145,13 @@ module Origin = struct
         (* If the current command fails, we return to the previous instant. *)
         try f ()
         with e ->
-          let _ = undo () in
+          ignore (undo ());
           raise e)
     | _ -> f ()
 
   (* Similar, but always rewind the state.  Used for non-undoable commands like "echo" (which might still, say, allow holes, but such that any created holes should be immediately discarded afterwards). *)
   let do_command_then_undo f =
+    if !speculating > 0 then raise (Failure "Origin: can't start command while speculating");
     match S.get () with
     | Present _ ->
         next ();
@@ -151,6 +162,7 @@ module Origin = struct
 
   (* Go back in time temporarily to a particular instant, run a callback command, and then return to the present.  The callback can modify the past state (of all versioned objects), with resulting effects on the present.  However, if it throws an exception, any such changes that it's made are discarded.  Used for commands like "solve" and "split". *)
   let rewind_command (instant : Instant.t) (f : unit -> 'a) : 'a =
+    if !speculating > 0 then raise (Failure "Origin: can't rewind while speculating");
     match S.get () with
     | Present now ->
         if instant <= now then
@@ -162,6 +174,7 @@ module Origin = struct
   (* Similarly, but always behave as if an exception were thrown, so that no changes made in the past are permanent.  Used for commands like "echo" in the context of a hole, which might allow holes that should not be saved. *)
   let rewind_command_then_undo : type a. Instant.t -> (unit -> a) -> a =
    fun instant f ->
+    if !speculating > 0 then raise (Failure "Origin: can't rewind while speculating");
     (* In order to trigger the "rewinds", we manually raise an exception with the return value and then catch it.  We define the exception in a local module so it can be parametrized by the type parameter of this function. *)
     let module R = struct
       exception Rewind_then_undo of a
@@ -170,9 +183,23 @@ module Origin = struct
       let _ = rewind_command instant (fun () -> raise (R.Rewind_then_undo (f ()))) in
       raise (Failure "rewind_then_undo: failed to raise")
     with R.Rewind_then_undo res -> res
+
+  (* Speculate, by saving the old versions of things, whatever the current origin, and proceeding with copies of those states into the callback.  If the callback terminates normally, the copied states are saved over the original ones with any changes made.  If it raises an exception, the copied states are discarded. *)
+  let speculate callback =
+    speculating := !speculating + 1;
+    List.iter (fun f -> f ()) !speculates;
+    match try Ok (callback ()) with e -> Error e with
+    | Ok result ->
+        speculating := !speculating - 1;
+        List.iter (fun f -> f ()) !successes;
+        result
+    | Error e ->
+        speculating := !speculating - 1;
+        List.iter (fun f -> f ()) !backtracks;
+        raise e
 end
 
-(* A versioned object is a MUTABLE one that has a separate version for each origin.  A simple example is the autonumber that counts constant or metavariable identifiers.  A more complicated example is the scope or global environment of definitions. *)
+(* A versioned object is a MUTABLE collection that stores a separate version for each origin, although the objects stored in it must be IMMUTABLE.  A simple example is the autonumber that counts constant or metavariable identifiers.  A more complicated example is the scope or global environment of definitions.  *)
 module Versioned = struct
   type 'a t = {
     default : unit -> 'a;
@@ -181,36 +208,6 @@ module Versioned = struct
     files : 'a Dynarray.t;
     instants : 'a Dynarray.t;
   }
-
-  (* Make a new versioned object with a given default value.  If inherit_values is true, then values for new files and the first instant are copied from top, while values for later instants are copied from the previous instant.  (This is appropriate for namespace scopes and notations.)  If inherit_values is false, then all new values are computed with the 'default', which is a function instead of a constant value so it can allocate new mutable values.  (This is appropriate for tables of constants and metavariables, whose identities already record their origins so we know which bucket to look for them in.) *)
-  let make : type a. default:(unit -> a) -> inherit_values:bool -> a t =
-   fun ~default ~inherit_values ->
-    let top, files, instants = (ref (default ()), Dynarray.create (), Dynarray.create ()) in
-    (* Add callbacks so that the instants array will grow or shrink as we go forwards or backwards in time.  These deal only with instants; the code for dealing with files is below in grow_files. *)
-    Origin.nexts :=
-      (fun () ->
-        let v =
-          if inherit_values then
-            match Dynarray.find_last instants with
-            | Some v -> v
-            | None -> !top
-          else default () in
-        Dynarray.add_last instants v)
-      :: !Origin.nexts;
-    Origin.prevs := (fun () -> Dynarray.remove_last instants) :: !Origin.prevs;
-    (* When rewinding to a past instant, we save the previous value in that instant, execute the code, and restore the original value in case of errors. *)
-    Origin.rewinds :=
-      {
-        wrap =
-          (fun i f () ->
-            let v = Dynarray.get instants i in
-            try f ()
-            with e ->
-              Dynarray.set instants i v;
-              raise e);
-      }
-      :: !Origin.rewinds;
-    { default; inherit_values; top; files; instants }
 
   (* If a files entry doesn't exist yet, we have to extend the array to make it long enough before setting the value.  This is the only way that the files array grows; we don't extend it automatically when new files are created. *)
   let grow_files : type a. a t -> File.t -> unit =
@@ -289,4 +286,42 @@ module Versioned = struct
     Dynarray.iteri (fun file v -> acc := f !acc (File file) v) x.files;
     Dynarray.iteri (fun instant v -> acc := f !acc (Instant instant) v) x.instants;
     !acc
+
+  (* Make a new versioned object with a given default value.  If inherit_values is true, then values for new files and the first instant are copied from top, while values for later instants are copied from the previous instant.  (This is appropriate for namespace scopes and notations.)  If inherit_values is false, then all new values are computed with the 'default', which is a function instead of a constant value so it can allocate new mutable values.  (This is appropriate for tables of constants and metavariables, whose identities already record their origins so we know which bucket to look for them in.) *)
+  let make : type a. default:(unit -> a) -> inherit_values:bool -> a t =
+   fun ~default ~inherit_values ->
+    if !Origin.speculating > 0 then
+      raise (Failure "Can't make new Versioned objects while speculating");
+    let top, files, instants, backtracks =
+      (ref (default ()), Dynarray.create (), Dynarray.create (), Stack.create ()) in
+    (* We don't actually need to store the backtracking information in the object; it's only used by the callbacks closures below. *)
+    let self = { default; inherit_values; top; files; instants } in
+    (* Add callbacks so that the instants array will grow or shrink as we go forwards or backwards in time.  These deal only with instants; the code for dealing with files is below in grow_files. *)
+    Origin.nexts :=
+      (fun () ->
+        let v =
+          if inherit_values then
+            match Dynarray.find_last instants with
+            | Some v -> v
+            | None -> !top
+          else default () in
+        Dynarray.add_last instants v)
+      :: !Origin.nexts;
+    Origin.prevs := (fun () -> Dynarray.remove_last instants) :: !Origin.prevs;
+    (* When rewinding to a past instant, we save the previous value in that instant, execute the code, and restore the original value in case of errors. *)
+    Origin.rewinds :=
+      {
+        wrap =
+          (fun i f () ->
+            let v = Dynarray.get instants i in
+            try f ()
+            with e ->
+              Dynarray.set instants i v;
+              raise e);
+      }
+      :: !Origin.rewinds;
+    Origin.speculates := (fun () -> Stack.push (get self) backtracks) :: !Origin.speculates;
+    Origin.successes := (fun () -> Stack.drop backtracks) :: !Origin.successes;
+    Origin.backtracks := (fun () -> set self (Stack.pop backtracks)) :: !Origin.backtracks;
+    self
 end

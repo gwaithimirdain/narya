@@ -20,6 +20,7 @@ open Degctx
 open Printable
 open Unact
 open Asai.Range
+open Origin
 include Status
 
 module OracleData = struct
@@ -1214,7 +1215,7 @@ and synth_or_check_let : type mode a b s p.
         @@
           try
             (* We first try checking the bound term first as an ordinary kinetic term. *)
-            let sv, svty = synth (Kinetic `Let) lctx v in
+            let sv, svty = Origin.speculate @@ fun () -> synth (Kinetic `Let) lctx v in
             let ev = eval_at (Ctx.env lctx) sv svty in
             (sv, { tm = ev; ty = Lazy.from_val svty })
           with
