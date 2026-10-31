@@ -186,19 +186,40 @@ module Origin = struct
       raise (Failure "rewind_then_undo: failed to raise")
     with R.Rewind_then_undo res -> res
 
-  (* Speculate, by saving the old versions of things, whatever the current origin, and proceeding with copies of those states into the callback.  If the callback terminates normally, the copied states are saved over the original ones with any changes made.  If it raises an exception, the copied states are discarded. *)
-  let speculate callback =
+  (* Speculate, by saving the old versions of things, whatever the current origin, and proceeding with copies of those states into the callback.  If the callback returns Ok, the copied states are saved over the original ones with any changes made.  If it returns Error, or raises an exception, the copied states are discarded and the original ones restored, and the Error is returned or the exception re-raised.  Thus Error can carry information out of an attempt that is backtracked, such as the diagnostics it reported. *)
+  let speculate : type a b. (unit -> (a, b) Result.t) -> (a, b) Result.t =
+   fun callback ->
     speculating := !speculating + 1;
     List.iter (fun f -> f ()) !speculates;
-    match try Ok (callback ()) with e -> Error e with
-    | Ok result ->
+    let backtrack () =
+      speculating := !speculating - 1;
+      List.iter (fun f -> f ()) !backtracks in
+    match callback () with
+    | Ok _ as result ->
         speculating := !speculating - 1;
         List.iter (fun f -> f ()) !successes;
         result
-    | Error e ->
-        speculating := !speculating - 1;
-        List.iter (fun f -> f ()) !backtracks;
-        raise e
+    | Error _ as result ->
+        backtrack ();
+        result
+    | exception e ->
+        let bt = Printexc.get_raw_backtrace () in
+        backtrack ();
+        Printexc.raise_with_backtrace e bt
+
+  (* Speculate, backtracking only if the callback raises an exception. *)
+  let speculate_exn : type a. (unit -> a) -> a =
+   fun callback ->
+    match speculate (fun () : (a, Util.Empty.t) Result.t -> Ok (callback ())) with
+    | Ok x -> x
+    | Error _ -> .
+
+  (* Speculate, always backtracking, so that only the result of the callback is retained, not its effects on the state. *)
+  let speculate_discard : type b. (unit -> b) -> b =
+   fun callback ->
+    match speculate (fun () : (Util.Empty.t, b) Result.t -> Error (callback ())) with
+    | Error x -> x
+    | Ok _ -> .
 end
 
 (* A versioned object is a MUTABLE collection that stores a separate version for each origin, although the objects stored in it must be IMMUTABLE.  A simple example is the autonumber that counts constant or metavariable identifiers.  A more complicated example is the scope or global environment of definitions.  *)

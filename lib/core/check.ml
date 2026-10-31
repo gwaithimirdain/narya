@@ -990,7 +990,8 @@ let rec check : type mode a b s.
         and try_alt errs alt passthru alts =
           let check_alt () = check status ctx (locate_opt tm.loc alt) ty in
           if passthru then
-            match Reporter.capture check_alt with
+            (* A failed alternative is backtracked, since we go on to try others. *)
+            match Origin.speculate (fun () -> Reporter.capture check_alt) with
             | Ok result -> result
             | Error alt_errs -> go (Bwd.append errs (Bwd.to_list alt_errs)) alts
           else check_alt () in
@@ -1087,6 +1088,7 @@ and check_ascription : type mode a b.
     ((mode, b, kinetic) term, Reporter.pending Bwd.t) Result.t =
  fun ctx aty ->
   match
+    Origin.speculate @@ fun () ->
     Reporter.speculate (fun () -> check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero))
   with
   | Ok (cty, ps) ->
@@ -1111,7 +1113,9 @@ and check_of_synth : type mode a b s.
       match check_ascription ctx aty with
       | Error asc_errs -> (
           (* If the ascription fails to check, we can proceed to check the ascribed term against the supplied type instead.  If that succeeds, we report the errors in the ascription but can go on to other parts of the program using the term so checked. *)
-          match Reporter.speculate (fun () -> check status ctx ctm ty) with
+          match
+            Origin.speculate (fun () -> Reporter.speculate (fun () -> check status ctx ctm ty))
+          with
           | Ok (tm, ps) ->
               Reporter.release asc_errs;
               Reporter.release ps;
@@ -1129,8 +1133,13 @@ and check_of_synth : type mode a b s.
                 Code.Unequal_synthesized_type
                   { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why } in
               (* If the ascription is a valid type that disagrees with the checking type, we don't know which of them is wrong.  Thus, we check the term against both. *)
-              let asc_result = Reporter.speculate (fun () -> check status ctx ctm ety) in
-              let result = Reporter.speculate (fun () -> check status ctx ctm ty) in
+              (* We only use the diagnostics from checking against the ascription, not the resulting term, so we always backtrack its effects on the state. *)
+              let asc_result =
+                Origin.speculate_discard (fun () ->
+                    Reporter.speculate (fun () -> check status ctx ctm ety)) in
+              let result =
+                Origin.speculate (fun () -> Reporter.speculate (fun () -> check status ctx ctm ty))
+              in
               match (asc_result, result) with
               | Ok (_, asc_ps), Ok (tm, _) ->
                   (* If both succeed, then we report the mismatch, but can go on with the rest of the term.  We report any other diagnostics relative to the ascription, since that's the check the user will really expect to happen. *)
@@ -1215,7 +1224,7 @@ and synth_or_check_let : type mode a b s p.
         @@
           try
             (* We first try checking the bound term first as an ordinary kinetic term. *)
-            let sv, svty = Origin.speculate @@ fun () -> synth (Kinetic `Let) lctx v in
+            let sv, svty = Origin.speculate_exn @@ fun () -> synth (Kinetic `Let) lctx v in
             let ev = eval_at (Ctx.env lctx) sv svty in
             (sv, { tm = ev; ty = Lazy.from_val svty })
           with
@@ -2110,7 +2119,7 @@ and check_var_match : type dom modality mode a b bm.
           | None -> fatal_diagnostic d)
       @@ fun () ->
       (* The branches are checked inside this, so if we fall back to a non-dependent match they will be checked again.  Thus we check them speculatively, so that the effects of checking them the first time, such as creating holes, are discarded. *)
-      Origin.speculate @@ fun () : (mode, b, potential) term ->
+      Origin.speculate_exn @@ fun () : (mode, b, potential) term ->
       let index_vars =
         Vec.mmap
           (fun [ tm ] -> CubeOf.mmap { map = (fun _ [ x ] -> is_fresh x) } [ tm ])
@@ -4175,7 +4184,10 @@ and synth : type mode a b s.
             (* If the ascribed type doesn't typecheck, *and* if the term itself happens to already be synthesizing, we can proceed to try to synthesize it.  If that succeeds, we report the errors in the ascription but can go on with the entire rest of the term using the type thereby synthesized.  This will rarely happen in normal use, since there is no need to ascribe a term that's already synthesizing, but with some alternative frontends it may. *)
             match tm.value with
             | Synth stm -> (
-                match Reporter.speculate (fun () -> synth status ctx (locate_opt tm.loc stm)) with
+                match
+                  Origin.speculate (fun () ->
+                      Reporter.speculate (fun () -> synth status ctx (locate_opt tm.loc stm)))
+                with
                 | Ok (result, ps) ->
                     Reporter.release asc_errs;
                     Reporter.release ps;
@@ -4391,7 +4403,8 @@ and synth : type mode a b s.
         and try_alt errs alt passthru alts =
           let check_alt () = synth status ctx (locate_opt tm.loc alt) in
           if passthru then
-            match Reporter.capture check_alt with
+            (* A failed alternative is backtracked, since we go on to try others. *)
+            match Origin.speculate (fun () -> Reporter.capture check_alt) with
             | Ok result -> result
             | Error alt_errs -> go (Bwd.append errs (Bwd.to_list alt_errs)) alts
           else check_alt () in
@@ -4481,11 +4494,13 @@ and synth : type mode a b s.
                             (* A step marked as reversed is checked only in the reversed orientation. *)
                             | `Reversed -> reversed ()
                             | `Plain -> (
-                                match Reporter.capture forward with
+                                match Origin.speculate (fun () -> Reporter.capture forward) with
                                 | Ok result -> result
-                                (* If that didn't work, we try reversing the equality and checking that instead. *)
+                                (* If that didn't work, we backtrack and try reversing the equality and checking that instead. *)
                                 | Error errs -> (
-                                    match Reporter.capture reversed with
+                                    match
+                                      Origin.speculate (fun () -> Reporter.capture reversed)
+                                    with
                                     | Ok result -> result
                                     (* But if that also fails, we report only the errors from the forwards direction (unless the reversed check hit a bug, which [capture] passes through). *)
                                     | Error _ -> Reporter.replay errs)))
