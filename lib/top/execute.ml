@@ -17,6 +17,9 @@ let __COMPILE_VERSION__ =
 (* The modification time of a file.  We follow symlinks, since a file loaded through a symlink is modified when its target is.  (The tests in FileUtil.test, such as Is_older_than, compare against the modification time of a symlink itself.) *)
 let mtime file = (FileUtil.stat ~dereference:true file).modification_time
 
+(* Sets of filenames, used to add each file only once to the transitive imports of a file. *)
+module Filenames = Set.Make (String)
+
 (* Normalize a file path, relative to a given directory, to a reduced absolute one, so we can use it as a hashtable key.  Symlinks are not resolved: a file loaded through a symlink is identified by the path of the symlink, has its compiled version stored next to the symlink, and resolves its imports relative to the symlink's directory.  Consistently with this, ".." is reduced lexically, so that "a/c/../b.ny" is the same file as "a/b.ny" even if "a/c" is a symlink. *)
 let normalize_filename cwd filename =
   let filename =
@@ -32,6 +35,8 @@ module Loadstate = struct
     parents : FilePath.filename Bwd.t;
     (* All the files imported so far by the current file, *transitively* (that is, files it imports, and files *they* import, etc.).  Stored in compiled files to ensure they are recompiled whenever any dependencies change, and for linking purposes. *)
     imports : (File.t * FilePath.filename) Bwd.t;
+    (* The filenames in imports, so that we add each file only once however many import paths reach it.  We record this as a set to avoid duplicates, but we also keep the above list to maintain the order in which the files were loaded. *)
+    imported : Filenames.t;
     (* Whether the current file has performed any effectual actions like 'echo'.  Stored in compiled files to produce a warning. *)
     actions : bool;
   }
@@ -39,6 +44,15 @@ end
 
 module Loading = struct
   include State.Make (Loadstate)
+
+  (* Add files to the transitive imports of the current file, skipping those that are already there. *)
+  let add_imports more =
+    modify (fun s ->
+        Bwd.fold_left
+          (fun (s : Loadstate.t) ((_, f) as x) ->
+            if Filenames.mem f s.imported then s
+            else { s with imports = Snoc (s.imports, x); imported = Filenames.add f s.imported })
+          s more)
 
   let run ~init f =
     run ~init @@ fun () ->
@@ -187,19 +201,20 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
               let old_file = (Istream.unmarshal chan : File.t) in
               (* Now we make sure none of the files *it* imports (transitively) have been modified more recently than the compilation, and that they have all been compiled. *)
               let old_imports = (Istream.unmarshal chan : (File.t * FilePath.filename) Bwd.t) in
+              let omtime = mtime ofile in
               if
                 Bwd.for_all
                   (fun (_, ifile) ->
                     let oifile = FilePath.replace_extension ifile "nyo" in
                     FileUtil.test Is_file oifile
                     && mtime oifile >= mtime ifile
-                    && mtime ifile <= mtime ofile)
+                    && mtime ifile <= omtime)
                   old_imports
               then (
-                (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file. *)
+                (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file.  Since the list is transitive and we load every file in it, a file that was already loaded only needs to check its own modification time, not those of its imports. *)
                 Mbwd.miter
                   (fun [ (_, ifile) ] ->
-                    let _ = load_file ifile false in
+                    let _ = load_file ~check_imports:false ifile false in
                     ())
                   [ old_imports ];
                 (* We create a hashtable mapping the old files to new ones. *)
@@ -216,7 +231,9 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
                 let trie = Parser.Scope.from_istream chan find_in_table in
                 (* We check whether the compiled file had any actions, and issue a warning if so *)
                 if (Istream.unmarshal chan : bool) then emit (Actions_in_compiled_file ofile);
-                Some (trie, unit_entry, old_imports))
+                (* We return the imports with their *new* file identifiers, since they will be stored with this file and copied into the imports of any file that imports it, hence also into its compiled file.  The old identifiers are only meaningful relative to the run that compiled this file, and in the current run they could belong to different files. *)
+                Some
+                  (trie, unit_entry, Bwd.map (fun (_, ifile) -> (lookup ifile, ifile)) old_imports))
               else None
           | Error flags ->
               emit (Incompatible_flags (filename, flags));
@@ -224,20 +241,21 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
         else None
   else None
 
-(* Load a file, possibly one specified on the command line, either from source or from a compiled version. *)
-and load_file filename top =
+(* Load a file, possibly one specified on the command line, either from source or from a compiled version.  If it was already loaded, check that the file (and its imports, unless check_imports is false) haven't been modified since then, and then add it back to Global and record it as imported. *)
+and load_file ?(check_imports = true) filename top =
   if not (FilePath.check_extension filename "ny") then fatal (Invalid_filename filename);
   let filename = normalize_filename (Loading.get ()).cwd filename in
   match Loaded.get_file filename with
   | Some ({ trie; globals; file; old_imports; explicit = top' }, loaded_mtime) ->
       (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded.  Each file is compared against its own loading time; an import is quite normally newer than the file that imports it. *)
       if mtime filename > loaded_mtime then fatal (Library_modified filename);
-      Bwd.iter
-        (fun (_, f) ->
-          match Loaded.get_file f with
-          | Some (_, fmtime) -> if mtime f > fmtime then fatal (Library_modified f)
-          | None -> ())
-        old_imports;
+      if check_imports then
+        Bwd.iter
+          (fun (_, f) ->
+            match Loaded.get_file f with
+            | Some (_, fmtime) -> if mtime f > fmtime then fatal (Library_modified f)
+            | None -> ())
+          old_imports;
       (* We add it back into Global, and to the 'all' namespace if it wasn't already there. *)
       Global.add_file file globals;
       if top && not top' then (
@@ -245,8 +263,8 @@ and load_file filename top =
         (* Ensure that it's marked as having been loaded explicitly. *)
         Loaded.add_to_files filename trie globals file old_imports true);
       (* We also add it, and the files it imports, to the list of things imported by the current ambient file, since that list is supposed to be transitive.  (The other branch appends the same thing, in the same order, after loading the file.)  TODO: Should that go in execute_command Import? *)
-      Loading.modify (fun s ->
-          { s with imports = Bwd_extra.append (Snoc (s.imports, (file, filename))) old_imports });
+      Loading.add_imports (Snoc (Emp, (file, filename)));
+      Loading.add_imports old_imports;
       (* Return its saved export namespace. *)
       trie
   | None ->
@@ -257,7 +275,7 @@ and load_file filename top =
       (* We make a name for it *)
       let file = File.make (`File filename) in
       (* Now we record it as a file that was imported by the current file. *)
-      Loading.modify (fun s -> { s with imports = Snoc (s.imports, (file, filename)) });
+      Loading.add_imports (Snoc (Emp, (file, filename)));
       (* Then we load it, in its directory and with itself added to the list of parents. *)
       let rename i = (fst (Loaded.get_file i <|> Anomaly "missing file in load_file")).file in
       let trie, imports =
@@ -267,6 +285,7 @@ and load_file filename top =
               cwd = FilePath.dirname filename;
               parents = Snoc ((Loading.get ()).parents, filename);
               imports = Emp;
+              imported = Filenames.empty;
               actions = false;
             }
         @@ fun () ->
@@ -323,7 +342,7 @@ and load_file filename top =
         if top then Loaded.add_to_scope trie;
         (trie, (Loading.get ()).imports) in
       (* We add the files that it imports to those of the current file, since the imports list is supposed to be transitive. *)
-      Loading.modify (fun s -> { s with imports = Bwd_extra.append s.imports imports });
+      Loading.add_imports imports;
       trie
 
 (* Load an -e string or stdin. *)

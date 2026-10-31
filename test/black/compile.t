@@ -506,3 +506,47 @@ Metavariables from compiled files work
   $ narya hasmeta.ny
 
   $ narya usesmeta.ny
+
+The imports of a file loaded from its compiled version, which are copied into the compiled versions of files that import it, refer to their files by the identifiers of the current run, not those of the run that compiled it.
+
+  $ echo 'axiom Y : Type → Type' >idy.ny
+  $ echo 'import "idy"' >idq.ny
+  $ echo 'axiom X : Type' >idx.ny
+  $ echo 'import "idq"' >idp.ny
+  $ cat >idg.ny <<EOF
+  > import "idx"
+  > import "idp"
+  > import "idq"
+  > def gx : Type ≔ X
+  > EOF
+  $ cat >idb.ny <<EOF
+  > import "idg"
+  > echo gx
+  > EOF
+
+  $ narya idq.ny
+
+  $ narya idg.ny
+
+  $ narya idb.ny
+  _OUT_OF_SCOPE.X
+    : Type
+  
+
+A file reachable along several import paths is saved only once among the imports of a compiled file, so these lists don't grow exponentially with the depth of diamonds in the import graph.
+
+  $ echo 'axiom D0 : Type' > d0.ny
+  $ for i in $(seq 1 14); do
+  >   echo "import \"d$((i-1))\"" > l$i.ny
+  >   echo "import \"d$((i-1))\"" > r$i.ny
+  >   printf 'import "l%d"\nimport "r%d"\n' $i $i > d$i.ny
+  > done
+  $ echo 'import "d14"' > diamond.ny
+
+  $ narya diamond.ny
+
+  $ [ $(wc -c < d14.nyo) -lt 50000 ] && echo small
+  small
+
+  $ narya -v diamond.ny 2>&1 | grep -c compiled
+  43

@@ -162,22 +162,25 @@ module rec Value : sig
 
   and (_, _, _, _) apps =
     | Emp : ('mode, 'mode, noninst, 'fail) apps
+    | Snoc :
+        ('hmode, 'mode1, 'any, live) apps * ('mode1, 'mode2, 'any, 'inst) apps_entry
+        -> ('hmode, 'mode2, 'inst, live) apps
+
+  and (_, _, _, _) apps_entry =
     | Arg :
-        ('hmode, 'mode, 'any, live) apps
-        * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
-        -> ('hmode, 'mode, noninst, live) apps
+        -> ('mode, 'mode, 'any, noninst) apps_entry
     | Field :
-        ('hmode, 'src, 'any, live) apps
-        * ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
+        ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
         * 'i Field.t
         * ('t, 'i, 'n) D.plus
         * ('tk, 't, 'k) insertion
-        -> ('hmode, 'mode, noninst, live) apps
+        -> ('src, 'mode, 'any, noninst) apps_entry
     | Inst :
-        ('hmode, 'mode, noninst, live) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
-        -> ('hmode, 'mode, inst, live) apps
+        'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
+        -> ('mode, 'mode, noninst, inst) apps_entry
 
   and (_, _, _, _, _) binder =
     | Bind : {
@@ -293,21 +296,20 @@ module rec Value : sig
 
   and ('mode, 's) lazy_state =
     | Deferred_eval :
-        ('hmode, 'm, 'b) env
-        * ('hmode, 'b, 's) term
+        ('mode, 'm, 'b) env
+        * ('mode, 'b, 's) term
         * ('mn, 'm, 'n) insertion
-        * ('hmode, 'mu, 'nu, 'cod) Modalcell.t
-        * ('hmode, 'mode, 'any, live) apps
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t
         -> ('mode, 's) lazy_state
-    | Deferred :
-        (unit -> ('hmode, 's) evaluation)
-        * ('m, 'n) deg
-        * ('hmode, 'mu, 'nu, 'cod) Modalcell.t
-        * ('hmode, 'mode, 'any, live) apps
-        -> ('mode, 's) lazy_state
+    | Deferred : (unit -> ('mode, 's) evaluation) -> ('mode, 's) lazy_state
+    | Applied : ('hmode, 's) lazy_eval * ('hmode, 'mode) lazy_app -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
 
   and ('mode, 's) lazy_eval = ('mode, 's) lazy_state ref
+
+  and (_, _) lazy_app =
+    | Apps : ('hmode, 'mode, noninst, 'inst) apps_entry -> ('hmode, 'mode) lazy_app
+    | Action : ('m, 'n) deg * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> ('mode, 'mode) lazy_app
 end = struct
   (* Here is the recursive application of the functor Cube.  First we define a module to pass as its argument, with type defined to equal the yet-to-be-defined binder, referred to recursively. *)
   module BindFam = struct
@@ -499,27 +501,31 @@ end = struct
 
   (* An application contains the data of an n-dimensional argument and its boundary, together with a neutral insertion applied outside that can't be pushed in.  This represents the *argument list* of a single application, not the function.  Thus, an application spine will be a head together with a list of apps.  Each application could be along a different modality. *)
   and (_, _, _, _) apps =
-    (* An apps has *two* mode parameters: the first is the mode at the head end of the spine, and the second is the mode of the whole spine.  These differ exactly when the spine crosses a modal field projection, whose left adjoint modality is stored in the Field entry. *)
+    (* An apps has *two* mode parameters: the first is the mode at the head end of the spine, and the second is the mode of the whole spine.  These differ exactly when the spine crosses a modal field projection, whose left adjoint modality is stored in the Field entry.  The third parameter records whether the last entry was an instantiation. *)
     | Emp : ('mode, 'mode, noninst, 'fail) apps
+    | Snoc :
+        ('hmode, 'mode1, 'any, live) apps * ('mode1, 'mode2, 'any, 'inst) apps_entry
+        -> ('hmode, 'mode2, 'inst, live) apps
+
+  (* A single entry in an application spine.  The first two parameters are the modes inside and outside it, the third is whether the spine it extends ends with an instantiation, and the fourth is whether it is itself one. *)
+  and (_, _, _, _) apps_entry =
     (* m is the dimension of the function being applied, n is the dimension of the arguments *)
     | Arg :
-        ('hmode, 'mode, 'any, live) apps
-        * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
-        -> ('hmode, 'mode, noninst, live) apps
+        -> ('mode, 'mode, 'any, noninst) apps_entry
     (* For a higher field with ('n, 't, 'i) insertion, the actual evaluation dimension is 'n, but the result dimension is only 't.  So the dimension of the arg is 't, since that's the output dimension that a degeneracy acting on could be pushed through.  However, since a degeneracy of dimension up to 'n can act on the inside, we can push in the whole insertion and store only a plus outside.  The stored filter_dim is by the left adjoint of the field's adjunction: the spine inside lives at its source mode (behind a lock by it), and at the *filtered* dimension 'ft of the (outer) result dimension 't.  These differ when the field's modality is nonparametric and a degeneracy has acted, filtering some directions of 't away from the projected term; a fresh projection always has a trivial filter with 'ft = 't. *)
     | Field :
-        ('hmode, 'src, 'any, live) apps
-        * ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
+        ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
         * 'i Field.t
         * ('t, 'i, 'n) D.plus
         * ('tk, 't, 'k) insertion
-        -> ('hmode, 'mode, noninst, live) apps
-    (* An (m+n)-dimensional type is "instantiated" by applying it a "boundary tube" to get an m-dimensional type.  This operation is supposed to be functorial in dimensions, so it should not be applied more than once in a row.  So the dummy parameter of 'apps' tracks whether the last application was an instantiation, and here we verify that it wasn't before instantiating.  We also allow only nontrivial instantiations, to avoid cluttering up application spines with lots of empty instantiations and simplify equality-checking. *)
+        -> ('src, 'mode, 'any, noninst) apps_entry
+    (* An (m+n)-dimensional type is "instantiated" by applying it a "boundary tube" to get an m-dimensional type.  This operation is supposed to be functorial in dimensions, so it should not be applied more than once in a row.  So the third parameter of 'apps' tracks whether the last application was an instantiation, and the Inst entry requires that the spine it extends doesn't end with one.  We also allow only nontrivial instantiations, to avoid cluttering up application spines with lots of empty instantiations and simplify equality-checking. *)
     | Inst :
-        ('hmode, 'mode, noninst, live) apps * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
-        -> ('hmode, 'mode, inst, live) apps
+        'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
+        -> ('mode, 'mode, noninst, inst) apps_entry
 
   (* Lambdas and Pis both bind a variable, along with its dependencies.  These are recorded as defunctionalized closures.  Since they are produced by higher-dimensional substitutions and operator actions, the dimension of the binder can be different than the dimension of the environment that closes its body.  Accordingly, in addition to the environment and degeneracy to close its body, we store information about how to map the eventual arguments into the bound variables in the body; this is the insertion.  *)
   and (_, _, _, _, _) binder =
@@ -670,24 +676,23 @@ end = struct
     (* The identity environment of a context, which substitutes each (level) variable for itself (index).  Rather than computing it in advance, we look through the context itself when traversing it, one entry at a time.  It always has dimension zero, so the variables don't need to come with any boundaries. *)
     | Ctx : ('mode, 'a, 'b) Ordered_ctx.t -> ('mode, D.zero, 'b) env
 
-  (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  It can also accumulate degeneracies on an arbitrary thunk (which could, of course, be a constant value that was already forced, but now is deferred again until it's done accumulating degeneracy actions).  Both kinds of deferred values can also store more arguments and field projections for it to be applied to; this is how glued evaluation defers the computation of an application spine. *)
+  (* An 's lazy_eval behaves from the outside like an 's evaluation Lazy.t.  But internally, in addition to being able to store an arbitrary thunk, it can also store a term and an environment in which to evaluate it (plus an outer insertion and key that can't be pushed into the environment).  This allows it to accept degeneracy actions and incorporate them into the environment, so that when it's eventually forced the term only has to be traversed once.  Finally, it can store a pending application or action applied to another lazy_eval: this is how glued evaluation defers the computation of an application spine.  Since the inner lazy_eval is shared rather than copied, forcing either one caches its result for the other, so that a prefix of a spine that is forced on its own (e.g. the value of a partial application f x, when f x y is also forced) is evaluated only once. *)
   and ('mode, 's) lazy_state =
     | Deferred_eval :
-        ('hmode, 'm, 'b) env
-        * ('hmode, 'b, 's) term
+        ('mode, 'm, 'b) env
+        * ('mode, 'b, 's) term
         * ('mn, 'm, 'n) insertion
-        * ('hmode, 'mu, 'nu, 'cod) Modalcell.t
-        * ('hmode, 'mode, 'any, live) apps
+        * ('mode, 'mu, 'nu, 'cod) Modalcell.t
         -> ('mode, 's) lazy_state
-    | Deferred :
-        (unit -> ('hmode, 's) evaluation)
-        * ('m, 'n) deg
-        * ('hmode, 'mu, 'nu, 'cod) Modalcell.t
-        * ('hmode, 'mode, 'any, live) apps
-        -> ('mode, 's) lazy_state
+    | Deferred : (unit -> ('mode, 's) evaluation) -> ('mode, 's) lazy_state
+    | Applied : ('hmode, 's) lazy_eval * ('hmode, 'mode) lazy_app -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
 
   and ('mode, 's) lazy_eval = ('mode, 's) lazy_state ref
+
+  and (_, _) lazy_app =
+    | Apps : ('hmode, 'mode, noninst, 'inst) apps_entry -> ('hmode, 'mode) lazy_app
+    | Action : ('m, 'n) deg * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> ('mode, 'mode) lazy_app
 end
 
 include Value
@@ -704,14 +709,13 @@ type (_, _) modal_value =
 
 type any_canonical = Any : ('mode, 'm, 'n) canonical -> any_canonical
 
-let defer : type mode s. mode Mode.t -> (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
- fun mode tm -> ref (Deferred (tm, id_deg D.zero, Modalcell.id2 mode, Emp))
+let defer : type mode s. (unit -> (mode, s) evaluation) -> (mode, s) lazy_eval =
+ fun tm -> ref (Deferred tm)
 
 (* The values in the identity environment of a cube of variables in a context.  We defer them because they might be Unknown or Delayed, but we don't want an error reported unless such a value is actually *used*. *)
-let env_entry : type mode n.
-    mode Mode.t -> (n, mode Binding.t) CubeOf.t -> (n, (mode, kinetic) lazy_eval) CubeOf.t =
- fun mode v ->
-  CubeOf.mmap { map = (fun _ [ x ] -> defer mode (fun () -> Val (Binding.value x).tm)) } [ v ]
+let env_entry : type mode n. (n, mode Binding.t) CubeOf.t -> (n, (mode, kinetic) lazy_eval) CubeOf.t
+    =
+ fun v -> CubeOf.mmap { map = (fun _ [ x ] -> defer (fun () -> Val (Binding.value x).tm)) } [ v ]
 
 (* Extend an identity environment of a context to that of the context extended by a cube of variables. *)
 let env_ext : type dom modality mode b n.
@@ -726,7 +730,7 @@ let env_ext : type dom modality mode b n.
       plus = D.zero_plus (CubeOf.dim bindings);
       filtered = filter;
       filter = Modality.filter_zero (Modality.filter_modality filter);
-      values = `Lazy (env_entry (Modality.src (Modality.filter_modality filter)) bindings);
+      values = `Lazy (env_entry bindings);
     }
 
 module Ordered_ctx = struct
@@ -836,8 +840,7 @@ let rec lock_env : type dom mu cod m b bmu.
 
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
- fun env tm ->
-  ref (Deferred_eval (env, tm, ins_zero (dim_env env), Modalcell.id2 (mode_env env), Emp))
+ fun env tm -> ref (Deferred_eval (env, tm, ins_zero (dim_env env), Modalcell.id2 (mode_env env)))
 
 let ready : type mode s. (mode, s) evaluation -> (mode, s) lazy_eval = fun ev -> ref (Ready ev)
 
@@ -848,18 +851,9 @@ let apply_lazy : type dom modality mode m n s.
     (n, dom normal) CubeOf.t ->
     (mode, s) lazy_eval =
  fun lev m filter xs ->
-  let xins = ins_zero m in
   match !lev with
-  | Deferred_eval (env, tm, ins, cell, apps) ->
-      ref (Deferred_eval (env, tm, ins, cell, Arg (apps, filter, xs, xins)))
-  | Deferred (tm, ins, cell, apps) -> ref (Deferred (tm, ins, cell, Arg (apps, filter, xs, xins)))
-  | Ready tm ->
-      ref
-        (Deferred
-           ( (fun () -> tm),
-             id_deg D.zero,
-             Modalcell.id2 (Modality.tgt (Modality.filter_modality filter)),
-             Arg (Emp, filter, xs, xins) ))
+  | Ready Unrealized -> lev
+  | _ -> ref (Applied (lev, Apps (Arg (filter, xs, ins_zero m))))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
@@ -1064,7 +1058,7 @@ and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
       Neu
         {
           head = Live (UU (mode, n));
-          args = Inst (Emp, n', args);
+          args = Snoc (Emp, Inst (n', args));
           value;
           ty = lazy (universe mode D.zero);
         }
@@ -1076,7 +1070,7 @@ let failed : type mode. mode Mode.t -> (mode, kinetic) value Lazy.t -> (mode, ki
     {
       head = Failed mode;
       args = Emp;
-      value = defer mode (fun () -> fatal (Dependent "failed term"));
+      value = defer (fun () -> fatal (Dependent "failed term"));
       ty;
     }
 
@@ -1090,51 +1084,16 @@ let failed_untyped : type mode. mode Mode.t -> (mode, kinetic) value =
 
 type ('hmode, 'mode) any_apps = Any : ('hmode, 'mode, 'any, live) apps -> ('hmode, 'mode) any_apps
 
-(* Smart constructor that coalesces instantiations *)
-let inst_apps : type hmode mode any m n mn.
-    (hmode, mode, any, live) apps -> (m, n, mn, mode normal) TubeOf.t -> (hmode, mode) any_apps =
- fun apps args2 ->
-  let n = TubeOf.inst args2 in
-  match D.compare_zero n with
-  | Zero -> Any apps
-  | Pos n' -> (
-      match apps with
-      | Inst (apps, k, args1) -> (
-          let (Plus nk) = D.plus (TubeOf.inst args1) in
-          match D.compare (TubeOf.uninst args1) (TubeOf.out args2) with
-          | Neq -> fatal (Dimension_mismatch ("inst_apps", TubeOf.uninst args1, TubeOf.out args2))
-          | Eq ->
-              let args = TubeOf.plus_tube nk args1 args2 in
-              Any (Inst (apps, D.plus_pos n k nk, args)))
-      | Emp -> Any (Inst (apps, n', args2))
-      | Arg _ -> Any (Inst (apps, n', args2))
-      | Field _ -> Any (Inst (apps, n', args2)))
-
-(* Instantiate a lazy value.  We take the mode as a callback since it's only needed in the Ready case, and if the type is failed then computing it might raise an exception.  An instantiation of an Unrealized value is still Unrealized, so in that case we don't need the mode either. *)
+(* Instantiate a lazy value.  An instantiation of an Unrealized value is still Unrealized. *)
 let inst_lazy : type mode m n mn s.
-    (unit -> mode Mode.t) ->
-    (mode, s) lazy_eval ->
-    (m, n, mn, mode normal) TubeOf.t ->
-    (mode, s) lazy_eval =
- fun mode lev args ->
-  match D.compare_zero (TubeOf.inst args) with
-  | Zero -> lev
-  | Pos k -> (
-      match !lev with
-      | Deferred_eval (env, tm, ins, cell, apps) ->
-          let (Any newargs) = inst_apps apps args in
-          ref (Deferred_eval (env, tm, ins, cell, newargs))
-      | Deferred (tm, ins, cell, apps) ->
-          let (Any newargs) = inst_apps apps args in
-          ref (Deferred (tm, ins, cell, newargs))
-      | Ready Unrealized -> lev
-      | Ready tm ->
-          ref
-            (Deferred ((fun () -> tm), id_deg D.zero, Modalcell.id2 (mode ()), Inst (Emp, k, args)))
-      )
+    (mode, s) lazy_eval -> (m, n, mn, mode normal) TubeOf.t -> (mode, s) lazy_eval =
+ fun lev args ->
+  match (D.compare_zero (TubeOf.inst args), !lev) with
+  | Zero, _ | _, Ready Unrealized -> lev
+  | Pos k, _ -> ref (Applied (lev, Apps (Inst (k, args))))
 
-let inst_tys : ('mode, kinetic) value -> ('mode, kinetic) value TubeOf.full = function
-  | Neu { ty = (lazy (Neu { args = Inst (_, _, tys); _ })); _ } -> (
+let inst_tys : type mode. (mode, kinetic) value -> (mode, kinetic) value TubeOf.full = function
+  | Neu { ty = (lazy (Neu { args = Snoc (_, Inst (_, tys)); _ })); _ } -> (
       match D.compare (TubeOf.uninst tys) D.zero with
       | Eq ->
           let Eq = D.plus_uniq (D.zero_plus (TubeOf.inst tys)) (TubeOf.plus tys) in
@@ -1151,10 +1110,10 @@ let inst_of_apps : type hmode mode any.
     (hmode, mode, noninst, live) apps * mode normal TubeOf.any option =
  fun apps ->
   match apps with
-  | Inst (base_args, _, args1) -> (base_args, Some (TubeOf.Any_tube args1))
+  | Snoc (base_args, Inst (_, args1)) -> (base_args, Some (TubeOf.Any_tube args1))
   | Emp -> (apps, None)
-  | Arg _ -> (apps, None)
-  | Field _ -> (apps, None)
+  | Snoc (_, Arg _) -> (apps, None)
+  | Snoc (_, Field _) -> (apps, None)
 
 (* A head together with an application spine ending at a given mode, with the mode at the head end existentially quantified. *)
 type _ head_apps = Head_apps : 'hmode head * ('hmode, 'mode) any_apps -> 'mode head_apps
@@ -1167,40 +1126,31 @@ let split_inst : type mode m.
  fun m tm ->
   let m = D.pos m in
   match tm with
-  | Neu { head = Live head; args = Inst (args, mk, tyargs); _ } -> (
+  | Neu { head = Live head; args = Snoc (args, Inst (mk, tyargs)); _ } -> (
       match (D.compare_zero (TubeOf.uninst tyargs), D.factor (D.pos mk) m) with
       | Zero, Some (Factor m_k) -> (
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (D.pos mk)) in
           let tyargs, rest = TubeOf.split (D.zero_plus m) m_k tyargs in
           match D.compare_zero (D.plus_right m_k) with
           | Zero -> Some (Head_apps (head, Any args), tyargs)
-          | Pos k -> Some (Head_apps (head, Any (Inst (args, k, rest))), tyargs))
+          | Pos k -> Some (Head_apps (head, Any (Snoc (args, Inst (k, rest)))), tyargs))
       | _ -> None)
   | _ -> None
 
 module Fwd_app = struct
-  (* Make an apps without instantiations into a forwards type-aligned sequence.  A single entry takes a spine ending at its first mode parameter to one ending at its second; the two differ for modal field projections. *)
-  type (_, _) t =
-    | Arg :
-        ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
-        * ('n, 'dom normal) CubeOf.t
-        * ('mk, 'm, 'k) insertion
-        -> ('mode, 'mode) t
-    | Field :
-        ('src, 'f, 'mode, 'ft, 't) Modality.filter_dim
-        * 'i Field.t
-        * ('t, 'i, 'n) D.plus
-        * ('tk, 't, 'k) insertion
-        -> ('src, 'mode) t
+  (* Make an apps without instantiations into a forwards type-aligned sequence of its entries.  Since the entries are not instantiations, the spine each one extends can be anything. *)
+  type (_, _) fwd =
+    | Nil : ('mode, 'mode) fwd
+    | Cons : ('a, 'b, 'any, noninst) apps_entry * ('b, 'c) fwd -> ('a, 'c) fwd
 
-  type (_, _) fwd = Nil : ('mode, 'mode) fwd | Cons : ('a, 'b) t * ('b, 'c) fwd -> ('a, 'c) fwd
-
-  let snoc : type hmode mode mode2 any.
-      (hmode, mode, any, live) apps -> (mode, mode2) t -> (hmode, mode2, noninst, live) apps =
+  let snoc : type hmode mode mode2 any any2.
+      (hmode, mode, any, live) apps ->
+      (mode, mode2, any2, noninst) apps_entry ->
+      (hmode, mode2, noninst, live) apps =
    fun apps app ->
     match app with
-    | Arg (filter, arg, ins) -> Arg (apps, filter, arg, ins)
-    | Field (f, fld, plus, ins) -> Field (apps, f, fld, plus, ins)
+    | Arg (filter, arg, ins) -> Snoc (apps, Arg (filter, arg, ins))
+    | Field (f, fld, plus, ins) -> Snoc (apps, Field (f, fld, plus, ins))
 
   let of_apps : type hmode mode any. (hmode, mode, any, live) apps -> (hmode, mode) fwd =
    fun apps ->
@@ -1209,9 +1159,9 @@ module Fwd_app = struct
      fun apps fwds ->
       match apps with
       | Emp -> fwds
-      | Arg (apps, filter, arg, ins) -> go apps (Cons (Arg (filter, arg, ins), fwds))
-      | Field (apps, f, fld, plus, ins) -> go apps (Cons (Field (f, fld, plus, ins), fwds))
-      | Inst _ -> fatal (Anomaly "instantiation in fwd_of_apps") in
+      | Snoc (apps, (Arg _ as app)) -> go apps (Cons (app, fwds))
+      | Snoc (apps, (Field _ as app)) -> go apps (Cons (app, fwds))
+      | Snoc (_, Inst _) -> fatal (Anomaly "instantiation in fwd_of_apps") in
     go apps Nil
 end
 

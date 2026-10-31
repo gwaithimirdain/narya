@@ -648,8 +648,9 @@ let rec check : type mode a b s.
               | Potential (c, args, hyp) ->
                   let arg = CubeOf.mmap { map = (fun _ [ x ] -> Ctx.Binding.value x) } [ newnfs ] in
                   Potential
-                    (c, Arg (args, filter, arg, ins_zero m), fun tm -> hyp (Lam (xs, m, filter, tm)))
-            in
+                    ( c,
+                      Snoc (args, Arg (filter, arg, ins_zero m)),
+                      fun tm -> hyp (Lam (xs, m, filter, tm)) ) in
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs filter newargs in
             match cube.value with
@@ -2347,33 +2348,35 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
                            (readback_env oldctx metaenv (Global.find_meta meta).termctx) )
                  | Constant (c, cmode, dim) -> Constant (c, cmode, dim) in
                (erhead, Emp)
-           | Arg (rest, filter, xs, ins) ->
+           | Snoc (rest, Arg (filter, xs, ins)) ->
                let modality = Modality.filter_modality filter in
                let (Locked (plus, loldctx)) = Ctx.lock oldctx modality in
                let lnewenv = lock_env newenv plus in
                let erhead, errest = erapps oldctx newenv rest in
                ( erhead,
-                 Arg
+                 Snoc
                    ( errest,
-                     filter,
-                     CubeOf.mmap
-                       {
-                         map =
-                           (fun _ [ x ] ->
-                             let tm = eval_term lnewenv (readback_nf loldctx x) in
-                             let ty = eval_term lnewenv (readback_val loldctx (Lazy.force x.ty)) in
-                             { tm; ty = Lazy.from_val ty });
-                       }
-                       [ xs ],
-                     ins ) )
-           | Field (rest, filter, x, y, z) ->
+                     Arg
+                       ( filter,
+                         CubeOf.mmap
+                           {
+                             map =
+                               (fun _ [ x ] ->
+                                 let tm = eval_term lnewenv (readback_nf loldctx x) in
+                                 let ty =
+                                   eval_term lnewenv (readback_val loldctx (Lazy.force x.ty)) in
+                                 { tm; ty = Lazy.from_val ty });
+                           }
+                           [ xs ],
+                         ins ) ) )
+           | Snoc (rest, Field (filter, x, y, z)) ->
                (* The spine inside a modal field projection lives behind a lock by the left adjoint. *)
                let fm = Modality.filter_modality filter in
                let (Locked (plus, loldctx)) = Ctx.lock oldctx fm in
                let lnewenv = lock_env newenv plus in
                let erhead, errest = erapps loldctx lnewenv rest in
-               (erhead, Field (errest, filter, x, y, z))
-           | Inst _ -> fatal (Anomaly "inst in make_match_status") in
+               (erhead, Snoc (errest, Field (filter, x, y, z)))
+           | Snoc (_, Inst _) -> fatal (Anomaly "inst in make_match_status") in
         erapps oldctx (Ctx.env newctx) args
     | None -> (head, args) in
   let hyp tm =
@@ -2690,7 +2693,7 @@ and implicit_goal_arg : type mode a b.
     match apps with
     | Nil -> (Eq, None)
     | Cons
-        ( Fwd_app.Arg
+        ( Arg
             (type dom modality n k m mk)
             ((filter, arg, ins) :
               (dom, modality, m1, n, m) Modality.filter_dim
@@ -2710,8 +2713,8 @@ and implicit_goal_arg : type mode a b.
   match ty with
   | Neu { head = Live (Const _); args; value = _; ty = _ } -> (
       match args with
-      | Inst _ -> None
-      | Emp | Arg _ | Field _ -> (
+      | Snoc (_, Inst _) -> None
+      | Emp | Snoc (_, Arg _) | Snoc (_, Field _) -> (
           try
             match go (Fwd_app.of_apps args) i with
             | Eq, nf -> nf
@@ -2736,7 +2739,7 @@ and get_indices : type mode hmode1 hmode2 a b any1 any2.
     function
     | Nil -> (Eq, [])
     | Cons
-        ( Fwd_app.Arg
+        ( Arg
             (type dom modality n k m mk)
             ((filter, arg, ins) :
               (dom, modality, m1, n, m) Modality.filter_dim
@@ -3072,7 +3075,7 @@ and check_record_field : type mode a f1 f2 f af d acd b n.
           Codatafield
             (None, Modalcell.id_adjunction (Ctx.mode ctx), plus_no_lock (Ctx.mode ctx), Lower cty)
         ) in
-    (cty, Snoc (checked_fields, entry), Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry)
+    (cty, Bwd.Snoc (checked_fields, entry), Fibrancy.Codata.add_field (Ctx.mode ctx) fibrancy entry)
   in
   let cty, checked_fields, fibrancy =
     (* If the field fails to typecheck, we record its type as Failed. *)
@@ -3226,10 +3229,10 @@ and check_field : type mode a b c s m n mn i et.
               let mkstatus lbl : (mode, b, s) status -> (gmode, bl, s) status = function
                 | Kinetic l -> Kinetic l
                 | Potential (c, args, hyp) ->
-                    let args = Value.Field (args, left_filter, fld, D.plus_zero m, ins) in
+                    let args = Snoc (args, Field (left_filter, fld, D.plus_zero m, ins)) in
                     let hyp tm =
                       let ctms =
-                        Snoc
+                        Bwd.Snoc
                           ( ctms,
                             Term.StructfieldAbwd.Entry
                               (fld, Term.Structfield.Lower (adj, ctx_plus_lock, tm, lbl)) ) in
@@ -3270,11 +3273,11 @@ and check_field : type mode a b c s m n mn i et.
                         (None, tms)) in
               (* Record the checked (or failed) field, with its value. *)
               let add_field ctm lbl =
-                ( Snoc
+                ( Bwd.Snoc
                     ( etms,
                       Value.StructfieldAbwd.Entry
                         (fld, Value.Structfield.Lower (adj, lazy_eval (Ctx.env lctx) ctm, lbl)) ),
-                  Snoc
+                  Bwd.Snoc
                     ( ctms,
                       Term.StructfieldAbwd.Entry
                         (fld, Term.Structfield.Lower (adj, ctx_plus_lock, ctm, lbl)) ) ) in
@@ -3399,7 +3402,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                          (* In the case of a metavariable, we eval-readback its stored environment to raise it to degctx. *)
                          Meta (meta, eval_env degenv rn (readback_env ctx metaenv d.termctx)) in
                    (head, Emp)
-               | Field (apps, filter, fldname, nk, appins) ->
+               | Snoc (apps, Field (filter, fldname, nk, appins)) ->
                    let fm = Modality.filter_modality filter in
                    let n = cod_left_ins appins in
                    let (Plus rn) = D.plus n in
@@ -3412,14 +3415,15 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                    let (Locked (plus, lctx)) = Ctx.lock ctx fm in
                    let ldegenv = lock_env degenv plus in
                    let head, newapps = erapps lctx ldegenv apps in
-                   (head, Value.Field (newapps, newfilter, fldname, rn_k, newins))
-               | Arg
-                   (type dom modality any' n m mz z)
-                   ((apps, filter_nm, arg, appins) :
-                     (hm, m2, any', live) apps
-                     * (dom, modality, m2, n, m) Modality.filter_dim
-                     * (n, dom normal) CubeOf.t
-                     * (mz, m, z) insertion) ->
+                   (head, Snoc (newapps, Field (newfilter, fldname, rn_k, newins)))
+               | Snoc
+                   ( apps,
+                     Arg
+                       (type dom modality n m mz z)
+                       ((filter_nm, arg, appins) :
+                         (dom, modality, m2, n, m) Modality.filter_dim
+                         * (n, dom normal) CubeOf.t
+                         * (mz, m, z) insertion) ) ->
                    let n = CubeOf.dim arg in
                    let m = cod_left_ins appins in
                    let (Plus rm) = D.plus m in
@@ -3475,8 +3479,9 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                        }
                        [ etms; etys ] in
                    let head, newapps = erapps ctx degenv apps in
-                   (head, Arg (newapps, filter_sn_rm, newarg, newins))
-               | Inst _ -> fatal (Anomaly "inst in eval-readback when checking higher field") in
+                   (head, Snoc (newapps, Arg (filter_sn_rm, newarg, newins)))
+               | Snoc (_, Inst _) ->
+                   fatal (Anomaly "inst in eval-readback when checking higher field") in
             let head, args = erapps ctx degenv args in
             let (Plus ni) = D.plus intrinsic in
             (* We add the current field projection to the args, with an insertion obtained by incorporating the remaining dimensions into the evaluation. *)
@@ -3484,14 +3489,14 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
             let newins = ins_plus_of_pbij fldins fldshuf rm in
             (* The Field entry crosses modes: the inner spine lives at the codatatype's mode and the projection at the left adjoint's target, and it stores the filter of the left adjoint at the (outer) result dimension.  Since we require modal higher fields to be parametric, this filter is trivial; for an ordinary field the modality itself is the identity. *)
             let (Has_filter lfilter) = Modality.filter left (cod_left_ins newins) in
-            let args = Value.Field (args, lfilter, fld, ni, newins) in
+            let args = Snoc (args, Field (lfilter, fld, ni, newins)) in
             (* To hypothesize a value for the current term, we insert the supposed value as the value of this field.  Note the context rbg of the supposed value is the degenerated and locked rbg instead of the original b, but this is exactly right for the value that's supposed to go in at this pbij.  *)
             let hyp (tm : (gmode, rbg, potential) term) : (hm, aa, potential) term =
               let hsf =
                 Term.Structfield.Higher
                   (adj, ctx_plus_lock, PlusPbijmap.set pbij (Some (PlusFam (plusmap_bg, tm))) cvals)
               in
-              let ctms = Snoc (ctms, Entry (fld, hsf)) in
+              let ctms = Bwd.Snoc (ctms, Entry (fld, hsf)) in
               hyp (Term.Struct { eta = Noeta; dim = m; fields = ctms; energy = energy status })
             in
             Potential (head, args, hyp) in
@@ -3567,12 +3572,12 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
       let env = lock_env (Ctx.env ctx) ctx_plus_lock in
       let deg = id_deg (D.plus_out (dim_env env) plusdim) in
       let etms =
-        Snoc
+        Bwd.Snoc
           ( etms,
             Entry
               (fld, Higher (lazy { adj; vals = evals; intrinsic; plusdim; env; deg; terms = cvals }))
           ) in
-      let ctms = Snoc (ctms, Entry (fld, Higher (adj, ctx_plus_lock, cvals))) in
+      let ctms = Bwd.Snoc (ctms, Entry (fld, Higher (adj, ctx_plus_lock, cvals))) in
       check_fields status Noeta ctx ty m (D.plus_zero m) codata_args fields tyargs tms ctms etms
 
 and synth : type mode a b s.
@@ -4211,7 +4216,7 @@ and synth : type mode a b s.
                   let arg = CubeOf.singleton xnf in
                   Potential
                     ( c,
-                      Arg (args, filter, arg, ins_zero D.zero),
+                      Snoc (args, Arg (filter, arg, ins_zero D.zero)),
                       fun tm -> hyp (Lam (xs, D.zero, Modality.filter_zero modality, tm)) ) in
             let cbody, scod = synth newstatus newctx body in
             let ty =

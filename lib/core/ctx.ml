@@ -81,8 +81,10 @@ let app_entry : type hmode dom modality mode f n b2 any.
  fun apps { bindings; filter; _ } ->
   if all_free bindings then
     let n = CubeOf.dim bindings in
-    Arg
-      (apps, filter, CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ], ins_zero n)
+    Snoc
+      ( apps,
+        Arg (filter, CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ], ins_zero n)
+      )
   else fatal (Anomaly "let-bound variable in Ctx.apps")
 
 (* The extension of a checked context by one cube of variables, as contributed by a visible or invisible entry. *)

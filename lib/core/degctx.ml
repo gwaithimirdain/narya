@@ -46,7 +46,7 @@ module Ordered = struct
                         match Hashtbl.find_opt xstbl (SFace_of fab') with
                         | Some x -> ready (Val x.tm)
                         | None ->
-                            defer (Modality.src modality) (fun () ->
+                            defer (fun () ->
                                 fatal (Anomaly "variable out of scope in degenerate_binding")));
                   } in
               let env : (mode, l, bb) env =

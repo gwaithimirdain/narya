@@ -790,7 +790,7 @@ and readback_neu : type hmode mode a z any.
   (* We always read back the function before its arguments, so that if its head is a let-bound variable that is out of scope, we find that out before doing any work on the arguments.  Otherwise, reading back the arguments and then again the value of the whole application, which contains them, could take exponential time. *)
   match (apps, head) with
   | Emp, _ -> readback_head ~canonical ctx head
-  | Arg (apps, filter, args, ins), _ ->
+  | Snoc (apps, Arg (filter, args, ins)), _ ->
       let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
@@ -808,7 +808,7 @@ and readback_neu : type hmode mode a z any.
                   CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ),
           p,
           sort )
-  | Field (apps, filter, fld, fldplus, ins), _ -> (
+  | Snoc (apps, Field (filter, fld, fldplus, ins)), _ -> (
       let fm = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
       (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
@@ -828,11 +828,11 @@ and readback_neu : type hmode mode a z any.
             Term.Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
           let liftdeg = Modality.deg_of_filter t filter in
           Term.Act (Kinetic, Term.Act (Kinetic, fieldterm, liftdeg, sort), p, sort))
-  | Inst (Emp, _, args), Pi _ when TubeOf.is_full args ->
+  | Snoc (Emp, Inst (_, args)), Pi _ when TubeOf.is_full args ->
       (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
       Inst (Kinetic, readback_head ~canonical ctx head, args)
-  | Inst (apps, _, args), _ ->
+  | Snoc (apps, Inst (_, args)), _ ->
       let fn = readback_neu ~canonical ctx head apps in
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
       Inst (Kinetic, fn, args)
@@ -1513,7 +1513,7 @@ and readback_permuted_codata : type mode a b m k mk e n.
 and uninstantiate : type mode. mode Mode.t -> (mode, kinetic) value -> mode normal =
  fun mode ty ->
   match view_term ty with
-  | Neu { head; args = Inst (base_args, _, insargs); value; ty = instty } -> (
+  | Neu { head; args = Snoc (base_args, Inst (_, insargs)); value; ty = instty } -> (
       match view_type (Lazy.force instty) "uninstantiate" with
       | Canonical (_, UU (_, umk), uins, uargs) -> (
           let Eq = eq_of_ins_zero uins in

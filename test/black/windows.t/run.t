@@ -255,7 +255,7 @@ recursively makes it permanent:
    ￫ error[E1715]
    ￭ command line fake-interact
    1 | def H : DomType ≔ data [ h. (_ : ?) ] def hbad (u : ○ H) : ○ H ≔ match u [ ○. w ↦ match (w :○| _) [ h. y ↦ ○. (h. y) ] ]
-     ^ window modality ○ must be pellucid since it is not yet known whether the datatype has recursive constructors, due to unsolved holes in its constructor types
+     ^ window modality ○ must be pellucid since the datatype might have recursive constructors
   
 
   $ narya -transparent-functor preserve.ny -fake-interact "def H : DomType ≔ data [ h. (_ : ?) ] solve 0 ≔ ⊥ def hgood (u : ○ H) : ○ H ≔ match u [ ○. w ↦ match (w :○| _) [ h. y ↦ ○. (h. y) ] ]"
