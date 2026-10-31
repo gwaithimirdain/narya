@@ -2046,7 +2046,7 @@ and check_var_match : type dom modality mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) ->
+        hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
       let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
@@ -2109,6 +2109,8 @@ and check_var_match : type dom modality mode a b bm.
                 motive loc
           | None -> fatal_diagnostic d)
       @@ fun () ->
+      (* The branches are checked inside this, so if we fall back to a non-dependent match they will be checked again.  Thus we check them speculatively, so that the effects of checking them the first time, such as creating holes, are discarded. *)
+      Origin.speculate @@ fun () : (mode, b, potential) term ->
       let index_vars =
         Vec.mmap
           (fun [ tm ] -> CubeOf.mmap { map = (fun _ [ x ] -> is_fresh x) } [ tm ])
@@ -2303,7 +2305,7 @@ and check_var_match : type dom modality mode a b bm.
           if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
         highers;
       (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store, but we record that it is implicitly dependent. *)
-      Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = `Implicit; branches }
+      Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = `Implicit; branches })
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
