@@ -14,6 +14,7 @@ type sort = [ `Let | `Letrec of letrec_block | `Bare of string ]
 and letrec_block
 
 val new_letrec_block : unit -> letrec_block
+val run_owner : (unit -> 'x) -> 'x
 val with_owner : Constant.t -> (unit -> 'x) -> 'x
 val with_owner_of : ('mode, 'a, 'b, 's) t -> (unit -> 'x) -> 'x
 

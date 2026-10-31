@@ -72,13 +72,17 @@ let new_letrec_block () : letrec_block =
   number
 
 (* The constant whose definition is currently being checked, if any, which will be the owner of any defined metavariables created. *)
-let current_owner : Constant.t option ref = ref None
+module Owner = Algaeff.Reader.Make (struct
+  type t = Constant.t option
+end)
+
+let () = Owner.register_printer (function `Read -> Some "unhandled Meta.Owner effect")
+
+(* Install the handler for the owner effect, with no owner.  This is done once at top level. *)
+let run_owner : type x. (unit -> x) -> x = fun f -> Owner.run ~env:None f
 
 let with_owner_opt : type x. Constant.t option -> (unit -> x) -> x =
- fun owner f ->
-  let old = !current_owner in
-  current_owner := owner;
-  Fun.protect ~finally:(fun () -> current_owner := old) f
+ fun owner f -> Owner.run ~env:owner f
 
 let with_owner : type x. Constant.t -> (unit -> x) -> x =
  fun const f -> with_owner_opt (Some const) f
@@ -129,7 +133,7 @@ let make_def : type mode a b s.
   let number = Versioned.get def_counters in
   Versioned.set def_counters (number + 1);
   let identity = `Def (number, sort) in
-  let owner = !current_owner in
+  let owner = Owner.read () in
   let local =
     match (owner, name) with
     | Some const, Some name -> Some (local_name const name loc)
@@ -146,7 +150,7 @@ let make_hole : type mode a b s.
   let number = Dynarray.length hole_origins in
   Dynarray.add_last hole_origins origin;
   let identity = `Hole number in
-  (origin, { identity; mode; raw; len; energy; owner = !current_owner; local = None })
+  (origin, { identity; mode; raw; len; energy; owner = Owner.read (); local = None })
 
 (* Run a callback with the same owner as a given metavariable, such as a hole being solved, so that the metavariables created by the callback have that owner. *)
 let with_owner_of : type mode a b s x. (mode, a, b, s) t -> (unit -> x) -> x =
