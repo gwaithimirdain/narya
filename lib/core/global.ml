@@ -250,83 +250,75 @@ let notify_holes () =
   let n = unsolved_holes () in
   if n > 0 then Reporter.emit (Open_holes n)
 
-(* Since holes are not allowed inside all commands, we need to keep track of whether we're in a command that allows holes and check for it.  We use a state effect for this.  We also record all the holes *created* by the current command in a separate list so they can be reported to the user, and what is known so far about whether the currently executing command must be parametric.. *)
+(* Since holes are not allowed inside all commands, we need to keep track of whether we're in a command that allows holes and check for it.  We use a global mutable state for this.  We also record all the holes *created* by the current command in a separate list so they can be reported to the user, and what is known so far about whether the currently executing command must be parametric.. *)
 
-module Command_state = struct
-  type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
+type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
 
-  type t = {
-    holes_allowed : (unit, string) Result.t;
-    current_holes : hole Bwd.t;
-    parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
-  }
-end
+type t = {
+  holes_allowed : (unit, string) Result.t;
+  current_holes : hole Bwd.t;
+  parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
+}
 
-module Current_command = State.Make (Command_state)
-
-let () =
-  Current_command.register_printer (function
-    | `Get -> Some "unhandled Current_command.get effect"
-    | `Set _ -> Some "unhandled Current_command.set effect")
+let current_command =
+  ref { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric }
 
 (* Set and get parametric-ness *)
 
 let set_nonparametric name =
-  Current_command.modify (fun d ->
-      if d.parametric = `Must_be_parametric then
-        match name with
-        | Some name -> fatal (Axiom_in_parametric_definition (PConstant name))
-        | None -> fatal (Anomaly "set_nonparametric found must_be without constant")
-      else { d with parametric = `Nonparametric })
+  if !current_command.parametric = `Must_be_parametric then
+    match name with
+    | Some name -> fatal (Axiom_in_parametric_definition (PConstant name))
+    | None -> fatal (Anomaly "set_nonparametric found must_be without constant")
+  else current_command := { !current_command with parametric = `Nonparametric }
 
 let set_parametric name =
-  Current_command.modify (fun d ->
-      if d.parametric = `Nonparametric then fatal (Locked_constant (PConstant name))
-      else { d with parametric = `Must_be_parametric })
+  if !current_command.parametric = `Nonparametric then fatal (Locked_constant (PConstant name))
+  else current_command := { !current_command with parametric = `Must_be_parametric }
 
 let set_maybe_parametric () =
-  Current_command.modify (fun d -> { d with parametric = `Maybe_parametric })
+  current_command := { !current_command with parametric = `Maybe_parametric }
 
 let get_parametric () =
-  match (Current_command.get ()).parametric with
+  match !current_command.parametric with
   | `Nonparametric -> `Nonparametric
   | `Must_be_parametric | `Maybe_parametric -> `Parametric
 
 (* At successful completion of a command, notify the user of generated holes.  Use make_msg to show the number of holes, and also emit the holes separately to be shown in the goals buffer.  This is a subroutine of run_command and friends, below. *)
 let end_command (offset, make_msg) =
-  let d = Current_command.get () in
   (* If the command ended up being parametric, we must retroactively label all the holes as parametric, so that they can only be filled using parametric constants, and oppositely. *)
   let update_parametric : type mode a b s.
       (mode, a, b, s) Metadef.hole -> (mode, a, b, s) Metadef.hole =
    fun h ->
     let parametric =
-      match d.parametric with
+      match !current_command.parametric with
       | `Must_be_parametric -> `Parametric
       | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Parametric
       | _ -> `Nonparametric in
     { h with parametric } in
   (* If the command had any errors, it will fail, so its holes won't exist; thus we don't display either the message about the command or the hole goals. *)
   let failed = moribund () in
-  if not failed then Option.iter emit (make_msg (Bwd.length d.current_holes));
+  if not failed then Option.iter emit (make_msg (Bwd.length !current_command.current_holes));
   Mbwd.miter
-    (fun [ ({ meta = Meta.Wrap m; printable; _ } : Command_state.hole) ] ->
+    (fun [ ({ meta = Meta.Wrap m; printable; _ } : hole) ] ->
       (* We intentionally do not "locate" this emission, since we want to display only the hole context and type, not its location in the source. *)
       if not failed then emit (Hole (Meta.name m, printable));
       match Holetable.find_opt m holes with
       | Some h -> Holetable.add m (update_parametric h) holes
       | None -> ())
-    [ d.current_holes ];
+    [ !current_command.current_holes ];
   (* Current_command.modify (fun d -> { d with current_holes = Emp; parametric = `Maybe_parametric }) *)
   ( offset,
     Bwd_extra.to_list_map
-      (fun ({ meta = Wrap meta; startpos; endpos; _ } : Command_state.hole) ->
+      (fun ({ meta = Wrap meta; startpos; endpos; _ } : hole) ->
         (Meta.hole_number meta, startpos, endpos))
-      d.current_holes )
+      !current_command.current_holes )
 
 (* Run a command.  If it reports any errors, even if it returns, it fails with a silent fatal error.  This has to happen inside the Origin command functions, so that in interactive mode they undo its effects, such as definitions with failed parts or partially failed hole solutions. *)
 let in_command init f =
   Reporter.failing_on_errors ~why:"command" @@ fun () ->
-  Current_command.run ~init @@ fun () -> end_command (f ())
+  current_command := init;
+  end_command (f ())
 
 (* The different versions correspond to the Origin command functions that they call. *)
 
@@ -357,14 +349,13 @@ let rewind_command_then_undo ~parametric ~holes_allowed instant f =
 
 (* For white box testing *)
 let run f =
-  Current_command.run
-    ~init:{ holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric }
-    f
+  current_command :=
+    { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric };
+  f ()
 
 (* Add a new hole. *)
 let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
-  let cmd = Current_command.get () in
-  match (Origin.holes_allowed (), cmd.holes_allowed) with
+  match (Origin.holes_allowed (), !current_command.holes_allowed) with
   | Error where, _ ->
       fatal
         (No_holes_allowed (where :> [ `Command of string | `File of string | `Other of string ]))
@@ -392,12 +383,12 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
         }
         holes;
       let s, e = Asai.Range.split loc in
-      Current_command.set
+      current_command :=
         {
-          cmd with
+          !current_command with
           current_holes =
             Snoc
-              ( cmd.current_holes,
+              ( !current_command.current_holes,
                 {
                   meta = Wrap m;
                   printable = PHole (Origin.current (), vars, termctx, ty);
@@ -416,9 +407,8 @@ let with_definition : type mode a.
  fun c m tm f ->
   match Constant.Table.find_opt c constants with
   | Some (Ok (Definition { mode; ty; _ }) as old) -> (
-      let d = Current_command.get () in
       let parametric =
-        match d.parametric with
+        match !current_command.parametric with
         | `Nonparametric -> `Nonparametric
         | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
       match Mode.compare mode m with
