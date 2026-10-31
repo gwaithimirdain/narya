@@ -1480,7 +1480,9 @@ type backtrack = ..
 
 exception Backtrack of backtrack
 
-(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost; except that if it is a [Backtrack], they are discarded.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost.  If the optional [emits_only] is true, collect only emitted non-errors and fail as soon as any mortal or fatal error is encountered, returning that error as the Error result (even if it was originally only mortal).  In that case the callback is abandoned by unwinding it with an exception, during which some cleanup code (such as an inner [collect]) may report more mortal errors; these are ignored, so that the error returned is the first one. *)
+(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost; except that if it is a [Backtrack], they are discarded.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost.  If the optional [emits_only] is true, collect only emitted non-errors and fail as soon as any mortal or fatal error is encountered, returning that error as the Error result (even if it was originally only mortal).  In that case the callback is abandoned by unwinding it with an exception, during which some cleanup code (such as an inner [collect]) may report more mortal errors; these are ignored, so that the error returned is the first one.
+
+   This is an internal function that should not be called outside Reporter, except by white-box tests. *)
 let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
     ('a, Code.t Asai.Diagnostic.t) Result.t * pending Bwd.t =
   let exception Killed of Code.t Asai.Diagnostic.t in
@@ -1526,7 +1528,8 @@ let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
       release !pendings;
       Printexc.raise_with_backtrace exn bt
 
-(* Pass on the results of [collect] as if it hadn't happened, releasing the delayed diagnostics and either returning the result or re-raising the fatal error. *)
+(* Pass on the results of [collect] as if it hadn't happened, releasing the delayed diagnostics and either returning the result or re-raising the fatal error.
+   This is an internal function that should not be called outside Reporter, except by white-box tests.  *)
 let uncollect (result, ps) =
   release ps;
   match result with
