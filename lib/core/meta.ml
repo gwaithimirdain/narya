@@ -87,42 +87,26 @@ let with_owner : type x. Constant.t -> (unit -> x) -> x =
 
 let current_owner () = Owner.read ()
 
-(* For each owner, the local names that have been given to its metavariables, and the names given to the metavariables bound at each location.  The latter ensures that if a binding is checked more than once, as can happen when backtracking, its metavariable gets the same name each time. *)
-type local_names = { mutable used : string list; at_loc : (int * int, string) Hashtbl.t }
+(* For each owner, the local names that have been given to its metavariables.  Like the definitions of constants, this is versioned, so that it is backtracked when speculation fails (see Origin.speculate) and on undo; thus a binding that is checked more than once gets the same name each time. *)
+module StringSet = Set.Make (String)
 
-let local_names : (Constant.t, local_names) Hashtbl.t = Hashtbl.create 10
+let local_names : StringSet.t Constant.Table.t = Constant.Table.make ()
 
-let owner_local_name : Constant.t -> string -> Asai.Range.t option -> string =
- fun const name loc ->
-  let names =
-    match Hashtbl.find_opt local_names const with
-    | Some names -> names
-    | None ->
-        let names = { used = []; at_loc = Hashtbl.create 10 } in
-        Hashtbl.add local_names const names;
-        names in
-  let loc =
-    Option.map
-      (fun loc ->
-        let start, stop = Asai.Range.split loc in
-        (start.offset, stop.offset))
-      loc in
-  match Option.bind loc (Hashtbl.find_opt names.at_loc) with
-  | Some local -> local
-  | None ->
-      let rec until_unique k =
-        let namek = name ^ Unicode.primes k in
-        if List.mem namek names.used then until_unique (k + 1) else namek in
-      let local = until_unique 0 in
-      names.used <- local :: names.used;
-      Option.iter (fun loc -> Hashtbl.add names.at_loc loc local) loc;
-      local
+let owner_local_name : Constant.t -> string -> string =
+ fun const name ->
+  let used = Option.value ~default:StringSet.empty (Constant.Table.find_opt const local_names) in
+  let rec until_unique k =
+    let namek = name ^ Unicode.primes k in
+    if StringSet.mem namek used then until_unique (k + 1) else namek in
+  let local = until_unique 0 in
+  Constant.Table.add const (StringSet.add local used) local_names;
+  local
 
-(* The local name to give a new defined metavariable bound to a variable with a given name, if any, at a given location: if it has an owner, the name is made unique among the metavariables of that owner by adding primes. *)
-let local_name : ?loc:Asai.Range.t -> string option -> string option =
- fun ?loc name ->
+(* The local name to give a new defined metavariable bound to a variable with a given name, if any: if it has an owner, the name is made unique among the metavariables of that owner by adding primes. *)
+let local_name : string option -> string option =
+ fun name ->
   match (Owner.read (), name) with
-  | Some const, Some name -> Some (owner_local_name const name loc)
+  | Some const, Some name -> Some (owner_local_name const name)
   | _ -> name
 
 (* Create a new defined metavariable in the current execution location (file or interactive instant). *)

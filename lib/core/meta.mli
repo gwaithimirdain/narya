@@ -18,7 +18,7 @@ val run_owner : (unit -> 'x) -> 'x
 val with_owner : Constant.t -> (unit -> 'x) -> 'x
 val with_owner_opt : Constant.t option -> (unit -> 'x) -> 'x
 val current_owner : unit -> Constant.t option
-val local_name : ?loc:Asai.Range.t -> string option -> string option
+val local_name : string option -> string option
 
 val make_def :
   sort -> 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t

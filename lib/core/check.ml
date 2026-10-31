@@ -1222,7 +1222,7 @@ and synth_or_check_let : type mode a b s p.
           (* If that encounters case-tree constructs, then we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
           | Case_tree_construct_in_let ->
             (* First we make the metavariable. *)
-            let local = Meta.local_name ?loc:v.loc name in
+            let local = Meta.local_name name in
             let meta =
               Meta.make_def `Let (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx) Potential
             in
@@ -1333,7 +1333,7 @@ and make_letrec_metas : type mode a b c ac v.
    fun actx tel vtms ->
     match (tel, vtms) with
     | Emp, [] -> []
-    | Ext (x, modality, rty, tel), vtm :: vtms -> (
+    | Ext (x, modality, rty, tel), _ :: vtms -> (
         (* A let-rec is NOT allowed to be modal.  I had technical problems with context manipulation in trying to figure out how to check a modal letrec, plus I'm not even sure what that would mean semantically. *)
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "checking let-rec" (e :> modality_error)
@@ -1347,7 +1347,7 @@ and make_letrec_metas : type mode a b c ac v.
                   @@ fun () ->
                   let cty = check (Kinetic `Nolet) actx rty (universe mode D.zero) in
                   (cty, eval_term (Ctx.env actx) cty) in
-                let local = Meta.local_name ?loc:vtm.loc x in
+                let local = Meta.local_name x in
                 let meta =
                   Meta.make_def (`Letrec block) mode (Ctx.raw_length actx) (Ctx.tctx actx) Potential
                 in
