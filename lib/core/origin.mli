@@ -43,3 +43,12 @@ module Versioned : sig
   val fold : 'a t -> ('acc -> 'a -> 'acc) -> 'acc -> 'acc
   val foldi : 'a t -> ('acc -> Origin.t -> 'a -> 'acc) -> 'acc -> 'acc
 end
+
+module Speculable : sig
+  type 'a t
+
+  val get : 'a t -> 'a
+  val set : 'a t -> 'a -> unit
+  val modify : 'a t -> ('a -> 'a) -> unit
+  val make : 'a -> 'a t
+end

@@ -325,3 +325,20 @@ module Versioned = struct
     Origin.backtracks := (fun () -> set self (Stack.pop backtracks)) :: !Origin.backtracks;
     self
 end
+
+(* A Speculable object isn't versioned, e.g. because it doesn't persist beyond one command, but it can be speculated and backtracked.  Like a Versioned, the objects stored in a Speculable must be IMMUTABLE. *)
+module Speculable = struct
+  type 'a t = 'a ref * 'a Stack.t
+
+  let get self = !(fst self)
+  let set self v = fst self := v
+  let modify self f = fst self := f !(fst self)
+
+  let make (init : 'a) : 'a t =
+    let backtracks = Stack.create () in
+    let self = (ref init, backtracks) in
+    Origin.speculates := (fun () -> Stack.push !(fst self) backtracks) :: !Origin.speculates;
+    Origin.successes := (fun () -> Stack.drop backtracks) :: !Origin.successes;
+    Origin.backtracks := (fun () -> fst self := Stack.pop backtracks) :: !Origin.backtracks;
+    self
+end

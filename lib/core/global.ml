@@ -254,33 +254,35 @@ let notify_holes () =
 
 type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
 
-type t = {
+type current_command = {
   holes_allowed : (unit, string) Result.t;
   current_holes : hole Bwd.t;
   parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
 }
 
-let current_command =
-  ref { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric }
+let current_command : current_command Speculable.t =
+  Speculable.make
+    { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric }
 
 (* Set and get parametric-ness *)
 
 let set_nonparametric name =
-  if !current_command.parametric = `Must_be_parametric then
+  if (Speculable.get current_command).parametric = `Must_be_parametric then
     match name with
     | Some name -> fatal (Axiom_in_parametric_definition (PConstant name))
     | None -> fatal (Anomaly "set_nonparametric found must_be without constant")
-  else current_command := { !current_command with parametric = `Nonparametric }
+  else Speculable.modify current_command (fun d -> { d with parametric = `Nonparametric })
 
 let set_parametric name =
-  if !current_command.parametric = `Nonparametric then fatal (Locked_constant (PConstant name))
-  else current_command := { !current_command with parametric = `Must_be_parametric }
+  if (Speculable.get current_command).parametric = `Nonparametric then
+    fatal (Locked_constant (PConstant name))
+  else Speculable.modify current_command (fun d -> { d with parametric = `Must_be_parametric })
 
 let set_maybe_parametric () =
-  current_command := { !current_command with parametric = `Maybe_parametric }
+  Speculable.modify current_command (fun d -> { d with parametric = `Maybe_parametric })
 
 let get_parametric () =
-  match !current_command.parametric with
+  match (Speculable.get current_command).parametric with
   | `Nonparametric -> `Nonparametric
   | `Must_be_parametric | `Maybe_parametric -> `Parametric
 
@@ -291,14 +293,15 @@ let end_command (offset, make_msg) =
       (mode, a, b, s) Metadef.hole -> (mode, a, b, s) Metadef.hole =
    fun h ->
     let parametric =
-      match !current_command.parametric with
+      match (Speculable.get current_command).parametric with
       | `Must_be_parametric -> `Parametric
       | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Parametric
       | _ -> `Nonparametric in
     { h with parametric } in
   (* If the command had any errors, it will fail, so its holes won't exist; thus we don't display either the message about the command or the hole goals. *)
   let failed = moribund () in
-  if not failed then Option.iter emit (make_msg (Bwd.length !current_command.current_holes));
+  if not failed then
+    Option.iter emit (make_msg (Bwd.length (Speculable.get current_command).current_holes));
   Mbwd.miter
     (fun [ ({ meta = Meta.Wrap m; printable; _ } : hole) ] ->
       (* We intentionally do not "locate" this emission, since we want to display only the hole context and type, not its location in the source. *)
@@ -306,18 +309,18 @@ let end_command (offset, make_msg) =
       match Holetable.find_opt m holes with
       | Some h -> Holetable.add m (update_parametric h) holes
       | None -> ())
-    [ !current_command.current_holes ];
+    [ (Speculable.get current_command).current_holes ];
   (* Current_command.modify (fun d -> { d with current_holes = Emp; parametric = `Maybe_parametric }) *)
   ( offset,
     Bwd_extra.to_list_map
       (fun ({ meta = Wrap meta; startpos; endpos; _ } : hole) ->
         (Meta.hole_number meta, startpos, endpos))
-      !current_command.current_holes )
+      (Speculable.get current_command).current_holes )
 
 (* Run a command.  If it reports any errors, even if it returns, it fails with a silent fatal error.  This has to happen inside the Origin command functions, so that in interactive mode they undo its effects, such as definitions with failed parts or partially failed hole solutions. *)
 let in_command init f =
   Reporter.failing_on_errors ~why:"command" @@ fun () ->
-  current_command := init;
+  Speculable.set current_command init;
   end_command (f ())
 
 (* The different versions correspond to the Origin command functions that they call. *)
@@ -349,13 +352,13 @@ let rewind_command_then_undo ~parametric ~holes_allowed instant f =
 
 (* For white box testing *)
 let run f =
-  current_command :=
+  Speculable.set current_command
     { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric };
   f ()
 
 (* Add a new hole. *)
 let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
-  match (Origin.holes_allowed (), !current_command.holes_allowed) with
+  match (Origin.holes_allowed (), (Speculable.get current_command).holes_allowed) with
   | Error where, _ ->
       fatal
         (No_holes_allowed (where :> [ `Command of string | `File of string | `Other of string ]))
@@ -383,12 +386,12 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
         }
         holes;
       let s, e = Asai.Range.split loc in
-      current_command :=
+      Speculable.set current_command
         {
-          !current_command with
+          (Speculable.get current_command) with
           current_holes =
             Snoc
-              ( !current_command.current_holes,
+              ( (Speculable.get current_command).current_holes,
                 {
                   meta = Wrap m;
                   printable = PHole (Origin.current (), vars, termctx, ty);
@@ -408,7 +411,7 @@ let with_definition : type mode a.
   match Constant.Table.find_opt c constants with
   | Some (Ok (Definition { mode; ty; _ }) as old) -> (
       let parametric =
-        match !current_command.parametric with
+        match (Speculable.get current_command).parametric with
         | `Nonparametric -> `Nonparametric
         | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
       match Mode.compare mode m with
