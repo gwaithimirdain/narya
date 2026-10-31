@@ -2107,7 +2107,8 @@ and check_var_match : type dom modality mode a b bm.
             let (Locked (_, lctx)) = Ctx.lock ctx window in
             fatal (Matching_wont_refine ("index is not a free variable", Some (PNormal (lctx, x))))
       in
-      Reporter.try_with ~fatal:(fun d ->
+      (* The branches are checked inside this, so if we fall back to a non-dependent match they will be checked again.  Thus we check them speculatively, so that the effects of checking them the first time, such as creating holes, are discarded, and we discard the diagnostics reported the first time as well. *)
+      Reporter.recovering ~recover:(fun d ->
           match
             match d.message with
             | Matching_wont_refine (str, x) -> Some (str, x)
@@ -2115,12 +2116,13 @@ and check_var_match : type dom modality mode a b bm.
             | _ -> None
           with
           | Some (msg, x) ->
-              emit ?loc:d.explanation.loc (Code.Matching_wont_refine (msg, x));
-              check_nondep_match status ctx (Term.Var index) varty window plus brs None highers
-                motive loc
-          | None -> fatal_diagnostic d)
+              Some
+                (fun () ->
+                  emit ?loc:d.explanation.loc (Code.Matching_wont_refine (msg, x));
+                  check_nondep_match status ctx (Term.Var index) varty window plus brs None highers
+                    motive loc)
+          | None -> None)
       @@ fun () ->
-      (* The branches are checked inside this, so if we fall back to a non-dependent match they will be checked again.  Thus we check them speculatively, so that the effects of checking them the first time, such as creating holes, are discarded. *)
       Origin.speculate_exn @@ fun () : (mode, b, potential) term ->
       let index_vars =
         Vec.mmap

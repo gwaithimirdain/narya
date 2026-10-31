@@ -1536,6 +1536,15 @@ let uncollect (result, ps) =
 (* Run a callback, holding back the diagnostics it reports until it finishes and then passing them on as if nothing had happened, unless it is abandoned by a [Backtrack], in which case they are discarded along with it. *)
 let backtrackable (f : unit -> 'a) : 'a = uncollect (collect f)
 
+(* Run a callback that might fail with a fatal error from which the caller recovers by redoing its work in a different way, holding back the diagnostics it reports.  If it fails with a fatal error for which [recover] supplies a recovery, the diagnostics are discarded along with the failed attempt and the recovery is run instead.  Otherwise they are passed on as if nothing had happened. *)
+let recovering ~(recover : Code.t Asai.Diagnostic.t -> (unit -> 'a) option) (f : unit -> 'a) : 'a =
+  match collect f with
+  | (Error d, _) as result -> (
+      match recover d with
+      | Some g -> g ()
+      | None -> uncollect result)
+  | result -> uncollect result
+
 (* Run a callback that should fail if it reports any mortal errors, even if it returns a result.  This is appropriate for a unit of work, such as a command, that shouldn't take effect if it had any errors.  All errors are passed on outwards immediately, and if any such errors occurred, a (silent) fatal error is raised at the end.  Inside the callback, [moribund] refers only to the errors it has reported. *)
 let failing_on_errors ?(why = "failing_on_errors") f =
   let errors = ref Emp in
