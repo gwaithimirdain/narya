@@ -26,7 +26,7 @@ module Identity = struct
   let compare : t -> t -> int = compare
 end
 
-(* A metavariable is also parametrized by its raw context length, its checked context length, and its energy (kinetic or potential), although these are not part of its identity.  A metavariable also remembers, for display purposes only, the constant in whose definition it was created (its "owner"), if any.  This is used to name a defined metavariable, and is remembered by a hole so that the metavariables created when solving it have the same owner.  A defined metavariable also remembers the name of the variable it was bound to, if any; when it has an owner, this name has been made unique among the metavariables of that owner by adding primes. *)
+(* A metavariable is also parametrized by its raw context length, its checked context length, and its energy (kinetic or potential), although these are not part of its identity.  We store witnesses of these so that we can compare them to make the type parameters match up; all the other properties of a metavariable are stored in its definition (see Metadef). *)
 module Extended_identity = struct
   type ('mode, 'a, 'b, 's) t = {
     identity : Identity.t;
@@ -34,8 +34,6 @@ module Extended_identity = struct
     raw : 'a N.t;
     len : ('mode, 'b) Tctx.t;
     energy : 's energy;
-    owner : Constant.t option;
-    local : string option;
   }
 
   let compare : type m1 m2 a1 b1 s1 a2 b2 s2.
@@ -71,7 +69,7 @@ let new_letrec_block () : letrec_block =
   Versioned.set block_counters (number + 1);
   number
 
-(* The constant whose definition is currently being checked, if any, which will be the owner of any defined metavariables created. *)
+(* The constant whose definition is currently being checked, if any, which will be the owner of any metavariables created (see Metadef). *)
 module Owner = Algaeff.Reader.Make (struct
   type t = Constant.t option
 end)
@@ -87,12 +85,14 @@ let with_owner_opt : type x. Constant.t option -> (unit -> x) -> x =
 let with_owner : type x. Constant.t -> (unit -> x) -> x =
  fun const f -> with_owner_opt (Some const) f
 
+let current_owner () = Owner.read ()
+
 (* For each owner, the local names that have been given to its metavariables, and the names given to the metavariables bound at each location.  The latter ensures that if a binding is checked more than once, as can happen when backtracking, its metavariable gets the same name each time. *)
 type local_names = { mutable used : string list; at_loc : (int * int, string) Hashtbl.t }
 
 let local_names : (Constant.t, local_names) Hashtbl.t = Hashtbl.create 10
 
-let local_name : Constant.t -> string -> Asai.Range.t option -> string =
+let owner_local_name : Constant.t -> string -> Asai.Range.t option -> string =
  fun const name loc ->
   let names =
     match Hashtbl.find_opt local_names const with
@@ -118,27 +118,22 @@ let local_name : Constant.t -> string -> Asai.Range.t option -> string =
       Option.iter (fun loc -> Hashtbl.add names.at_loc loc local) loc;
       local
 
-(* Create a new defined constant in the current execution location (file or interactive instant).  The location is that of the binding, if any. *)
+(* The local name to give a new defined metavariable bound to a variable with a given name, if any, at a given location: if it has an owner, the name is made unique among the metavariables of that owner by adding primes. *)
+let local_name : ?loc:Asai.Range.t -> string option -> string option =
+ fun ?loc name ->
+  match (Owner.read (), name) with
+  | Some const, Some name -> Some (owner_local_name const name loc)
+  | _ -> name
+
+(* Create a new defined metavariable in the current execution location (file or interactive instant). *)
 let make_def : type mode a b s.
-    ?loc:Asai.Range.t ->
-    sort ->
-    string option ->
-    mode Mode.t ->
-    a N.t ->
-    (mode, b) Tctx.t ->
-    s energy ->
-    (mode, a, b, s) t =
- fun ?loc sort name mode raw len energy ->
+    sort -> mode Mode.t -> a N.t -> (mode, b) Tctx.t -> s energy -> (mode, a, b, s) t =
+ fun sort mode raw len energy ->
   let origin = Origin.current () in
   let number = Versioned.get def_counters in
   Versioned.set def_counters (number + 1);
   let identity = `Def (number, sort) in
-  let owner = Owner.read () in
-  let local =
-    match (owner, name) with
-    | Some const, Some name -> Some (local_name const name loc)
-    | _ -> name in
-  (origin, { identity; mode; raw; len; energy; owner; local })
+  (origin, { identity; mode; raw; len; energy })
 
 (* We just use one global hole counter, so that a hole can be represented by a single number to communicate with the user and ProofGeneral.  But to make up for that, we have to remember the origin of each hole as a function of its global number.  And then, since the next number is just the length of this array, we don't need a separate counter for hole autonumbers.  Note that this dynarray never shrinks, so old holes that have gone away are still here.  There wouldn't be any easy way to do that, since solving an old hole can create new holes that have to be at the end of the array, so the origins don't appear here in order. *)
 let hole_origins : Origin.t Dynarray.t = Dynarray.create ()
@@ -150,37 +145,38 @@ let make_hole : type mode a b s.
   let number = Dynarray.length hole_origins in
   Dynarray.add_last hole_origins origin;
   let identity = `Hole number in
-  (origin, { identity; mode; raw; len; energy; owner = Owner.read (); local = None })
-
-(* Run a callback with the same owner as a given metavariable, such as a hole being solved, so that the metavariables created by the callback have that owner. *)
-let with_owner_of : type mode a b s x. (mode, a, b, s) t -> (unit -> x) -> x =
- fun (_, m) f -> with_owner_opt m.owner f
+  (origin, { identity; mode; raw; len; energy })
 
 (* Re-make (link) a metavariable when loading a compiled version from disk. *)
 let remake : type mode a b s. (File.t -> File.t) -> (mode, a, b, s) t -> (mode, a, b, s) t =
  fun f (origin, m) ->
   match origin with
   | Top -> raise (Failure "can't remake built-in metavariable")
-  | File file -> (File (f file), { m with owner = Option.map (Constant.remake f) m.owner })
+  | File file -> (File (f file), m)
   | Instant _ -> raise (Failure "can't remake interactive metavariable")
 
 (* Printable names. *)
 let mode : type mode a b s. (mode, a, b, s) t -> mode Mode.t = fun (_, m) -> m.mode
 
-(* A defined metavariable bound to a named variable is named like "foo.bar._baz", where "foo.bar" is the name of its owner, as computed by the supplied function, and "baz" its local name.  If it has no owner, or the function isn't supplied, then the owner is replaced by its origin and autonumber, as in "F3.17._baz".  A defined metavariable not bound to a named variable, such as one inserted automatically to hold a bare case tree construct, is named like "foo.bar.__match.F3.17", with its sort, origin, and autonumber. *)
-let name : type mode a b s. ?owner_name:(Constant.t -> string) -> (mode, a, b, s) t -> string =
- fun ?owner_name (origin, x) ->
+(* A defined metavariable bound to a named variable is named like "foo.bar._baz", where "foo.bar" is the name of its owner, as computed by the supplied function, and "baz" its local name.  If it has no owner, or the function isn't supplied, then the owner is replaced by its origin and autonumber, as in "F3.17._baz".  A defined metavariable not bound to a named variable, such as one inserted automatically to hold a bare case tree construct, is named like "foo.bar.__match.F3.17", with its sort, origin, and autonumber.  The owner and local name are stored in the definition of the metavariable, so they have to be supplied (see Global.meta_name). *)
+let name : type mode a b s.
+    ?owner_name:(Constant.t -> string) ->
+    ?owner:Constant.t ->
+    ?local:string ->
+    (mode, a, b, s) t ->
+    string =
+ fun ?owner_name ?owner ?local (origin, x) ->
   match x.identity with
   | `Hole number ->
       (* We don't need to include the origin here, since holes are sequentially numbered globally rather than by origin. *)
       Printf.sprintf "?%d" number
   | `Def (number, sort) -> (
       let owner =
-        match (owner_name, x.owner) with
+        match (owner_name, owner) with
         | Some owner_name, Some owner -> Some (owner_name owner)
         | _ -> None in
       let numbered = Printf.sprintf "%s.%d" (Origin.to_string origin) number in
-      match (owner, x.local) with
+      match (owner, local) with
       | Some owner, Some local -> Printf.sprintf "%s._%s" owner local
       | None, Some local -> Printf.sprintf "%s._%s" numbered local
       | Some owner, None -> Printf.sprintf "%s.__%s.%s" owner (string_of_sort sort) numbered

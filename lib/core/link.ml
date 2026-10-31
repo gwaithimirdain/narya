@@ -222,4 +222,5 @@ let metadef : type mode x y z.
     | `Defined tm -> `Defined (term f tm)
     | x -> x in
   let recursion = Positivity.link_recursion f data.recursion in
-  { data with tm; termctx; ty; recursion }
+  let owner = Option.map (Constant.remake f) data.owner in
+  { data with tm; termctx; ty; recursion; owner }

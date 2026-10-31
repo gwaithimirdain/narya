@@ -1032,7 +1032,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             ( Scope_and_ctx (vars, fun _ -> Of_raw (Norm.eval_ctx termctx)),
               fun f ->
                 Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant
-                @@ fun () -> Meta.with_owner_of meta f ) in
+                @@ fun () -> Global.with_owner_of meta f ) in
       run @@ fun () ->
       let rtm = process vars tm in
       action_taken ();
@@ -1171,7 +1171,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let ety = Norm.eval_term (Ctx.env ctx) ty in
       (* The metavariables created, such as by let-bindings, have the same owner as the hole. *)
       let ctm, recursion =
-        Meta.with_owner_of meta @@ fun () ->
+        Global.with_owner_of meta @@ fun () ->
         Positivity.run_beingdefined beingdefined @@ fun () ->
         Positivity.scope @@ fun () -> Check.check status ctx ptm ety in
       Global.set_meta meta ~recursion ctm;

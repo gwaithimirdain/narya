@@ -68,6 +68,18 @@ let find_meta m =
   | Some (Error e) -> fatal e
   | None -> fatal (Anomaly ("undefined metavariable: " ^ Meta.name m))
 
+(* The name of a metavariable, using the owner and local name stored in its definition, if it has one. *)
+let meta_name : type mode a b s.
+    ?owner_name:(Constant.t -> string) -> (mode, a, b, s) Meta.t -> string =
+ fun ?owner_name m ->
+  match Metatable.find_opt m metas with
+  | Some (Ok { owner; local; _ }) -> Meta.name ?owner_name ?owner ?local m
+  | _ -> Meta.name ?owner_name m
+
+(* Run a callback with the same owner as a given metavariable, such as a hole being solved, so that the metavariables created by the callback have that owner. *)
+let with_owner_of : type mode a b s x. (mode, a, b, s) Meta.t -> (unit -> x) -> x =
+ fun m f -> Meta.with_owner_opt (find_meta m).owner f
+
 (* Combine all the data for a hole, to return them when looked up. *)
 type find_hole =
   | Found_hole : {
@@ -189,10 +201,11 @@ let set : type mode.
 (* Add a new constant, but make it an error to access it. *)
 let add_error c e = consttable_add c (Error e)
 
-(* Add a new Global metavariable (e.g. local let-definition) to the new metas associated to the current command. *)
-let add_meta m ~termctx ~ty ~tm ~energy =
+(* Add a new Global metavariable (e.g. local let-definition) to the new metas associated to the current command.  Its owner is the current one, and its local name, if any, should have been computed with Meta.local_name when it was created. *)
+let add_meta ?local m ~termctx ~ty ~tm ~energy =
   let tm = (tm :> [ `Defined of ('mode, 'b, 's) term | `Axiom | `Undefined ]) in
-  metatable_add m (Ok { tm; termctx; ty; energy; recursion = `Nonrecursive })
+  metatable_add m
+    (Ok { tm; termctx; ty; energy; recursion = `Nonrecursive; owner = Meta.current_owner (); local })
 
 let add_meta_error m e = metatable_add m (Error e)
 
@@ -365,6 +378,8 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
              ty;
              energy = Status.energy status;
              recursion = `Nonrecursive;
+             owner = Meta.current_owner ();
+             local = None;
            });
       Holetable.add m
         {

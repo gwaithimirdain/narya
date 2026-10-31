@@ -16,22 +16,24 @@ and letrec_block
 val new_letrec_block : unit -> letrec_block
 val run_owner : (unit -> 'x) -> 'x
 val with_owner : Constant.t -> (unit -> 'x) -> 'x
-val with_owner_of : ('mode, 'a, 'b, 's) t -> (unit -> 'x) -> 'x
+val with_owner_opt : Constant.t option -> (unit -> 'x) -> 'x
+val current_owner : unit -> Constant.t option
+val local_name : ?loc:Asai.Range.t -> string option -> string option
 
 val make_def :
-  ?loc:Asai.Range.t ->
-  sort ->
-  string option ->
-  'mode Mode.t ->
-  'a N.t ->
-  ('mode, 'b) Tctx.t ->
-  's energy ->
-  ('mode, 'a, 'b, 's) t
+  sort -> 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t
 
 val make_hole : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t
 val remake : (File.t -> File.t) -> ('mode, 'a, 'b, 's) t -> ('mode, 'a, 'b, 's) t
 val mode : ('mode, 'a, 'b, 's) t -> 'mode Mode.t
-val name : ?owner_name:(Constant.t -> string) -> ('mode, 'a, 'b, 's) t -> string
+
+val name :
+  ?owner_name:(Constant.t -> string) ->
+  ?owner:Constant.t ->
+  ?local:string ->
+  ('mode, 'a, 'b, 's) t ->
+  string
+
 val sort_of : ('mode, 'a, 'b, 's) t -> sort option
 val is_bare : ('mode, 'a, 'b, 's) t -> bool
 val letrec_siblings : ('m1, 'a1, 'b1, 's1) t -> ('m2, 'a2, 'b2, 's2) t -> bool

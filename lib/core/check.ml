@@ -1175,7 +1175,7 @@ and kinetic_of_potential : type mode a b.
       emit (Bare_case_tree_construct sort);
       (* We create a metavariable to store the potential value. *)
       let meta =
-        Meta.make_def (`Bare sort) None (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential
+        Meta.make_def (`Bare sort) (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential
       in
       (* We first define the metavariable without a value, as an "axiom", just as we do for global constants.  This isn't necessary for recursion, since this metavariable can't refer to itself, but so that with_meta_definition will be able to find it for consistency. *)
       let termctx = readback_ctx ctx in
@@ -1221,9 +1221,10 @@ and synth_or_check_let : type mode a b s p.
           (* If that encounters case-tree constructs, then we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
           | Case_tree_construct_in_let ->
             (* First we make the metavariable. *)
+            let local = Meta.local_name ?loc:v.loc name in
             let meta =
-              Meta.make_def ?loc:v.loc `Let name (Ctx.mode lctx) (Ctx.raw_length lctx)
-                (Ctx.tctx lctx) Potential in
+              Meta.make_def `Let (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx) Potential
+            in
             let termctx = readback_ctx lctx in
             (* A new status in which to check the value of that metavariable; now it is the "current constant" being defined. *)
             let tmstatus = Potential (Meta (meta, Ctx.env lctx), Emp, fun x -> x) in
@@ -1232,7 +1233,7 @@ and synth_or_check_let : type mode a b s p.
               | Asc (vtm, rvty) ->
                   (* If the bound term is explicitly ascribed, then we can give the metavariable a type while checking its body.  This is probably mainly only useful with "let rec". *)
                   let vty = check (Kinetic `Nolet) lctx rvty (universe (Ctx.mode lctx) D.zero) in
-                  Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
+                  Global.add_meta ?local meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
                   let evty = eval_term (Ctx.env lctx) vty in
                   let cv = check tmstatus lctx vtm evty in
                   Global.set_meta meta cv;
@@ -1243,7 +1244,7 @@ and synth_or_check_let : type mode a b s p.
                   (* We pass in a ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
                   let synthed svty =
                     let vty = readback_val lctx svty in
-                    Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
+                    Global.add_meta ?local meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
                   let sv, svty = synth ~synthed tmstatus lctx v in
                   (* Now the type is already installed and we can just set the value. *)
                   Global.set_meta meta sv;
@@ -1345,10 +1346,11 @@ and make_letrec_metas : type mode a b c ac v.
                   @@ fun () ->
                   let cty = check (Kinetic `Nolet) actx rty (universe mode D.zero) in
                   (cty, eval_term (Ctx.env actx) cty) in
+                let local = Meta.local_name ?loc:vtm.loc x in
                 let meta =
-                  Meta.make_def ?loc:vtm.loc (`Letrec block) x mode (Ctx.raw_length actx)
-                    (Ctx.tctx actx) Potential in
-                Global.add_meta meta ~termctx:(readback_ctx actx) ~tm:`Axiom ~ty:cty
+                  Meta.make_def (`Letrec block) mode (Ctx.raw_length actx) (Ctx.tctx actx) Potential
+                in
+                Global.add_meta ?local meta ~termctx:(readback_ctx actx) ~tm:`Axiom ~ty:cty
                   ~energy:Potential;
                 let tm = eval_term (Ctx.env actx) (Meta (meta, Kinetic)) in
                 let actx =
@@ -4248,7 +4250,7 @@ and synth : type mode a b s.
             emit (Bare_case_tree_construct "match");
             (* A match in a kinetic synthesizing position, we can treat like a let-binding that returns the bound (metavariable) value.  Of course we can shortcut the binding by just inserting the metavariable as the result.  This code is copied and modified from synth_or_check_let.  Note that in this case there is no evident way to give the metavariable a type before defining it, which means that with_meta_definition won't be able to set it to anything; but this shouldn't be a problem since there is also no name for this metavariable and hence no way for the user to refer to it in the body, so it doesn't need to have a type or a value. *)
             let meta =
-              Meta.make_def (`Bare "match") None (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx)
+              Meta.make_def (`Bare "match") (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx)
                 Potential in
             let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun x -> x) in
             (* First we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)

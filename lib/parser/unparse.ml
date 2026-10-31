@@ -311,7 +311,7 @@ let displayed_metadef : type mode x b s. (mode, x, b, s) Meta.t -> (mode, x, b, 
 
 (* The full name of a metavariable, using the name currently in scope for the constant that owns it. *)
 let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
- fun v -> Meta.name ~owner_name:(fun c -> String.concat "." (Scope.name_of c)) v
+ fun v -> Global.meta_name ~owner_name:(fun c -> String.concat "." (Scope.name_of c)) v
 
 (* The name with which a variable whose value is a metavariable is displayed in place of being bound. *)
 let meta_var_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
