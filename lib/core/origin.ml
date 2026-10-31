@@ -85,9 +85,6 @@ module Origin = struct
   (* We always start execution at the toplevel. *)
   let run f = S.run ~init:Top f
 
-  (* Execute a new file, making it current, and then return to the previous current origin (wherever it was imported from).  The file object must have been created with File.make previously. *)
-  let with_file ~holes_allowed file f = S.run ~init:(File (file, holes_allowed)) f
-
   (* Callbacks for changing instants, to grow or shrink all the Versioned Dynarrays. *)
   let nexts : (unit -> unit) list ref = ref []
   let prevs : (unit -> unit) list ref = ref []
@@ -102,6 +99,11 @@ module Origin = struct
   let successes : (unit -> unit) list ref = ref []
   let backtracks : (unit -> unit) list ref = ref []
   let speculating = ref 0
+
+  (* Execute a new file, making it current, and then return to the previous current origin (wherever it was imported from).  The file object must have been created with File.make previously. *)
+  let with_file ~holes_allowed file f =
+    if !speculating > 0 then raise (Failure "Origin: can't load a file while speculating");
+    S.run ~init:(File (file, holes_allowed)) f
 
   (* Switch to interactive mode.  Only works in top-level (after all files and exec-strings are completed). *)
   let set_interactive () =
@@ -335,6 +337,8 @@ module Speculable = struct
   let modify self f = fst self := f !(fst self)
 
   let make (init : 'a) : 'a t =
+    if !Origin.speculating > 0 then
+      raise (Failure "Can't make new Speculable objects while speculating");
     let backtracks = Stack.create () in
     let self = (ref init, backtracks) in
     Origin.speculates := (fun () -> Stack.push !(fst self) backtracks) :: !Origin.speculates;
