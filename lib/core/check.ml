@@ -286,7 +286,7 @@ let merge_branches : type hmode dom a m.
          (c, Checkable_branch { xs; body = None; env; ty }))
        leftovers)
 
-exception Case_tree_construct_in_let
+type Reporter.backtrack += Case_tree_construct_in_let
 
 (* The output of checking a telescope includes an extended context. *)
 type (_, _, _, _, _) checked_tel =
@@ -1180,7 +1180,7 @@ and kinetic_of_potential : type mode a b.
     (mode, b, kinetic) term =
  fun l ctx tm ty sort ->
   match l with
-  | `Let -> raise Case_tree_construct_in_let
+  | `Let -> raise (Reporter.Backtrack Case_tree_construct_in_let)
   | `Nolet ->
       emit (Bare_case_tree_construct sort);
       (* We create a metavariable to store the potential value. *)
@@ -1224,12 +1224,14 @@ and synth_or_check_let : type mode a b s p.
         @@
           try
             (* We first try checking the bound term first as an ordinary kinetic term. *)
-            let sv, svty = Origin.speculate_exn @@ fun () -> synth (Kinetic `Let) lctx v in
+            let sv, svty =
+              Reporter.backtrackable @@ fun () ->
+              Origin.speculate_exn @@ fun () -> synth (Kinetic `Let) lctx v in
             let ev = eval_at (Ctx.env lctx) sv svty in
             (sv, { tm = ev; ty = Lazy.from_val svty })
           with
           (* If that encounters case-tree constructs, then we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
-          | Case_tree_construct_in_let ->
+          | Reporter.Backtrack Case_tree_construct_in_let ->
             (* First we make the metavariable. *)
             let local = Meta.local_name name in
             let meta =
@@ -4260,7 +4262,7 @@ and synth : type mode a b s.
         (realize status ctm, ety)
     | Match _, Kinetic l -> (
         match l with
-        | `Let -> raise Case_tree_construct_in_let
+        | `Let -> raise (Reporter.Backtrack Case_tree_construct_in_let)
         | `Nolet ->
             emit (Bare_case_tree_construct "match");
             (* A match in a kinetic synthesizing position, we can treat like a let-binding that returns the bound (metavariable) value.  Of course we can shortcut the binding by just inserting the metavariable as the result.  This code is copied and modified from synth_or_check_let.  Note that in this case there is no evident way to give the metavariable a type before defining it, which means that with_meta_definition won't be able to set it to anything; but this shouldn't be a problem since there is also no name for this metavariable and hence no way for the user to refer to it in the body, so it doesn't need to have a type or a value. *)

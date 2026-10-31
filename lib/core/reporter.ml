@@ -1475,7 +1475,12 @@ let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
        (fun () -> diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
        ~fatal:(fun d -> if is_dependent d then d else fatal_diagnostic d))
 
-(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost.  If the optional [emits_only] is true, collect only emitted non-errors and fail as soon as any mortal or fatal error is encountered, returning that error as the Error result (even if it was originally only mortal).  In that case the callback is abandoned by unwinding it with an exception, during which some cleanup code (such as an inner [collect]) may report more mortal errors; these are ignored, so that the error returned is the first one. *)
+(* Exceptions are used both for reporting errors and for nonlocal control flow.  For the latter we use this exception, with an extensible payload, to abandon an attempt at doing something, such as a typechecking attempt that will be redone in a different way.  The diagnostics reported during an abandoned attempt belong to it, so they are discarded along with it: in particular, [collect] discards rather than releases them when a [Backtrack] passes through it. *)
+type backtrack = ..
+
+exception Backtrack of backtrack
+
+(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost; except that if it is a [Backtrack], they are discarded.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost.  If the optional [emits_only] is true, collect only emitted non-errors and fail as soon as any mortal or fatal error is encountered, returning that error as the Error result (even if it was originally only mortal).  In that case the callback is abandoned by unwinding it with an exception, during which some cleanup code (such as an inner [collect]) may report more mortal errors; these are ignored, so that the error returned is the first one. *)
 let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
     ('a, Code.t Asai.Diagnostic.t) Result.t * pending Bwd.t =
   let exception Killed of Code.t Asai.Diagnostic.t in
@@ -1513,6 +1518,9 @@ let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
   with
   | result -> (result, !pendings)
   | exception Killed p -> (Error p, !pendings)
+  | exception (Backtrack _ as exn) ->
+      let bt = Printexc.get_raw_backtrace () in
+      Printexc.raise_with_backtrace exn bt
   | exception exn ->
       let bt = Printexc.get_raw_backtrace () in
       release !pendings;
@@ -1524,6 +1532,9 @@ let uncollect (result, ps) =
   match result with
   | Result.Ok x -> x
   | Error d -> fatal_diagnostic d
+
+(* Run a callback, holding back the diagnostics it reports until it finishes and then passing them on as if nothing had happened, unless it is abandoned by a [Backtrack], in which case they are discarded along with it. *)
+let backtrackable (f : unit -> 'a) : 'a = uncollect (collect f)
 
 (* Run a callback that should fail if it reports any mortal errors, even if it returns a result.  This is appropriate for a unit of work, such as a command, that shouldn't take effect if it had any errors.  All errors are passed on outwards immediately, and if any such errors occurred, a (silent) fatal error is raised at the end.  Inside the callback, [moribund] refers only to the errors it has reported. *)
 let failing_on_errors ?(why = "failing_on_errors") f =
