@@ -389,8 +389,7 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
           with
           | Some v -> { names with aliases = Meta.WrapMap.add v x names.aliases }
           | None -> names))
-  | Snoc (ctx, { vis = Vis (Var_cube, { dim; plusdim; vars; fields; _ }); _ }, _, Suc (Zero, Dim _))
-    ->
+  | Snoc (ctx, { vis = Vis (Vars, { dim; plusdim; vars; fields; _ }); _ }, _, Suc (Zero, Dim _)) ->
       let { ctx; used; hidden; aliases } = of_ordered_ctx ctx in
       let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
       let used = ref used in

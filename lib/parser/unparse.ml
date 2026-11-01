@@ -2085,7 +2085,7 @@ let rec unparse_ctx : type dom modality mode a b.
             Bwv.mmap (fun [ (x, _); (f, _, _) ] -> (Field.to_string f, x)) [ fs; fields ] in
           let (names : b Names.t) =
             match (kind, ext) with
-            | Var_cube, Ext_dim ->
+            | Vars, Ext_dim ->
                 Names.unsafe_add names (Variables (dim, plusdim, xs)) (Bwv.to_bwd fnames)
             | Alias, Ext_alias -> names in
           let xnames = Names.add_lock names plus_lock in

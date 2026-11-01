@@ -698,7 +698,7 @@ module Ordered_ctx = struct
       (mode, modality, n, b2, b, newb) ext_kind =
    fun { vis; _ } comp ->
     match (vis, comp) with
-    | Vis (Var_cube, _), Suc (Zero, Dim _) -> Ext_dim
+    | Vis (Vars, _), Suc (Zero, Dim _) -> Ext_dim
     | Invis, Suc (Zero, Dim _) -> Ext_dim
     | Vis (Alias, _), Zero -> Ext_alias
 

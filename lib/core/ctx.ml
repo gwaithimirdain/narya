@@ -116,8 +116,7 @@ module Ordered = struct
         {
           filter;
           bindings;
-          vis =
-            Vis (Var_cube, { dim; plusdim; vars; hasfields = No_fields; fields = Emp; fplus = Zero });
+          vis = Vis (Vars, { dim; plusdim; vars; hasfields = No_fields; fields = Emp; fplus = Zero });
         },
         af,
         dim_comp filter bindings )
@@ -170,8 +169,7 @@ module Ordered = struct
         {
           filter;
           bindings;
-          vis =
-            Vis (Var_cube, { dim = D.zero; plusdim; vars; hasfields = Has_fields; fields; fplus });
+          vis = Vis (Vars, { dim = D.zero; plusdim; vars; hasfields = Has_fields; fields; fplus });
         },
         af,
         dim_comp filter bindings )
@@ -312,9 +310,9 @@ module Ordered = struct
     let n = CubeOf.dim bindings in
     match (vis, comp, found) with
     | Vis (Alias, _), Zero, _ -> found
-    | Vis (Var_cube, _), Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
+    | Vis (Vars, _), Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
     | Invis, Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
-    | Vis (Var_cube, _), Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
+    | Vis (Vars, _), Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
         Aliased (Alias_lookup { v with plus = plus_with_locks_dim v.plus n filter })
     | Invis, Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
         Aliased (Alias_lookup { v with plus = plus_with_locks_dim v.plus n filter })
@@ -418,7 +416,7 @@ module Ordered = struct
         | Right i -> (
             (* Only a cube of variables can have field variables. *)
             match (kind, comp) with
-            | Var_cube, Suc (Zero, Dim _) -> (
+            | Vars, Suc (Zero, Dim _) -> (
                 let b = CubeOf.find_top bindings in
                 match Binding.level b with
                 | Some level ->
@@ -444,7 +442,7 @@ module Ordered = struct
             | Found_face fab -> (
                 let x = CubeOf.find bindings fab in
                 match (kind, comp) with
-                | Var_cube, Suc (Zero, Dim _) ->
+                | Vars, Suc (Zero, Dim _) ->
                     Found
                       (Lookup
                          {
@@ -593,7 +591,7 @@ module Ordered = struct
     | Snoc (ctx, { vis = Vis (Alias, _); _ }, _, Zero) -> lam ctx tree
     | Snoc
         ( ctx,
-          { bindings; filter; vis = Vis (Var_cube, { dim; plusdim; vars; fplus = Zero; _ }) },
+          { bindings; filter; vis = Vis (Vars, { dim; plusdim; vars; fplus = Zero; _ }) },
           _,
           Suc (Zero, Dim _) )
       when all_free bindings ->

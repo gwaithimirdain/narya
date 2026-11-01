@@ -164,7 +164,7 @@ module Ordered = struct
             let data : _ Term.vis_data =
               { dim = D.plus_out k km; plusdim; vars; hasfields = No_fields; fields; fplus } in
             match (kind, ext) with
-            | Var_cube, Ext_dim -> ext_dim (degenerated ()) (Vis (Var_cube, data))
+            | Vars, Ext_dim -> ext_dim (degenerated ()) (Vis (Vars, data))
             (* An alias is degenerated like a cube of variables, but it doesn't extend the context or the environment. *)
             | Alias, Ext_alias ->
                 let bindings, _ = degenerated () in
