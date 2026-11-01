@@ -3620,19 +3620,21 @@ and synth : type mode a b s.
         match Ctx.lookup ctx i with
         | Aliased (Alias_lookup { value; dirt; modality; plus = plus_tgt }) -> (
             Positivity.record dirt;
-            (* An alias has no checked variable, so we read back its value, in the context at its position locked by its modality, and then weaken it to the current context, as we do for a variable below. *)
-            let (Any_ctx actx) = Ctx.remove_locks ctx plus_tgt in
+            (* Since an alias has no corresponding variable, we have to read its value back into the current context to get a term. *)
             let (Plus_with_locks (_, locks)) = plus_tgt in
             let lock = Locks.cod locks in
-            let (Has_plus_lock plus_src) = plus_lock modality in
-            let lctx = Ctx.lock_to actx modality plus_src in
-            let tm = readback_nf lctx value in
             match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
             | Eq, _ ->
-                ( realize status (weaken_gen plus_src tm plus_tgt : (mode, b, kinetic) term),
+                let tm = readback_nf ctx value in
+                ( (realize status tm : (mode, b, s) term),
                   (act_value (Lazy.force value.ty) (id_deg D.zero) (Modalcell.id2 mode)
                     : (mode, kinetic) value) )
             | _, Some (Unique cell) ->
+                (* If it requires a nontrivial key, we have to modify the readback context. *)
+                let (Any_ctx actx) = Ctx.remove_locks ctx plus_tgt in
+                let (Has_plus_lock plus_src) = plus_lock modality in
+                let lctx = Ctx.lock_to actx modality plus_src in
+                let tm = readback_nf lctx value in
                 ( realize status (Term.Key { tm; cell; plus_tgt; plus_src }),
                   act_value (Lazy.force value.ty) (id_deg D.zero) cell )
             | Neq, None -> fatal (Missing_key (modality, lock)))
