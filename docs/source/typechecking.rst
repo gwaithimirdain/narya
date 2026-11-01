@@ -55,6 +55,8 @@ The term ``M`` is required to synthesize.  Thus ``let x ≔ M : A in N`` is a co
 
 The body ``N`` can either check or synthesize, and the let-binding as a whole inherits this from it: if ``N`` synthesizes a type then the let-binding synthesizes the same type, while if ``N`` checks then the let-binding checks against a type that is passed on to ``N`` to check against.  The let-binding notation is right-associative with tightness −ω.
 
+When a term involving ``x`` is displayed while ``x`` is still in scope, such as in the type of a hole in ``N`` or in an error message arising while checking ``N``, the variable ``x`` is displayed as itself rather than as its value ``M``.  Outside of its scope, for instance in the type synthesized by the whole let-binding, it is displayed as its value.
+
 Recursive let-binding
 ^^^^^^^^^^^^^^^^^^^^^
 

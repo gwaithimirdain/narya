@@ -525,7 +525,7 @@ In a hole, a let-bound variable whose value is its metavariable is displayed as 
      not ≔ t._not : bool → bool
      y ≔ not b : bool
      ----------------------------------------------------------------------
-     J bool (not b) (not b)
+     J bool (not b) y
   
    ￫ error[E3002]
    ￮ command-line exec string contains open holes
@@ -560,9 +560,117 @@ This also works for a modal let-bound variable used with a key.
   
   [1]
 
-A let-bound variable can be degenerated, as in the context of a higher codatatype field.
+An ordinary let-bound variable, whose value is not a metavariable, is also displayed as itself while it is in scope.  This includes when it is applied to arguments or acted on by a degeneracy, and in the branches of a match, which rebuild the context.
 
-  $ narya -v -e 'def t4 (A : Type) (a : A) : Type ≔ let b : A ≔ a in codata [ x .f.e : ? ]'
+  $ cat >kinlet.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > axiom P : ℕ → Type
+  > axiom R : (n : ℕ) → Id ℕ n n → Type
+  > EOF
+
+  $ narya -v kinlet.ny -e 'def t1 (n : ℕ) : Type ≔ let m : ℕ ≔ suc. n in let f : ℕ → ℕ ≔ x ↦ suc. x in P m → P (f n) → R m (refl m) → ?'
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0001]
+   ￮ axiom P assumed
+  
+   ￫ info[I0001]
+   ￮ axiom R assumed
+  
+   ￫ info[I0000]
+   ￮ constant t1 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     n : ℕ
+     m ≔ suc. n : ℕ
+     f ≔ x ↦ suc. x : ℕ → ℕ
+     𝑧 : P m (not in scope)
+     𝑦 : P (f n) (not in scope)
+     𝑥 : R m (refl m) (not in scope)
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+  $ narya -v kinlet.ny -e 'def t2 (n : ℕ) : Type ≔ let m : ℕ ≔ suc. n in match n [ zero. ↦ P m → ? | suc. k ↦ P m → ? ]'
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0001]
+   ￮ axiom P assumed
+  
+   ￫ info[I0001]
+   ￮ axiom R assumed
+  
+   ￫ info[I0000]
+   ￮ constant t2 defined, containing 2 holes
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     n ≔ 0 : ℕ
+     m ≔ 1 : ℕ
+     𝑥 : P m (not in scope)
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     k : ℕ
+     n ≔ suc. k : ℕ
+     m ≔ suc. (suc. k) : ℕ
+     𝑥 : P m (not in scope)
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+Out of its scope, it is displayed as its value.
+
+  $ narya kinlet.ny -e 'synth (n : ℕ) ↦ let m : ℕ ≔ suc. n in (p : P m) ↦ p'
+  n ↦ let m ≔ suc. n in p ↦ p
+    : (n : ℕ) (p : P (suc. n)) → P (suc. n)
+  
+
+Error messages also display it as itself.
+
+  $ narya kinlet.ny -e 'def t3 (n : ℕ) (x : P n) : Type ≔ let m : ℕ ≔ suc. n in let y : P m ≔ x in Type'
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t3 (n : ℕ) (x : P n) : Type ≔ let m : ℕ ≔ suc. n in let y : P m ≔ x in Type
+     ^ term synthesized type
+         P n
+       but is being checked against type
+         P m
+       unequal terms:
+         n
+       does not equal
+         suc. n
+  
+  [1]
+
+A let-bound variable can be degenerated, as in the context of a higher codatatype field.  Its degenerated faces are not read back as themselves while reading back their own values.
+
+  $ narya kinlet.ny -v -e 'def t4 (A : Type) (a : A) : Type ≔ let b : A ≔ a in codata [ x .f.e : ? ]'
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0001]
+   ￮ axiom P assumed
+  
+   ￫ info[I0001]
+   ￮ axiom R assumed
+  
    ￫ info[I0000]
    ￮ constant t4 defined, containing 1 hole
   
