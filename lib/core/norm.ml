@@ -681,12 +681,7 @@ and apply : type dom modality mode n m s.
     (mode, s) evaluation =
  fun fn filter_nm arg ->
   let modality = Modality.filter_modality filter_nm in
-  (* A let-bound function is not unfolded, but applied as a glued neutral, so that the application can be read back with the variable as its head. *)
-  let fn =
-    match fn with
-    | Neu { head = Live (Letvar _); _ } -> fn
-    | _ -> view_term fn in
-  match fn with
+  match view_term fn with
   | Neu { head = Failed mode; args = Emp; value = _; ty } ->
       Val
         (failed_elim mode ty (fun ty ->
