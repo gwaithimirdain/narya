@@ -850,16 +850,9 @@ let parse_single (content : string) : Whitespace.t list * Command.t option =
       else (ws, None)
   | _ -> Core.Reporter.fatal (Anomaly "interactive parse doesn't start with Bof")
 
-(* The context and type of a hole are stored as terms, read back at the moment the hole was created.  Since then, other holes appearing in them may have been solved, and constants that were being defined may have acquired definitions.  Thus, before displaying a hole we re-evaluate its context and type in the current global state and read them back again, so that the user sees an up-to-date goal.  (This is also what happens when the hole is actually solved: "solve" evaluates the stored context and type in the current state, so the type displayed here is the one that a solution will be checked against.) *)
+(* Display a hole's context and type.  The printer for PHole re-evaluates them in the current global state, so that the user sees an up-to-date goal. *)
 let show_hole = function
   | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
-      let termctx, ty =
-        (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)
-        Reporter.discard_errors ~fallback:(fun () -> (termctx, ty)) @@ fun () ->
-        let ctx = Norm.eval_ctx termctx in
-        let ety = Norm.eval_term (Ctx.env ctx) ty in
-        Readback.Displaying.run ~env:true @@ fun () -> (readback_ctx ctx, readback_val ctx ety)
-      in
       emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
 let string_of_mode = function
@@ -1039,8 +1032,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       match rtm.value with
       | Synth stm ->
           let (Of_raw ctx) = ctx rtm in
-          Readback.Displaying.run ~env:true @@ fun () ->
+          (* The term is checked with internal readback, like any other term, so that the contexts of any metavariables it creates are not read back for display.  Only the results are read back for display. *)
           let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
+          Readback.Displaying.run ~env:true @@ fun () ->
           let names = Names.of_ctx ctx in
           (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
           let utm =

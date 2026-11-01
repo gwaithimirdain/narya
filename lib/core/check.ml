@@ -876,9 +876,9 @@ let rec check : type mode a b s.
         let meta =
           Meta.make_hole (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) (energy status) in
         num := Meta.hole_number meta;
-        let ty, termctx =
-          Readback.Displaying.run ~env:true @@ fun () -> (readback_val ctx ty, readback_ctx ctx)
-        in
+        (* Like the context of any metavariable, a hole's context and type are read back for internal use rather than display, since they are also used to check its eventual solution.  The printer for holes re-evaluates them and reads them back again for display. *)
+        let ty = readback_val ctx ty in
+        let termctx = readback_ctx ctx in
         Global.add_hole meta pos ~vars ~termctx ~ty ~status ~li ~ri;
         (* The hole might be solved later with a term containing occurrences of currently-being-defined constants, so we record it as blocking any enclosing occurrence-analysis scope. *)
         Positivity.record_hole meta;
