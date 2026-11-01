@@ -320,7 +320,7 @@ module F = struct
   and entry : type dom modality mode x n b2.
       formatter -> (dom, modality, mode, x, n, b2) Ctx.entry -> unit =
    fun ppf -> function
-    | { bindings; filter; vis = Vis { dim; plusdim; hasfields = No_fields; vars; _ } } -> (
+    | { bindings; filter; vis = Vis (_, { dim; plusdim; hasfields = No_fields; vars; _ }) } -> (
         match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
         | Zero, Zero ->
             let x =

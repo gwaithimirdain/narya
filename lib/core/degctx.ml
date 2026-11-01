@@ -136,79 +136,46 @@ module Ordered = struct
         let (Has_filter filter_k_l) = Modality.filter modality l in
         let k = Modality.filtered l filter_k_l in
         let (Plus k_mn) = D.plus mn in
-        match (ext, entry.vis) with
-        | Ext_alias, Alias { dim; plusdim; vars; hasfields = No_fields; fields; fplus } ->
-            (* An alias is degenerated like a visible variable, but it doesn't extend the context or the environment. *)
+        let filter_kmn =
+          Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn in
+        let degenerated () =
+          degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn ext readbacks env in
+        (* A cube of variables extends both the degenerated context and its environment by a degenerated cube of variables. *)
+        let ext_dim (bindings, newval) vis =
+          Degctx
+            ( Suc
+                ( kb,
+                  Inject (Plus_dim (k_mn, filter_mn, filter_k_l)),
+                  Suc (Zero, Dim (D.plus_out k k_mn, filter_kmn)) ),
+              Snoc
+                ( newctx',
+                  { bindings; filter = filter_kmn; vis },
+                  ax,
+                  Ctx.dim_comp filter_kmn bindings ),
+              Ext
+                { env; plus = k_mn; filter = filter_k_l; filtered = filter_mn; values = `Ok newval }
+            ) in
+        match entry.vis with
+        | Vis (_, { hasfields = Has_fields; _ }) ->
+            fatal (Anomaly "attempt to degenerate a context containing illusory variables")
+        | Vis (kind, { dim; plusdim; vars; hasfields = No_fields; fields; fplus }) -> (
             let (Plus km) = D.plus dim in
             let plusdim = D.plus_assocl km plusdim k_mn in
-            let bindings, _ =
-              degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn ext readbacks env
-            in
-            let filter_kmn =
-              Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn in
-            let vis =
-              Ctx.Alias
-                { dim = D.plus_out k km; plusdim; vars; hasfields = No_fields; fields; fplus } in
-            Degctx (kb, Snoc (newctx', { bindings; filter = filter_kmn; vis }, ax, Zero), env)
-        | Ext_alias, Alias { hasfields = Has_fields; _ } ->
-            fatal (Anomaly "attempt to degenerate a context containing an alias with fields")
-        | Ext_dim, _ ->
-            let newentry, newenv, filter_kmn, filter_mn =
-              match entry.vis with
-              | Vis { hasfields = Has_fields; _ } ->
-                  fatal (Anomaly "attempt to degenerate a context containing illusory variables")
-              | Vis { dim; plusdim; vars; hasfields = No_fields; fields; fplus } ->
-                  let (Plus km) = D.plus dim in
-                  let plusdim = D.plus_assocl km plusdim k_mn in
-                  let bindings, newval =
-                    degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn ext readbacks
-                      env in
-                  let hasfields = Term.No_fields in
-                  let filter_kmn =
-                    Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn
-                  in
-                  ( ({
-                       bindings;
-                       filter = filter_kmn;
-                       vis =
-                         Ctx.Vis { dim = D.plus_out k km; plusdim; vars; hasfields; fields; fplus };
-                     }
-                      : _ Ctx_entry.entry),
-                    Ext
-                      {
-                        env;
-                        plus = k_mn;
-                        filter = filter_k_l;
-                        filtered = filter_mn;
-                        values = `Ok newval;
-                      },
-                    filter_kmn,
-                    filter_mn )
-              | Invis ->
-                  let newxs, newval =
-                    degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn ext readbacks
-                      env in
-                  let filter_kmn =
-                    Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn
-                  in
-                  ( { filter = filter_kmn; bindings = newxs; vis = Invis },
-                    Ext
-                      {
-                        env;
-                        plus = k_mn;
-                        filter = filter_k_l;
-                        filtered = filter_mn;
-                        values = `Ok newval;
-                      },
-                    filter_kmn,
-                    filter_mn ) in
-            Degctx
-              ( Suc
+            let data : _ Term.vis_data =
+              { dim = D.plus_out k km; plusdim; vars; hasfields = No_fields; fields; fplus } in
+            match (kind, ext) with
+            | Var_cube, Ext_dim -> ext_dim (degenerated ()) (Vis (Var_cube, data))
+            (* An alias is degenerated like a cube of variables, but it doesn't extend the context or the environment. *)
+            | Alias, Ext_alias ->
+                let bindings, _ = degenerated () in
+                Degctx
                   ( kb,
-                    Inject (Plus_dim (k_mn, filter_mn, filter_k_l)),
-                    Suc (Zero, Dim (D.plus_out k k_mn, filter_kmn)) ),
-                Snoc (newctx', newentry, ax, Ctx.dim_comp filter_kmn newentry.bindings),
-                newenv ))
+                    Snoc
+                      (newctx', { bindings; filter = filter_kmn; vis = Vis (Alias, data) }, ax, Zero),
+                    env ))
+        | Invis -> (
+            match ext with
+            | Ext_dim -> ext_dim (degenerated ()) Invis))
     | Weaken (ctx, code) ->
         let (Degctx (kb, newctx, env)) = degenerate ctx l in
         Degctx (kb, Weaken (newctx, code), env)

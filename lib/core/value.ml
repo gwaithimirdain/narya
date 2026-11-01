@@ -81,14 +81,9 @@ module rec Value : sig
 
     and (_, _, _, _, _, _) visibility =
       | Vis :
-          ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
-          -> ( 'dom,
-               'modality,
-               'mode,
-               'f,
-               'mn,
-               ('mode id, ('modality, 'mn) dim_entry) snoc )
-             visibility
+          ('modality, 'mode, 'mn, 'f2, 'b2) vis_kind
+          * ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
+          -> ('dom, 'modality, 'mode, 'f, 'mn, 'b2) visibility
       | Invis :
           ( 'dom,
             'modality,
@@ -97,9 +92,6 @@ module rec Value : sig
             'n,
             ('mode id, ('modality, 'n) dim_entry) snoc )
           visibility
-      | Alias :
-          ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
-          -> ('dom, 'modality, 'mode, 'f, 'mn, 'mode id) visibility
   end
 
   module Ordered_ctx : sig
@@ -388,16 +380,11 @@ end = struct
 
     (* The last parameter 'b2 is the extension of the checked context contributed by the entry: one cube of variables for a visible or invisible entry, and nothing for an alias. *)
     and (_, _, _, _, _, _) visibility =
+      (* A visible entry is either a cube of variables or an alias (see Term.vis_kind).  An alias is visible to the raw world like a cube of variables, but it doesn't extend the checked context: it is a cube of let-bound values, whose names refer directly to those values.  Thus a context containing aliases is a substitution from the checked context to the raw one that is not just a weakening.  We allow the "field type" to be anything, so it could be either the terms if they are present, or trivial if not. *)
       | Vis :
-          (* We allow the "field type" to be anything, so it could be either the terms if they are present, or trivial if not. *)
-          ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
-          -> ( 'dom,
-               'modality,
-               'mode,
-               'f,
-               'mn,
-               ('mode id, ('modality, 'mn) dim_entry) snoc )
-             visibility
+          ('modality, 'mode, 'mn, 'f2, 'b2) vis_kind
+          * ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
+          -> ('dom, 'modality, 'mode, 'f, 'mn, 'b2) visibility
       | Invis :
           ( 'dom,
             'modality,
@@ -406,10 +393,6 @@ end = struct
             'n,
             ('mode id, ('modality, 'n) dim_entry) snoc )
           visibility
-      (* An alias is visible to the raw world like a visible entry, but it doesn't extend the checked context: it is a cube of let-bound values, whose names refer directly to those values.  Thus a context containing aliases is a substitution from the checked context to the raw one that is not just a weakening. *)
-      | Alias :
-          ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
-          -> ('dom, 'modality, 'mode, 'f, 'mn, 'mode id) visibility
   end
 
   (* An ordered context: a context without a permutation of its raw indices.  See Ctx for more explanation.  We define this in a submodule so that it can be included later in Ctx.Ordered. *)
@@ -715,9 +698,9 @@ module Ordered_ctx = struct
       (mode, modality, n, b2, b, newb) ext_kind =
    fun { vis; _ } comp ->
     match (vis, comp) with
-    | Vis _, Suc (Zero, Dim _) -> Ext_dim
+    | Vis (Var_cube, _), Suc (Zero, Dim _) -> Ext_dim
     | Invis, Suc (Zero, Dim _) -> Ext_dim
-    | Alias _, Zero -> Ext_alias
+    | Vis (Alias, _), Zero -> Ext_alias
 
   (* The extension contributed by an entry can be added to any checked context. *)
   let rebase : type mode b2 b newb b'.

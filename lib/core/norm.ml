@@ -1988,18 +1988,22 @@ let eval_at : type mode m b.
 
 (* Evaluate a term context to produce a value context. *)
 
-let eval_bindings : type dom modality mode a b n bm.
+(* The bindings of a cube of variables live in the context extended by that cube, so that each can refer to the ones before it, which we arrange with a temporary invisible entry of unknown bindings that we specify as we go.  The bindings of an alias don't extend the context, so they can't refer to each other, and they must all be let-bound. *)
+let eval_bindings : type dom modality mode a b bb b2 n bm.
+    (mode, modality, n, b2, b, bb) ext_kind ->
     (mode, a, b) Ctx.Ordered.t ->
     (dom, modality, mode, n, n) Modality.filter_dim ->
-    ((b, (modality, n) dim_entry) snoc, mode, modality, dom, bm) plus_lock ->
+    (bb, mode, modality, dom, bm) plus_lock ->
     (n, (dom, bm) binding) CubeOf.t ->
     (n, dom Ctx.Binding.t) CubeOf.t =
- fun ctx filter al cbs ->
+ fun ext ctx filter al cbs ->
   let i = Ctx.Ordered.length ctx in
   let vbs = CubeOf.build (CubeOf.dim cbs) { build = (fun _ -> Ctx.Binding.unknown ()) } in
-  let ctx = Ctx.Ordered.invis ctx filter vbs in
   let modality = Modality.filter_modality filter in
-  let tempctx = Ctx.Ordered.lock_to ctx modality al in
+  let tempctx =
+    match ext with
+    | Ext_dim -> Ctx.Ordered.lock_to (Ctx.Ordered.invis ctx filter vbs) modality al
+    | Ext_alias -> Ctx.Ordered.lock_to ctx modality al in
   let argtbl = Hashtbl.create 10 in
   let j = ref 0 in
   let () =
@@ -2013,6 +2017,10 @@ let eval_bindings : type dom modality mode a b n bm.
             j := !j + 1;
             let lvl, v =
               match ctm with
+              | None
+                when match ext with
+                     | Ext_alias -> true
+                     | Ext_dim -> false -> fatal (Anomaly "alias without a value")
               | None ->
                   ( Some level,
                     ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal) )
@@ -2025,45 +2033,16 @@ let eval_bindings : type dom modality mode a b n bm.
       [ cbs; vbs ] in
   vbs
 
-(* The bindings of an alias don't extend the context, so they can't refer to each other, and they must all be let-bound. *)
-let eval_alias_bindings : type dom modality mode a b n bm.
-    (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, n, n) Modality.filter_dim ->
-    (b, mode, modality, dom, bm) plus_lock ->
-    (n, (dom, bm) binding) CubeOf.t ->
-    (n, dom Ctx.Binding.t) CubeOf.t =
- fun ctx filter al cbs ->
-  let modality = Modality.filter_modality filter in
-  let tempctx = Ctx.Ordered.lock_to ctx modality al in
-  CubeOf.mmap
-    {
-      map =
-        (fun _ [ ({ ty = cty; tm = ctm } : (dom, bm) binding) ] ->
-          let ety = eval_term (Ctx.Ordered.env tempctx) cty in
-          match ctm with
-          | Some ctm ->
-              Ctx.Binding.make None
-                { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety }
-          | None -> fatal (Anomaly "alias without a value"));
-    }
-    [ cbs ]
-
 let eval_entry : type dom modality mode a b bb f n bm b2.
     (mode, a, b) Ctx.Ordered.t ->
     (dom, modality, mode, bb, bm, f, n, b2) entry ->
     (mode, b2, mode, b, unit, bb) Tctx.comp ->
     (dom, modality, mode, f, n, b2) Ctx.entry =
  fun ctx ({ plus_lock; filter; bindings; vis } as e) comp ->
-  match (ext_kind e comp, vis) with
-  | Ext_dim, Vis v ->
-      let bindings = eval_bindings ctx filter plus_lock bindings in
-      { filter; bindings; vis = Vis v }
-  | Ext_dim, Invis _ ->
-      let bindings = eval_bindings ctx filter plus_lock bindings in
-      { filter; bindings; vis = Invis }
-  | Ext_alias, Alias v ->
-      let bindings = eval_alias_bindings ctx filter plus_lock bindings in
-      { filter; bindings; vis = Alias v }
+  let bindings = eval_bindings (ext_kind e comp) ctx filter plus_lock bindings in
+  match vis with
+  | Vis (kind, v) -> { filter; bindings; vis = Vis (kind, v) }
+  | Invis _ -> { filter; bindings; vis = Invis }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function

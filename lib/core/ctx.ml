@@ -41,8 +41,7 @@ include Value.Ctx_entry
 
 let raw_entry : type dom modality mode f n b2. (dom, modality, mode, f, n, b2) entry -> f N.t =
   function
-  | { vis = Vis { vars; fplus; _ }; _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
-  | { vis = Alias { vars; fplus; _ }; _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
+  | { vis = Vis (_, { vars; fplus; _ }); _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
   | { vis = Invis; _ } -> N.zero
 
 let modality_entry : type dom modality mode f n b2.
@@ -64,8 +63,7 @@ let bindings_entry : type dom modality mode f n b2.
 
 let variables_entry : type dom modality mode f n b2.
     (dom, modality, mode, f, n, b2) entry -> n variables = function
-  | { vis = Vis { dim; plusdim; vars; _ }; _ } -> Variables (dim, plusdim, vars)
-  | { vis = Alias { dim; plusdim; vars; _ }; _ } -> Variables (dim, plusdim, vars)
+  | { vis = Vis (_, { dim; plusdim; vars; _ }); _ } -> Variables (dim, plusdim, vars)
   | { vis = Invis; bindings; _ } ->
       (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
       let hints =
@@ -118,7 +116,8 @@ module Ordered = struct
         {
           filter;
           bindings;
-          vis = Vis { dim; plusdim; vars; hasfields = No_fields; fields = Emp; fplus = Zero };
+          vis =
+            Vis (Var_cube, { dim; plusdim; vars; hasfields = No_fields; fields = Emp; fplus = Zero });
         },
         af,
         dim_comp filter bindings )
@@ -139,7 +138,8 @@ module Ordered = struct
         {
           filter;
           bindings;
-          vis = Alias { dim; plusdim; vars; hasfields = No_fields; fields = Emp; fplus = Zero };
+          vis =
+            Vis (Alias, { dim; plusdim; vars; hasfields = No_fields; fields = Emp; fplus = Zero });
         },
         af,
         Zero )
@@ -170,7 +170,8 @@ module Ordered = struct
         {
           filter;
           bindings;
-          vis = Vis { dim = D.zero; plusdim; vars; hasfields = Has_fields; fields; fplus };
+          vis =
+            Vis (Var_cube, { dim = D.zero; plusdim; vars; hasfields = Has_fields; fields; fplus });
         },
         af,
         dim_comp filter bindings )
@@ -310,10 +311,10 @@ module Ordered = struct
     let modality = Modality.filter_modality filter in
     let n = CubeOf.dim bindings in
     match (vis, comp, found) with
-    | Alias _, Zero, _ -> found
-    | Vis _, Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
+    | Vis (Alias, _), Zero, _ -> found
+    | Vis (Var_cube, _), Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
     | Invis, Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
-    | Vis _, Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
+    | Vis (Var_cube, _), Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
         Aliased (Alias_lookup { v with plus = plus_with_locks_dim v.plus n filter })
     | Invis, Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
         Aliased (Alias_lookup { v with plus = plus_with_locks_dim v.plus n filter })
@@ -407,60 +408,64 @@ module Ordered = struct
     match (vis, comp) with
     | ( Vis
           (type m n f1 f2 c cm fldty)
-          ({ dim; plusdim; vars; hasfields = _; fields; fplus } :
-            (dom, modality, mode, c, cm, m, n, mn, f1, f2, f, fldty) vis_data),
-        Suc (Zero, Dim _) ) -> (
+          ((kind, { dim; plusdim; vars; hasfields = _; fields; fplus }) :
+            (modality, mode, mn, f2, b2) vis_kind
+            * (dom, modality, mode, c, cm, m, n, mn, f1, f2, f, fldty) vis_data),
+        _ ) -> (
         let (Plus pf1) = N.plus (NICubeOf.out N.zero vars) in
         let pf12 = N.plus_assocl pf1 fplus pf in
         match N.index_in_plus pf12 (fst k) with
         | Right i -> (
-            let b = CubeOf.find_top bindings in
-            match Binding.level b with
-            | Some level ->
-                let x, _, _ = Bwv.nth i fields in
-                Found
-                  (Lookup
-                     {
-                       result = `Field (level, x);
-                       value = Binding.value b;
-                       dirt = Binding.dirt b;
-                       insert = Now;
-                       modality;
-                       filter;
-                       plus = plus_with_no_locks (mode ctx);
-                     })
-            | None -> fatal (Anomaly "missing level in field view"))
+            (* Only a cube of variables can have field variables. *)
+            match (kind, comp) with
+            | Var_cube, Suc (Zero, Dim _) -> (
+                let b = CubeOf.find_top bindings in
+                match Binding.level b with
+                | Some level ->
+                    let x, _, _ = Bwv.nth i fields in
+                    Found
+                      (Lookup
+                         {
+                           result = `Field (level, x);
+                           value = Binding.value b;
+                           dirt = Binding.dirt b;
+                           insert = Now;
+                           modality;
+                           filter;
+                           plus = plus_with_no_locks (mode ctx);
+                         })
+                | None -> fatal (Anomaly "missing level in field view"))
+            | Alias, Zero -> (
+                match i with
+                | _ -> .))
         | Left i -> (
             match find_in_cube dim plusdim vars pf1 (i, snd k) with
             | Not_found j -> pop_looked_up e comp (lookup ctx j)
-            | Found_face fab ->
+            | Found_face fab -> (
                 let x = CubeOf.find bindings fab in
-                Found
-                  (Lookup
-                     {
-                       result = `Var (Binding.level x, fab);
-                       modality;
-                       filter;
-                       value = Binding.value x;
-                       dirt = Binding.dirt x;
-                       insert = Now;
-                       plus = plus_with_no_locks (Modality.tgt modality);
-                     })))
-    (* An alias has no fields, and its variables have only values. *)
-    | Alias { dim; plusdim; vars; fplus = Zero; _ }, Zero -> (
-        match find_in_cube dim plusdim vars pf k with
-        | Not_found j -> lookup ctx j
-        | Found_face fab ->
-            let x = CubeOf.find bindings fab in
-            Aliased
-              (Alias_lookup
-                 {
-                   value = Binding.value x;
-                   dirt = Binding.dirt x;
-                   modality;
-                   plus = plus_with_no_locks (Modality.tgt modality);
-                 }))
-    | Alias _, Zero -> fatal (Anomaly "alias with fields")
+                match (kind, comp) with
+                | Var_cube, Suc (Zero, Dim _) ->
+                    Found
+                      (Lookup
+                         {
+                           result = `Var (Binding.level x, fab);
+                           modality;
+                           filter;
+                           value = Binding.value x;
+                           dirt = Binding.dirt x;
+                           insert = Now;
+                           plus = plus_with_no_locks (Modality.tgt modality);
+                         })
+                (* The variables of an alias have only values. *)
+                | Alias, Zero ->
+                    Aliased
+                      (Alias_lookup
+                         {
+                           value = Binding.value x;
+                           dirt = Binding.dirt x;
+                           modality;
+                           plus = plus_with_no_locks (Modality.tgt modality);
+                         }))))
     (* By definition, an invisible entry can't be looked up into, and doesn't increment the raw indices. *)
     | Invis, Suc (Zero, Dim _) ->
         let Zero = pf in
@@ -585,10 +590,10 @@ module Ordered = struct
     | Emp _ -> tree
     | Weaken (ctx, _) -> lam ctx tree
     | Lock _ -> fatal (Anomaly "context lock in Ctx.lam")
-    | Snoc (ctx, { vis = Alias _; _ }, _, Zero) -> lam ctx tree
+    | Snoc (ctx, { vis = Vis (Alias, _); _ }, _, Zero) -> lam ctx tree
     | Snoc
         ( ctx,
-          { bindings; filter; vis = Vis { dim; plusdim; vars; fplus = Zero; _ } },
+          { bindings; filter; vis = Vis (Var_cube, { dim; plusdim; vars; fplus = Zero; _ }) },
           _,
           Suc (Zero, Dim _) )
       when all_free bindings ->

@@ -372,7 +372,7 @@ let alias_name : type b mode x a s. b t -> (mode, x, a, s) Meta.t -> string opti
 let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = function
   | Emp _ -> empty
   (* An alias has no checked variables, so it contributes nothing to the list of cubes of names.  But if it is zero-dimensional and its value is a metavariable, we record its name for that metavariable, reserving the name like that of a variable. *)
-  | Snoc (ctx, { vis = Alias { vars; _ }; bindings; filter }, _, Zero) -> (
+  | Snoc (ctx, { vis = Vis (Alias, { vars; _ }); bindings; filter }, _, Zero) -> (
       let names = of_ordered_ctx ctx in
       match D.compare_zero (CubeOf.dim bindings) with
       | Pos _ -> names
@@ -389,7 +389,8 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
           with
           | Some v -> { names with aliases = Meta.WrapMap.add v x names.aliases }
           | None -> names))
-  | Snoc (ctx, { vis = Vis { dim; plusdim; vars; fields; _ }; _ }, _, Suc (Zero, Dim _)) ->
+  | Snoc (ctx, { vis = Vis (Var_cube, { dim; plusdim; vars; fields; _ }); _ }, _, Suc (Zero, Dim _))
+    ->
       let { ctx; used; hidden; aliases } = of_ordered_ctx ctx in
       let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
       let used = ref used in

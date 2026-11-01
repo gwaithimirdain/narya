@@ -297,14 +297,12 @@ module Ordered = struct
     let open Monad.Ops (Monad.Maybe) in
     let* bindings =
       match vis with
-      | Vis { fplus = Zero; _ } ->
+      (* The variables of an alias are all let-bound, so it doesn't matter whether they are bindable. *)
+      | Vis (_, { fplus = Zero; _ }) ->
           bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings
           (* A variable that has views of its fields can't be bound. *)
       | Vis _ -> bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings
-      | Invis -> bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings
-      (* The variables of an alias are all let-bound, so they can't be bound. *)
-      | Alias _ -> bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings
-    in
+      | Invis -> bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings in
     return ({ bindings; filter; vis } : _ Ctx_entry.entry)
 
   (* This seems an appropriate place to comment about the "insert" and "bplus_permute" data being returned from (go_)go_bind_some.  The issue is that in addition to a permuted context, we need to compute the permutation relating it to the original context.  In fact we need *two* permutations, one for the raw indices and one for the checked indices.

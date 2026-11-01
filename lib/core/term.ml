@@ -26,6 +26,11 @@ type (_, _, _, _) is_glue =
    Incorporates information appropriate to the internal syntax that is constructed during typechecking, e.g. applications and abstractions are grouped by a dimension, since this can be inferred during typechecking, from the synthesized type of a function being applied and from the pi-type the lambda is being checked against, respectively.  Similarly, we have instantiations of higher-dimensional types obtained by applying them to a tube of boundary terms. *)
 
 (* The codomain of a higher-dimensional pi-type is a cube of terms with bound variables whose number varies with the face of the cube.  We can enforce this with a parametrized instance of Cube, but it has to be defined recursively with term using a recursive module (like BindCube in Value; see there for more commentary).  Since term has three type parameters ('mode, 'a, 's) but Cube requires a Fam2 with two parameters, we pack 'mode * 'a into the second parameter of CodFam using a GADT constructor. *)
+(* The kind of a visible context entry.  An ordinary one is a cube of variables, which extends the checked context by one entry.  An alias also gives raw names to a cube, but of values rather than variables, so it doesn't extend the checked context (see Value.Ctx_entry); nor does it have any field variables.  The last parameter is the extension of the checked context. *)
+type (_, _, _, _, _) vis_kind =
+  | Var_cube : ('modality, 'mode, 'mn, 'f2, ('mode id, ('modality, 'mn) dim_entry) snoc) vis_kind
+  | Alias : ('modality, 'mode, 'mn, N.zero, 'mode id) vis_kind
+
 module rec Term : sig
   module CodFam : sig
     type (_, _) t =
@@ -304,29 +309,23 @@ module rec Term : sig
   }
 
   and (_, _, _, _, _, _, _, _) visibility =
+    (* A visible entry is either a cube of variables or an alias (see vis_kind). *)
     | Vis :
-        ( 'dom,
-          'modality,
-          'mode,
-          'b,
-          'bm,
-          'm,
-          'n,
-          'mn,
-          'f1,
-          'f2,
-          'f,
-          ('dom, 'bm, kinetic) term )
-        vis_data
-        -> ( 'dom,
-             'modality,
-             'mode,
-             'b,
-             'bm,
-             'f,
-             'mn,
-             ('mode id, ('modality, 'mn) dim_entry) snoc )
-           visibility
+        ('modality, 'mode, 'mn, 'f2, 'b2) vis_kind
+        * ( 'dom,
+            'modality,
+            'mode,
+            'b,
+            'bm,
+            'm,
+            'n,
+            'mn,
+            'f1,
+            'f2,
+            'f,
+            ('dom, 'bm, kinetic) term )
+          vis_data
+        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn, 'b2) visibility
     | Invis : {
         hints : hints;
       }
@@ -339,22 +338,6 @@ module rec Term : sig
              'n,
              ('mode id, ('modality, 'n) dim_entry) snoc )
            visibility
-    (* An alias doesn't extend the checked context (see Value.Ctx_entry). *)
-    | Alias :
-        ( 'dom,
-          'modality,
-          'mode,
-          'b,
-          'bm,
-          'm,
-          'n,
-          'mn,
-          'f1,
-          'f2,
-          'f,
-          ('dom, 'bm, kinetic) term )
-        vis_data
-        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn, 'mode id) visibility
 
   and ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data = {
     dim : 'm D.t;
@@ -718,29 +701,23 @@ end = struct
   }
 
   and (_, _, _, _, _, _, _, _) visibility =
+    (* A visible entry is either a cube of variables or an alias (see vis_kind). *)
     | Vis :
-        ( 'dom,
-          'modality,
-          'mode,
-          'b,
-          'bm,
-          'm,
-          'n,
-          'mn,
-          'f1,
-          'f2,
-          'f,
-          ('dom, 'bm, kinetic) term )
-        vis_data
-        -> ( 'dom,
-             'modality,
-             'mode,
-             'b,
-             'bm,
-             'f,
-             'mn,
-             ('mode id, ('modality, 'mn) dim_entry) snoc )
-           visibility
+        ('modality, 'mode, 'mn, 'f2, 'b2) vis_kind
+        * ( 'dom,
+            'modality,
+            'mode,
+            'b,
+            'bm,
+            'm,
+            'n,
+            'mn,
+            'f1,
+            'f2,
+            'f,
+            ('dom, 'bm, kinetic) term )
+          vis_data
+        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn, 'b2) visibility
     | Invis : {
         hints : hints;
       }
@@ -753,22 +730,6 @@ end = struct
              'n,
              ('mode id, ('modality, 'n) dim_entry) snoc )
            visibility
-    (* An alias doesn't extend the checked context (see Value.Ctx_entry). *)
-    | Alias :
-        ( 'dom,
-          'modality,
-          'mode,
-          'b,
-          'bm,
-          'm,
-          'n,
-          'mn,
-          'f1,
-          'f2,
-          'f,
-          ('dom, 'bm, kinetic) term )
-        vis_data
-        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn, 'mode id) visibility
 
   (* Vis means the cube of internal variables are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn.  If vis is omitted,  *)
   and ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data = {
@@ -1020,9 +981,9 @@ let ext_kind : type dom modality mode bb bm f n b2 b.
     (mode, modality, n, b2, b, bb) ext_kind =
  fun { vis; _ } comp ->
   match (vis, comp) with
-  | Vis _, Suc (Zero, Dim _) -> Ext_dim
+  | Vis (Var_cube, _), Suc (Zero, Dim _) -> Ext_dim
   | Invis _, Suc (Zero, Dim _) -> Ext_dim
-  | Alias _, Zero -> Ext_alias
+  | Vis (Alias, _), Zero -> Ext_alias
 
 module Termctx = struct
   type ('mode, 'a, 'b) ordered = ('mode, 'a, 'b) ordered_termctx
@@ -1052,14 +1013,15 @@ module Termctx = struct
           bindings = CubeOf.singleton b;
           vis =
             Vis
-              {
-                dim = D.zero;
-                plusdim = D.plus_zero D.zero;
-                vars = NICubeOf.singleton x;
-                hasfields = No_fields;
-                fields = Emp;
-                fplus = Zero;
-              };
+              ( Var_cube,
+                {
+                  dim = D.zero;
+                  plusdim = D.plus_zero D.zero;
+                  vars = NICubeOf.singleton x;
+                  hasfields = No_fields;
+                  fields = Emp;
+                  fplus = Zero;
+                } );
         },
         Suc Zero,
         Suc (Zero, Dim (D.zero, filter)) )
@@ -1092,12 +1054,12 @@ module Termctx = struct
    fun ctx ->
     match ctx with
     | Emp _ -> Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_proj)
-    | Ext (_, { vis = Vis _; _ }, _, Suc (Zero, Dim _)) ->
+    | Ext (_, { vis = Vis (Var_cube, _); _ }, _, Suc (Zero, Dim _)) ->
         Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_dim)
     | Ext (_, { vis = Invis _; _ }, _, Suc (Zero, Dim _)) ->
         Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_dim)
     (* We can only remove locks below an alias if there aren't any, since the alias's bindings live in its context. *)
-    | Ext (ctx', ({ vis = Alias _; _ } as e), af, Zero) -> (
+    | Ext (ctx', ({ vis = Vis (Alias, _); _ } as e), af, Zero) -> (
         match ordered_remove_locks ctx' with
         | Ordered_remove_locks (ctx', (Plus_lock (Zero _, Zero) as plus), wl) ->
             Ordered_remove_locks (Ext (ctx', e, af, Zero), plus, wl)
@@ -1180,8 +1142,7 @@ let rec ordered_hole_vars : type mode a b.
       | Invis _ ->
           let Zero = af in
           rest
-      | Vis { vars = cube; fplus; _ } -> Bwv.bappend af rest (hole_vars_vis cube fplus xs)
-      | Alias { vars = cube; fplus; _ } -> Bwv.bappend af rest (hole_vars_vis cube fplus xs))
+      | Vis (_, { vars = cube; fplus; _ }) -> Bwv.bappend af rest (hole_vars_vis cube fplus xs))
 
 let hole_vars : type mode a b.
     (mode, a, b) termctx -> (string option, a) Bwv.t -> (binder_name, a) Bwv.t =
