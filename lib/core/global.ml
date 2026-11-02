@@ -380,6 +380,18 @@ let unif_solution : type mode a b.
   | Some _ as solution -> solution
   | None -> (find_unif meta).solution
 
+(* The solution of a unification metavariable for display: like unif_solution, but if its table is gone (because its command has ended without solving it), we just say it has no solution. *)
+let unif_solution_opt : type mode a b.
+    (mode, a, b, kinetic) Meta.t ->
+    (mode, b, kinetic) term option ref ->
+    (mode, b, kinetic) term option =
+ fun meta unif ->
+  match !unif with
+  | Some _ as solution -> solution
+  | None ->
+      Option.bind (Uniftable.find_opt meta (Speculable.get current_command).unifs) (fun d ->
+          d.solution)
+
 (* Whether a unification metavariable has been solved, and if so whether its solution has been written into its cell (and hence is permanent) or is only in the table of the current command (and hence could still be backtracked). *)
 let unif_status : type mode a b.
     (mode, a, b, kinetic) Meta.t ->

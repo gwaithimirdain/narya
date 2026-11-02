@@ -206,6 +206,9 @@ let run_with_definition : type mode a c.
   | Constant (c, mode, _) -> Global.with_definition c mode (`Defined tm) f
   | Meta (m, _) -> Global.with_meta_definition m tm f
 
+(* Install the unification algorithm into the equality checker. *)
+let () = Unify.install ()
+
 (* Create a new unification metavariable in a given context, of a given type, returning it as a term in that context.  Its type is read back now, but its context is read back only if needed (see Global.Unifdata), and then not for display, since it is also used for internal purposes like comparing environments. *)
 let make_unif : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, b, kinetic) term =
@@ -213,8 +216,11 @@ let make_unif : type mode a b.
   let meta = Meta.make_unif (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) in
   let unif : (mode, b, kinetic) term option ref = ref None in
   let ty = readback_val ctx ty in
-  (* The context is forced by whatever first needs it, which may be readback for display, such as when printing an error message that mentions the metavariable.  Since the result is cached, and must be a non-display readback, we set the display flag explicitly rather than inheriting it from the place where it is forced. *)
-  let termctx = lazy (Readback.Displaying.run ~env:false @@ fun () -> readback_ctx ctx) in
+  (* The context is forced by whatever first needs it, which may be readback for display, such as when printing an error message that mentions the metavariable, or readback of the solution of another unification metavariable.  Since the result is cached, and must be an ordinary readback, we set the readback mode explicitly rather than inheriting it from the place where it is forced. *)
+  let termctx =
+    lazy
+      ( Readback.Displaying.run ~env:false @@ fun () ->
+        Readback.Unifying.run ~env:None @@ fun () -> readback_ctx ctx ) in
   Global.add_unif meta unif ~ty ~termctx;
   Meta (meta, Unif_meta unif, Kinetic)
 

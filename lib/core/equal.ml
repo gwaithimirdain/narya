@@ -83,6 +83,19 @@ end
 
 (* Eta-expanding equality checks.  In all functions, the integer is the current De Bruijn level, i.e. the length of the current context (we don't need any other information about the context). *)
 
+(* Before comparing two values structurally, we try to solve a unification metavariable on either side with the other side.  The solver is defined in the downstream module Unify, since it needs readback, so we make it a forward reference set there.  It is passed the type at which the values are being compared, if known; otherwise it must check that the types agree.  It returns true if it solved a metavariable, so that the values are now equal. *)
+type solver = {
+  solve :
+    'mode 'a 'b.
+    ('mode, 'a, 'b) Ctx.t ->
+    ('mode, kinetic) value ->
+    ('mode, kinetic) value ->
+    ('mode, kinetic) value option ->
+    bool;
+}
+
+let solver : solver ref = ref { solve = (fun _ _ _ _ -> false) }
+
 (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
 let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
  fun n x y ->
@@ -110,6 +123,7 @@ and equal_at : type mode a b.
  fun ctx x y ty ->
   (* Physically equal values are definitionally equal, and physical sharing is common (cached constants, shared let-bindings, shared forced values), so we short-circuit on it before any structural work. *)
   if x == y then Ok ()
+  else if !solver.solve ctx x y (Some ty) then Ok ()
   else
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
@@ -241,6 +255,7 @@ and equal_val : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
  fun ctx x y ->
   if x == y then Ok ()
+  else if !solver.solve ctx x y None then Ok ()
   else
     match (x, y) with
     | Neu _, Neu _ -> (

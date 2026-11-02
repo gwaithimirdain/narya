@@ -90,6 +90,11 @@ val unif_solution :
 
 val unsolved_unifs : unit -> bool
 
+val unif_solution_opt :
+  ('mode, 'a, 'b, kinetic) Meta.t ->
+  ('mode, 'b, kinetic) term option ref ->
+  ('mode, 'b, kinetic) term option
+
 val unif_status :
   ('mode, 'a, 'b, kinetic) Meta.t ->
   ('mode, 'b, kinetic) term option ref ->

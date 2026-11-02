@@ -18,12 +18,20 @@ module Binding = Ctx.Binding
 
 module Readback = struct
   module Displaying = Algaeff.Reader.Make (Bool)
+
+  (* The "Unifying" reader records whether we're reading back a value to be the solution of a unification metavariable, and if so which one.  In that case the readback must fail, by raising Unsolvable, if the value refers to a variable that isn't in the context (since the solution lives in the smaller context of the metavariable), or if it contains the metavariable itself, either directly or through the definition of some other metavariable.  To avoid the latter, we unfold all solved unification metavariables and all definition metavariables of the current origin (such as let-bound variables), failing if any of the latter don't have a value to unfold to. *)
+  module Unifying = Algaeff.Reader.Make (struct
+    type t = Meta.wrapped option
+  end)
+
+  exception Unsolvable
 end
 
 open Readback
 
 let () =
-  Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect")
+  Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect");
+  Unifying.register_printer (function `Read -> Some "unhandled Readback.Unifying.read effect")
 
 (* Degenerating a context by a dimension (for the non-projectable instances of higher codata fields, when displaying a codatatype or comatch).  The degeneration itself is implemented in the downstream module Degctx, because it does an eval-readback cycle and hence depends on this file; but the readback/display code that consumes it lives here (below), so we make the degeneration a forward reference set by Degctx.  The result packages the degeneration plus-map, the degenerated context, and the canonical k-dimensional environment from it back to the original. *)
 type (_, _, _, _) degctx =
@@ -747,14 +755,42 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
   (* A failed term is read back as Failed, without forcing its value (which would fail). *)
   | Neu { head = Failed _; _ } -> Failed Kinetic
   | Neu { head = Live head; args; value; ty } -> (
-      match (force_eval value, Displaying.read ()) with
-      | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
-      | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
-      | _ -> readback_neu ~canonical:`Other ctx head args)
+      match unfold_for_unifying head value with
+      | Some v -> readback_at Kinetic ctx v (Lazy.force ty)
+      | None -> (
+          match (force_eval value, Displaying.read ()) with
+          | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
+          | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
+          | _ -> readback_neu ~canonical:`Other ctx head args))
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
   | Canonical _ -> fatal (Anomaly "unexpected canonical type in synthesizing readback")
+
+(* When reading back the solution of a unification metavariable (see Unifying), decide whether a neutral with a given head must be unfolded to its value, which is then returned, or whether the readback fails. *)
+and unfold_for_unifying : type hmode mode.
+    hmode head -> (mode, potential) lazy_eval -> (mode, kinetic) value option =
+ fun head value ->
+  match Unifying.read () with
+  | None -> None
+  | Some (Wrap target) -> (
+      let unfold () =
+        match force_eval value with
+        | Realize v -> Some v
+        | _ -> raise Unsolvable in
+      match head with
+      | Meta { meta; kind = Unif_meta unif; _ } -> (
+          match Meta.compare meta target with
+          (* The metavariable being solved can't occur in its solution. *)
+          | Eq -> raise Unsolvable
+          | Neq -> (
+              match Global.unif_status meta unif with
+              | `Unsolved -> None
+              | `Speculative | `Written -> unfold ()))
+      | Meta { meta; kind = Global_meta; _ }
+        when Option.is_some (Meta.sort_of meta) && Meta.origin meta = Origin.Origin.current () ->
+          unfold ()
+      | _ -> None)
 
 and readback_neu : type hmode mode a z any.
     ?canonical:[ `Canonical | `Other ] ->
@@ -823,7 +859,11 @@ and readback_head : type mode c z.
       (* Now we look for the level variable in the remaining context. *)
       let (Lookup
              { result; value; dirt = _; modality; filter; insert; plus = Plus_with_locks (c, _) }) =
-        Ctx.find_level ctx level <|> No_such_level (PLevel level) in
+        match Ctx.find_level ctx level with
+        | Some lookup -> lookup
+        (* When reading back the solution of a unification metavariable, a variable not in its context means there is no solution. *)
+        | None when Option.is_some (Unifying.read ()) -> raise Unsolvable
+        | None -> fatal (No_such_level (PLevel level)) in
       (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
       match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
       | Eq, `Var (_, fa), Zero -> (
@@ -1515,3 +1555,38 @@ let rec readback_about : type mode a b.
       | Realize v -> readback_about ctx v
       | Unrealized | Blocked _ -> None)
   | _ -> None
+
+(* ********** Solutions of unification metavariables ********** *)
+
+(* A context whose checked variables are those of a metavariable. *)
+type (_, _) unif_prefix = Unif_prefix : ('mode, 'a, 'b) Ctx.t -> ('mode, 'b) unif_prefix
+
+(* If the environment of a metavariable is the identity on some prefix of the given context, obtained by removing only variables, aliases, and weakenings (not locks), return that prefix. *)
+let unif_prefix : type mode a b c d n.
+    (mode, a, b) Ctx.t -> (mode, n, d) env -> (mode, c, d) termctx -> (mode, d) unif_prefix option =
+ fun (Permute { level; ctx; _ }) env (Permute (_, envctx)) ->
+  let rec go : type a b.
+      (mode, a, b) Ctx.Ordered.t -> (mode, D.zero, d) env -> (mode, d) unif_prefix option =
+   fun ctx env ->
+    match is_identity_ordered_env ctx env envctx with
+    | Some Eq -> Some (Unif_prefix (Ctx.of_ordered ~level ctx))
+    | None -> (
+        match ctx with
+        | Snoc (rest, _, _, _) -> go rest env
+        | Weaken (rest, _) -> go rest env
+        | Lock _ | Emp _ -> None) in
+  match D.compare (dim_env env) D.zero with
+  | Eq -> Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () -> go ctx env
+  | Neq -> None
+
+(* Read back a value, at a type, as the solution of a unification metavariable in (a prefix context of) its context, or return None if that's impossible. *)
+let readback_unif_solution : type mode a b x.
+    (mode, x, b, kinetic) Meta.t ->
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value ->
+    (mode, b, kinetic) term option =
+ fun meta ctx v ty ->
+  Displaying.run ~env:false @@ fun () ->
+  Unifying.run ~env:(Some (Wrap meta)) @@ fun () ->
+  try Some (readback_at Kinetic ctx v ty) with Unsolvable -> None
