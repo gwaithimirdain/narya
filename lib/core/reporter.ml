@@ -331,6 +331,7 @@ module Code = struct
     | Dependent : string -> t
     | Fatalize : string -> t
     | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
+    | Unsolved_unification_metas : int -> t
     | Invalid_instant : string -> t
     | Oracle_failed : oracle_error -> t
     | Extern : { code : string; text : string; error : extern_error } -> t
@@ -522,6 +523,7 @@ module Code = struct
     | Dependent _ -> Error
     | Fatalize _ -> Error
     | No_holes_allowed _ -> Error
+    | Unsolved_unification_metas _ -> Error
     | Invalid_instant _ -> Bug
     | Wrong_dimension_of_field _ -> Error
     | Invalid_field_suffix _ -> Error
@@ -683,6 +685,7 @@ module Code = struct
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
     | No_holes_allowed _ -> "E2002"
+    | Unsolved_unification_metas _ -> "E2004"
     | Invalid_instant _ -> "E2003"
     (* def *)
     | Redefining_constant _ -> "E2100"
@@ -1280,6 +1283,9 @@ module Code = struct
           | `File file -> textf "imported file '%s' cannot contain holes" file
           | `Other where -> textf "%s cannot contain holes" where)
       | Invalid_instant instant -> textf "invalid instant: %s" instant
+      | Unsolved_unification_metas n ->
+          if n = 1 then text "there is 1 unsolved unification metavariable"
+          else textf "there are %d unsolved unification metavariables" n
       | Oracle_failed _ -> text "oracle failed"
       | Extern { text = t; _ } -> text t
       | Invalid_flags -> text "invalid combination of command-line flags"

@@ -206,6 +206,18 @@ let run_with_definition : type mode a c.
   | Constant (c, mode, _) -> Global.with_definition c mode (`Defined tm) f
   | Meta (m, _) -> Global.with_meta_definition m tm f
 
+(* Create a new unification metavariable in a given context, of a given type, returning it as a term in that context.  Its type is read back now, but its context is read back only if needed (see Global.Unifdata), and then not for display, since it is also used for internal purposes like comparing environments. *)
+let make_unif : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, b, kinetic) term =
+ fun ctx ty ->
+  let meta = Meta.make_unif (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) in
+  let unif : (mode, b, kinetic) term option ref = ref None in
+  let ty = readback_val ctx ty in
+  (* The context is forced by whatever first needs it, which may be readback for display, such as when printing an error message that mentions the metavariable.  Since the result is cached, and must be a non-display readback, we set the display flag explicitly rather than inheriting it from the place where it is forced. *)
+  let termctx = lazy (Readback.Displaying.run ~env:false @@ fun () -> readback_ctx ctx) in
+  Global.add_unif meta unif ~ty ~termctx;
+  Meta (meta, Unif_meta unif, Kinetic)
+
 (* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  The constructor's argument types and output are stored together as its function-type "ty" (as in a Value.dataconstr); the argument variables are introduced, and the type indices of this branch read off, by ext_pi at typechecking time.  *)
 type (_, _, _) checkable_branch =
   | Checkable_branch : {
@@ -947,7 +959,7 @@ let rec check : type mode a b s.
         Global.add_hole meta pos ~vars ~termctx ~ty ~status ~li ~ri;
         (* The hole might be solved later with a term containing occurrences of currently-being-defined constants, so we record it as blocking any enclosing occurrence-analysis scope. *)
         Positivity.record_hole meta;
-        Meta (meta, energy status)
+        Meta (meta, Global_meta, energy status)
     (* If we have a synthesizing term, we synthesize it. *)
     | Synth stm, _ -> check_of_synth status ctx stm tm.loc ty
     (* We pass through case tree leaf markers *)
@@ -1246,7 +1258,7 @@ and kinetic_of_potential : type mode a b.
   let cv = check tmstatus ctx tm ty in
   Global.set_meta meta cv;
   (* Finally, we return the metavariable. *)
-  Term.Meta (meta, Kinetic)
+  Term.Meta (meta, Global_meta, Kinetic)
 
 and synth_or_check_let : type mode a b s p.
     ?nosynth:Code.t Asai.Diagnostic.t ->
@@ -1308,12 +1320,15 @@ and synth_or_check_let : type mode a b s p.
                 Global.set_meta meta sv;
                 (sv, svty) in
           (* We turn that metavariable into a value. *)
-          let head = Live (Value.Meta { meta; env = Ctx.env lctx; ins = zero_ins D.zero }) in
+          let head =
+            Live
+              (Value.Meta { meta; kind = Global_meta; env = Ctx.env lctx; ins = zero_ins D.zero })
+          in
           let tm =
             (* Glued evaluation: we delay evaluating the term until it's needed. *)
             Neu { head; args = Emp; value = lazy_eval (Ctx.env lctx) sv; ty = Lazy.from_val svty }
           in
-          (Term.Meta (meta, Kinetic), { tm; ty = Lazy.from_val svty }) in
+          (Term.Meta (meta, Global_meta, Kinetic), { tm; ty = Lazy.from_val svty }) in
       (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context.  If it failed, we instead bind the variable to a failed value, so that parts of the body that need to inspect it fail silently, while the others can still be checked. *)
       let v, newctx =
         match checked with
@@ -1410,7 +1425,7 @@ and make_letrec_metas : type mode a b c ac v.
                 in
                 Global.add_meta ?local meta ~termctx:(readback_ctx actx) ~tm:`Axiom ~ty:cty
                   ~energy:Potential;
-                let tm = eval_term (Ctx.env actx) (Meta (meta, Kinetic)) in
+                let tm = eval_term (Ctx.env actx) (Meta (meta, Global_meta, Kinetic)) in
                 let actx =
                   Ctx.ext_alias ~dirt:(dirt_of_meta meta) actx (Modality.id mode) x
                     { tm; ty = Lazy.from_val ety } in
@@ -1437,7 +1452,7 @@ and check_letrec_bindings : type mode a b c ac.
     match (ac, metas) with
     | Zero, [] -> actx
     | Suc ac, Letrec_meta { name; meta; ty } :: metas ->
-        let tm = eval_term (Ctx.env actx) (Meta (meta, Kinetic)) in
+        let tm = eval_term (Ctx.env actx) (Meta (meta, Global_meta, Kinetic)) in
         let ty = eval_term (Ctx.env actx) ty in
         aliases
           (Ctx.ext_alias ~dirt:(dirt_of_meta meta) actx (Modality.id mode) name
@@ -1477,13 +1492,13 @@ and letrec_body : type mode a b c ac b' s.
   | Zero, [] -> Letrec_body (ctx, fun tm -> tm)
   | Suc ac, Letrec_meta { name; meta; ty } :: metas ->
       let modality = Modality.id mode in
-      let tm = eval_term env (Meta (meta, Kinetic)) in
+      let tm = eval_term env (Meta (meta, Global_meta, Kinetic)) in
       let ty = eval_term env ty in
       let newctx =
         Ctx.ext_let ~dirt:(dirt_of_meta meta) ctx modality name { tm; ty = Lazy.from_val ty } in
       let newplus = plus_with_locks_dim plus D.zero (Modality.filter_zero modality) in
       let (Letrec_body (bodyctx, wrap)) = letrec_body env newctx ac newplus metas in
-      let v = weaken_gen (plus_no_lock mode) (Meta (meta, Kinetic)) plus in
+      let v = weaken_gen (plus_no_lock mode) (Meta (meta, Global_meta, Kinetic)) plus in
       Letrec_body
         (bodyctx, fun body -> Let (name, Modal (modality, plus_no_lock mode, v), wrap body))
 
@@ -4326,7 +4341,7 @@ and synth : type mode a b s.
           Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
         let sv, svty = synth ~synthed tmstatus ctx tm in
         Global.set_meta meta sv;
-        (Term.Meta (meta, Kinetic), svty)
+        (Term.Meta (meta, Global_meta, Kinetic), svty)
     | Match { tm; window; sort = `Explicit motive; branches; refutables = _; highers }, Potential _
       -> synth_dep_match ?synthed status ctx tm window branches highers motive
     | Match { tm; window; sort = `Implicit; branches; refutables = _; highers }, Potential _ ->

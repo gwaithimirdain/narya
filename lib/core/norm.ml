@@ -231,11 +231,13 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
               Val result
           | Neq ->
               fatal (Mode_mismatch (`Internal, "evaluating a constant", mode, None, mode_env env))))
-  | Meta (meta, ambient) -> (
+  | Meta (type x l) ((meta, kind, ambient) : (mode, x, b, l) Meta.t * _ * _) -> (
       let dim = dim_env env in
-      let head = Live (Value.Meta { meta; env; ins = ins_zero dim }) in
+      (* A neutral metavariable is a kinetic occurrence of it, so its head records the kind of a kinetic occurrence. *)
+      let head (kind : (mode, b, l, kinetic) meta_kind) =
+        Live (Value.Meta { meta; kind; env; ins = ins_zero dim }) in
       (* As with constants, we need to instantiate the type at the same meta evaluated at lower dimensions. *)
-      let make_ty meta ty =
+      let make_ty (kind : (mode, b, l, kinetic) meta_kind) ty =
         inst (eval_term env ty)
           (TubeOf.build D.zero (D.zero_plus dim)
              {
@@ -244,24 +246,54 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                    let tm =
                      eval_term
                        (act_env env (opt_op_of_sface (sface_of_tface fa)))
-                       (Meta (meta, Kinetic)) in
+                       (Meta (meta, kind, Kinetic)) in
                    match tm with
                    | Neu { ty; _ } -> { tm; ty }
                    | _ -> fatal (Anomaly "eval of lower-dim meta not neutral/canonical"));
              }) in
-      match (Global.find_meta meta, ambient) with
-      (* If a metavariable has a definition that fits with the current energy, we simply evaluate that definition. *)
-      | { tm = `Defined tm; energy = Potential; _ }, Potential -> eval env tm
-      | { tm = `Defined tm; energy = Kinetic; _ }, Kinetic -> eval env tm
-      | { tm = `Defined tm; energy = Kinetic; _ }, Potential -> Realize (eval_term env tm)
-      | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic ->
-          (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
-          Val (Neu { head; args = Emp; value = lazy_eval env tm; ty = lazy (make_ty meta ty) })
-      (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  We don't need to return the metavariable itself; it suffices to know that that branch of the case tree is stuck, as the constant whose definition it is should handle all identity/equality checks correctly. *)
-      | _, Potential -> Unrealized
-      (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
-      | { ty; _ }, Kinetic ->
-          Val (Neu { head; args = Emp; value = ready Unrealized; ty = lazy (make_ty meta ty) }))
+      match kind with
+      | Global_meta -> (
+          let head = head Global_meta in
+          match (Global.find_meta meta, ambient) with
+          (* If a metavariable has a definition that fits with the current energy, we simply evaluate that definition. *)
+          | { tm = `Defined tm; energy = Potential; _ }, Potential -> eval env tm
+          | { tm = `Defined tm; energy = Kinetic; _ }, Kinetic -> eval env tm
+          | { tm = `Defined tm; energy = Kinetic; _ }, Potential -> Realize (eval_term env tm)
+          | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic ->
+              (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
+              Val
+                (Neu
+                   {
+                     head;
+                     args = Emp;
+                     value = lazy_eval env tm;
+                     ty = lazy (make_ty Global_meta ty);
+                   })
+          (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  We don't need to return the metavariable itself; it suffices to know that that branch of the case tree is stuck, as the constant whose definition it is should handle all identity/equality checks correctly. *)
+          | _, Potential -> Unrealized
+          (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
+          | { ty; _ }, Kinetic ->
+              Val
+                (Neu
+                   {
+                     head;
+                     args = Emp;
+                     value = ready Unrealized;
+                     ty = lazy (make_ty Global_meta ty);
+                   }))
+      (* A unification metavariable and its occurrences are always kinetic.  If it has been solved, we evaluate its solution; otherwise it is a neutral. *)
+      | Unif_meta unif -> (
+          match Global.unif_solution meta unif with
+          | Some tm -> eval env tm
+          | None ->
+              Val
+                (Neu
+                   {
+                     head = head kind;
+                     args = Emp;
+                     value = ready Unrealized;
+                     ty = lazy (make_ty kind (Global.meta_ty meta kind));
+                   })))
   | UU (mode, n) ->
       let m = dim_env env in
       let (Plus mn) = D.plus n in

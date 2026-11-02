@@ -73,6 +73,26 @@ val set_meta :
   ('mode, 'b, 's) term ->
   unit
 
+val add_unif :
+  ('mode, 'a, 'b, kinetic) Meta.t ->
+  ('mode, 'b, kinetic) term option ref ->
+  ty:('mode, 'b, kinetic) term ->
+  termctx:('mode, 'a, 'b) termctx Lazy.t ->
+  unit
+
+val solve_unif : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'b, kinetic) term -> unit
+
+val unif_solution :
+  ('mode, 'a, 'b, kinetic) Meta.t ->
+  ('mode, 'b, kinetic) term option ref ->
+  ('mode, 'b, kinetic) term option
+
+val meta_termctx :
+  ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'b, 's, 'e) meta_kind -> ('mode, 'a, 'b) termctx
+
+val meta_ty :
+  ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'b, 's, 'e) meta_kind -> ('mode, 'b, kinetic) term
+
 val unsolved_holes : unit -> int
 val current_unsolved_holes : unit -> int
 val notify_holes : unit -> unit

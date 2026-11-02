@@ -196,7 +196,7 @@ module F = struct
     | Const { name; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Const (%s, %s)" (print_to_string (PConstant name)) (string_of_deg p)
-    | Meta { meta; env = e; ins } ->
+    | Meta { meta; env = e; ins; _ } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Meta (%s, %a, %s)" (Meta.name meta) env e (string_of_deg p)
     | UU (_, n) -> fprintf ppf "UU %a" dim n
@@ -259,7 +259,7 @@ module F = struct
     | Var (Index (x, fa, _, _)) ->
         fprintf ppf "IVar %d.%s" (Tctx.int_of_insert x) (string_of_sface fa)
     | Const c -> fprintf ppf "Const %s" (print_to_string (PConstant c))
-    | Meta (v, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
+    | Meta (v, _, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
     | Field (_, Modal (_, _, tm), fld, ins) ->
         fprintf ppf "Field (%a, %s%s(%s))" term tm (Field.to_string fld) (string_of_ins ins)
           (string_of_dim (dom_ins ins))

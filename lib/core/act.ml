@@ -555,10 +555,10 @@ module Act = struct
         let (Insfact_comp_ext (_, ins, _, _)) = insfact_comp_ext ins s in
         Const { name; ins }
     (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment, as does the key. *)
-    | Meta { meta; env; ins } ->
+    | Meta { meta; kind; env; ins } ->
         let (Insfact_comp_ext (deg, ins, _, _)) = insfact_comp_ext ins s in
         let env = act_env_deg env deg c in
-        Meta { meta; env; ins }
+        Meta { meta; kind; env; ins }
     | UU (mode, nk) ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in
         UU (mode, dom_deg fa)
