@@ -30,6 +30,8 @@ module Origin : sig
   val speculate : (unit -> ('a, 'b) Result.t) -> ('a, 'b) Result.t
   val speculate_exn : (unit -> 'a) -> 'a
   val speculate_discard : (unit -> 'b) -> 'b
+  val speculation_depth : unit -> int
+  val on_speculation_success : (unit -> unit) -> unit
 end
 
 module Versioned : sig

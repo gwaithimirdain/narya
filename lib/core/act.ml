@@ -343,6 +343,7 @@ module Act = struct
    fun tm s c ->
     match tm with
     | Unrealized -> Unrealized
+    | Blocked b -> Blocked b
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
 
@@ -451,6 +452,7 @@ module Act = struct
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
           | Unrealized -> Unrealized
+          | Blocked b -> Blocked b
           | Val
               (Canonical { mode; canonical = c; tyargs = ctyargs; ins; fields = _; inst_fields = _ })
             -> (
@@ -681,7 +683,8 @@ module Act = struct
         let (Wrap newkey) = key_vcomp c key in
         ref (Applied (inner, Action (fa, newkey)))
     (* Otherwise, and in particular when there is a pending argument spine, we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
-    | Applied (_, Apps _) | Deferred _ | Ready _ -> ref (Applied (lev, Action (s, c)))
+    | Applied (_, Apps _) | Deferred _ | Ready _ | Blocked_on _ ->
+        ref (Applied (lev, Action (s, c)))
 end
 
 let short_circuit : type mode mu1 mu2 cod m n a.

@@ -256,6 +256,8 @@ type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos
 
 (* The unification metavariables created by a command are stored only in the state of that command, since they are either solved by the time it succeeds or else cause it to fail.  For each one we store its type and context, which are needed only while it is unsolved, and its solution if it has been solved during the command.  Since the state of the command is a Speculable, all of these are discarded if a speculative computation that creates or solves them backtracks.  When the command succeeds, the solutions are written into the cells shared by their occurrences (see Term.meta_kind), so that the table is no longer needed.
 
+   We also record the depth of speculation (see Origin.speculate) at which each one was created.  A speculation can only solve the unification metavariables created inside it, not those from outside it, since if it backtracks, values created outside it that saw the solution (e.g. by forcing lazy computations that depended on it) would remain incorrect.  When a speculation succeeds, the unification metavariables created inside it now belong to the enclosing computation, so we decrease their recorded depth to match.
+
    The context is computed lazily, since it is needed only if the metavariable is compared to itself, read back with a nontrivial environment, or displayed.  It must not be read back for display, so its thunk sets the display flag explicitly (see Check.make_unif).  The table is never marshaled, so it can contain such functional values. *)
 module Unifdata = struct
   type ('mode, 'a, 'b, 's) t = {
@@ -263,6 +265,7 @@ module Unifdata = struct
     ty : ('mode, 'b, kinetic) term;
     termctx : ('mode, 'a, 'b) termctx Lazy.t;
     solution : ('mode, 'b, kinetic) term option;
+    depth : int;
   }
 end
 
@@ -315,7 +318,13 @@ let add_unif : type mode a b.
     unit =
  fun meta unif ~ty ~termctx ->
   Speculable.modify current_command (fun d ->
-      { d with unifs = Uniftable.add meta { unif; ty; termctx; solution = None } d.unifs })
+      {
+        d with
+        unifs =
+          Uniftable.add meta
+            { unif; ty; termctx; solution = None; depth = Origin.speculation_depth () }
+            d.unifs;
+      })
 
 (* Look up the data of a unification metavariable.  This is only possible during the command that created it. *)
 let find_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, a, b, kinetic) Unifdata.t =
@@ -327,12 +336,35 @@ let find_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, a, b, kine
         (Anomaly
            ("unification metavariable used outside the command that created it: " ^ Meta.name meta))
 
+(* Whether a unification metavariable can be solved at the current depth of speculation, i.e. whether it was created inside the innermost current speculation (or a speculation that has since succeeded into it). *)
+let unif_assignable : type mode a b. (mode, a, b, kinetic) Meta.t -> bool =
+ fun meta ->
+  let d = find_unif meta in
+  let depth = Origin.speculation_depth () in
+  if d.depth > depth then
+    fatal (Anomaly ("unification metavariable deeper than current speculation: " ^ Meta.name meta))
+  else d.depth = depth
+
+(* When a speculation succeeds, the unification metavariables created inside it now belong to the enclosing computation. *)
+let () =
+  Origin.on_speculation_success @@ fun () ->
+  let depth = Origin.speculation_depth () in
+  Speculable.modify current_command (fun c ->
+      {
+        c with
+        unifs = Uniftable.map { map = (fun d -> { d with depth = min d.depth depth }) } c.unifs;
+      })
+
 (* Record the solution of an unsolved unification metavariable in the table of the current command.  If this happens during a speculative computation that later backtracks, the solution is discarded with the rest of the table.  It is written into the cell of the metavariable only when the command succeeds (see finish_unifs). *)
 let solve_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, b, kinetic) term -> unit =
  fun meta tm ->
   let d = find_unif meta in
   match d.solution with
   | Some _ -> fatal (Anomaly ("solving already-solved unification metavariable " ^ Meta.name meta))
+  | None when not (unif_assignable meta) ->
+      fatal
+        (Anomaly
+           ("solving unification metavariable from outside current speculation: " ^ Meta.name meta))
   | None ->
       invalidate ();
       Speculable.modify current_command (fun c ->
@@ -347,6 +379,19 @@ let unif_solution : type mode a b.
   match !unif with
   | Some _ as solution -> solution
   | None -> (find_unif meta).solution
+
+(* Whether a unification metavariable has been solved, and if so whether its solution has been written into its cell (and hence is permanent) or is only in the table of the current command (and hence could still be backtracked). *)
+let unif_status : type mode a b.
+    (mode, a, b, kinetic) Meta.t ->
+    (mode, b, kinetic) term option ref ->
+    [ `Unsolved | `Speculative | `Written ] =
+ fun meta unif ->
+  match !unif with
+  | Some _ -> `Written
+  | None -> (
+      match (find_unif meta).solution with
+      | Some _ -> `Speculative
+      | None -> `Unsolved)
 
 (* The stored context and type of a metavariable of either kind. *)
 let meta_termctx : type mode a b s e.

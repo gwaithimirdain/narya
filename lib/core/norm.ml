@@ -151,6 +151,14 @@ let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
       | _ -> tm)
   | _ -> tm
 
+(* If a value is a neutral whose value is blocked on an unsolved unification metavariable, return that blocker. *)
+and blocker_of : type mode s. (mode, s) value -> blocker option = function
+  | Neu { head = Live _; value; _ } -> (
+      match force_eval value with
+      | Blocked b -> Some b
+      | _ -> None)
+  | _ -> None
+
 (* Viewing a type fails if the argument is not fully instantiated.  In most situations this would be a bug, but we allow the caller to specify it differently, since during typechecking it could be a user error. *)
 and view_type : type mode.
     ?severity:Asai.Diagnostic.severity -> (mode, kinetic) value -> string -> mode view_type =
@@ -285,13 +293,15 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       | Unif_meta unif -> (
           match Global.unif_solution meta unif with
           | Some tm -> eval env tm
+          (* If it is unsolved, its value is blocked on it, and once it is solved the value is computed by evaluating it again. *)
           | None ->
+              let recompute () = Realize (eval_term env (Meta (meta, kind, Kinetic))) in
               Val
                 (Neu
                    {
                      head = head kind;
                      args = Emp;
-                     value = ready Unrealized;
+                     value = ref (Blocked_on (Blocker (meta, unif), Deferred recompute));
                      ty = lazy (make_ty kind (Global.meta_ty meta kind));
                    })))
   | UU (mode, n) ->
@@ -583,7 +593,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let akenv = act_env kenv (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
       let (Plus plus_dim) = D.plus match_dim in
       (* Get the argument being inspected *)
-      match view_term (eval_term akenv tm) with
+      let discriminee = view_term (eval_term akenv tm) in
+      match discriminee with
       (* To reduce nontrivially, the discriminee must be an application of a constructor. *)
       | Constr (name, constr_dim, dargs) -> (
           match Constr.Map.find_opt name branches with
@@ -606,8 +617,11 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   eval (Permute (perm, env)) tm))
       (* A match on a failed term also realizes to a failed value. *)
       | Neu { head = Failed _; _ } -> Realize (failed_untyped (mode_env env))
-      (* Otherwise, the case tree doesn't reduce. *)
-      | _ -> Unrealized)
+      (* Otherwise, the case tree doesn't reduce.  If that's because the discriminee is blocked on an unsolved unification metavariable, then so is the match. *)
+      | _ -> (
+          match blocker_of discriminee with
+          | Some b -> Blocked b
+          | None -> Unrealized))
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
   | Unshift (n, plusmap, tm) ->
@@ -1521,19 +1535,35 @@ and apply_binder_term : type dom modality mode k n.
 
 and force_eval : type mode s. (mode, s) lazy_eval -> (mode, s) evaluation =
  fun lev ->
-  let cache etm =
-    lev := Ready etm;
+  (* We cache the result of computing a state, except that a Blocked result is cached together with the state that computed it, so that the computation can be redone once the blocking metavariable is solved. *)
+  let cache (state : (mode, s) lazy_state) (etm : (mode, s) evaluation) : (mode, s) evaluation =
+    (match etm with
+    | Blocked b -> lev := Blocked_on (b, state)
+    | _ -> lev := Ready etm);
     etm in
   match !lev with
+  | Ready etm -> etm
+  | Blocked_on ((Blocker (meta, unif) as b), state) -> (
+      match Global.unif_status meta unif with
+      | `Unsolved -> Blocked b
+      (* Once the blocking metavariable is permanently solved, we redo the computation and cache its result. *)
+      | `Written -> cache state (run_lazy_state state)
+      (* If it is solved only in the table of the current command, the solution could still be backtracked, so we redo the computation but don't cache its result. *)
+      | `Speculative -> run_lazy_state state)
+  | state -> cache state (run_lazy_state state)
+
+(* Compute the result of a lazy state, without caching it. *)
+and run_lazy_state : type mode s. (mode, s) lazy_state -> (mode, s) evaluation = function
   | Deferred_eval (env, tm, ins, c) ->
       (* The insertion and cell are only the part of any outer actions that act_lazy_eval couldn't compose into the environment.  They are almost always trivial, in which case act_evaluation returns immediately. *)
       let (To p) = deg_of_ins ins in
-      cache (act_evaluation (eval env tm) p c)
-  | Deferred tm -> cache (tm ())
+      act_evaluation (eval env tm) p c
+  | Deferred tm -> tm ()
   (* Forcing the inner value caches it there too, so that it is shared with anything else that refers to it. *)
-  | Applied (inner, Apps e) -> cache (app_eval_entry (force_eval inner) e)
-  | Applied (inner, Action (s, c)) -> cache (act_evaluation (force_eval inner) s c)
+  | Applied (inner, Apps e) -> app_eval_entry (force_eval inner) e
+  | Applied (inner, Action (s, c)) -> act_evaluation (force_eval inner) s c
   | Ready etm -> etm
+  | Blocked_on (_, state) -> run_lazy_state state
 
 and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) value =
  fun v ->
@@ -1579,7 +1609,8 @@ and app_eval_entry : type mode1 mode2 s any inst.
           let (Val v) =
             act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized -> Unrealized)
+      | Unrealized -> Unrealized
+      | Blocked b -> Blocked b)
   | Field (filter, fld, fldplus, ins) -> (
       let fm = Modality.filter_modality filter in
       let mode = Modality.tgt fm in
@@ -1595,12 +1626,14 @@ and app_eval_entry : type mode1 mode2 s any inst.
               (field fm tm fld (id_ins (cod_left_ins ins) fldplus))
               p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized -> Unrealized)
+      | Unrealized -> Unrealized
+      | Blocked b -> Blocked b)
   | Inst (_, args) -> (
       match ev with
       | Val tm -> Val (inst tm args)
       | Realize tm -> Realize (inst tm args)
-      | Unrealized -> Unrealized)
+      | Unrealized -> Unrealized
+      | Blocked b -> Blocked b)
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the Locks on the end of the environment have already been stripped off by restrict_keys (which the type of the index ensures, since an insertion only passes dimension entries).  Any Prekeys inside are accumulated into a prekey action. *)
 and lookup_cube : type dom mu munu mode n a b k mk nk.

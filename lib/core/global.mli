@@ -80,6 +80,7 @@ val add_unif :
   termctx:('mode, 'a, 'b) termctx Lazy.t ->
   unit
 
+val unif_assignable : ('mode, 'a, 'b, kinetic) Meta.t -> bool
 val solve_unif : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'b, kinetic) term -> unit
 
 val unif_solution :
@@ -88,6 +89,11 @@ val unif_solution :
   ('mode, 'b, kinetic) term option
 
 val unsolved_unifs : unit -> bool
+
+val unif_status :
+  ('mode, 'a, 'b, kinetic) Meta.t ->
+  ('mode, 'b, kinetic) term option ref ->
+  [ `Unsolved | `Speculative | `Written ]
 
 val meta_termctx :
   ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'b, 's, 'e) meta_kind -> ('mode, 'a, 'b) termctx

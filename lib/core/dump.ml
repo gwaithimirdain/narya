@@ -140,6 +140,7 @@ module F = struct
       | Ready v -> (evaluation (depth - 1)) ppf v
       | Deferred_eval _ -> fprintf ppf "(Deferred_eval)"
       | Deferred _ -> fprintf ppf "(Deferred)"
+      | Blocked_on (Blocker (m, _), _) -> fprintf ppf "(Blocked_on %s)" (Meta.name m)
       | Applied (inner, Apps e) -> fprintf ppf "Applied (%a, %a)" (lazy_eval 0) inner apps_entry e
       | Applied (inner, Action (s, c)) ->
           fprintf ppf "Acted (%a, %s, %s)" (lazy_eval 0) inner (string_of_deg s)
@@ -149,6 +150,7 @@ module F = struct
    fun depth ppf v ->
     match v with
     | Unrealized -> fprintf ppf "Unrealized"
+    | Blocked (Blocker (m, _)) -> fprintf ppf "Blocked %s" (Meta.name m)
     | Realize v -> fprintf ppf "Realize (%a)" (dvalue depth) v
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 

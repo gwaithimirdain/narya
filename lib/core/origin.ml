@@ -214,6 +214,12 @@ module Origin = struct
     | Ok x -> x
     | Error _ -> .
 
+  (* The number of speculations currently in progress, nested inside each other. *)
+  let speculation_depth () = !speculating
+
+  (* Register a callback to run when a speculation succeeds, after the depth has been decreased to that of the enclosing computation. *)
+  let on_speculation_success f = successes := f :: !successes
+
   (* Speculate, always backtracking, so that only the result of the callback is retained, not its effects on the state. *)
   let speculate_discard : type b. (unit -> b) -> b =
    fun callback ->

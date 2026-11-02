@@ -416,8 +416,8 @@ and readback_eval : type mode a z s.
   | Val v, _ -> readback_at ~eta status ctx v ty
   (* In the realize case the value is kinetic, so the stored self-term in the Potential status is discarded. *)
   | Realize v, _ -> Realize (readback_at ~eta Kinetic ctx v ty)
-  (* A stuck case tree is displayed as the application spine of the neutral that the status carries.  Only a potential readback can meet an Unrealized, so that neutral is always available. *)
-  | Unrealized, Potential neutral -> Realize (readback_val ctx neutral)
+  (* A stuck case tree is displayed as the application spine of the neutral that the status carries, whether it is stuck permanently or only on an unsolved unification metavariable.  Only a potential readback can meet an Unrealized or Blocked, so that neutral is always available. *)
+  | (Unrealized | Blocked _), Potential neutral -> Realize (readback_val ctx neutral)
 
 (* A failed term is read back as Failed, whatever its type.  And a term whose type is failed can't be eta-expanded, so we read it back without its type if possible. *)
 and readback_at : type mode a z s.
@@ -1513,5 +1513,5 @@ let rec readback_about : type mode a b.
       | Val v -> Some (readback_at (Potential value) ctx v (Lazy.force ty))
       (* Under glued evaluation, a constant whose definition is an ordinary term rather than a case tree is a neutral whose value realizes that term.  It has no potential value of its own, but the neutral it realizes to may, so we look there. *)
       | Realize v -> readback_about ctx v
-      | Unrealized -> None)
+      | Unrealized | Blocked _ -> None)
   | _ -> None
