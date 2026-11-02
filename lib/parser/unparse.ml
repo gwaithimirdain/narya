@@ -313,6 +313,13 @@ let displayed_metadef : type mode x b s e.
         | _ -> None
       else None
 
+(* The solution of a unification metavariable, if it has one, which is displayed in its place. *)
+let solved_unif : type mode x b l s.
+    (mode, x, b, l) Meta.t -> (mode, b, l, s) meta_kind -> (mode, b, s) term option =
+ fun v -> function
+  | Global_meta -> None
+  | Unif_meta unif -> Global.unif_solution_opt v unif
+
 (* The full name of a metavariable, using the name currently in scope for the constant that owns it. *)
 let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
  fun v -> Global.meta_name ~owner_name:(fun c -> String.concat "." (Scope.name_of c)) v
@@ -339,11 +346,14 @@ let rec synths : type mode n s. (mode, n, s) term -> bool =
   match tm with
   (* A metavariable displayed as its definition synthesizes if that definition does, while one displayed as its name synthesizes. *)
   | Meta (v, kind, _) -> (
-      match displayed_metadef v kind with
-      | Some { tm = `Defined def; _ } ->
-          (* When asking whether the definition synthesizes, we assume temporarily that we're unparsing that metavariable, so it doesn't again get displayed as its definition. *)
-          MetaDefs.while_unparsing v @@ fun () -> synths def
-      | _ -> true)
+      match solved_unif v kind with
+      | Some tm -> synths tm
+      | None -> (
+          match displayed_metadef v kind with
+          | Some { tm = `Defined def; _ } ->
+              (* When asking whether the definition synthesizes, we assume temporarily that we're unparsing that metavariable, so it doesn't again get displayed as its definition. *)
+              MetaDefs.while_unparsing v @@ fun () -> synths def
+          | _ -> true))
   | Var _ | Const _ | Field _ | UU _ | Inst _ | Pi _ -> true
   (* A let-only always synthesizes, since its body is ascribed if necessary. *)
   | Letonly _ -> true
@@ -592,16 +602,20 @@ let rec unparse : type mode n lt ls rt rs s.
       | Some { keys = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (constant_name vars (Scope.name_of c), [])))
+  (* A solved unification metavariable is displayed as its solution. *)
   | Meta (v, kind, _) -> (
-      (* A metavariable to which an alias in scope refers, such as the metavariable of a let-rec variable in a hole in the definition of one of its siblings, is displayed as the name of that alias, just as a variable let-bound to it would be. *)
-      match Names.alias_name vars v with
-      | Some x -> unlocated (Ident ([ x ], []))
+      match solved_unif v kind with
+      | Some tm -> unparse vars tm li ri
       | None -> (
-          (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
-          match displayed_metadef v kind with
-          | Some { tm = `Defined def; _ } ->
-              MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
-          | _ -> unparse_meta_name v))
+          (* A metavariable to which an alias in scope refers, such as the metavariable of a let-rec variable in a hole in the definition of one of its siblings, is displayed as the name of that alias, just as a variable let-bound to it would be. *)
+          match Names.alias_name vars v with
+          | Some x -> unlocated (Ident ([ x ], []))
+          | None -> (
+              (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
+              match displayed_metadef v kind with
+              | Some { tm = `Defined def; _ } ->
+                  MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
+              | _ -> unparse_meta_name v)))
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
@@ -2155,6 +2169,7 @@ let () =
               string "_UNPRINTABLE")
       @@ fun () ->
       Readback.Displaying.run ~env:true @@ fun () ->
+      Readback.Unifying.run ~env:None @@ fun () ->
       match pr with
       | PUnit -> empty
       | PAnd (x, y) -> print x ^^ utf8string " and " ^^ print y
