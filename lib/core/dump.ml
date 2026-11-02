@@ -383,6 +383,7 @@ module F = struct
     | SelfRecord _ -> fprintf ppf "SelfRecord(?)"
     | Refute (_, _) -> fprintf ppf "Refute(?)"
     | Hole _ -> fprintf ppf "Hole"
+    | Unif -> fprintf ppf "Unif"
     | Realize x -> fprintf ppf "Realize %a" check x
     | ImplicitApp (fn, _, args) ->
         fprintf ppf "ImplicitApp (%a," synth fn.value;

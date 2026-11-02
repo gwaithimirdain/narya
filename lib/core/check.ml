@@ -496,7 +496,7 @@ let rec check_has_case_tree : type a. a check -> bool = function
   | Realize tm -> check_has_case_tree tm
   | Weaken (tm, _) -> check_has_case_tree tm
   | First alts -> List.exists (fun (_, tm, _) -> check_has_case_tree tm) alts
-  | Constr _ | Numeral _ | Hole _ | ImplicitApp _ | Oracle _ -> false
+  | Constr _ | Numeral _ | Hole _ | Unif | ImplicitApp _ | Oracle _ -> false
   | Embed _ -> .
 
 and synth_has_case_tree : type a. a synth -> bool = function
@@ -948,6 +948,11 @@ let rec check : type mode a b s.
     | Record _, Kinetic -> kinetic_of_potential ctx tm ty "sig"
     | Data _, Kinetic -> kinetic_of_potential ctx tm ty "data"
     (* If the user left a hole, we create an eternal metavariable. *)
+    (* A placeholder creates a unification metavariable.  In a case tree, it is a leaf. *)
+    | Unif, _ -> (
+        match status with
+        | Kinetic -> make_unif ctx ty
+        | Potential _ -> Realize (make_unif ctx ty))
     | Hole { scope = vars; loc = pos; li; ri; num }, _ ->
         (* Holes aren't numbered by the file they appear in. *)
         let meta =
@@ -5135,6 +5140,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Data _ | Codata _ | Record _ | SelfRecord _ -> None
       | Refute (_, _) -> None
       | Hole _ -> None
+      | Unif -> None
       | Realize _ -> None
       | ImplicitApp (_, _, _) -> None
       | Embed _ -> .
