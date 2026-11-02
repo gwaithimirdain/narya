@@ -353,7 +353,7 @@ let add_gen_lock : type a g. a t -> (a, g lock_entry) snoc t =
 
 (* The metavariable that a term is, possibly weakened (as is the value of an alias that lies behind other entries). *)
 let rec meta_of_term : type mode b s. (mode, b, s) term -> Meta.wrapped option = function
-  | Meta (v, _) -> Some (Meta.Wrap v)
+  | Meta (v, _, _) -> Some (Meta.Wrap v)
   | Key { tm; cell; _ } when Modalcell.is_id cell -> meta_of_term tm
   | _ -> None
 

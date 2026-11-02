@@ -254,15 +254,35 @@ let notify_holes () =
 
 type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
 
+(* The unification metavariables created by a command are stored only in the state of that command, since they are either solved by the time it succeeds or else cause it to fail.  For each one we store its type and context, which are needed only while it is unsolved, and its solution if it has been solved during the command.  Since the state of the command is a Speculable, all of these are discarded if a speculative computation that creates or solves them backtracks.  When the command succeeds, the solutions are written into the cells shared by their occurrences (see Term.meta_kind), so that the table is no longer needed.
+
+   The context is computed lazily, since it is needed only if the metavariable is compared to itself, read back with a nontrivial environment, or displayed.  It must not be read back for display, so its thunk sets the display flag explicitly (see Check.make_unif).  The table is never marshaled, so it can contain such functional values. *)
+module Unifdata = struct
+  type ('mode, 'a, 'b, 's) t = {
+    unif : ('mode, 'b, kinetic) term option ref;
+    ty : ('mode, 'b, kinetic) term;
+    termctx : ('mode, 'a, 'b) termctx Lazy.t;
+    solution : ('mode, 'b, kinetic) term option;
+  }
+end
+
+module Uniftable = Meta.Table.Make_map (Unifdata)
+
 type current_command = {
   holes_allowed : (unit, string) Result.t;
   current_holes : hole Bwd.t;
+  unifs : Uniftable.t;
   parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
 }
 
 let current_command : current_command Speculable.t =
   Speculable.make
-    { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric }
+    {
+      holes_allowed = Error "run";
+      current_holes = Emp;
+      unifs = Uniftable.empty Top;
+      parametric = `Maybe_parametric;
+    }
 
 (* Set and get parametric-ness *)
 
@@ -286,8 +306,75 @@ let get_parametric () =
   | `Nonparametric -> `Nonparametric
   | `Must_be_parametric | `Maybe_parametric -> `Parametric
 
+(* Add a new unification metavariable, with its cell, to the table of the current command. *)
+let add_unif : type mode a b.
+    (mode, a, b, kinetic) Meta.t ->
+    (mode, b, kinetic) term option ref ->
+    ty:(mode, b, kinetic) term ->
+    termctx:(mode, a, b) termctx Lazy.t ->
+    unit =
+ fun meta unif ~ty ~termctx ->
+  Speculable.modify current_command (fun d ->
+      { d with unifs = Uniftable.add meta { unif; ty; termctx; solution = None } d.unifs })
+
+(* Look up the data of a unification metavariable.  This is only possible during the command that created it. *)
+let find_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, a, b, kinetic) Unifdata.t =
+ fun meta ->
+  match Uniftable.find_opt meta (Speculable.get current_command).unifs with
+  | Some d -> d
+  | None ->
+      fatal
+        (Anomaly
+           ("unification metavariable used outside the command that created it: " ^ Meta.name meta))
+
+(* Record the solution of an unsolved unification metavariable in the table of the current command.  If this happens during a speculative computation that later backtracks, the solution is discarded with the rest of the table.  It is written into the cell of the metavariable only when the command succeeds (see finish_unifs). *)
+let solve_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, b, kinetic) term -> unit =
+ fun meta tm ->
+  let d = find_unif meta in
+  match d.solution with
+  | Some _ -> fatal (Anomaly ("solving already-solved unification metavariable " ^ Meta.name meta))
+  | None ->
+      invalidate ();
+      Speculable.modify current_command (fun c ->
+          { c with unifs = Uniftable.add meta { d with solution = Some tm } c.unifs })
+
+(* The solution of a unification metavariable, if it has one: either written into its cell when its command succeeded, or else in the table of the current command. *)
+let unif_solution : type mode a b.
+    (mode, a, b, kinetic) Meta.t ->
+    (mode, b, kinetic) term option ref ->
+    (mode, b, kinetic) term option =
+ fun meta unif ->
+  match !unif with
+  | Some _ as solution -> solution
+  | None -> (find_unif meta).solution
+
+(* The stored context and type of a metavariable of either kind. *)
+let meta_termctx : type mode a b s e.
+    (mode, a, b, s) Meta.t -> (mode, b, s, e) meta_kind -> (mode, a, b) termctx =
+ fun meta -> function
+  | Global_meta -> (find_meta meta).termctx
+  | Unif_meta _ -> Lazy.force (find_unif meta).termctx
+
+let meta_ty : type mode a b s e.
+    (mode, a, b, s) Meta.t -> (mode, b, s, e) meta_kind -> (mode, b, kinetic) term =
+ fun meta -> function
+  | Global_meta -> (find_meta meta).ty
+  | Unif_meta _ -> (find_unif meta).ty
+
+(* At the end of a command, all its unification metavariables must be solved, or else it fails.  If they are and it succeeds, we write their solutions into them.  If the command has already failed for some other reason, we don't report its unsolved unification metavariables, since they are likely to be consequences of that failure. *)
+let finish_unifs () =
+  if not (moribund ()) then
+    let unifs = (Speculable.get current_command).unifs in
+    let unsolved =
+      Uniftable.fold
+        { fold = (fun { solution; _ } n -> if Option.is_none solution then n + 1 else n) }
+        unifs 0 in
+    if unsolved > 0 then mortal (Unsolved_unification_metas unsolved)
+    else Uniftable.fold { fold = (fun { unif; solution; _ } () -> unif := solution) } unifs ()
+
 (* At successful completion of a command, notify the user of generated holes.  Use make_msg to show the number of holes, and also emit the holes separately to be shown in the goals buffer.  This is a subroutine of run_command and friends, below. *)
 let end_command (offset, make_msg) =
+  finish_unifs ();
   (* If the command ended up being parametric, we must retroactively label all the holes as parametric, so that they can only be filled using parametric constants, and oppositely. *)
   let update_parametric : type mode a b s.
       (mode, a, b, s) Metadef.hole -> (mode, a, b, s) Metadef.hole =
@@ -330,11 +417,25 @@ let in_command init f =
 
 let run_command ~holes_allowed f =
   Origin.do_command @@ fun () ->
-  in_command { holes_allowed; current_holes = Emp; parametric = `Maybe_parametric } f
+  in_command
+    {
+      holes_allowed;
+      current_holes = Emp;
+      unifs = Uniftable.empty (Origin.current ());
+      parametric = `Maybe_parametric;
+    }
+    f
 
 let run_command_then_undo ~holes_allowed f =
   Origin.do_command_then_undo @@ fun () ->
-  in_command { holes_allowed; current_holes = Emp; parametric = `Maybe_parametric } f
+  in_command
+    {
+      holes_allowed;
+      current_holes = Emp;
+      unifs = Uniftable.empty (Origin.current ());
+      parametric = `Maybe_parametric;
+    }
+    f
 
 (* In the rewind cases, we have to restore the parametric-ness information from the past also. *)
 let rewind_command ~parametric ~holes_allowed instant f =
@@ -343,7 +444,9 @@ let rewind_command ~parametric ~holes_allowed instant f =
     | `Parametric -> `Must_be_parametric
     | `Nonparametric -> `Nonparametric in
   Origin.rewind_command instant @@ fun () ->
-  in_command { holes_allowed; current_holes = Emp; parametric } f
+  in_command
+    { holes_allowed; current_holes = Emp; unifs = Uniftable.empty (Origin.current ()); parametric }
+    f
 
 let rewind_command_then_undo ~parametric ~holes_allowed instant f =
   let parametric =
@@ -351,12 +454,19 @@ let rewind_command_then_undo ~parametric ~holes_allowed instant f =
     | `Parametric -> `Must_be_parametric
     | `Nonparametric -> `Nonparametric in
   Origin.rewind_command_then_undo instant @@ fun () ->
-  in_command { holes_allowed; current_holes = Emp; parametric } f
+  in_command
+    { holes_allowed; current_holes = Emp; unifs = Uniftable.empty (Origin.current ()); parametric }
+    f
 
 (* For white box testing *)
 let run f =
   Speculable.set current_command
-    { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric };
+    {
+      holes_allowed = Error "run";
+      current_holes = Emp;
+      unifs = Uniftable.empty Top;
+      parametric = `Maybe_parametric;
+    };
   f ()
 
 (* Add a new hole. *)

@@ -253,7 +253,8 @@ let let_var_of_meta : type mode a b c d x s mmode cfull dfull dom modality f k b
    fun b ->
     match (Binding.level b, Binding.value_opt b) with
     | ( None,
-        Some { tm = Neu { head = Live (Meta { meta = meta'; env = xenv; ins }); args = Emp; _ }; _ }
+        Some
+          { tm = Neu { head = Live (Meta { meta = meta'; env = xenv; ins; _ }); args = Emp; _ }; _ }
       ) -> (
         (* The variable is let-bound to a metavariable, so we compare it to our given one.  We also check whether its environment is 0-dimensional and it has no insertion. *)
         match (Meta.compare meta' meta, D.compare (dim_env xenv) D.zero, is_id_ins ins) with
@@ -336,16 +337,18 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
 let readback_meta_at_idenv : type mode a b n c d x s.
     (mode, a, b) Ctx.t ->
     (mode, x, d, s) Meta.t ->
+    (mode, d, s, kinetic) meta_kind ->
     (mode, n, d) env ->
     (mode, c, d) termctx ->
     (mode, b, kinetic) term option =
- fun ctx meta env (Permute (_, envctx)) ->
+ fun ctx meta kind env (Permute (_, envctx)) ->
   let open Monad.Ops (Monad.Maybe) in
   let search : type a b.
       (mode, a, b) Ctx.t -> (mode, D.zero, d) env -> (mode, b, kinetic) term option =
    fun (Permute { ctx; _ }) env ->
     match find_meta_readback meta envctx ctx env envctx with
-    | Some (Weakened_meta (plus, newplus)) -> Some (weaken_gen plus (Meta (meta, Kinetic)) newplus)
+    | Some (Weakened_meta (plus, newplus)) ->
+        Some (weaken_gen plus (Meta (meta, kind, Kinetic)) newplus)
     | Some (Let_var (newplus, fa, filter)) -> (
         (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
         match
@@ -861,8 +864,8 @@ and readback_head : type mode c z.
             | `Canonical -> `Canonical
             | `Other -> canonical in
           Act (Kinetic, Const name, deg, (sort, canonical)))
-  | Meta { meta; env; ins } -> (
-      let { termctx; ty; _ } : _ Metadef.t = Global.find_meta meta in
+  | Meta { meta; kind; env; ins } -> (
+      let termctx = Global.meta_termctx meta kind and ty = Global.meta_ty meta kind in
       let with_perm (tm : (mode, c, kinetic) term) : (mode, c, kinetic) term =
         match is_id_ins ins with
         | Some _ -> tm
@@ -871,16 +874,17 @@ and readback_head : type mode c z.
             let (To perm) = deg_of_ins ins in
             Act (Kinetic, tm, perm, (`Other, canonical)) in
       let letonly () =
-        Letonly { termctx; env = readback_env ctx env termctx; tm = Meta (meta, Kinetic); ty } in
+        Letonly { termctx; env = readback_env ctx env termctx; tm = Meta (meta, kind, Kinetic); ty }
+      in
       (* If the environment is the identity, possibly weakened, we can omit it. *)
-      match readback_meta_at_idenv ctx meta env termctx with
+      match readback_meta_at_idenv ctx meta kind env termctx with
       | Some tm -> with_perm tm
       | None -> (
           let (Permute (_, octx)) = termctx in
           match no_checked_vars octx with
           (* If the context of the metavariable has no variables, an environment for it of positive dimension carries no information, so the metavariable is just degenerated, possibly with a permutation. *)
           | Some Eq -> (
-              match readback_meta_at_idenv ctx meta (Emp (Ctx.mode ctx, D.zero)) termctx with
+              match readback_meta_at_idenv ctx meta kind (Emp (Ctx.mode ctx, D.zero)) termctx with
               | Some tm -> (
                   let (To perm) = deg_of_ins ins in
                   let (DegExt (_, _, deg)) = comp_deg_extending (deg_zero (cod_left_ins ins)) perm in

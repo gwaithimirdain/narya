@@ -23,6 +23,7 @@ val local_name : string option -> string option
 val make_def :
   sort -> 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t
 
+val make_unif : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> ('mode, 'a, 'b, kinetic) t
 val make_hole : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t
 val remake : (File.t -> File.t) -> ('mode, 'a, 'b, 's) t -> ('mode, 'a, 'b, 's) t
 val mode : ('mode, 'a, 'b, 's) t -> 'mode Mode.t
@@ -91,5 +92,18 @@ module Table : sig
     }
 
     val from_istream_origin : Istream.t -> 'x mapper -> Origin.t -> 'x t -> 'x origin_entry
+  end
+
+  module Make_map (F : Fam4) : sig
+    type t
+
+    val empty : Origin.t -> t
+    val is_empty : t -> bool
+    val find_opt : ('mode, 'a, 'b, 's) key -> t -> ('mode, 'a, 'b, 's) F.t option
+    val add : ('mode, 'a, 'b, 's) key -> ('mode, 'a, 'b, 's) F.t -> t -> t
+
+    type 'acc folder = { fold : 'mode 'a 'b 's. ('mode, 'a, 'b, 's) F.t -> 'acc -> 'acc }
+
+    val fold : 'acc folder -> t -> 'acc -> 'acc
   end
 end

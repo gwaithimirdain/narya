@@ -125,6 +125,7 @@ module rec Value : sig
     | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
     | Meta : {
         meta : ('mode, 'a, 'b, 's) Meta.t;
+        kind : ('mode, 'b, 's, kinetic) meta_kind;
         env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }
@@ -432,6 +433,7 @@ end = struct
     (* A metavariable (i.e. flexible) head stores the metavariable along with a delayed substitution applied to it. *)
     | Meta : {
         meta : ('mode, 'a, 'b, 's) Meta.t;
+        kind : ('mode, 'b, 's, kinetic) meta_kind;
         env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }

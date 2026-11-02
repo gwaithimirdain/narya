@@ -21,7 +21,7 @@ let string_of_sort : sort -> string = function
   | `Bare sort -> sort
 
 module Identity = struct
-  type t = [ `Hole of int | `Def of int * sort ]
+  type t = [ `Hole of int | `Def of int * sort | `Unif of int ]
 
   let compare : t -> t -> int = compare
 end
@@ -119,6 +119,18 @@ let make_def : type mode a b s.
   let identity = `Def (number, sort) in
   (origin, { identity; mode; raw; len; energy })
 
+(* Unification metavariables live only during the command that creates them (see Global), so their autonumbers only have to be unique within an origin, like those of defined metavariables. *)
+let unif_counters = Versioned.make ~default:(fun _ -> 0) ~inherit_values:false
+
+(* Unification metavariables are always kinetic. *)
+let make_unif : type mode a b. mode Mode.t -> a N.t -> (mode, b) Tctx.t -> (mode, a, b, kinetic) t =
+ fun mode raw len ->
+  let origin = Origin.current () in
+  let number = Versioned.get unif_counters in
+  Versioned.set unif_counters (number + 1);
+  let identity = `Unif number in
+  (origin, { identity; mode; raw; len; energy = Kinetic })
+
 (* We just use one global hole counter, so that a hole can be represented by a single number to communicate with the user and ProofGeneral.  But to make up for that, we have to remember the origin of each hole as a function of its global number.  Note that this dynarray never shrinks, so old holes that have gone away are still here.  There wouldn't be any easy way to do that, since solving an old hole can create new holes that have to be at the end of the array, so the origins don't appear here in order. *)
 let hole_origins : Origin.t Dynarray.t = Dynarray.create ()
 
@@ -161,6 +173,8 @@ let name : type mode a b s.
   | `Hole number ->
       (* We don't need to include the origin here, since holes are sequentially numbered globally rather than by origin. *)
       Printf.sprintf "?%d" number
+  (* Unification metavariables only exist during a single command, so their origin is not needed either. *)
+  | `Unif number -> Printf.sprintf "?u%d" number
   | `Def (number, sort) -> (
       let owner =
         match (owner_name, owner) with
@@ -178,14 +192,14 @@ let sort_of : type mode a b s. (mode, a, b, s) t -> sort option =
  fun (_, x) ->
   match x.identity with
   | `Def (_, sort) -> Some sort
-  | `Hole _ -> None
+  | `Hole _ | `Unif _ -> None
 
 (* Whether a metavariable was inserted automatically to hold a bare case tree construct. *)
 let is_bare : type mode a b s. (mode, a, b, s) t -> bool =
  fun (_, x) ->
   match x.identity with
   | `Def (_, `Bare _) -> true
-  | `Def (_, (`Let | `Letrec _)) | `Hole _ -> false
+  | `Def (_, (`Let | `Letrec _)) | `Hole _ | `Unif _ -> false
 
 (* Whether two metavariables were bound by the same "let rec" block. *)
 let letrec_siblings : type m1 a1 b1 s1 m2 a2 b2 s2. (m1, a1, b1, s1) t -> (m2, a2, b2, s2) t -> bool
@@ -318,5 +332,38 @@ module Table = struct
             IdMap.map (fun (Entry (key, value)) -> Entry (key, f.map (origin, key) value)) n in
           Option.bind (Versioned.set_at m origin fn) @@ fun () -> Some fn
       | None -> None
+  end
+
+  (* An immutable map from metavariables, without versioning.  This is used for the per-command table of unification metavariables, which is stored in a Speculable and hence backtracked by replacing it with an older version.  As in the versioned tables, the keys are extended identities, whose type parameters are stored existentially and compared when looking them up, while the origin is not part of the key.  Since a map holds the metavariables created by a single command, they all have the origin of that command, which is given when the map is created; looking up a metavariable from any other origin finds nothing. *)
+  module Make_map (F : Fam4) = struct
+    type entry =
+      | Entry : ('mode, 'a, 'b, 's) Extended_identity.t * ('mode, 'a, 'b, 's) F.t -> entry
+
+    type t = { origin : Origin.t; entries : entry IdMap.t }
+
+    let empty : Origin.t -> t = fun origin -> { origin; entries = IdMap.empty }
+    let is_empty : t -> bool = fun m -> IdMap.is_empty m.entries
+
+    let find_opt : type mode a b s. (mode, a, b, s) key -> t -> (mode, a, b, s) F.t option =
+     fun (origin, key) m ->
+      if m.origin <> origin then None
+      else
+        match IdMap.find_opt key.identity m.entries with
+        | None -> None
+        | Some (Entry (key', value)) -> (
+            match Extended_identity.compare key key' with
+            | Eq -> Some value
+            | Neq -> raise (Failure "Meta.Table.Make_map.find_opt"))
+
+    let add : type mode a b s. (mode, a, b, s) key -> (mode, a, b, s) F.t -> t -> t =
+     fun (origin, key) value m ->
+      if m.origin <> origin then
+        raise (Failure "Meta.Table.Make_map: adding from a different origin")
+      else { m with entries = IdMap.add key.identity (Entry (key, value)) m.entries }
+
+    type 'acc folder = { fold : 'mode 'a 'b 's. ('mode, 'a, 'b, 's) F.t -> 'acc -> 'acc }
+
+    let fold : type acc. acc folder -> t -> acc -> acc =
+     fun f m acc -> IdMap.fold (fun _ (Entry (_, value)) acc -> f.fold value acc) m.entries acc
   end
 end

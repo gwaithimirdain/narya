@@ -125,7 +125,9 @@ module rec Term : sig
   type (_, _, _) term =
     | Var : ('mode, 'a) index -> ('mode, 'a, kinetic) term
     | Const : Constant.t -> ('mode, 'a, kinetic) term
-    | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
+    | Meta :
+        ('mode, 'x, 'b, 'l) Meta.t * ('mode, 'b, 'l, 's) meta_kind * 's energy
+        -> ('mode, 'b, 's) term
     | Field :
         's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, 's) term
@@ -365,6 +367,10 @@ module rec Term : sig
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
+
+  and (_, _, _, _) meta_kind =
+    | Global_meta : ('mode, 'b, 'l, 's) meta_kind
+    | Unif_meta : ('mode, 'b, kinetic) term option ref -> ('mode, 'b, kinetic, kinetic) meta_kind
 end = struct
   module CodFam = struct
     type ('k, _) t =
@@ -481,7 +487,9 @@ end = struct
     | Var : ('mode, 'a) index -> ('mode, 'a, kinetic) term
     | Const : Constant.t -> ('mode, 'a, kinetic) term
     (* A metavariable lives in its own context.  When one arises by readback from a value metavariable whose environment is not the identity, it is wrapped in a let-only that binds the variables of its context. *)
-    | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
+    | Meta :
+        ('mode, 'x, 'b, 'l) Meta.t * ('mode, 'b, 'l, 's) meta_kind * 's energy
+        -> ('mode, 'b, 's) term
     (* A field projection.  For a modal field, the term being projected lives behind a lock by the left adjoint of the field's adjunction; for ordinary fields that modality is the identity. *)
     | Field :
         's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion
@@ -768,6 +776,11 @@ end = struct
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
+
+  (* Every occurrence of a metavariable records what kind of metavariable it is, which determines where its data is found.  The kind is indexed by the energy of the metavariable and that of the occurrence: a global metavariable can occur with either energy, but a unification metavariable is kinetic and so are its occurrences.  A global metavariable lives in the global table of metavariables (see Global).  A unification metavariable lives in the table of the command that created it, which stores its type and context and, if it has been solved during that command, its solution.  When the command succeeds, its solution is written into a mutable cell that is shared by all of its occurrences, so that afterwards it can be evaluated without the table. *)
+  and (_, _, _, _) meta_kind =
+    | Global_meta : ('mode, 'b, 'l, 's) meta_kind
+    | Unif_meta : ('mode, 'b, kinetic) term option ref -> ('mode, 'b, kinetic, kinetic) meta_kind
 end
 
 include Term

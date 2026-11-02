@@ -331,12 +331,13 @@ and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> 
           let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
           return ()
       | Neq -> None)
-  | Meta { meta = meta1; env = env1; ins = i1 }, Meta { meta = meta2; env = env2; ins = i2 } -> (
+  | ( Meta { meta = meta1; kind = kind1; env = env1; ins = i1 },
+      Meta { meta = meta2; kind = _; env = env2; ins = i2 } ) -> (
       match (Meta.compare meta1 meta2, D.compare (cod_left_ins i1) (cod_left_ins i2)) with
       | Eq, Eq ->
           let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
           let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
-          Some (equal_env ctx env1 env2 (Global.find_meta meta1).termctx)
+          Some (equal_env ctx env1 env2 (Global.meta_termctx meta1 kind1))
       | Neq, _ -> Some (Error (Metas (meta1, meta2)))
       | _, Neq -> None)
   | UU (_, m), UU (_, n) -> (

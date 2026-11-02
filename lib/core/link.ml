@@ -10,7 +10,12 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   match tm with
   | Var i -> Var i
   | Const c -> Const (Constant.remake f c)
-  | Meta (m, s) -> Meta (Meta.remake f m, s)
+  | Meta (m, Global_meta, s) -> Meta (Meta.remake f m, Global_meta, s)
+  (* A unification metavariable in a compiled file must have been solved when the command that created it succeeded, so we inline its solution. *)
+  | Meta (_, Unif_meta { contents = Some tm }, _) -> term f tm
+  | Meta (m, Unif_meta { contents = None }, _) ->
+      Reporter.fatal
+        (Anomaly ("unsolved unification metavariable in compiled file: " ^ Meta.name m))
   | Field (e, Modal (modality, al, tm), fld, fldins) ->
       Field (e, Modal (modality, al, term f tm), fld, fldins)
   | UU (mode, n) -> UU (mode, n)

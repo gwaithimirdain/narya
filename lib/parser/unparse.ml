@@ -298,16 +298,20 @@ end
 let () = MetaDefs.register_printer (function `Read -> Some "unhandled MetaDefs effect")
 
 (* A metavariable inserted automatically to hold a bare case tree construct is displayed as its definition, which lives in the context of the metavariable.  So are other metavariables (such as those bound by let-bindings), if the user asks for it with "display let ≔ definitions".  If it has no definition (e.g. a hole, or because we are displaying an error that occurred while checking it), we fall back to its name.  We also use its name for occurrences inside its own definition, as in the constructor types of a datatype or a recursive let-binding. *)
-let displayed_metadef : type mode x b s. (mode, x, b, s) Meta.t -> (mode, x, b, s) Metadef.t option
-    =
- fun v ->
-  if (Meta.is_bare v || Display.lets () = `Definitions) && not (MetaDefs.unparsing v) then
-    match
-      Reporter.discard_errors ~fallback:(fun () -> None) (fun () -> Some (Global.find_meta v))
-    with
-    | Some ({ tm = `Defined _; _ } as def) -> Some def
-    | _ -> None
-  else None
+let displayed_metadef : type mode x b s e.
+    (mode, x, b, s) Meta.t -> (mode, b, s, e) meta_kind -> (mode, x, b, s) Metadef.t option =
+ fun v kind ->
+  match kind with
+  (* A unification metavariable has no definition to display: once it is solved, it evaluates to its solution. *)
+  | Unif_meta _ -> None
+  | Global_meta ->
+      if (Meta.is_bare v || Display.lets () = `Definitions) && not (MetaDefs.unparsing v) then
+        match
+          Reporter.discard_errors ~fallback:(fun () -> None) (fun () -> Some (Global.find_meta v))
+        with
+        | Some ({ tm = `Defined _; _ } as def) -> Some def
+        | _ -> None
+      else None
 
 (* The full name of a metavariable, using the name currently in scope for the constant that owns it. *)
 let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
@@ -334,8 +338,8 @@ let rec synths : type mode n s. (mode, n, s) term -> bool =
  fun tm ->
   match tm with
   (* A metavariable displayed as its definition synthesizes if that definition does, while one displayed as its name synthesizes. *)
-  | Meta (v, _) -> (
-      match displayed_metadef v with
+  | Meta (v, kind, _) -> (
+      match displayed_metadef v kind with
       | Some { tm = `Defined def; _ } ->
           (* When asking whether the definition synthesizes, we assume temporarily that we're unparsing that metavariable, so it doesn't again get displayed as its definition. *)
           MetaDefs.while_unparsing v @@ fun () -> synths def
@@ -588,13 +592,13 @@ let rec unparse : type mode n lt ls rt rs s.
       | Some { keys = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (constant_name vars (Scope.name_of c), [])))
-  | Meta (v, _) -> (
+  | Meta (v, kind, _) -> (
       (* A metavariable to which an alias in scope refers, such as the metavariable of a let-rec variable in a hole in the definition of one of its siblings, is displayed as the name of that alias, just as a variable let-bound to it would be. *)
       match Names.alias_name vars v with
       | Some x -> unlocated (Ident ([ x ], []))
       | None -> (
           (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
-          match displayed_metadef v with
+          match displayed_metadef v kind with
           | Some { tm = `Defined def; _ } ->
               MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
           | _ -> unparse_meta_name v))
@@ -669,7 +673,7 @@ let rec unparse : type mode n lt ls rt rs s.
       let _, bodyvars = unparse_letonly_clauses vars ctx tmenv in
       unparse bodyvars body li ri
   (* A let-only whose body is a metavariable that isn't a bare one arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
-  | Letonly { env = tmenv; tm = Meta (v, _); _ }
+  | Letonly { env = tmenv; tm = Meta (v, _, _); _ }
     when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
       let inner =
         Multiple
