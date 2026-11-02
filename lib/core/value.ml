@@ -215,6 +215,10 @@ module rec Value : sig
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
     | Unrealized : ('mode, potential) evaluation
+    | Blocked : blocker -> ('mode, potential) evaluation
+
+  and blocker =
+    | Blocker : ('mode, 'a, 'b, kinetic) Meta.t * ('mode, 'b, kinetic) term option ref -> blocker
 
   and (_, _, _) canonical =
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
@@ -288,6 +292,7 @@ module rec Value : sig
     | Deferred : (unit -> ('mode, 's) evaluation) -> ('mode, 's) lazy_state
     | Applied : ('hmode, 's) lazy_eval * ('hmode, 'mode) lazy_app -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
+    | Blocked_on : blocker * ('mode, potential) lazy_state -> ('mode, potential) lazy_state
 
   and ('mode, 's) lazy_eval = ('mode, 's) lazy_state ref
 
@@ -544,6 +549,11 @@ end = struct
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
     | Unrealized : ('mode, potential) evaluation
+    (* Blocked is like Unrealized, but the case tree is stuck only because of an unsolved unification metavariable, so it may become unstuck when that metavariable is solved.  We record the metavariable along with its cell, so that we can tell whether it has been solved since. *)
+    | Blocked : blocker -> ('mode, potential) evaluation
+
+  and blocker =
+    | Blocker : ('mode, 'a, 'b, kinetic) Meta.t * ('mode, 'b, kinetic) term option ref -> blocker
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
   and (_, _, _) canonical =
@@ -644,6 +654,8 @@ end = struct
     | Deferred : (unit -> ('mode, 's) evaluation) -> ('mode, 's) lazy_state
     | Applied : ('hmode, 's) lazy_eval * ('hmode, 'mode) lazy_app -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
+    (* A result that was Blocked when it was computed, together with the state that computed it.  When forced again, if the blocking metavariable has been solved since, the computation is redone (see Norm.force_eval). *)
+    | Blocked_on : blocker * ('mode, potential) lazy_state -> ('mode, potential) lazy_state
 
   and ('mode, 's) lazy_eval = ('mode, 's) lazy_state ref
 

@@ -102,6 +102,10 @@ module Table : sig
     val find_opt : ('mode, 'a, 'b, 's) key -> t -> ('mode, 'a, 'b, 's) F.t option
     val add : ('mode, 'a, 'b, 's) key -> ('mode, 'a, 'b, 's) F.t -> t -> t
 
+    type mapper = { map : 'mode 'a 'b 's. ('mode, 'a, 'b, 's) F.t -> ('mode, 'a, 'b, 's) F.t }
+
+    val map : mapper -> t -> t
+
     type 'acc folder = { fold : 'mode 'a 'b 's. ('mode, 'a, 'b, 's) F.t -> 'acc -> 'acc }
 
     val fold : 'acc folder -> t -> 'acc -> 'acc

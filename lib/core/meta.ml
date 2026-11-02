@@ -361,6 +361,15 @@ module Table = struct
         raise (Failure "Meta.Table.Make_map: adding from a different origin")
       else { m with entries = IdMap.add key.identity (Entry (key, value)) m.entries }
 
+    type mapper = { map : 'mode 'a 'b 's. ('mode, 'a, 'b, 's) F.t -> ('mode, 'a, 'b, 's) F.t }
+
+    let map : mapper -> t -> t =
+     fun f m ->
+      {
+        m with
+        entries = IdMap.map (fun (Entry (key, value)) -> Entry (key, f.map value)) m.entries;
+      }
+
     type 'acc folder = { fold : 'mode 'a 'b 's. ('mode, 'a, 'b, 's) F.t -> 'acc -> 'acc }
 
     let fold : type acc. acc folder -> t -> acc -> acc =

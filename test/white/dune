@@ -1,5 +1,5 @@
 (tests
- (names readback pbij library_modified)
+ (names readback pbij library_modified unif)
  (libraries core parser testutil top unix zarith))
 
 (env
