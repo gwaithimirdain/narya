@@ -115,6 +115,7 @@ module rec Make : functor (I : Indices) -> sig
         num : int ref;
       }
         -> 'a check
+    | Unif : 'a check
     | Realize : 'a check -> 'a check
     | ImplicitApp :
         'a synth located * implicit_source * (Asai.Range.t option * 'a check located) list
@@ -310,6 +311,8 @@ functor
           num : int ref;
         }
           -> 'a check
+      (* A placeholder "_" in term position, to be filled by unification.  It creates a new unification metavariable, which must be solved by the end of the command. *)
+      | Unif : 'a check
       (* Force a leaf of the case tree *)
       | Realize : 'a check -> 'a check
       (* Pass the type being checked against, or one of the arguments of the constant it is an application of, as the implicit first argument of a function. *)
@@ -607,6 +610,7 @@ module Resolve (R : Resolver) = struct
           Record (locate_opt xs.loc xs2, fields2, opaq, hints)
       | Refute (args, sort) -> Refute (List.map (fun (tm, w) -> (synth ctx tm, w)) args, sort)
       | Hole { scope; loc; li; ri; num } -> Hole { scope = R.rescope ctx scope; loc; li; ri; num }
+      | Unif -> Unif
       | Realize x -> Realize (check ctx (locate_opt tm.loc x)).value
       | ImplicitApp (fn, src, args) ->
           ImplicitApp (synth ctx fn, src, List.map (fun (l, x) -> (l, check ctx x)) args)

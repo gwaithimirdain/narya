@@ -1069,7 +1069,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                           No.Interval.entire)) in
           let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
           let uty = unparse names bty No.Interval.entire No.Interval.entire in
-          if not (moribund ()) then
+          (* If the command has already failed, or will fail at its end because of an unsolved unification metavariable, we don't print anything. *)
+          if not (moribund () || Global.unsolved_unifs ()) then
             !echo_output
               PPrint.(
                 hang 2

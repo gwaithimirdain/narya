@@ -87,6 +87,8 @@ val unif_solution :
   ('mode, 'b, kinetic) term option ref ->
   ('mode, 'b, kinetic) term option
 
+val unsolved_unifs : unit -> bool
+
 val meta_termctx :
   ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'b, 's, 'e) meta_kind -> ('mode, 'a, 'b) termctx
 

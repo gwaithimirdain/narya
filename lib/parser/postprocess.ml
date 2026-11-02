@@ -102,7 +102,7 @@ let rec process : type n lt ls rt rs.
   | Notn (n, d) -> (find n).processor ctx (args d) loc
   (* "Application" nodes in result trees are used for anything that syntactically *looks* like an application.  In addition to actual applications of functions, this includes applications of constructors and degeneracy operators, and also field projections.  *)
   | App { fn; arg; _ } -> process_spine ctx fn [ (Wrap arg, res.loc) ]
-  | Placeholder _ -> fatal (Unimplemented "unification arguments")
+  | Placeholder _ -> { value = Unif; loc }
   | Ident (parts, _) ->
       Reporter.try_with
         (fun () -> process_ident ctx loc parts)
