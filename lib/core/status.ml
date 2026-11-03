@@ -26,7 +26,7 @@ let mode_of_potential : type mode a. (mode, a) potential_head -> mode Mode.t = f
   | Meta (meta, _) -> Meta.mode meta
 
 type (_, _, _) status =
-  | Kinetic : [ `Let | `Nolet ] -> ('mode, 'b, kinetic) status
+  | Kinetic : ('mode, 'b, kinetic) status
   (* The head (the constant or metavariable being defined) lives at its own mode, which differs from the current checking mode when the spine of arguments crosses a modal field projection (i.e. when we are checking the component of a modal field in a comatch or tuple).  The hypothesizing callback takes a term in the current context to a definition of the head in its own context. *)
   | Potential :
       ('hmode, 'a) potential_head
@@ -35,14 +35,14 @@ type (_, _, _) status =
       -> ('mode, 'b, potential) status
 
 let energy : type mode b s. (mode, b, s) status -> s energy = function
-  | Kinetic _ -> Kinetic
+  | Kinetic -> Kinetic
   | Potential _ -> Potential
 
 let realize : type mode b s. (mode, b, s) status -> (mode, b, kinetic) term -> (mode, b, s) term =
  fun status tm ->
   match status with
   | Potential _ -> Realize tm
-  | Kinetic _ -> tm
+  | Kinetic -> tm
 
 let pop_status : type mode b dom n modality s.
     n D.t ->
@@ -50,5 +50,5 @@ let pop_status : type mode b dom n modality s.
     (mode, (b, (modality, n) dim_entry) snoc, s) status ->
     (mode, b, s) status =
  fun n f -> function
-  | Kinetic l -> Kinetic l
+  | Kinetic -> Kinetic
   | Potential (head, apps, hyp) -> Potential (head, apps, fun x -> hyp (weaken_dim n f x))

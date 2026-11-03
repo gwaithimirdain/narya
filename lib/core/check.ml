@@ -285,8 +285,6 @@ let merge_branches : type hmode dom a m.
          (c, Checkable_branch { xs; body = None; env; ty }))
        leftovers)
 
-type Control.backtrack += Case_tree_construct_in_let
-
 (* The output of checking a telescope includes an extended context. *)
 type (_, _, _, _, _) checked_tel =
   | Checked_tel :
@@ -475,6 +473,45 @@ let missing_constructors : type a b. (Constr.t, a) Abwd.t -> b =
       Mbwd.miter (fun [ (c, _) ] -> mortal (Missing_constructor_in_match c)) [ constrs ];
       fatal (Fatalize "missing_constructors")
 
+(* Whether a let-bound value contains a case tree construct, so that it must be bound to a metavariable (see synth_or_check_let).  This is decided syntactically by following exactly the subterms to which checking passes on the status of the term being checked: those of constructs that can be either case trees or ordinary terms, such as the bodies of abstractions, the components of tuples, ascribed terms, and the bodies of let-bindings.  A construct that can only be a case tree, such as a match or comatch, means yes; a construct that checks its subterms as ordinary terms, such as an application or a constructor, means no for that subterm.  It should agree with the checker: if it says no, then checking the value as a kinetic term never encounters a case tree construct.  (If it did, the construct would be treated like any other case tree construct in a kinetic term, i.e. bound to a metavariable of its own with a hint (see kinetic_of_potential), which is correct but not what the user would expect for a let-bound value.) *)
+let rec check_has_case_tree : type a. a check -> bool = function
+  | Synth stm -> synth_has_case_tree stm
+  | Lam { body; _ } -> check_has_case_tree body.value
+  | Struct (Eta, fields) ->
+      Abwd.fold (fun _ (_, tm) found -> found || check_has_case_tree tm.value) fields false
+  | Struct (Noeta, _) | Empty_co_match | Refute _ | Data _ | Codata _ | Record _ | SelfRecord _ ->
+      true
+  | Realize tm -> check_has_case_tree tm
+  | Weaken (tm, _) -> check_has_case_tree tm
+  | First alts -> List.exists (fun (_, tm, _) -> check_has_case_tree tm) alts
+  | Constr _ | Numeral _ | Hole _ | ImplicitApp _ | Oracle _ -> false
+  | Embed _ -> .
+
+and synth_has_case_tree : type a. a synth -> bool = function
+  | Match _ -> true
+  (* The bound values of nested lets are checked separately, as their own let-bindings; only their bodies inherit the status. *)
+  | Let (_, _, _, body) -> check_has_case_tree body.value
+  | Letrec (_, _, body) -> check_has_case_tree body.value
+  | Asc (tm, _) -> check_has_case_tree tm.value
+  | AscLam (_, _, _, body) -> synth_has_case_tree body.value
+  | SFirst (alts, arg) ->
+      List.exists (fun (_, stm, _) -> synth_has_case_tree stm) alts
+      || Option.fold ~none:false ~some:synth_has_case_tree arg
+  | Var _
+  | Const _
+  | Field _
+  | Key _
+  | Pi _
+  | HigherPi _
+  | InstHigherPi _
+  | App _
+  | UU _
+  | Letonly _
+  | Act _
+  | Fail _
+  | ImplicitSApp _
+  | Calc _ -> false
+
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential). *)
 let rec check : type mode a b s.
     (mode, b, s) status ->
@@ -516,7 +553,7 @@ let rec check : type mode a b s.
                 check_of_synth ~nosynth status ctx stm tm.loc ty
             | Ok ty_fainv ->
                 (* A pure permutation is never locking.  *)
-                let cx = check (Kinetic `Nolet) ctx x ty_fainv in
+                let cx = check Kinetic ctx x ty_fainv in
                 realize status
                   (Term.Act
                      ( Kinetic,
@@ -557,7 +594,7 @@ let rec check : type mode a b s.
                             (Modalcell.id2 (Ctx.mode ctx)) in
                         let cx, xloc =
                           match x with
-                          | Some x -> (check (Kinetic `Nolet) ctx x xty, x.loc)
+                          | Some x -> (check Kinetic ctx x xty, x.loc)
                           | None -> (readback_nf ctx arg, None) in
                         (* We also have to check that the rest of the output type is correct. *)
                         let ex = eval_term (Ctx.env ctx) cx in
@@ -622,8 +659,7 @@ let rec check : type mode a b s.
                 | Error ((`Not_found _ | `Wrong_tgt _) as e) ->
                     modality_fatal "checking ascribed lambda" (e :> modality_error));
                 let (Locked (_, lctx)) = Ctx.lock ctx modality in
-                let cdom =
-                  check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
+                let cdom = check Kinetic lctx dom (universe (Modality.src modality) D.zero) in
                 let edom = eval_term (Ctx.env lctx) cdom in
                 match subtype_of lctx (CubeOf.find_top doms) edom with
                 | Ok () -> ()
@@ -644,7 +680,7 @@ let rec check : type mode a b s.
             let mkstatus (xs : n variables) :
                 (mode, b, s) status -> (mode, (b, (modality, n) dim_entry) snoc, s) status =
               function
-              | Kinetic l -> Kinetic l
+              | Kinetic -> Kinetic
               | Potential (c, args, hyp) ->
                   let arg = CubeOf.mmap { map = (fun _ [ x ] -> Ctx.Binding.value x) } [ newnfs ] in
                   Potential
@@ -789,14 +825,14 @@ let rec check : type mode a b s.
       ->
         let (Wrap window) = get_window (Ctx.mode ctx) window in
         let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
-        let stm, sty = synth (Kinetic `Nolet) lctx tm in
+        let stm, sty = synth Kinetic lctx tm in
         check_nondep_match status ctx stm sty window plus_lock branches i highers ty tm.loc
     (* We don't need to deal with `Explicit matches here, since they can always synthesize a type and hence be caught by the catch-all for checking synthesizing terms, below. *)
     (* Checking [] at a pi-type interprets it as a pattern-matching lambda over some empty datatype. *)
     | Empty_co_match, _ -> (
         match (view_type ~severity ty "checking empty (co)match", status) with
         | Canonical (_, Pi _, _, _), Potential _ -> check_empty_match_lam ctx ty `First
-        | Canonical (_, Pi _, _, _), Kinetic l -> kinetic_of_potential l ctx tm ty "matching lambda"
+        | Canonical (_, Pi _, _, _), Kinetic -> kinetic_of_potential ctx tm ty "matching lambda"
         | _, _ -> check status ctx { value = Struct (Noeta, Abwd.empty); loc = tm.loc } ty)
     | Refute (tms, i), Potential _ -> check_refute ctx tms i
     (* Now we go through the canonical types. *)
@@ -863,13 +899,13 @@ let rec check : type mode a b s.
         check_data ~recursive:`Nonrecursive ~hints ~tyfam status ctx ty num_indices Abwd.empty
           (Bwd.to_list constrs)
     (* If we have a term that's not valid outside a case tree, we bind it to a global metavariable. *)
-    | Struct (Noeta, _), Kinetic l -> kinetic_of_potential l ctx tm ty "comatch"
-    | Synth (Match _), Kinetic l -> kinetic_of_potential l ctx tm ty "match"
-    | Refute _, Kinetic l -> kinetic_of_potential l ctx tm ty "match"
-    | Codata _, Kinetic l -> kinetic_of_potential l ctx tm ty "codata"
-    | SelfRecord _, Kinetic l -> kinetic_of_potential l ctx tm ty "sig"
-    | Record _, Kinetic l -> kinetic_of_potential l ctx tm ty "sig"
-    | Data _, Kinetic l -> kinetic_of_potential l ctx tm ty "data"
+    | Struct (Noeta, _), Kinetic -> kinetic_of_potential ctx tm ty "comatch"
+    | Synth (Match _), Kinetic -> kinetic_of_potential ctx tm ty "match"
+    | Refute _, Kinetic -> kinetic_of_potential ctx tm ty "match"
+    | Codata _, Kinetic -> kinetic_of_potential ctx tm ty "codata"
+    | SelfRecord _, Kinetic -> kinetic_of_potential ctx tm ty "sig"
+    | Record _, Kinetic -> kinetic_of_potential ctx tm ty "sig"
+    | Data _, Kinetic -> kinetic_of_potential ctx tm ty "data"
     (* If the user left a hole, we create an eternal metavariable. *)
     | Hole { scope = vars; loc = pos; li; ri; num }, _ ->
         (* Holes aren't numbered by the file they appear in. *)
@@ -886,14 +922,14 @@ let rec check : type mode a b s.
     (* If we have a synthesizing term, we synthesize it. *)
     | Synth stm, _ -> check_of_synth status ctx stm tm.loc ty
     (* We pass through case tree leaf markers *)
-    | Realize ktm, Potential _ -> Realize (check (Kinetic `Nolet) ctx (locate_opt tm.loc ktm) ty)
-    | Realize ktm, Kinetic l -> check (Kinetic l) ctx (locate_opt tm.loc ktm) ty
+    | Realize ktm, Potential _ -> Realize (check Kinetic ctx (locate_opt tm.loc ktm) ty)
+    | Realize ktm, Kinetic -> check Kinetic ctx (locate_opt tm.loc ktm) ty
     (* Nothing is embedded *)
     | Embed _, _ -> .
     (* If we're using the checking type, or an argument of it, as an implicit first argument: *)
     | ImplicitApp (fn, src, args), _ -> (
         (* Now we act like synth on an application. *)
-        let sfn, sty = synth (Kinetic `Nolet) ctx fn in
+        let sfn, sty = synth Kinetic ctx fn in
         match view_type sty "ImplicitApp" with
         | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) -> (
             let Eq = eq_of_ins_zero ins in
@@ -996,13 +1032,13 @@ let rec check : type mode a b s.
           else check_alt () in
         go Emp alts
     | Oracle tm, _ -> (
-        let ctm = check (Kinetic `Nolet) ctx tm ty in
+        let ctm = check Kinetic ctx tm ty in
         let etm = eval_term (Ctx.env ctx) ctm in
         match Oracle.ask (Ask (ctx, etm)) with
         | Ok () -> (
             (* TODO: try just "realize ctm" *)
             match status with
-            | Kinetic _ -> ctm
+            | Kinetic -> ctm
             | Potential _ -> Realize ctm)
         | Error err -> fatal err)
     | Weaken (body, Eq), _ -> (
@@ -1086,9 +1122,7 @@ and check_ascription : type mode a b.
     a check located ->
     ((mode, b, kinetic) term, Reporter.pending Bwd.t) Result.t =
  fun ctx aty ->
-  match
-    Control.speculate (fun () -> check (Kinetic `Nolet) ctx aty (universe (Ctx.mode ctx) D.zero))
-  with
+  match Control.speculate (fun () -> check Kinetic ctx aty (universe (Ctx.mode ctx) D.zero)) with
   | Ok (cty, ps) ->
       Reporter.release ps;
       Ok cty
@@ -1164,31 +1198,26 @@ and check_of_synth : type mode a b s.
 
 (* Deal with checking a potential term in kinetic position *)
 and kinetic_of_potential : type mode a b.
-    [ `Let | `Nolet ] ->
     (mode, a, b) Ctx.t ->
     a check located ->
     (mode, kinetic) value ->
     string ->
     (mode, b, kinetic) term =
- fun l ctx tm ty sort ->
-  match l with
-  | `Let -> raise (Control.Backtrack Case_tree_construct_in_let)
-  | `Nolet ->
-      emit (Bare_case_tree_construct sort);
-      (* We create a metavariable to store the potential value. *)
-      let meta =
-        Meta.make_def (`Bare sort) (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential
-      in
-      (* We first define the metavariable without a value, as an "axiom", just as we do for global constants.  This isn't necessary for recursion, since this metavariable can't refer to itself, but so that with_meta_definition will be able to find it for consistency. *)
-      let termctx = readback_ctx ctx in
-      let vty = readback_val ctx ty in
-      Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
-      (* Then we check the value and redefine the metavariable to be that value. *)
-      let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun x -> x) in
-      let cv = check tmstatus ctx tm ty in
-      Global.set_meta meta cv;
-      (* Finally, we return the metavariable. *)
-      Term.Meta (meta, Kinetic)
+ fun ctx tm ty sort ->
+  emit (Bare_case_tree_construct sort);
+  (* We create a metavariable to store the potential value. *)
+  let meta =
+    Meta.make_def (`Bare sort) (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential in
+  (* We first define the metavariable without a value, as an "axiom", just as we do for global constants.  This isn't necessary for recursion, since this metavariable can't refer to itself, but so that with_meta_definition will be able to find it for consistency. *)
+  let termctx = readback_ctx ctx in
+  let vty = readback_val ctx ty in
+  Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
+  (* Then we check the value and redefine the metavariable to be that value. *)
+  let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun x -> x) in
+  let cv = check tmstatus ctx tm ty in
+  Global.set_meta meta cv;
+  (* Finally, we return the metavariable. *)
+  Term.Meta (meta, Kinetic)
 
 and synth_or_check_let : type mode a b s p.
     ?nosynth:Code.t Asai.Diagnostic.t ->
@@ -1214,50 +1243,48 @@ and synth_or_check_let : type mode a b s p.
         Reporter.mortalize ~fallback:(fun () -> None) @@ fun () ->
         Option.some
         @@
-          try
-            (* We first try checking the bound term first as an ordinary kinetic term. *)
-            let sv, svty = Control.backtrackable @@ fun () -> synth (Kinetic `Let) lctx v in
-            let ev = eval_at (Ctx.env lctx) sv svty in
-            (sv, { tm = ev; ty = Lazy.from_val svty })
-          with
-          (* If that encounters case-tree constructs, then we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
-          | Control.Backtrack Case_tree_construct_in_let ->
-            (* First we make the metavariable. *)
-            let local = Meta.local_name name in
-            let meta =
-              Meta.make_def `Let (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx) Potential
-            in
-            let termctx = readback_ctx lctx in
-            (* A new status in which to check the value of that metavariable; now it is the "current constant" being defined. *)
-            let tmstatus = Potential (Meta (meta, Ctx.env lctx), Emp, fun x -> x) in
-            let sv, svty =
-              match v.value with
-              | Asc (vtm, rvty) ->
-                  (* If the bound term is explicitly ascribed, then we can give the metavariable a type while checking its body.  This is probably mainly only useful with "let rec". *)
-                  let vty = check (Kinetic `Nolet) lctx rvty (universe (Ctx.mode lctx) D.zero) in
-                  Global.add_meta ?local meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
-                  let evty = eval_term (Ctx.env lctx) vty in
-                  let cv = check tmstatus lctx vtm evty in
-                  Global.set_meta meta cv;
-                  (cv, evty)
-              | _ ->
-                  (* Otherwise, we just synthesize the term.  But first we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
-                  Global.add_meta_error meta (Typeless_meta (meta, `Let));
-                  (* We pass in a ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
-                  let synthed svty =
-                    let vty = readback_val lctx svty in
-                    Global.add_meta ?local meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
-                  let sv, svty = synth ~synthed tmstatus lctx v in
-                  (* Now the type is already installed and we can just set the value. *)
-                  Global.set_meta meta sv;
-                  (sv, svty) in
-            (* We turn that metavariable into a value. *)
-            let head = Live (Value.Meta { meta; env = Ctx.env lctx; ins = zero_ins D.zero }) in
-            let tm =
-              (* Glued evaluation: we delay evaluating the term until it's needed. *)
-              Neu { head; args = Emp; value = lazy_eval (Ctx.env lctx) sv; ty = Lazy.from_val svty }
-            in
-            (Term.Meta (meta, Kinetic), { tm; ty = Lazy.from_val svty }) in
+        (* If the bound term contains no case-tree constructs, we check it as an ordinary kinetic term. *)
+        if not (synth_has_case_tree v.value) then
+          let sv, svty = synth Kinetic lctx v in
+          let ev = eval_at (Ctx.env lctx) sv svty in
+          (sv, { tm = ev; ty = Lazy.from_val svty })
+        else
+          (* Otherwise, we can allow the bound term to be a case tree, i.e. a potential term.  But in a checked "let" expression, the term being bound is a kinetic one, and must be so that its value can be put into the environment when the term is evaluated.  We deal with this by binding a *metavariable* to the bound term and then taking the value of that metavariable as the kinetic term to actually be bound.  *)
+          (* First we make the metavariable. *)
+          let local = Meta.local_name name in
+          let meta =
+            Meta.make_def `Let (Ctx.mode lctx) (Ctx.raw_length lctx) (Ctx.tctx lctx) Potential in
+          let termctx = readback_ctx lctx in
+          (* A new status in which to check the value of that metavariable; now it is the "current constant" being defined. *)
+          let tmstatus = Potential (Meta (meta, Ctx.env lctx), Emp, fun x -> x) in
+          let sv, svty =
+            match v.value with
+            | Asc (vtm, rvty) ->
+                (* If the bound term is explicitly ascribed, then we can give the metavariable a type while checking its body.  This is probably mainly only useful with "let rec". *)
+                let vty = check Kinetic lctx rvty (universe (Ctx.mode lctx) D.zero) in
+                Global.add_meta ?local meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential;
+                let evty = eval_term (Ctx.env lctx) vty in
+                let cv = check tmstatus lctx vtm evty in
+                Global.set_meta meta cv;
+                (cv, evty)
+            | _ ->
+                (* Otherwise, we just synthesize the term.  But first we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
+                Global.add_meta_error meta (Typeless_meta (meta, `Let));
+                (* We pass in a ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
+                let synthed svty =
+                  let vty = readback_val lctx svty in
+                  Global.add_meta ?local meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
+                let sv, svty = synth ~synthed tmstatus lctx v in
+                (* Now the type is already installed and we can just set the value. *)
+                Global.set_meta meta sv;
+                (sv, svty) in
+          (* We turn that metavariable into a value. *)
+          let head = Live (Value.Meta { meta; env = Ctx.env lctx; ins = zero_ins D.zero }) in
+          let tm =
+            (* Glued evaluation: we delay evaluating the term until it's needed. *)
+            Neu { head; args = Emp; value = lazy_eval (Ctx.env lctx) sv; ty = Lazy.from_val svty }
+          in
+          (Term.Meta (meta, Kinetic), { tm; ty = Lazy.from_val svty }) in
       (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context.  If it failed, we instead bind the variable to a failed value, so that parts of the body that need to inspect it fail silently, while the others can still be checked. *)
       let v, newctx =
         match checked with
@@ -1268,7 +1295,7 @@ and synth_or_check_let : type mode a b s p.
         match status with
         | Potential (c, args, hyp) ->
             Potential (c, args, fun body -> hyp (Let (name, Modal (modality, plus, v), body)))
-        | Kinetic l -> Kinetic l in
+        | Kinetic -> Kinetic in
       (* And synthesize or check the body in the extended context. *)
       Annotate.ctx status newctx body;
       match (ty, body) with
@@ -1304,7 +1331,7 @@ and synth_or_check_letrec : type mode a b c ac s p.
   let status : (mode, _, s) status =
     match status with
     | Potential (c, args, hyp) -> Potential (c, args, fun x -> hyp (wrap x))
-    | Kinetic l -> Kinetic l in
+    | Kinetic -> Kinetic in
   (* And synthesize or check the body in the extended context. *)
   Annotate.ctx status newctx body;
   match (ty, body) with
@@ -1346,7 +1373,7 @@ and make_letrec_metas : type mode a b c ac v.
                 let cty, ety =
                   Reporter.mortalize ~fallback:(fun () -> (Term.Failed Kinetic, failed_type mode))
                   @@ fun () ->
-                  let cty = check (Kinetic `Nolet) actx rty (universe mode D.zero) in
+                  let cty = check Kinetic actx rty (universe mode D.zero) in
                   (cty, eval_term (Ctx.env actx) cty) in
                 let local = Meta.local_name x in
                 let meta =
@@ -1441,7 +1468,7 @@ and synth_letonly : type mode a b k e.
  fun ctx k clauses body ->
   let (Checked_letonly_clauses (type eb) ((tmenv, venv, bodyctx) : _ * _ * (mode, e, eb) Ctx.t)) =
     check_letonly_clauses ctx k clauses in
-  let status : (mode, _, kinetic) status = Kinetic `Nolet in
+  let status : (mode, _, kinetic) status = Kinetic in
   Annotate.ctx status bodyctx (locate_opt body.loc (Synth body.value));
   let sbody, sbodyty = synth status bodyctx body in
   let sbodyty = readback_val bodyctx sbodyty in
@@ -1577,7 +1604,7 @@ and check_letonly_type : type mode a b.
   let mode = Ctx.mode ctx in
   match ty.value with
   | Synth sty -> (
-      let cty, tyty = synth (Kinetic `Nolet) ctx { value = sty; loc = ty.loc } in
+      let cty, tyty = synth Kinetic ctx { value = sty; loc = ty.loc } in
       match view_type tyty "type of let-only variable" with
       | Canonical (_, UU _, ins, tyargs) ->
           let Eq = eq_of_ins_zero ins in
@@ -1588,7 +1615,7 @@ and check_letonly_type : type mode a b.
           | Error _ ->
               fatal ?loc:ty.loc (Universe_expected (`Synth, "let-only variable", PVal (ctx, tyty))))
       )
-  | _ -> Letonly_type (check (Kinetic `Nolet) ctx ty (universe mode D.zero), TubeOf.empty D.zero)
+  | _ -> Letonly_type (check Kinetic ctx ty (universe mode D.zero), TubeOf.empty D.zero)
 
 (* Check the bound term of a let-only clause, which must belong to an instantiation of the given uninstantiated type of dimension mn, returning it along with the instantiation arguments, which form its boundary.  If mn is zero, there are no instantiation arguments and we can just check it; but otherwise it must synthesize, and we read the arguments off its synthesized type. *)
 and check_letonly_term : type mode a b mn.
@@ -1599,9 +1626,9 @@ and check_letonly_term : type mode a b mn.
     (mode, b, kinetic) term * (D.zero, mn, mn, mode normal) TubeOf.t =
  fun ctx mn tm ty ->
   match (D.compare_zero mn, tm.value) with
-  | Zero, _ -> (check (Kinetic `Nolet) ctx tm ty, TubeOf.empty D.zero)
+  | Zero, _ -> (check Kinetic ctx tm ty, TubeOf.empty D.zero)
   | Pos _, Synth stm -> (
-      let ctm, sty = synth (Kinetic `Nolet) ctx { value = stm; loc = tm.loc } in
+      let ctm, sty = synth Kinetic ctx { value = stm; loc = tm.loc } in
       let (Full_tube tyargs) = get_tyargs sty "bound term of let-only" in
       match D.factor (TubeOf.out tyargs) mn with
       | None ->
@@ -1647,7 +1674,7 @@ and check_implicit_match : type mode a b.
   let fallback () =
     let (Wrap window) = get_window (Ctx.mode ctx) window_name in
     let (Locked (plus, wctx)) = Ctx.lock ctx window in
-    let stm, varty = synth (Kinetic `Nolet) wctx tm in
+    let stm, varty = synth Kinetic wctx tm in
     check_nondep_match status ctx stm varty window plus brs None highers motive tm.loc in
   (* We look up the discriminee to check whether it is an unlocked free variable and get its De Bruijn level, its type, and its checked-index. *)
   match tm with
@@ -1849,7 +1876,7 @@ and synth_nondep_match : type mode a b.
   match get_window (Ctx.mode ctx) window_name with
   | Wrap (type dom window) (window : (dom, window, mode) Modality.t) -> (
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
-      let (tm, varty), loc = (synth (Kinetic `Nolet) lctx tm, tm.loc) in
+      let (tm, varty), loc = (synth Kinetic lctx tm, tm.loc) in
       (* Now we define the callback that will try to synthesize a motive from one of the branches. *)
       let get : type m.
           m D.t ->
@@ -1959,7 +1986,7 @@ and synth_dep_match : type mode a b.
   match get_window (Ctx.mode ctx) window_name with
   | Wrap window -> (
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx window in
-      let (tm, varty), loc = (synth (Kinetic `Nolet) lctx tm, tm.loc) in
+      let (tm, varty), loc = (synth Kinetic lctx tm, tm.loc) in
       let result, result_ty =
         check_match_branches status ctx tm varty window plus_lock brs None highers loc
           (* In this case when the motive is dependent, the definition of the motive callbacks is more involved. *)
@@ -1972,7 +1999,7 @@ and synth_dep_match : type mode a b.
                    let emotivety =
                      eval_term (Ctx.env ctx)
                        (motive_of_family ctx window tyfam.tm (Lazy.force tyfam.ty)) in
-                   let cmotive = check (Kinetic `Nolet) ctx motive emotivety in
+                   let cmotive = check Kinetic ctx motive emotivety in
                    let emotive = eval_term (Ctx.env ctx) cmotive in
                    (* Note that the motive object here is a *type family* value, not a single type.  Therefore, the "use" and "return" callbacks have to apply that function to appropriate arguments.  We keep the checked term alongside it, to be stored in the Match for display. *)
                    (Some (cmotive, emotive), Constr.Map.empty, user_branches));
@@ -2262,7 +2289,7 @@ and check_var_match : type dom modality mode a b bm.
                                               refutation_window newctx x window_name in
                                             let (Locked (plus_lock, wctx)) =
                                               Ctx.lock newctx window in
-                                            let stm, sty = synth (Kinetic `Nolet) wctx x in
+                                            let stm, sty = synth Kinetic wctx x in
                                             match is_empty sty with
                                             | None -> ()
                                             | Some (Wrap dim) ->
@@ -2408,7 +2435,7 @@ and check_refute : type mode a b.
     | (tm, window_name) :: tms -> (
         let (Wrap window) = refutation_window ctx tm window_name in
         let (Locked (plus_lock, wctx)) = Ctx.lock ctx window in
-        let stm, sty = synth (Kinetic `Nolet) wctx tm in
+        let stm, sty = synth Kinetic wctx tm in
         (* The error to report if nothing can be refuted comes from the first term. *)
         let err default = Some (Option.value err ~default) in
         match view_type sty "check_refute" with
@@ -2637,7 +2664,7 @@ and check_data : type mode a b i.
             let Checked_tel (args, newctx), crec =
               Positivity.scope @@ fun () -> check_tel ctx args in
             (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
-            let coutput = check (Kinetic `Nolet) newctx output (universe (Ctx.mode ctx) D.zero) in
+            let coutput = check Kinetic newctx output (universe (Ctx.mode ctx) D.zero) in
             if Telescope.has_failed args then fatal (Dependent "failed constructor argument");
             let err = Code.Invalid_constructor_type (c, Left "head must be current datatype") in
             match eval_term (Ctx.env newctx) coutput with
@@ -2849,7 +2876,7 @@ and check_codata : type mode a b n et.
       (* If a type was given for the self variable, it must be equal to the current codatatype with its parameters. *)
       (match self_ty with
       | Some self_ty -> (
-          let cself_ty = check (Kinetic `Nolet) ctx self_ty (universe (Ctx.mode ctx) D.zero) in
+          let cself_ty = check Kinetic ctx self_ty (universe (Ctx.mode ctx) D.zero) in
           let eself_ty = eval_term (Ctx.env ctx) cself_ty in
           let err : Code.t =
             Invalid_self_variable_type (fld, Left ("head must be current " ^ record_or_codata eta))
@@ -2928,9 +2955,7 @@ and check_codata : type mode a b n et.
                         Ctx.cube_vis lctx (Modality.filter_idempotent left_filter) x (self adj)
                       in
                       (* Note the type of each field is checked *kinetically*: it's not part of the case tree. *)
-                      let cty =
-                        check (Kinetic `Nolet) newctx rty (universe (Modality.src right) D.zero)
-                      in
+                      let cty = check Kinetic newctx rty (universe (Modality.src right) D.zero) in
                       let entry =
                         CodatafieldAbwd.Entry (fld, Codatafield (x, adj, plus_lock, Lower cty))
                       in
@@ -2980,9 +3005,7 @@ and check_codata : type mode a b n et.
                       let fldtermctx = readback_ctx lctx in
                       (* Only then do we degenerate the whole thing by the field's intrinsic dimension, which makes the self variable into an i-dimensional cube along with the rest of the context. *)
                       let (Degctx (plusmap, degctx, _)) = degctx newctx i in
-                      let cty =
-                        check (Kinetic `Nolet) degctx rty (universe (Modality.src right) D.zero)
-                      in
+                      let cty = check Kinetic degctx rty (universe (Modality.src right) D.zero) in
                       (* Since the codatatype has evaluation dimension zero, that declared type is the field's only instance. *)
                       let entry =
                         CodatafieldAbwd.Entry
@@ -3042,7 +3065,7 @@ and check_record : type mode a f1 f2 f af d acd b n.
           | Ok (Wrap modality) -> (
               match Modality.compare_id modality with
               | Neq -> fatal (Unimplemented "modal record fields in telescope syntax")
-              | Eq -> check (Kinetic `Nolet) newctx rty (universe (Ctx.mode ctx) D.zero)))
+              | Eq -> check Kinetic newctx rty (universe (Ctx.mode ctx) D.zero)))
         raw_fields
   (* A field sharing the type of the previous one, such as snd in "sig (fst snd : A)".  The field variables are projections of the self variable, so all the fields are checked in the same context, and we can reuse the checked type of the previous field.  If that failed to typecheck, it is Failed, its error has already been reported, and this field is Failed too. *)
   | Same (Some name, raw_fields) ->
@@ -3176,7 +3199,7 @@ and check_fields : type mode a b c s m n mn et.
       let head = Live (head_of_potential name) in
       let prev_etm = Neu { head; args; value = ready (Val str); ty = Lazy.from_val ty } in
       check_field status eta ctx ty m mn codata_args fields tyargs fld cdf prev_etm tms ctms etms
-  | Entry (fld, cdf) :: fields, Kinetic _ ->
+  | Entry (fld, cdf) :: fields, Kinetic ->
       let prev_etm = str in
       check_field status eta ctx ty m mn codata_args fields tyargs fld cdf prev_etm tms ctms etms
 
@@ -3234,7 +3257,7 @@ and check_field : type mode a b c s m n mn i et.
                        (b, mode, g, gmode, bl) plus_lock * (gmode, a, bl) Ctx.t)) =
                 Ctx.lock ctx right in
               let mkstatus lbl : (mode, b, s) status -> (gmode, bl, s) status = function
-                | Kinetic l -> Kinetic l
+                | Kinetic -> Kinetic
                 | Potential (c, args, hyp) ->
                     let args = Snoc (args, Field (left_filter, fld, D.plus_zero m, ins)) in
                     let hyp tm =
@@ -3319,7 +3342,7 @@ and check_field : type mode a b c s m n mn i et.
                 (PlusPbijmap.build m i { build = (fun _ -> None) })
                 (InsmapOf.build m i { build = (fun _ -> None) })
                 (all_pbij_between m i) prev_etm fld_plus_lock fldtermctx ic0 fldty
-          | Higher _, Kinetic _, _ -> .))
+          | Higher _, Kinetic, _ -> .))
 
 and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
     (mode, b, potential) status ->
@@ -3707,7 +3730,7 @@ and synth : type mode a b s.
         let synth_field : type dom f. (dom, f, mode) Modality.t -> _ =
          fun fm ->
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
-          let stm, sty = synth (Kinetic `Nolet) lctx tm in
+          let stm, sty = synth Kinetic lctx tm in
           let etm = eval_term (Ctx.env lctx) stm in
           let WithIns (fld, ins), newty = tyof_field_withname fm lctx etm sty fld in
           (realize status (Field (Kinetic, Modal (fm, plus_lock, stm), fld, ins)), newty) in
@@ -3725,7 +3748,7 @@ and synth : type mode a b s.
             | Some (Found_plus_with_locks plus_tgt) ->
                 let (Replaced (newctx, plus_src)) =
                   Ctx.replace_locks ctx (Hidden_variable `Key) plus_tgt src in
-                let tm, sty = synth (Kinetic `Nolet) newctx tm in
+                let tm, sty = synth Kinetic newctx tm in
                 ( realize status (Key { tm; cell; plus_tgt; plus_src }),
                   act_value sty (deg_zero D.zero) cell )
             | None ->
@@ -3747,8 +3770,7 @@ and synth : type mode a b s.
               Reporter.mortalize
                 ~fallback:(fun () -> (Term.Failed Kinetic, failed_type (Modality.src modality)))
                 (fun () ->
-                  let cdom =
-                    check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
+                  let cdom = check Kinetic lctx dom (universe (Modality.src modality) D.zero) in
                   (cdom, eval_term (Ctx.env lctx) cdom)) in
             (* Each variable is bound at the same evaluated domain, since values don't change under weakening.  The domain *term* of each variable after the first lives in the context extended by the earlier ones and locked by the modality, so it is the weakening of the previous one under that lock. *)
             let rec bind : type a b c ac bm.
@@ -3760,7 +3782,7 @@ and synth : type mode a b s.
                 (mode, b, kinetic) term =
              fun ctx plus_src cdom xs cod ->
               match xs with
-              | [] -> check (Kinetic `Nolet) ctx cod (universe mode D.zero)
+              | [] -> check Kinetic ctx cod (universe mode D.zero)
               | x :: xs ->
                   let newctx = Ctx.ext ctx modality x.value edom in
                   let (Locked (newplus, _)) = Ctx.lock newctx modality in
@@ -3778,7 +3800,7 @@ and synth : type mode a b s.
         | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
         | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-            let cdom, domty = synth (Kinetic `Nolet) lctx dom in
+            let cdom, domty = synth Kinetic lctx dom in
             let edom = eval_term (Ctx.env lctx) cdom in
             match view_type domty "higher pi domain" with
             | Canonical
@@ -3809,7 +3831,7 @@ and synth : type mode a b s.
                         (mode, b1, kinetic) term * (mode, kinetic) value =
                      fun ctx plus cdoms xs cod ->
                       match xs with
-                      | [] -> synth (Kinetic `Nolet) ctx cod
+                      | [] -> synth Kinetic ctx cod
                       | { value = x; loc = _ } :: xs -> (
                           let _, binds = dom_vars ctx modality edoms in
                           let newctx = Ctx.cube_vis ctx kfilter x binds in
@@ -3975,9 +3997,7 @@ and synth : type mode a b s.
                   | Emp -> fatal (Not_enough_domains k)
                   | Ext (x, _, dom, rest) ->
                       (* We check the domains against universe 0, since they should be fully instantiated. *)
-                      let cdom =
-                        check (Kinetic `Nolet) xctx dom (universe (Modality.src modality) D.zero)
-                      in
+                      let cdom = check Kinetic xctx dom (universe (Modality.src modality) D.zero) in
                       Entry (x, eval_term (Ctx.env xctx) cdom, dom.loc, rest)
                   (* A domain that shares the type of the previous one, which was checked in the scope outside both of them, has the same evaluated type. *)
                   | Same (x, rest) -> (
@@ -4058,7 +4078,7 @@ and synth : type mode a b s.
                   let ccod =
                     match extras with
                     (* We likewise check the codomain against universe 0. *)
-                    | [] -> check (Kinetic `Nolet) newctx cod (universe mode D.zero)
+                    | [] -> check Kinetic newctx cod (universe mode D.zero)
                     (* If there are more variables sharing the primary domain, the codomain is the pi-type whose only domain is that shared one.  There can't have been any boundary domains, since then those variables would need their own. *)
                     | { value = y; loc = yloc } :: extras -> (
                         match Raw.fwn_of_tel doms with
@@ -4160,7 +4180,7 @@ and synth : type mode a b s.
         let (Maybe_locked (lctx, plus_src, cell)) =
           Ctx.maybe_lock ctx (Modalcell.parametric_locker mode) fa in
         (* We pass on the "nosynth" error, so that we can look through multiple degeneracies before noticing a nonsynthesizing term. *)
-        let sx, ety = synth ?nosynth (Kinetic `Nolet) lctx x in
+        let sx, ety = synth ?nosynth Kinetic lctx x in
         let ex = eval_term (Ctx.env lctx) sx in
         let sty =
           with_loc x.loc @@ fun () -> act_ty ex ety fa cell ~err:(low_dim_arg_err str.value) in
@@ -4202,7 +4222,7 @@ and synth : type mode a b s.
         | Error e -> modality_fatal "synthesizing ascribed lambda" (e :> modality_error)
         | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
             let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-            let cdom = check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
+            let cdom = check Kinetic lctx dom (universe (Modality.src modality) D.zero) in
             let edom = eval_term (Ctx.env lctx) cdom in
             let newctx = Ctx.ext ctx modality x edom in
             (* We get the normal corresponding to the new variable.  The modality must be the one we added it with, and the lock must be trivial since we just added it. *)
@@ -4220,7 +4240,7 @@ and synth : type mode a b s.
             let filter = Modality.filter_zero modality in
             let newstatus : (mode, (b, (modality, D.zero) dim_entry) snoc, s) status =
               match status with
-              | Kinetic l -> Kinetic l
+              | Kinetic -> Kinetic
               | Potential (c, args, hyp) ->
                   let arg = CubeOf.singleton xnf in
                   Potential
@@ -4250,27 +4270,24 @@ and synth : type mode a b s.
     | Letonly (k, clauses, body), _ ->
         let ctm, ety = synth_letonly ctx k clauses body in
         (realize status ctm, ety)
-    | Match _, Kinetic l -> (
-        match l with
-        | `Let -> raise (Control.Backtrack Case_tree_construct_in_let)
-        | `Nolet ->
-            emit (Bare_case_tree_construct "match");
-            (* A match in a kinetic synthesizing position, we can treat like a let-binding that returns the bound (metavariable) value.  Of course we can shortcut the binding by just inserting the metavariable as the result.  This code is copied and modified from synth_or_check_let.  Note that in this case there is no evident way to give the metavariable a type before defining it, which means that with_meta_definition won't be able to set it to anything; but this shouldn't be a problem since there is also no name for this metavariable and hence no way for the user to refer to it in the body, so it doesn't need to have a type or a value. *)
-            let meta =
-              Meta.make_def (`Bare "match") (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx)
-                Potential in
-            let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun x -> x) in
-            (* First we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
-            Global.add_meta_error meta (Typeless_meta (meta, `Bare));
-            (* We wrap the supplied ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
-            let synthed svty =
-              Option.iter (fun f -> f svty) synthed;
-              let vty = readback_val ctx svty in
-              let termctx = readback_ctx ctx in
-              Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
-            let sv, svty = synth ~synthed tmstatus ctx tm in
-            Global.set_meta meta sv;
-            (Term.Meta (meta, Kinetic), svty))
+    | Match _, Kinetic ->
+        emit (Bare_case_tree_construct "match");
+        (* A match in a kinetic synthesizing position, we can treat like a let-binding that returns the bound (metavariable) value.  Of course we can shortcut the binding by just inserting the metavariable as the result.  This code is copied and modified from synth_or_check_let.  Note that in this case there is no evident way to give the metavariable a type before defining it, which means that with_meta_definition won't be able to set it to anything; but this shouldn't be a problem since there is also no name for this metavariable and hence no way for the user to refer to it in the body, so it doesn't need to have a type or a value. *)
+        let meta =
+          Meta.make_def (`Bare "match") (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential
+        in
+        let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun x -> x) in
+        (* First we bind the meta to a specific error value, so that if it is referred to before we have installed its type below, the user gets a meaningful bug report. *)
+        Global.add_meta_error meta (Typeless_meta (meta, `Bare));
+        (* We wrap the supplied ?synthed callback so that if the type is deduced before the entire term is typechecked, we go ahead and install it immediately into the metavariable, in case some other part of typechecking the term depends on it. *)
+        let synthed svty =
+          Option.iter (fun f -> f svty) synthed;
+          let vty = readback_val ctx svty in
+          let termctx = readback_ctx ctx in
+          Global.add_meta meta ~termctx ~tm:`Axiom ~ty:vty ~energy:Potential in
+        let sv, svty = synth ~synthed tmstatus ctx tm in
+        Global.set_meta meta sv;
+        (Term.Meta (meta, Kinetic), svty)
     | Match { tm; window; sort = `Explicit motive; branches; refutables = _; highers }, Potential _
       -> synth_dep_match ?synthed status ctx tm window branches highers motive
     | Match { tm; window; sort = `Implicit; branches; refutables = _; highers }, Potential _ ->
@@ -4282,8 +4299,8 @@ and synth : type mode a b s.
     (* If we're using the synthesized type of an argument as an implicit first argument: *)
     | ImplicitSApp (fn, apploc, arg), _ -> (
         (* We synthesize both function and argument *)
-        let sfn, sfnty = synth (Kinetic `Nolet) ctx fn in
-        let sarg, sargty = synth (Kinetic `Nolet) ctx arg in
+        let sfn, sfnty = synth Kinetic ctx fn in
+        let sarg, sargty = synth Kinetic ctx arg in
         (* We read back the synthesized type, so we can put it as the first argument in the generated term. *)
         let cargty = readback_val ctx sargty in
         match view_type sfnty "ImplicitSApp" with
@@ -4403,7 +4420,7 @@ and synth : type mode a b s.
         go Emp alts
     | Calc (x, rest), _ ->
         let idm = Modality.id mode in
-        let cx, ty = synth (Kinetic `Nolet) ctx x in
+        let cx, ty = synth Kinetic ctx x in
         let cty = readback_val ctx ty in
         let env = Ctx.env ctx in
         let ex = eval_term env cx in
@@ -4430,7 +4447,7 @@ and synth : type mode a b s.
               match
                 Reporter.mortalize
                   ~fallback:(fun () -> None)
-                  (fun () -> Some (check (Kinetic `Nolet) ctx z ty))
+                  (fun () -> Some (check Kinetic ctx z ty))
               with
               | None -> (cy, None, fail ())
               | Some cz -> (
@@ -4451,7 +4468,7 @@ and synth : type mode a b s.
                                 Hott.tube ny nz
                                 <|> Unimplemented "equational reasoning without -hott" in
                               let idyz = inst idty yztube in
-                              let cyeqz = check (Kinetic `Nolet) ctx yeqz idyz in
+                              let cyeqz = check Kinetic ctx yeqz idyz in
                               let pqtube =
                                 Hott.tube12 hh cx cx creflx cy cz cyeqz
                                 <|> Unimplemented "equational reasoning without -hott" in
@@ -4469,7 +4486,7 @@ and synth : type mode a b s.
                                 Hott.tube nz ny
                                 <|> Unimplemented "equational reasoning without -hott" in
                               let idzy = inst idty zytube in
-                              let czeqy = check (Kinetic `Nolet) ctx yeqz idzy in
+                              let czeqy = check Kinetic ctx yeqz idzy in
                               let pqtube =
                                 Hott.tube12 hh cx cx creflx cz cy czeqy
                                 <|> Unimplemented "equational reasoning without -hott" in
@@ -4540,7 +4557,7 @@ and synth_apps : type mode a b.
   | [] -> (asfn.value, aty)
   | _ :: _ ->
       with_loc asfn.loc (fun () ->
-          Annotate.ctx (Kinetic `Nolet) ctx afn;
+          Annotate.ctx Kinetic ctx afn;
           Annotate.ty ctx aty;
           Annotate.tm ctx asfn.value);
       synth_apps ctx asfn aty afn aargs
@@ -4579,7 +4596,7 @@ and synth_arg_cube : type dom modality mode a b n c.
     (* Otherwise, the first argument must be explicit and synthesizing. *)
     | (_, { value = Some (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false -> (
         (* We synthesize its type, extract the instantiation arguments, and store them to fill in the boundary arguments. *)
-        let _, argty = synth (Kinetic `Nolet) lctx (locate_opt loc toptm) in
+        let _, argty = synth Kinetic lctx (locate_opt loc toptm) in
         let (Full_tube argtyargs) = get_tyargs argty "primary argument" in
         (* A function of one dimension can be applied to a primary argument of a *higher* dimension, since a cube is also a square.  So we require only that the dimension of argtyargs factors through the application dimension. *)
         match D.factor (TubeOf.inst argtyargs) (CubeOf.dim doms) with
@@ -4662,7 +4679,7 @@ and synth_arg_cube : type dom modality mode a b n c.
                   (* If the argument fails to typecheck, we record it as Failed and go on.  Since it is evaluated lazily, later arguments can still be checked as long as their types, and the output type, don't depend on it. *)
                   let ctm =
                     Reporter.mortalize ~fallback:(fun () -> Term.Failed Kinetic) @@ fun () ->
-                    check (Kinetic `Nolet) lctx tm ty in
+                    check Kinetic lctx tm ty in
                   (ctm, lazy_eval_at (Ctx.env lctx) ctm ty) in
             (* In both cases, we store the resulting lazy value with its type in the hashtable of previous values, to use in instantiating later types. *)
             Hashtbl.add eargtbl (SFace_of fa) (etm, ty);
@@ -4769,7 +4786,7 @@ and synth_or_check_apps : type mode a b.
   match (fn.value, actions (Some fn)) with
   (* If we can fully synthesize a type for the function (that is, if it's a synthesizing term perhaps degenerated), we do that and then pass off to synth_apps to iterate through all the arguments. *)
   | Synth sfn, (_, Some { value = Synth _; _ }) ->
-      let sfn, sty = synth (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc } in
+      let sfn, sty = synth Kinetic ctx { value = sfn; loc = fn.loc } in
       let stm, sty = synth_apps ctx { value = sfn; loc = fn.loc } sty fn args in
       (stm, sty)
   (* Otherwise, we try getting information from the arguments. *)
@@ -4808,7 +4825,7 @@ and synth_lam : type mode a b c d n.
   let mode = Ctx.mode ctx in
   match (fn.value, args) with
   (* If the current function synthesizes, we do that right away and return it, ignoring the rest of the arguments. *)
-  | Synth sfn, _ -> synth (Kinetic `Nolet) ctx { value = sfn; loc = fn.loc }
+  | Synth sfn, _ -> synth Kinetic ctx { value = sfn; loc = fn.loc }
   (* Otherwise, if we're out of arguments, we assume we have a non-dependent function type and check the body against the overall type that must have been supplied to check against. *)
   | _, [] -> (
       match ty with
@@ -4816,7 +4833,7 @@ and synth_lam : type mode a b c d n.
           (* We un-act on the checking type to obtain a type for the function inside the degeneracy *)
           let uty =
             unact_ty ~err:(Unimplemented "typechecking degenerated redexes with arity 0") ty n in
-          let cfn = check (Kinetic `Nolet) ctx fn uty in
+          let cfn = check Kinetic ctx fn uty in
           (cfn, uty)
       | None ->
           fatal ?loc:fn.loc (Nonsynthesizing "head of application spine in synthesizing position"))
@@ -4835,7 +4852,7 @@ and synth_lam : type mode a b c d n.
       | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
           let (Locked (plus, lctx)) = Ctx.lock ctx modality in
           (* As in synthesizing an AscLam, we check the supplied domain and extend the context. *)
-          let cdom = check (Kinetic `Nolet) lctx dom (universe (Modality.src modality) D.zero) in
+          let cdom = check Kinetic lctx dom (universe (Modality.src modality) D.zero) in
           let edom = eval_term (Ctx.env lctx) cdom in
           let newctx = Ctx.ext ctx modality name.value edom in
           let xs = singleton_variables D.zero (View.hinted name.value edom) in
@@ -4863,7 +4880,7 @@ and synth_lam : type mode a b c d n.
       (_, arg, { value = `Explicit; _ }) :: args ) -> (
       match arg.value with
       | Some (Synth sarg) ->
-          let _, sargty = synth (Kinetic `Nolet) argctx (locate_opt arg.loc sarg) in
+          let _, sargty = synth Kinetic argctx (locate_opt arg.loc sarg) in
           let edom =
             unact_ty ~err:(Unimplemented "typechecking degenerated redexes with arity 0") sargty n
           in
@@ -4936,7 +4953,7 @@ and check_at_pi : type mode n a c e.
                         (* Since the checked term doesn't use the supplied boundary (see below), if it is wrong we can just go on. *)
                         Reporter.mortalize ~fallback:(fun () -> ()) @@ fun () ->
                         let uty = Lazy.force t.ty in
-                        let uctm = check (Kinetic `Nolet) lctx utm uty in
+                        let uctm = check Kinetic lctx utm uty in
                         let uetm = eval_term (Ctx.env lctx) uctm in
                         match equal_at lctx uetm t.tm uty with
                         | Ok () -> ()
@@ -4968,7 +4985,7 @@ and check_at_pi : type mode n a c e.
           (* If the argument fails to typecheck, we record it as Failed and go on, so that later arguments can still be checked if their types don't depend on it. *)
           let ctm =
             Reporter.mortalize ~fallback:(fun () -> Term.Failed Kinetic) @@ fun () ->
-            check (Kinetic `Nolet) lctx tm ity in
+            check Kinetic lctx tm ity in
           (* We evaluate the checked argument lazily, since often it isn't needed (e.g. if the codomain is non-dependent), and evaluating it eagerly makes checking deeply nested constructor applications such as large numerals quadratic.  This also means that a Failed argument only causes a dependent error if its value is actually inspected. *)
           let etm = lazy_eval_at (Ctx.env lctx) ctm ity in
           let argcube =
@@ -5004,7 +5021,7 @@ and check_tel : type mode a b c ac.
             Reporter.mortalize ~fallback:(fun () ->
                 (Term.Failed Kinetic, failed_type (Modality.src modality)))
             @@ fun () ->
-            let cty = check (Kinetic `Nolet) lctx ty (universe (Modality.src modality) D.zero) in
+            let cty = check Kinetic lctx ty (universe (Modality.src modality) D.zero) in
             (cty, eval_term (Ctx.env lctx) cty) in
           check_tel_ext ctx (Tel_prev (modality, plus, cty, ety)) x tys)
   | Same (x, tys) -> (

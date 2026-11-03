@@ -919,7 +919,7 @@ let split_match_cases : type mode a b.
     | (_, Wrap tm) :: tms -> (
         match process vars tm with
         | { value = Synth rtm; loc } -> (
-            let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
+            let _, sty = Check.synth Kinetic ctx (locate_opt loc rtm) in
             match View.view_type sty "split" with
             | Canonical (_, Data { dim; constrs; _ }, _, _) ->
                 let* () =
@@ -1033,7 +1033,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | Synth stm ->
           let (Of_raw ctx) = ctx rtm in
           (* The term is checked with internal readback, like any other term, so that the contexts of any metavariables it creates are not read back for display.  Only the results are read back for display. *)
-          let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
+          let ctm, ety = Check.synth Kinetic ctx { value = stm; loc = rtm.loc } in
           Readback.Displaying.run ~env:true @@ fun () ->
           let names = Names.of_ctx ctx in
           (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
@@ -1346,7 +1346,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               | (_, Wrap tm) :: tms -> (
                   match process vars tm with
                   | { value = Synth rtm; loc } -> (
-                      let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
+                      let _, sty = Check.synth Kinetic ctx (locate_opt loc rtm) in
                       match View.view_type sty "split" with
                       | Canonical (_, Data { dim; constrs; _ }, _, _) ->
                           let* () =

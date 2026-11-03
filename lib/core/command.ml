@@ -148,7 +148,7 @@ let check_type_of : type b c.
   let (Checked_tel (params, ctx)) = check_tel (Ctx.empty mode) params in
   let ty =
     Reporter.mortalize ~fallback:(fun () -> Term.Failed Kinetic) @@ fun () ->
-    check (Kinetic `Nolet) ctx ty (universe mode D.zero) in
+    check Kinetic ctx ty (universe mode D.zero) in
   Checked_type { mode; params; ty }
 
 (* Check the parameters and type of one constant in a mutual "def", and define it as an axiom with that type. *)
