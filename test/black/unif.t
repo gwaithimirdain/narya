@@ -94,6 +94,82 @@ Unification works inside let-bound values, whether or not they are case trees.
    ￮ constant v defined
   
 
+A case tree stuck on an unsolved metavariable is blocked, and is recomputed once the metavariable is solved, even if its blocked value has been computed and cached in the meantime.  Here the type Z, i.e. T ?u, is forced while ?u is unsolved, by comparing two terms of type Z; then ?u is solved by comparing b with true., after which Z must compute to ℕ.
+
+  $ narya -v - <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > def T (b : Bool) : Type ≔ match b [ true. ↦ ℕ | false. ↦ Bool ]
+  > def id (X : Type) (x : X) : X ≔ x
+  > def test : ℕ ≔ let b : Bool ≔ _ in let Z : Type ≔ T b in let z : Z ≔ _ in let e : Id Z z (id Z z) ≔ refl z in let w : Id Bool b true. ≔ refl (true. : Bool) in let k : Id ℕ z zero. ≔ refl (zero. : ℕ) in suc. z
+  > echo test
+  > EOF
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant T defined
+  
+   ￫ info[I0000]
+   ￮ constant id defined
+  
+   ￫ info[I0000]
+   ￮ constant test defined
+  
+  1
+    : ℕ
+  
+
+An ascribed type is checked speculatively.  A metavariable created inside a speculation that succeeds can be solved outside it afterwards.  But a speculation can't solve a metavariable created outside it, since if the speculation were backtracked, values created outside it might retain consequences of the solution.
+
+  $ narya -v - <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > def id (X : Type) (x : X) : X ≔ x
+  > def s : A ≔ (a : _)
+  > def s' : A ≔ let X : Type ≔ _ in (a : id X A)
+  > EOF
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0000]
+   ￮ constant id defined
+  
+   ￫ info[I0000]
+   ￮ constant s defined
+  
+   ￫ error[E0401]
+   ￭ stdin
+   5 | def s' : A ≔ let X : Type ≔ _ in (a : id X A)
+     ^ term synthesized type
+         Type
+       but is being checked against type
+         X
+       unequal head terms:
+         Type
+       does not equal
+         X
+  
+   ￫ error[E0401]
+   ￭ stdin
+   5 | def s' : A ≔ let X : Type ≔ _ in (a : id X A)
+     ^ term synthesized type
+         X
+       but is being checked against type
+         Type
+       unequal head terms:
+         X
+       does not equal
+         Type
+  
+  [1]
+
 A metavariable can be solved in an extended context, by a value not involving the extra variables.  But it can't be solved by a value involving them, or by a value containing itself, including through a let-bound variable.
 
   $ narya -v - <<EOF
