@@ -382,6 +382,18 @@ A metavariable can be solved when it is applied to arguments, as long as they ar
     : Type
   
 
+The bound variables of such an abstraction are named according to the type of the metavariable.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom C : A → A → Type
+  > def named : A → A → Type ≔ let f : (u v : A) → Type ≔ _ in let k : (y z : A) → Id Type (f y z) (C z y) ≔ y z ↦ refl (C z y) in f
+  > about named
+  > EOF
+  let f ≔ u v ↦ C v u in let k ≔ y z ↦ Id (C z y) in f
+    : A → A → Type
+  
+
 The arguments count as part of the renaming, so the value can't use an argument that is repeated or also appears in the environment, since then there would be more than one solution.  An argument that isn't a variable isn't a renaming, the value can't use other variables, and the metavariable can't occur in it.  Well-typedness is also checked as before.
 
   $ narya - <<EOF
