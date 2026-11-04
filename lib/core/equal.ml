@@ -96,6 +96,26 @@ type solver = {
 
 let solver : solver ref = ref { solve = (fun _ _ _ _ -> false) }
 
+(* A comparison of two neutral spines with the same head may fail and then succeed by unfolding them, so it shouldn't solve any metavariables while it might be abandoned, since those solutions may not be justified by the final comparison.  For example, if g ignores its arguments, then g ?v b1 and g a1 b2 are equal, and that says nothing about ?v.  Thus we first compare spines "flexibly", without solving anything. *)
+let flexible = ref false
+
+let flexibly (f : unit -> 'a) : 'a =
+  if !flexible || not (Global.unsolved_unifs ()) then f ()
+  else (
+    flexible := true;
+    Fun.protect ~finally:(fun () -> flexible := false) f)
+
+let try_solve ctx x y ty = (not !flexible) && !solver.solve ctx x y ty
+
+(* Whether an equality between neutrals forces their spines to be equal, even after any metavariables in them are solved.  This is so if the neutral is permanently stuck, because it is a variable, an axiom, or a case tree stuck on something other than a metavariable, or if it is a canonical type, since these are generative.  It is not so if it is stuck on a metavariable, or if its head is a metavariable, since that metavariable could turn out to ignore some of its arguments. *)
+let forces_spine : type mode s. (mode, s) value -> bool = function
+  | Neu { head = Live (Meta _); _ } -> false
+  | Neu { head = Live _; value; _ } -> (
+      match View.force_eval value with
+      | Unrealized | Val (Canonical _) -> true
+      | Realize _ | Blocked _ | Val _ -> false)
+  | _ -> false
+
 (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
 let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
  fun n x y ->
@@ -108,10 +128,29 @@ and equal_at_eta_spines : type mode a b.
  fun ctx x y ->
   match (x, y) with
   | Neu _, Neu _ -> (
-      match equal_neu ctx x y with
+      (* Since the fallback is to something else that is complete, this should never solve anything. *)
+      match flexibly (fun () -> equal_neu ctx x y) with
       | Ok () -> true
       | Error _ -> false)
   | _ -> false
+
+(* Compare two neutrals as spines, without solving any metavariables if the comparison might be abandoned.  If that fails, then the mismatch is inconclusive if either side unfolds (its stored value is Realized), in which case we call the given function on the unfoldings.  Since view_term unfolds Realized glued values all the way down, a second view is the physical identity, so there is at most one retry per node and subterms that match as spines are never unfolded.  Otherwise, if the spines are forced to be equal, we compare them again, now solving metavariables. *)
+and equal_neu_or_unfold : type mode a b.
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value ->
+    ((mode, kinetic) value -> (mode, kinetic) value -> unit Err.t) ->
+    unit Err.t =
+ fun ctx x y retry ->
+  match flexibly (fun () -> equal_neu ctx x y) with
+  | Ok () -> Ok ()
+  | Error err ->
+      let vx = view_term x in
+      let vy = view_term y in
+      if vx != x || vy != y then retry vx vy
+      else if (not !flexible) && Global.unsolved_unifs () && forces_spine x && forces_spine y then
+        equal_neu ctx x y
+      else Error err
 
 (* Compare two values at a type, which they are both assumed to belong to.  We do eta-expansion here if the type is one with an eta-rule, like a pi-type or a record type.  We also deal with the case of terms that don't synthesize, such as structs even in codatatypes without eta, and constructors in datatypes. *)
 and equal_at : type mode a b.
@@ -123,7 +162,7 @@ and equal_at : type mode a b.
  fun ctx x y ty ->
   (* Physically equal values are definitionally equal, and physical sharing is common (cached constants, shared let-bindings, shared forced values), so we short-circuit on it before any structural work. *)
   if x == y then Ok ()
-  else if !solver.solve ctx x y (Some ty) then Ok ()
+  else if try_solve ctx x y (Some ty) then Ok ()
   else
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
@@ -226,14 +265,8 @@ and equal_at_data : type mode m a b.
               ~not_constr:(fun _ -> Anomaly "inst arg not constr in equality at datatype") in
           (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees. *)
           equal_at_pi ctx xn (lazy (force_eval_term fnty)) xargs yargs tyarg_args)
-  | Neu _, Neu _ -> (
-      (* Two neutrals are first compared as spines; a mismatch is inconclusive if either side unfolds, in which case we retry (once) on the unfoldings, which may now be constructors. *)
-      match equal_neu ctx x y with
-      | Ok () -> Ok ()
-      | Error err ->
-          let vx = view_term x in
-          let vy = view_term y in
-          if vx == x && vy == y then Error err else equal_at_data ctx constrs ty tyargs vx vy)
+  (* Two neutrals are first compared as spines; if they unfold, the unfoldings may now be constructors. *)
+  | Neu _, Neu _ -> equal_neu_or_unfold ctx x y (equal_at_data ctx constrs ty tyargs)
   | _ -> (
       let vx = view_term x in
       let vy = view_term y in
@@ -255,17 +288,10 @@ and equal_val : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
  fun ctx x y ->
   if x == y then Ok ()
-  else if !solver.solve ctx x y None then Ok ()
+  else if try_solve ctx x y None then Ok ()
   else
     match (x, y) with
-    | Neu _, Neu _ -> (
-        (* Two neutrals are first compared rigidly as spines.  With glued evaluation, a spine mismatch is inconclusive if either side unfolds (its stored value is Realized): in that case we retry on the unfoldings.  Since view_term unfolds Realized glued values all the way down, a second view is the physical identity, so there is at most one retry per node and subterms that match as spines are never unfolded. *)
-        match equal_neu ctx x y with
-        | Ok () -> Ok ()
-        | Error err ->
-            let vx = view_term x in
-            let vy = view_term y in
-            if vx == x && vy == y then Error err else equal_val ctx vx vy)
+    | Neu _, Neu _ -> equal_neu_or_unfold ctx x y (equal_val ctx)
     | Lam _, _ | _, Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing equality-check")
     | Struct _, _ | _, Struct _ ->
         fatal (Anomaly "unexpected struct in synthesizing equality-check")
