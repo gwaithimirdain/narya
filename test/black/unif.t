@@ -329,6 +329,161 @@ An environment entry with a nonidentity key isn't a renaming.  A value can't use
   
   [1]
 
+A metavariable can be solved when it is applied to arguments, as long as they are plain variables, by abstracting over them.  This includes partial applications, cubes of arguments, and arguments of modal function-types.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom C : A → A → Type
+  > axiom a0 : A
+  > axiom a1 : A
+  > axiom a2 : Id A a0 a1
+  > def one : A → Type ≔ let f : A → Type ≔ _ in let k : (x : A) → Id Type (f x) (B x) ≔ x ↦ refl (B x) in f
+  > about one
+  > echo one a0
+  > def two : A → A → Type ≔ let f : A → A → Type ≔ _ in let k : (y z : A) → Id Type (f y z) (C z y) ≔ y z ↦ refl (C z y) in f
+  > echo two a0 a1
+  > def part : A → A → Type ≔ let f : A → A → Type ≔ _ in let k : (y : A) → Id (A → Type) (f y) (C y) ≔ y ↦ refl (C y) in f
+  > echo part a0 a1
+  > def constfn (b : A) : A → Type ≔ let f : A → Type ≔ _ in let k : (x : A) → Id Type (f x) (B b) ≔ x ↦ refl (B b) in f
+  > echo constfn a0 a1
+  > axiom f0 : A → Type
+  > axiom Q0 : (y0 y1 : A) (y2 : Id A y0 y1) → Id Type (f0 y0) (f0 y1)
+  > def cub : Id (A → Type) f0 f0 ≔ let G : Id (A → Type) f0 f0 ≔ _ in let k : (y0 y1 : A) (y2 : Id A y0 y1) → Id (Id Type (f0 y0) (f0 y1)) (G y2) (Q0 y0 y1 y2) ≔ y0 y1 y2 ↦ refl (Q0 y0 y1 y2) in G
+  > echo cub a2
+  > EOF
+  let f ≔ 𝑥 ↦ B 𝑥 in let k ≔ x ↦ Id (B x) in f
+    : A → Type
+  
+  B a0
+    : Type
+  
+  C a1 a0
+    : Type
+  
+  C a0 a1
+    : Type
+  
+  B a0
+    : Type
+  
+  Q0 a0 a1 a2
+    : Type⁽ᵉ⁾ (f0 a0) (f0 a1)
+  
+
+  $ narya -spatial - <<EOF
+  > axiom A : Type
+  > axiom B : (_ :♭| A) → Type
+  > axiom a0 : A
+  > def modal : (_ :♭| A) → Type ≔ let f : (_ :♭| A) → Type ≔ _ in let k : (y :♭| A) → Id Type (f y) (B y) ≔ y ↦ refl (B y) in f
+  > echo modal a0
+  > EOF
+  B a0
+    : Type
+  
+
+The arguments count as part of the renaming, so the value can't use an argument that is repeated or also appears in the environment, since then there would be more than one solution.  An argument that isn't a variable isn't a renaming, the value can't use other variables, and the metavariable can't occur in it.  Well-typedness is also checked as before.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom a0 : A
+  > def envarg : A → Type ≔ x ↦ let f : A → Type ≔ _ in let k : Id Type (f x) (B x) ≔ refl (B x) in A
+  > def reparg : Type ≔ let f : A → A → Type ≔ _ in let k : (y : A) → Id Type (f y y) (B y) ≔ y ↦ refl (B y) in A
+  > def nonvar : Type ≔ let f : A → Type ≔ _ in let k : Id Type (f a0) (B a0) ≔ refl (B a0) in A
+  > def scope : Type ≔ let f : A → Type ≔ _ in let k : (x w : A) → Id Type (f x) (B w) ≔ x w ↦ refl (B w) in A
+  > def occurs (F : Type → Type) : Type ≔ let f : A → Type ≔ _ in let k : (x : A) → Id Type (f x) (F (f x)) ≔ x ↦ refl (F (f x)) in A
+  > def tydep : (Z : Type) → Type ≔ let m : (X Y : Type) → X → Y → Y ≔ _ in Z ↦ let k : Id (Z → Z → Z) (m Z Z) ((x y ↦ y) : Z → Z → Z) ≔ refl ((x y ↦ y) : Z → Z → Z) in Z
+  > def vardep : (Z : Type) (z : Z) (e : Z → Type) → Type ≔ let G : (X Y : Type) (c : X) (e : Y → Type) → Type ≔ _ in Z z e ↦ let k : Id Type (G Z Z z e) (e z) ≔ refl (e z) in Type
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   4 | def envarg : A → Type ≔ x ↦ let f : A → Type ≔ _ in let k : Id Type (f x) (B x) ≔ refl (B x) in A
+     ^ term synthesized type
+         Type⁽ᵉ⁾ (B x) (B x)
+       but is being checked against type
+         Type⁽ᵉ⁾ (f x) (B x)
+       unequal head terms:
+         B
+       does not equal
+         f
+  
+   ￫ error[E0401]
+   ￭ stdin
+   5 | def reparg : Type ≔ let f : A → A → Type ≔ _ in let k : (y : A) → Id Type (f y y) (B y) ≔ y ↦ refl (B y) in A
+     ^ term synthesized type
+         Type⁽ᵉ⁾ (B y) (B y)
+       but is being checked against type
+         Type⁽ᵉ⁾ (f y y) (B y)
+       unequal head terms:
+         B
+       does not equal
+         f
+  
+   ￫ error[E0401]
+   ￭ stdin
+   6 | def nonvar : Type ≔ let f : A → Type ≔ _ in let k : Id Type (f a0) (B a0) ≔ refl (B a0) in A
+     ^ term synthesized type
+         Type⁽ᵉ⁾ (B a0) (B a0)
+       but is being checked against type
+         Type⁽ᵉ⁾ (f a0) (B a0)
+       unequal head terms:
+         B
+       does not equal
+         f
+  
+   ￫ error[E0401]
+   ￭ stdin
+   7 | def scope : Type ≔ let f : A → Type ≔ _ in let k : (x w : A) → Id Type (f x) (B w) ≔ x w ↦ refl (B w) in A
+     ^ term synthesized type
+         Type⁽ᵉ⁾ (B w) (B w)
+       but is being checked against type
+         Type⁽ᵉ⁾ (f x) (B w)
+       unequal head terms:
+         B
+       does not equal
+         f
+  
+   ￫ error[E0401]
+   ￭ stdin
+   8 | def occurs (F : Type → Type) : Type ≔ let f : A → Type ≔ _ in let k : (x : A) → Id Type (f x) (F (f x)) ≔ x ↦ refl (F (f x)) in A
+     ^ term synthesized type
+         Type⁽ᵉ⁾ (F (f x)) (F (f x))
+       but is being checked against type
+         Type⁽ᵉ⁾ (f x) (F (f x))
+       unequal head terms:
+         F
+       does not equal
+         f
+  
+   ￫ error[E0401]
+   ￭ stdin
+   9 | def tydep : (Z : Type) → Type ≔ let m : (X Y : Type) → X → Y → Y ≔ _ in Z ↦ let k : Id (Z → Z → Z) (m Z Z) ((x y ↦ y) : Z → Z → Z) ≔ refl ((x y ↦ y) : Z → Z → Z) in Z
+     ^ term synthesized type
+         {𝑥₀ : Z} {𝑥₁ : Z} (𝑥₂ : Id Z 𝑥₀ 𝑥₁) {𝑦₀ : Z} {𝑦₁ : Z} (𝑦₂ : Id Z 𝑦₀ 𝑦₁)
+         →⁽ᵉ⁾ Id Z 𝑦₀ 𝑦₁
+       but is being checked against type
+         {𝑥₀ : Z} {𝑥₁ : Z} (𝑥₂ : Id Z 𝑥₀ 𝑥₁) {𝑦₀ : Z} {𝑦₁ : Z} (𝑦₂ : Id Z 𝑦₀ 𝑦₁)
+         →⁽ᵉ⁾ Id Z (m Z Z 𝑥₀ 𝑦₀) 𝑦₁
+       unequal head terms:
+         𝑦
+       does not equal
+         m
+  
+   ￫ error[E0401]
+   ￭ stdin
+   10 | def vardep : (Z : Type) (z : Z) (e : Z → Type) → Type ≔ let G : (X Y : Type) (c : X) (e : Y → Type) → Type ≔ _ in Z z e ↦ let k : Id Type (G Z Z z e) (e z) ≔ refl (e z) in Type
+      ^ term synthesized type
+          Type⁽ᵉ⁾ (e z) (e z)
+        but is being checked against type
+          Type⁽ᵉ⁾ (G Z Z z e) (e z)
+        unequal head terms:
+          e
+        does not equal
+          G
+  
+  [1]
+
 A case tree stuck on an unsolved metavariable is blocked, and is recomputed once the metavariable is solved, even if its blocked value has been computed and cached in the meantime.  Here the type Z, i.e. T ?u, is forced while ?u is unsolved, by comparing two terms of type Z; then ?u is solved by comparing b with true., after which Z must compute to ℕ.
 
   $ narya -v - <<EOF
