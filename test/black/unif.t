@@ -929,7 +929,7 @@ A modal field that disappears at some dimension isn't part of a tuple at that di
     : R⁽ᵉ⁾ r r
   
 
-An instantiation of a higher-dimensional Gel is a record, so it can be a singleton.  A symmetry of one isn't a record, although it inherits an eta-rule from one, so it is also a singleton, as shown by the explicit element below.  But for now, we can't solve a metavariable of such a type, since its element can't be written as a tuple without an outer symmetry.
+An instantiation of a higher-dimensional Gel is a record, so it can be a singleton.  A symmetry of one isn't a record, although it inherits an eta-rule from one, so it is also a singleton, as shown by the explicit element below.  A metavariable of such a type is solved by a symmetry of a tuple.
 
   $ narya -parametric - <<EOF
   > def Top : Type ≔ sig ()
@@ -948,6 +948,7 @@ An instantiation of a higher-dimensional Gel is a record, so it can be a singlet
   > def bysym : (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} ((),) {a₁} {b₁} ((),) a₂ b₂ ≔ sym (ungel ≔ ())
   > echo bysym
   > def symmed : (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} ((),) {a₁} {b₁} ((),) a₂ b₂ ≔ _
+  > echo symmed
   > EOF
   (ungel ≔ ())
     : Gel⁽ᵉ⁾ (Id A) (Id B) (Id R) a₂ b₂ (ungel ≔ ()) (ungel ≔ ())
@@ -956,10 +957,35 @@ An instantiation of a higher-dimensional Gel is a record, so it can be a singlet
     : sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)) {a₀} {b₀} (_ ≔ ()) {a₁} {b₁} (_ ≔ ())
         a₂ b₂
   
-   ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+  sym (ungel ≔ ())
+    : sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)) {a₀} {b₀} (_ ≔ ()) {a₁} {b₁} (_ ≔ ())
+        a₂ b₂
   
-  [1]
+
+The permutation may not be its own inverse, and the type can have boundaries that are symmetrized too.  Here we get the type from the first argument of a function.
+
+  $ narya -parametric - <<EOF
+  > def Top : Type ≔ sig ()
+  > def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )
+  > def R : Top → Top → Type ≔ x y ↦ Top
+  > def g : Gel Top Top R () () ≔ (ungel ≔ ())
+  > def two (X : Type) (x y : X) : X ≔ y
+  > echo two _ (refl (refl g)) _
+  > echo two _ ((refl (refl g))⁽²³¹⁾) _
+  > echo two _ ((refl (refl g))⁽³¹²⁾) _
+  > EOF
+  (ungel ≔ ())
+    : Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾ {()} {()} {()} {()} {()} {()} {()} {()}
+        () {()} {()} {()} {()} {()} {()} {()} {()} () (refl g) (refl g)
+        (refl g) (refl g)
+  
+  (ungel ≔ ())⁽²³¹⁾
+    : (Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²³¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ () ()
+  
+  (ungel ≔ ())⁽²¹³⁾
+    : (Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²¹³⁾ (refl g) (refl g) {()} {()} ()
+        {()} {()} () g⁽ᵉ¹⁾ g⁽ᵉ¹⁾
+  
 
 Other types aren't singletons, even if they have one constructor, and neither is a type that is an unsolved metavariable.
 

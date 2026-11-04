@@ -63,7 +63,10 @@ let try_solve : type mode a b.
   | _ -> false
 
 (* A metavariable that is projected from, perhaps after being applied to some arguments, has to be solved by a tuple, since we can only get information about one field from the projection, and the other fields have to be left unknown.  This is always correct, by eta-conversion, so it doesn't affect whether the solution is most general; but it does create more metavariables, so we do it only when solving an equation that requires it.  To avoid having to duplicate the logic for typechecking tuples, particularly regarding modal fields (whose components live in a locked context, and possibly a different mode), we do this by constructing a raw term out of abstractions, tuples, and placeholders, and typechecking it at the type of the metavariable.  Since typechecking comes later, we record here just the shape of the term, consisting of an abstraction for each argument (with a name, and whether it is a cube abstraction) and a tuple for each projection (with all the field names and the one that continues).  There is no need for a final sequence of abstractions, since the metavariables created for the tuple components can just be applied to the same arguments. *)
-type expansion = Abs of string option * bool | Tuple of string list * string
+type expansion =
+  | Abs : string option * bool -> expansion
+  | Tuple : string list * string -> expansion
+  | Perm : ('m, 'n) deg -> expansion
 
 type expander = {
   expand :
@@ -199,16 +202,21 @@ let rec solve_singletons () =
                       match D.compare_zero (CubeOf.dim doms) with
                       | Zero -> false
                       | Pos _ -> true in
-                    Some (Abs (option_of_binder_name (top_variable x), cube))
-                | Canonical (_, Codata { eta = Eta; fields; _ }, ins, _)
-                  when Option.is_some (is_id_ins ins) ->
-                    Some (Tuple (field_names fields (cod_left_ins ins), ""))
-                | _ -> None in
+                    [ Abs (option_of_binder_name (top_variable x), cube) ]
+                | Canonical (_, Codata { eta = Eta; fields; _ }, ins, _) -> (
+                    let tuple = Tuple (field_names fields (cod_left_ins ins), "") in
+                    (* If the record has a nonidentity insertion, it isn't actually a record type, but it is isomorphic to one by a permutation.  So its element is a tuple with that permutation acting on it. *)
+                    match is_id_ins ins with
+                    | Some _ -> [ tuple ]
+                    | None ->
+                        let (Perm_to p) = perm_of_ins ins in
+                        [ Perm (deg_of_perm p); tuple ])
+                | _ -> [] in
               match shape with
-              | Some shape ->
-                  Global.solve_unif meta (!expander.expand ctx ety [ shape ]);
-                  changed := true
-              | None -> ());
+              | [] -> ()
+              | _ :: _ ->
+                  Global.solve_unif meta (!expander.expand ctx ety shape);
+                  changed := true);
     };
   if !changed then solve_singletons ()
 
