@@ -5255,6 +5255,8 @@ let rec raw_of_expansion : type a. Unify.expansion list -> a check located = fun
              dom = None;
              body = raw_of_expansion rest;
            })
+  | Perm fa :: rest ->
+      locate_opt None (Synth (Act (locate_opt None "sym", fa, Some (raw_of_expansion rest))))
   | Tuple (fields, fld) :: rest ->
       let component f =
         ( Some (f, []),
