@@ -92,6 +92,16 @@ val unif_solution :
 
 val unsolved_unifs : unit -> bool
 
+type unsolved_unif_iter = {
+  it :
+    'mode 'a 'b.
+    ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'a, 'b) Ctx.t -> ('mode, 'b, kinetic) term -> unit;
+}
+
+val iter_unsolved_unifs : unsolved_unif_iter -> unit
+val set_singleton_unif_solver : (unit -> unit) -> unit
+val solve_singleton_unifs : unit -> unit
+
 val unif_solution_opt :
   ('mode, 'a, 'b, kinetic) Meta.t ->
   ('mode, 'b, kinetic) term option ref ->

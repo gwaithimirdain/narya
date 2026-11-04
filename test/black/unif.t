@@ -856,6 +856,137 @@ But they aren't forced if it is stuck on a metavariable, or if the head is a met
   
   [1]
 
+At the end of a command, a metavariable with a singleton type, up to eta-conversion, is solved even if nothing has constrained it.  This includes records with all fields singletons, functions with singleton codomains, and the other fields of an expanded metavariable.  It also happens soon enough for echo to know that it can print.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a0 : A
+  > def Top : Type ≔ sig ()
+  > def u : Top ≔ _
+  > about u
+  > def fn : (x : A) → Top ≔ _
+  > about fn
+  > def nest : sig (a : Top, b : A → Top) ≔ _
+  > about nest
+  > echo (_ : Top)
+  > def Dep : Top → Type ≔ x ↦ Top
+  > def dep : sig (x : Top, y : Dep x) ≔ _
+  > about dep
+  > def Pr : Type ≔ sig (fst : A, snd : Top)
+  > def part : Pr ≔ let p : Pr ≔ _ in let k : Id A (p .fst) a0 ≔ refl a0 in p
+  > about part
+  > def hi (a b : A) (p : Id A a b) : Id Top _ _ ≔ _
+  > EOF
+  ()
+    : Top
+  
+  x ↦ ()
+    : (x : A) → Top
+  
+  (a ≔ (), b ≔ 𝑥 ↦ ())
+    : sig #(gen) (
+        a : Top,
+        b : A → Top )
+  
+  ()
+    : Top
+  
+  (x ≔ (), y ≔ ())
+    : sig #(gen) (
+        x : Top,
+        y : Dep x )
+  
+  let p ≔ (fst ≔ a0, snd ≔ ()) in let k ≔ refl a0 in p
+    : Pr
+  
+
+  $ narya -adjunction - <<EOF
+  > def Top : Type ≔ sig ()
+  > def □′ (A :□| Type) : Disc ≔ sig ( (x :△| _) .□ : A )
+  > def modal : □′ Top ≔ _
+  > about modal
+  > EOF
+  (□ ≔ ())
+    : □′ Top
+  
+
+A modal field that disappears at some dimension isn't part of a tuple at that dimension, so it isn't part of an expansion either.
+
+  $ narya -parametric -discrete-spatial - <<EOF
+  > axiom A : Type
+  > def Top : Type ≔ sig ()
+  > def R : Type ≔ sig ((x :♭| _) .f : A, x .g : Top)
+  > axiom r : R
+  > def hd : Id R r r ≔ let v : Id R r r ≔ _ in let k : Id (Id Top (r .g) (r .g)) (v .g) (refl (r .g)) ≔ refl (refl (r .g)) in v
+  > echo hd
+  > def sing : Id R r r ≔ _
+  > echo sing
+  > EOF
+  (g ≔ ())
+    : R⁽ᵉ⁾ r r
+  
+  (g ≔ ())
+    : R⁽ᵉ⁾ r r
+  
+
+An instantiation of a higher-dimensional Gel is a record, so it can be a singleton.  A symmetry of one isn't a record, although it inherits an eta-rule from one, so it is also a singleton, as shown by the explicit element below.  But for now, we can't solve a metavariable of such a type, since its element can't be written as a tuple without an outer symmetry.
+
+  $ narya -parametric - <<EOF
+  > def Top : Type ≔ sig ()
+  > def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )
+  > axiom A : Type
+  > axiom B : Type
+  > def R : A → B → Type ≔ x y ↦ Top
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > axiom b₀ : B
+  > axiom b₁ : B
+  > axiom b₂ : Id B b₀ b₁
+  > def plain : refl (Gel A B R) a₂ b₂ (ungel ≔ ()) (ungel ≔ ()) ≔ _
+  > echo plain
+  > def bysym : (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} ((),) {a₁} {b₁} ((),) a₂ b₂ ≔ sym (ungel ≔ ())
+  > echo bysym
+  > def symmed : (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} ((),) {a₁} {b₁} ((),) a₂ b₂ ≔ _
+  > EOF
+  (ungel ≔ ())
+    : Gel⁽ᵉ⁾ (Id A) (Id B) (Id R) a₂ b₂ (ungel ≔ ()) (ungel ≔ ())
+  
+  sym (ungel ≔ ())
+    : sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)) {a₀} {b₀} (_ ≔ ()) {a₁} {b₁} (_ ≔ ())
+        a₂ b₂
+  
+   ￫ error[E2004]
+   ￮ there is 1 unsolved unification metavariable
+  
+  [1]
+
+Other types aren't singletons, even if they have one constructor, and neither is a type that is an unsolved metavariable.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > def Top : Type ≔ sig ()
+  > def Pr : Type ≔ sig (fst : A, snd : Top)
+  > def One : Type ≔ data [ one. ]
+  > def notsing : Pr ≔ _
+  > def data1 : One ≔ _
+  > def neutralty (T : Type) : T ≔ _
+  > def metaty : Top ≔ let X : Type ≔ _ in let y : X ≔ _ in ()
+  > EOF
+   ￫ error[E2004]
+   ￮ there is 1 unsolved unification metavariable
+  
+   ￫ error[E2004]
+   ￮ there is 1 unsolved unification metavariable
+  
+   ￫ error[E2004]
+   ￮ there is 1 unsolved unification metavariable
+  
+   ￫ error[E2004]
+   ￮ there are 2 unsolved unification metavariables
+  
+  [1]
+
 A case tree stuck on an unsolved metavariable is blocked, and is recomputed once the metavariable is solved, even if its blocked value has been computed and cached in the meantime.  Here the type Z, i.e. T ?u, is forced while ?u is unsolved, by comparing two terms of type Z; then ?u is solved by comparing b with true., after which Z must compute to ℕ.
 
   $ narya -v - <<EOF

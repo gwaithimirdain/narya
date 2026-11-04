@@ -261,6 +261,7 @@ type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos
    The context is computed lazily, since it is needed only if the metavariable is compared to itself, read back with a nontrivial environment, or displayed.  It must not be read back for display, so its thunk sets the display flag explicitly (see Check.make_unif).  The table is never marshaled, so it can contain such functional values. *)
 module Unifdata = struct
   type ('mode, 'a, 'b, 's) t = {
+    meta : ('mode, 'a, 'b, kinetic) Meta.t;
     unif : ('mode, 'b, kinetic) term option ref;
     ctx : ('mode, 'a, 'b) Ctx.t;
     ty : ('mode, 'b, kinetic) term;
@@ -324,7 +325,7 @@ let add_unif : type mode a b.
         d with
         unifs =
           Uniftable.add meta
-            { unif; ctx; ty; termctx; solution = None; depth = Origin.speculation_depth () }
+            { meta; unif; ctx; ty; termctx; solution = None; depth = Origin.speculation_depth () }
             d.unifs;
       })
 
@@ -425,12 +426,33 @@ let meta_ty : type mode a b s e.
   | Unif_meta _ -> (find_unif meta).ty
 
 (* At the end of a command, all its unification metavariables must be solved, or else it fails, and we write their solutions into them.  If the command has already failed for some other reason, we don't report its unsolved unification metavariables, since they are likely to be consequences of that failure. *)
+(* Iterate over the currently unsolved unification metavariables. *)
+type unsolved_unif_iter = {
+  it :
+    'mode 'a 'b.
+    ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'a, 'b) Ctx.t -> ('mode, 'b, kinetic) term -> unit;
+}
+
+let iter_unsolved_unifs f =
+  Uniftable.fold
+    {
+      fold =
+        (fun { meta; ctx; ty; solution; _ } () -> if Option.is_none solution then f.it meta ctx ty);
+    }
+    (Speculable.get current_command).unifs ()
+
+(* Some unification metavariables can be solved at the end of a command even if nothing has constrained them, because their type has only one element up to eta-conversion.  That's defined in Unify, downstream of here. *)
+let singleton_unif_solver : (unit -> unit) ref = ref (fun () -> ())
+let set_singleton_unif_solver f = singleton_unif_solver := f
+let solve_singleton_unifs () = !singleton_unif_solver ()
+
 let count_unsolved_unifs () =
   Uniftable.fold
     { fold = (fun { solution; _ } n -> if Option.is_none solution then n + 1 else n) }
     (Speculable.get current_command).unifs 0
 
 let finish_unifs () =
+  if not (moribund ()) then solve_singleton_unifs ();
   if (not (moribund ())) && count_unsolved_unifs () > 0 then
     mortal (Unsolved_unification_metas (count_unsolved_unifs ()));
   (* Even if the command failed, the constants it was defining may still be used by later commands, with their failed parts failing silently if they are inspected.  Thus, an unsolved unification metavariable, whose table is about to go away, must become such a failed part. *)
