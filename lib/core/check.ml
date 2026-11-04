@@ -578,8 +578,9 @@ let rec check : type mode a b s.
     | Synth (Act (str, fa, x) as stm), _ -> (
         (* An action can always synthesize, but can usually also check. *)
         match (perm_of_deg fa, x) with
-        | Some pfa, Some x -> (
-            (* It can check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type. *)
+        | Some pfa, x -> (
+            (* It can check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type.  Unlike the type, the argument isn't determined by this, so if it is a placeholder then it is an ordinary placeholder for a term, i.e. a unification metavariable. *)
+            let x = Option.value x ~default:(locate_opt tm.loc Unif) in
             let fainv = deg_of_perm (perm_inv pfa) in
             match
               Reporter.try_with ~fatal:(fun d ->
@@ -604,7 +605,6 @@ let rec check : type mode a b s.
                        cx,
                        fa,
                        (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx) )))
-        | Some _, None -> fatal (Nonsynthesizing "pure symmetry of placeholder")
         | None, _ -> (
             (* It can also check if it is *not* a permutation and the arity is positive, since then we can extract the needed type of its argument from the boundary of the type it is checking against. *)
             let (Full_tube tyargs) = get_tyargs ty "type of checking degeneracy" in
