@@ -94,6 +94,158 @@ Unification works inside let-bound values, whether or not they are case trees.
    ￮ constant v defined
   
 
+A metavariable can also be solved when its environment is a renaming, sending the variables of its context to distinct variables of the current context, including permuting them, and including entire cubes of variables.  A let-bound variable in its context doesn't count, since its value is determined by the others.  Below, the normal forms show that the solutions are in terms of the metavariable's own variables.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom C : A → A → Type
+  > def ren (h : (y : A) → B y) : A → Type ≔ let G : A → Type ≔ x ↦ B _ in y ↦ let k : G y ≔ h y in G y
+  > def perm (h : (y z : A) → C z y) : A → A → Type ≔ let G : A → A → Type ≔ p q ↦ C _ _ in y z ↦ let k : G y z ≔ h y z in let j : G z y ≔ h z y in G y z
+  > def letent (a : A) (h : (y : A) → B y) : A → Type ≔ let c : A ≔ a in let G : A → Type ≔ x ↦ B _ in y ↦ let k : G y ≔ h y in G y
+  > def cub (f : A → Type) (Q : (y0 y1 : A) (y2 : Id A y0 y1) → Id Type (f y0) (f y1)) : (y0 y1 : A) (y2 : Id A y0 y1) → Id Type (f y0) (f y1) ≔ let G : Id (A → Type) f f ≔ x ⤇ Q _ _ _ in y0 y1 y2 ↦ let k : Id (Id Type (f y0) (f y1)) (G y2) (Q y0 y1 y2) ≔ refl (Q y0 y1 y2) in G y2
+  > axiom a0 : A
+  > axiom a1 : A
+  > axiom a2 : Id A a0 a1
+  > axiom h0 : (y : A) → B y
+  > axiom hh : (y z : A) → C z y
+  > axiom f0 : A → Type
+  > axiom Q0 : (y0 y1 : A) (y2 : Id A y0 y1) → Id Type (f0 y0) (f0 y1)
+  > about ren
+  > echo ren h0 a0
+  > echo perm hh a0 a1
+  > echo letent a1 h0 a0
+  > echo cub f0 Q0 a0 a1 a2
+  > EOF
+  h ↦ let G ≔ x ↦ B x in y ↦ let k ≔ h y in G y
+    : (h : (y : A) → B y) → A → Type
+  
+  B a0
+    : Type
+  
+  C a1 a0
+    : Type
+  
+  B a0
+    : Type
+  
+  Q0 a0 a1 a2
+    : Type⁽ᵉ⁾ (f0 a0) (f0 a1)
+  
+
+But the value must not involve variables outside the image of the renaming, and the environment can't repeat a variable, since then a solution wouldn't be unique.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > def scope (h : (w : A) → B w) : A → A → Type ≔ let G : A → Type ≔ x ↦ B _ in y w ↦ let k : G y ≔ h w in A
+  > def repeated (a : A) (b : B a) : Type ≔ let G : A → Type ≔ x ↦ B _ in let k : G a ≔ b in A
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   3 | def scope (h : (w : A) → B w) : A → A → Type ≔ let G : A → Type ≔ x ↦ B _ in y w ↦ let k : G y ≔ h w in A
+     ^ term synthesized type
+         B w
+       but is being checked against type
+         B (let only … in ?u0)
+       unequal head terms:
+         w
+       does not equal
+         let only … in ?u0
+  
+   ￫ error[E0401]
+   ￭ stdin
+   4 | def repeated (a : A) (b : B a) : Type ≔ let G : A → Type ≔ x ↦ B _ in let k : G a ≔ b in A
+     ^ term synthesized type
+         B a
+       but is being checked against type
+         B (let only … in ?u1)
+       unequal head terms:
+         a
+       does not equal
+         let only … in ?u1
+  
+  [1]
+
+A renaming can send variables with a modal annotation to variables with the same annotation, and can pass through matching locks.  The value can use the variables with keys, or under locks that it introduces itself.
+
+  $ narya -spatial - <<EOF
+  > axiom A : Type
+  > axiom B : (_ :♭| A) → Type
+  > axiom C : A → Type
+  > axiom D : (_ :♭| Type) → Type
+  > axiom a0 : A
+  > axiom b0 : (y :♭| A) → B y
+  > axiom c0 : (y :♭| A) → C y
+  > def locked (h : (y :♭| A) → B y) : (y :♭| A) → Type ≔ let G : (_ :♭| A) → Type ≔ x ↦ B _ in y ↦ let k : G y ≔ h y in G y
+  > def annotated (h : (y :♭| A) → B y) : (y :♭| A) → Type ≔ let G : (_ :♭| A) → Type ≔ x ↦ _ in y ↦ let k : G y ≔ h y in G y
+  > def keyed (h : (y :♭| A) → C y) : (y :♭| A) → Type ≔ let G : (_ :♭| A) → Type ≔ x ↦ _ in y ↦ let k : G y ≔ h y in G y
+  > echo locked b0 a0
+  > echo annotated b0 a0
+  > echo keyed c0 a0
+  > axiom d1 : D ((z : A) → C z)
+  > def ambient : Type ≔ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d1 in A
+  > EOF
+  B a0
+    : Type
+  
+  B a0
+    : Type
+  
+  C a0
+    : Type
+  
+
+An environment entry with a nonidentity key isn't a renaming.  Nor is an entry whose variable has a different annotation than the corresponding variable of the metavariable's context, even if the value doesn't use it.  And when the current context has locks that the metavariable's context doesn't, the value can't use variables behind them.
+
+  $ narya -spatial - <<EOF
+  > axiom A : Type
+  > axiom C : A → Type
+  > axiom D : (_ :♭| Type) → Type
+  > def keyenv (h : (y :♭| A) → C y) : (y :♭| A) → Type ≔ let G : A → Type ≔ x ↦ C _ in y ↦ let k : G y ≔ h y in A
+  > axiom t : (y :♭| A) → D Type
+  > def mismatch : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in (_ : Type)) ≔ t y in A
+  > axiom d2 : (y :♭| A) → D ((z : A) → C y)
+  > def lockscope : (y :♭| A) → Type ≔ y ↦ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d2 y in A
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   4 | def keyenv (h : (y :♭| A) → C y) : (y :♭| A) → Type ≔ let G : A → Type ≔ x ↦ C _ in y ↦ let k : G y ≔ h y in A
+     ^ term synthesized type
+         C y
+       but is being checked against type
+         C (let only … in ?u0)
+       unequal head terms:
+         y
+       does not equal
+         let only … in ?u0
+  
+   ￫ error[E0401]
+   ￭ stdin
+   6 | def mismatch : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in (_ : Type)) ≔ t y in A
+     ^ term synthesized type
+         D Type
+       but is being checked against type
+         D (let only … in ?u1)
+       unequal head terms:
+         Type
+       does not equal
+         let only … in ?u1
+  
+   ￫ error[E0401]
+   ￭ stdin
+   8 | def lockscope : (y :♭| A) → Type ≔ y ↦ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d2 y in A
+     ^ term synthesized type
+         D ((z : A) → C y)
+       but is being checked against type
+         D ((z : A) → let only … in ?u2)
+       unequal head head terms:
+         C
+       does not equal
+         let only … in ?u2
+  
+  [1]
+
 A case tree stuck on an unsolved metavariable is blocked, and is recomputed once the metavariable is solved, even if its blocked value has been computed and cached in the meantime.  Here the type Z, i.e. T ?u, is forced while ?u is unsolved, by comparing two terms of type Z; then ?u is solved by comparing b with true., after which Z must compute to ℕ.
 
   $ narya -v - <<EOF
@@ -231,7 +383,7 @@ A metavariable can be solved in an extended context, by a value not involving th
   
   [1]
 
-A unification metavariable whose environment is not a weakened identity can't be solved yet.  This includes one used in a branch of a match against a variable, since the variable is substituted by a constructor there.  It is equal only to itself, and is displayed by number.
+A unification metavariable whose environment is not a renaming can't be solved yet.  This includes one used in a branch of a match against a variable, since the variable is substituted by a constructor there.  It is equal only to itself, and is displayed by number.
 
   $ narya -v - <<EOF
   > def Bool : Type ≔ data [ true. | false. ]
