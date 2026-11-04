@@ -352,7 +352,7 @@ A metavariable can be solved when it is applied to arguments, as long as they ar
   > def cub : Id (A → Type) f0 f0 ≔ let G : Id (A → Type) f0 f0 ≔ _ in let k : (y0 y1 : A) (y2 : Id A y0 y1) → Id (Id Type (f0 y0) (f0 y1)) (G y2) (Q0 y0 y1 y2) ≔ y0 y1 y2 ↦ refl (Q0 y0 y1 y2) in G
   > echo cub a2
   > EOF
-  let f ≔ 𝑥 ↦ B 𝑥 in let k ≔ x ↦ Id (B x) in f
+  let f ≔ B in let k ≔ x ↦ Id (B x) in f
     : A → Type
   
   B a0
@@ -382,17 +382,128 @@ A metavariable can be solved when it is applied to arguments, as long as they ar
     : Type
   
 
-The bound variables of such an abstraction are named according to the type of the metavariable.
+Solutions are eta-contracted when possible, omitting final arguments that agree on both sides, including when the other side is also a metavariable.  This only happens when the omitted argument doesn't also occur elsewhere.  Otherwise, the bound variables are named according to the type of the metavariable.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom C : A → A → Type
+  > axiom a0 : A
+  > axiom a1 : A
+  > def eta1 : A → Type ≔ let f : (w : A) → Type ≔ _ in let k : (x : A) → Id Type (f x) (B x) ≔ x ↦ refl (B x) in f
+  > about eta1
+  > def eta2 : A → A → Type ≔ let f : (u v : A) → Type ≔ _ in let k : (y z : A) → Id Type (f y z) (C y z) ≔ y z ↦ refl (C y z) in f
+  > about eta2
+  > def swapped : A → A → Type ≔ let f : (u v : A) → Type ≔ _ in let k : (y z : A) → Id Type (f y z) (C z y) ≔ y z ↦ refl (C z y) in f
+  > about swapped
+  > echo swapped a0 a1
+  > def partial (D : A → A → A → Type) : A → A → Type ≔ let f : (u v : A) → Type ≔ _ in let k : (y z : A) → Id Type (f y z) (D y y z) ≔ y z ↦ refl (D y y z) in f
+  > about partial
+  > echo partial (x y z ↦ C x z) a0 a1
+  > def nocontract : A → Type ≔ let f : (w : A) → Type ≔ _ in let k : (x : A) → Id Type (f x) (C x x) ≔ x ↦ refl (C x x) in f
+  > about nocontract
+  > def flexflex : A → Type ≔ let f : (w : A) → Type ≔ _ in let g : (w : A) → Type ≔ _ in let k : (x : A) → Id Type (f x) (g x) ≔ x ↦ refl (g x) in let j : (x : A) → Id Type (g x) (B x) ≔ x ↦ refl (B x) in f
+  > about flexflex
+  > echo flexflex a0
+  > EOF
+  let f ≔ B in let k ≔ x ↦ Id (B x) in f
+    : A → Type
+  
+  let f ≔ C in let k ≔ y z ↦ Id (C y z) in f
+    : A → A → Type
+  
+  let f ≔ u v ↦ C v u in let k ≔ y z ↦ Id (C z y) in f
+    : A → A → Type
+  
+  C a1 a0
+    : Type
+  
+  D ↦ let f ≔ u ↦ D u u in let k ≔ y z ↦ Id (D y y z) in f
+    : (D : A → A → A → Type) → A → A → Type
+  
+  C a0 a1
+    : Type
+  
+  let f ≔ w ↦ C w w in let k ≔ x ↦ Id (C x x) in f
+    : A → Type
+  
+  let f ≔ B in let g ≔ f in let k ≔ x ↦ Id (g x) in let j ≔ x ↦ Id (B x) in f
+    : A → Type
+  
+  B a0
+    : Type
+  
+
+After contracting to a metavariable, its later solution can still use its argument.  But we can't contract if that metavariable's environment contains the omitted variable, and then the variable flows through that environment.  A metavariable also can't be solved by one created inside its own let-binding, since the environment of the latter contains the former.
 
   $ narya - <<EOF
   > axiom A : Type
   > axiom C : A → A → Type
-  > def named : A → A → Type ≔ let f : (u v : A) → Type ≔ _ in let k : (y z : A) → Id Type (f y z) (C z y) ≔ y z ↦ refl (C z y) in f
-  > about named
+  > axiom a0 : A
+  > axiom a1 : A
+  > def later : A → Type ≔ let f : (w : A) → Type ≔ _ in let g : (w : A) → Type ≔ _ in let k : (x : A) → Id Type (f x) (g x) ≔ x ↦ refl (g x) in let j : (x : A) → Id Type (g x) (C x x) ≔ x ↦ refl (C x x) in f
+  > about later
+  > echo later a0
+  > def inenv : A → A → Type ≔ let f : (w : A) → Type ≔ _ in x ↦ let g : (w : A) → Type ≔ let only x' : A ≔ x in (_ : A → Type) in let k : Id Type (f x) (g x) ≔ refl (g x) in let j : (z : A) → Id Type (g z) (C x z) ≔ z ↦ refl (C x z) in f
+  > about inenv
+  > echo inenv a0 a1
+  > def scoped : A → Type ≔ let f : (w : A) → Type ≔ _ in x ↦ let g : (w : A) → Type ≔ _ in let k : Id Type (f x) (g x) ≔ refl (g x) in A
   > EOF
-  let f ≔ u v ↦ C v u in let k ≔ y z ↦ Id (C z y) in f
+  let f ≔ w ↦ C w w in
+  let g ≔ f in
+  let k ≔ x ↦ Id (g x) in
+  let j ≔ x ↦ Id (C x x) in
+  f
+    : A → Type
+  
+  C a0 a0
+    : Type
+  
+  let f ≔ w ↦ C w w in
+  x ↦
+  let g ≔ let only … in ?u3 in
+  let k ≔ Id (g x) in
+  let j ≔ z ↦ Id (C x z) in
+  f
     : A → A → Type
   
+  C a1 a1
+    : Type
+  
+   ￫ error[E0401]
+   ￭ stdin
+   11 | def scoped : A → Type ≔ let f : (w : A) → Type ≔ _ in x ↦ let g : (w : A) → Type ≔ _ in let k : Id Type (f x) (g x) ≔ refl (g x) in A
+      ^ term synthesized type
+          Type⁽ᵉ⁾ (g x) (g x)
+        but is being checked against type
+          Type⁽ᵉ⁾ (f x) (g x)
+        unequal head metavariables:
+          ?u5
+        does not equal
+          ?u4
+  
+  [1]
+
+Eta-contraction doesn't change the problem: ?f x x =? h x uses a repeated variable, even though ?f x =? h wouldn't.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom h : A → Type
+  > def repeated : Type ≔ let f : A → A → Type ≔ _ in let k : (x : A) → Id Type (f x x) (h x) ≔ x ↦ refl (h x) in A
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   3 | def repeated : Type ≔ let f : A → A → Type ≔ _ in let k : (x : A) → Id Type (f x x) (h x) ≔ x ↦ refl (h x) in A
+     ^ term synthesized type
+         Type⁽ᵉ⁾ (h x) (h x)
+       but is being checked against type
+         Type⁽ᵉ⁾ (f x x) (h x)
+       unequal head terms:
+         h
+       does not equal
+         f
+  
+  [1]
 
 The arguments count as part of the renaming, so the value can't use an argument that is repeated or also appears in the environment, since then there would be more than one solution.  An argument that isn't a variable isn't a renaming, the value can't use other variables, and the metavariable can't occur in it.  Well-typedness is also checked as before.
 

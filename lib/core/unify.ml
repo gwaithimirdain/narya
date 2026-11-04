@@ -27,9 +27,9 @@ let try_solve : type mode a b.
           (Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta)
           &&
           let mty = Global.meta_ty meta kind in
-          match renamed_ctx meta ctx env args mty (Global.unif_ctx meta) with
+          match renamed_ctx meta ctx env args mty (Global.unif_ctx meta) v with
           | None -> false
-          | Some (Renamed_ctx { ctx = rctx; check_type; wrap }) -> (
+          | Some (Renamed_ctx { ctx = rctx; check_type; wrap; contracted }) -> (
               (* If we don't know the type at which they are being compared, we must check that the type of v is that of u. *)
               let typed =
                 match ty with
@@ -43,10 +43,16 @@ let try_solve : type mode a b.
                     | _ -> false) in
               typed
               &&
-              (* We read back v at the type of u, which has been substituted by its environment and arguments and hence lives in the current context like v. *)
-              match readback_unif_solution meta rctx ~check_type v (Lazy.force uty) with
+              (* If we can eta-contract, we do.  Otherwise, we read back v at the type of u, which has been substituted by its environment and arguments and hence lives in the current context like v. *)
+              let solution =
+                match List.find_map (fun attempt -> attempt ()) contracted with
+                | Some _ as tm -> tm
+                | None ->
+                    Option.map wrap
+                      (readback_unif_solution meta rctx ~check_type v (Lazy.force uty)) in
+              match solution with
               | Some tm ->
-                  Global.solve_unif meta (wrap tm);
+                  Global.solve_unif meta tm;
                   true
               | None -> false)))
   | _ -> false

@@ -1579,12 +1579,15 @@ let rec readback_about : type mode a b.
 
    The metavariable can also be applied to arguments, as long as they are also plain variables.  We treat these like further entries of its environment, so that the renamed context extends it by one entry for each argument (whose types we don't need to know, since they are only for readback), and the solution is then an abstraction over them.
 
+   We prefer eta-short solutions, so if the value being compared with the metavariable ends with some of the same arguments, we first try to omit them from both, since a solution of ?f =? g is also one of ?f y =? g y.  We only do this if nothing is undefined, since otherwise we could change the problem: ?f x x =? g x has no most general solution, but ?f x =? g does.
+
    A variable of mctx sent to an undefined variable can't be used in the solution.  But this is not enough to make the solution well-typed: the type of another variable of mctx, or of the metavariable, might depend on it.  Thus we also treat any variable whose type contains an undefined variable as undefined itself, and the caller must check that the type of the metavariable doesn't contain one either.  Since menv is a renaming, it suffices to read back the types obtained by substitution with menv, which we already have. *)
 type (_, _) renamed_ctx =
   | Renamed_ctx : {
       ctx : ('mode, 'a, 'bc) Ctx.t;
       check_type : bool;
       wrap : ('mode, 'bc, kinetic) term -> ('mode, 'b, kinetic) term;
+      contracted : (unit -> ('mode, 'b, kinetic) term option) list;
     }
       -> ('mode, 'b) renamed_ctx
 
@@ -1625,6 +1628,48 @@ type (_, _) renamed_args =
       * (('mode, 'bc, kinetic) term -> ('mode, 'b, kinetic) term)
       * ('mode, kinetic) value option
       -> ('mode, 'b) renamed_args
+
+(* The head and a prefix of the spine of a neutral value that could be an eta-contracted solution of a metavariable applied to arguments. *)
+type _ contractible =
+  | Contractible : 'hmode head * ('hmode, 'mode, 'any, live) apps -> 'mode contractible
+
+(* A prefix of a neutral doesn't have a stored value, so we can only contract neutrals whose readback doesn't need to look at it (see unfold_for_unifying). *)
+let contractible : type mode. (mode, kinetic) value -> mode contractible option = function
+  | Neu { head = Live (Var _ as head); args; _ } -> Some (Contractible (head, args))
+  | Neu { head = Live (Const _ as head); args; _ } -> Some (Contractible (head, args))
+  | Neu { head = Live (Meta { meta; kind = Unif_meta unif; _ } as head); args; _ }
+    when Global.unif_status meta unif = `Unsolved -> Some (Contractible (head, args))
+  | _ -> None
+
+(* Whether an argument of a metavariable, which is a cube of plain variables, is the same as the last argument of another neutral. *)
+let same_arg : type dom1 modality1 n1 m1 dom2 modality2 n2 m2 mode x1 y1 x2 y2.
+    (dom1, modality1, mode, n1, m1) Modality.filter_dim ->
+    (n1, dom1 normal) CubeOf.t ->
+    (x1, m1, y1) insertion ->
+    (dom2, modality2, mode, n2, m2) Modality.filter_dim ->
+    (n2, dom2 normal) CubeOf.t ->
+    (x2, m2, y2) insertion ->
+    bool =
+ fun filter1 xs1 ins1 filter2 xs2 ins2 ->
+  let modality1 = Modality.filter_modality filter1 in
+  match
+    ( Modality.compare modality1 (Modality.filter_modality filter2),
+      D.compare (CubeOf.dim xs1) (CubeOf.dim xs2),
+      D.compare (cod_left_ins ins1) (cod_left_ins ins2),
+      is_id_ins ins2 )
+  with
+  | Eq, Eq, Eq, Some _ ->
+      let same = ref true in
+      CubeOf.miter2
+        {
+          it2 =
+            (fun _ (x1 : _ normal) (x2 : _ normal) ->
+              let { var; _ } = renamed_var modality1 x1.tm in
+              if not (is_plain_var var (view_term x2.tm)) then same := false);
+        }
+        xs1 xs2;
+      !same
+  | _ -> false
 
 (* Determine the variables to use for abstracting over an argument of a metavariable, from the function-type of the metavariable if we can, and also the codomain of that function-type applied to the argument.  This is only for display, so if anything goes wrong we just use anonymous variables. *)
 let renamed_binder : type dom modality mode n m.
@@ -1667,7 +1712,7 @@ let renamed_values : type dom modality mode b k.
       CubeOf.build k { build = (fun fa -> act (CubeOf.find xs fa) s pre) }
   | _ -> raise_notrace Not_renaming
 
-(* Given a metavariable, the current context, the metavariable's environment, arguments, type, and context, compute the renamed context, along with whether anything is undefined in it and a function wrapping a term in that context in abstractions over the arguments, or return None if the environment and arguments aren't a renaming.  Since the entries of the new context have values and types in the current context, and all the levels of its variables are levels of the current context, new variables created in it are given levels above those of the current context. *)
+(* Given a metavariable, the current context, the metavariable's environment, arguments, type, and context, and the value being compared with it, compute the renamed context, along with whether anything is undefined in it, a function wrapping a term in that context in abstractions over the arguments, and a list of eta-contracted solutions to try first, most contracted first; or return None if the environment and arguments aren't a renaming.  Since the entries of the new context have values and types in the current context, and all the levels of its variables are levels of the current context, new variables created in it are given levels above those of the current context. *)
 let renamed_ctx : type mode a b c d n x any.
     (mode, x, d, kinetic) Meta.t ->
     (mode, a, b) Ctx.t ->
@@ -1675,8 +1720,9 @@ let renamed_ctx : type mode a b c d n x any.
     (mode, mode, any, live) apps ->
     (mode, d, kinetic) term ->
     (mode, c, d) Ctx.t ->
+    (mode, kinetic) value ->
     (mode, d) renamed_ctx option =
- fun meta ctx env args mty (Permute { ctx = mctx; _ }) ->
+ fun meta ctx env args mty (Permute { ctx = mctx; _ }) v ->
   let level = Ctx.level ctx in
   let counts : (level, int) Hashtbl.t = Hashtbl.create 20 in
   let undefined = ref false in
@@ -1795,16 +1841,33 @@ let renamed_ctx : type mode a b c d n x any.
             let vbs = renamed_bindings rest (Ctx.filter_entry entry) values free in
             let (Plus a_x) = N.plus (N.plus_right af) in
             Renamed_ordered (Snoc (rest, { entry with bindings = vbs }, a_x, comp))) in
+  let contracted : (unit -> (mode, d, kinetic) term option) list ref = ref [] in
   let rec go_args : type a any.
       (mode, a, d) Ctx.Ordered.t ->
       (mode, mode, any, live) apps ->
       (mode, kinetic) value option ->
+      mode contractible option ->
       (mode, d) renamed_args =
-   fun rest args ty ->
+   fun rest args ty vspine ->
     match args with
     | Emp -> Renamed_args (rest, (fun tm -> tm), ty)
     | Snoc (args, Arg (filter, xs, ins)) ->
-        let (Renamed_args (rest, wrap, ty)) = go_args rest args ty in
+        (* If the last arguments agree, we can continue to compare the rest of the arguments and try to omit this one. *)
+        let vprefix : mode contractible option =
+          match vspine with
+          | Some (Contractible (head, Snoc (vargs, Arg (vfilter, ys, vins))))
+            when same_arg filter xs ins vfilter ys vins -> Some (Contractible (head, vargs))
+          | _ -> None in
+        let (Renamed_args (rest, wrap, ty)) = go_args rest args ty vprefix in
+        (match vprefix with
+        | Some (Contractible (head, vargs)) ->
+            let rctx = Ctx.of_ordered ~level rest in
+            let attempt () =
+              Displaying.run ~env:false @@ fun () ->
+              Unifying.run ~env:(Some (Wrap meta)) @@ fun () ->
+              try Some (wrap (readback_neu rctx head vargs)) with Unsolvable -> None in
+            contracted := !contracted @ [ attempt ]
+        | None -> ());
         let k = CubeOf.dim xs in
         let ifilter = Modality.filter_idempotent filter in
         let free = CubeOf.build k { build = (fun _ -> true) } in
@@ -1818,7 +1881,13 @@ let renamed_ctx : type mode a b c d n x any.
   (* If the environment is literally the identity environment of a context, and there are no arguments, that context itself is what we want. *)
   | Ctx mctx, Emp ->
       Some
-        (Renamed_ctx { ctx = Ctx.of_ordered ~level mctx; check_type = false; wrap = (fun tm -> tm) })
+        (Renamed_ctx
+           {
+             ctx = Ctx.of_ordered ~level mctx;
+             check_type = false;
+             wrap = (fun tm -> tm);
+             contracted = [];
+           })
   | _ -> (
       match D.compare (dim_env env) D.zero with
       | Neq -> None
@@ -1834,8 +1903,16 @@ let renamed_ctx : type mode a b c d n x any.
               match args with
               | Emp -> None
               | _ -> Some (Norm.eval_term env mty) in
-            let (Renamed_args (rest, wrap, _)) = go_args rest args ty in
-            Some (Renamed_ctx { ctx = Ctx.of_ordered ~level rest; check_type = !undefined; wrap })
+            let vspine = if !undefined then None else contractible v in
+            let (Renamed_args (rest, wrap, _)) = go_args rest args ty vspine in
+            Some
+              (Renamed_ctx
+                 {
+                   ctx = Ctx.of_ordered ~level rest;
+                   check_type = !undefined;
+                   wrap;
+                   contracted = !contracted;
+                 })
           with Not_renaming -> None))
 
 (* Read back a value, at a type, as the solution of a unification metavariable in a renamed version of its context, or return None if that's impossible.  If anything is undefined in that context, the type can't contain it either. *)
