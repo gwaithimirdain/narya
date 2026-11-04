@@ -1742,8 +1742,8 @@ let renamed_ctx : type mode a b c d n x any.
     | Lock (mctx, g) ->
         let (Restrict_keys (env, pre)) =
           restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
-        (* Any nonidentity prekey encountered in the environment means it is not a renaming. *)
-        if not (Modalcell.is_id pre) then raise_notrace Not_renaming;
+        (* A nonidentity prekey encountered in the environment, such as the counit of an adjunction after projecting a modal field, means that we can't invert the variables behind this lock, since their keys would have to be transposed along that prekey.  In the context we build, readback will fail on them anyway, since it won't find the locks it needs.  So we can only allow values that don't use them, and treat this like having undefined variables. *)
+        if not (Modalcell.is_id pre) then undefined := true;
         scan mctx env
     | Snoc (mctx, entry, _, comp) -> (
         match Ctx.Ordered.ext_kind entry comp with
