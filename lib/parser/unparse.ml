@@ -686,9 +686,10 @@ let rec unparse : type mode n lt ls rt rs s.
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; _ } when letonly_empty ctx ->
       let _, bodyvars = unparse_letonly_clauses vars ctx tmenv in
       unparse bodyvars body li ri
-  (* A let-only whose body is a metavariable that isn't a bare one arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
-  | Letonly { env = tmenv; tm = Meta (v, _, _); _ }
-    when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
+  (* A let-only whose body is a metavariable that isn't a bare one arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses, unless it is a solved unification metavariable, which is displayed as its solution. *)
+  | Letonly { env = tmenv; tm = Meta (v, kind, _); _ }
+    when (not (Meta.is_bare v)) && Display.lets () = `Names && Option.is_none (solved_unif v kind)
+    -> (
       let inner =
         Multiple
           (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Ellipsis), wstok In)

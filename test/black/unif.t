@@ -461,7 +461,7 @@ After contracting to a metavariable, its later solution can still use its argume
   
   let f ≔ w ↦ C w w in
   x ↦
-  let g ≔ let only … in ?u3 in
+  let g ≔ let only x' : A ≔ x in C x' in
   let k ≔ Id (g x) in
   let j ≔ z ↦ Id (C x z) in
   f
