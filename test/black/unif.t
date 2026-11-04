@@ -1019,6 +1019,84 @@ Other types aren't singletons, even if they have one constructor, and neither is
   
   [1]
 
+A metavariable with a permutation on it can be solved by inverting the permutation.
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > axiom a₂₀ : Id A a₀₀ a₁₀
+  > axiom a₂₁ : Id A a₀₁ a₁₁
+  > axiom t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > echo rf _ t : Same _ t (sym _)
+  > echo rf _ (sym t) : Same _ (sym t) (sym _)
+  > echo rf _ t : Same _ t (sym (sym _))
+  > axiom f : A → Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > axiom use : (F : A → Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁)
+  >   → ((x : A) → Same (Id (Id A) a₂₀ a₂₁ a₀₂ a₁₂) (sym (F x)) (sym (f x))) → Type
+  > echo use _ (x ↦ rf _ (sym (f x)))
+  > axiom use2 : (F : A → Id (Id A) a₂₀ a₂₁ a₀₂ a₁₂)
+  >   → ((x : A) → Same (Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁) (f x) (sym (F x))) → Type
+  > echo use2 _ (x ↦ rf _ (f x))
+  > EOF
+  rf (A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁) t
+    : Same (A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁) t t
+  
+  rf (A⁽ᵉᵉ⁾ a₂₀ a₂₁ a₀₂ a₁₂) (sym t)
+    : Same (A⁽ᵉᵉ⁾ a₂₀ a₂₁ a₀₂ a₁₂) (sym t) (sym t)
+  
+  rf (A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁) t
+    : Same (A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁) t t
+  
+  use f (x ↦ rf (A⁽ᵉᵉ⁾ a₂₀ a₂₁ a₀₂ a₁₂) (sym (f x)))
+    : Type
+  
+  use2 (𝑥 ↦ sym (f 𝑥)) (x ↦ rf (A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁) (f x))
+    : Type
+  
+
+This includes permutations that aren't their own inverse, and one can be solved with a value having a different permutation.  We use a record type here since its higher-dimensional instances are not symmetric in the Gel direction.
+
+  $ narya -parametric - <<EOF
+  > def Top : Type ≔ sig ()
+  > axiom C : Type
+  > axiom c : C
+  > def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )
+  > def R : Top → Top → Type ≔ x y ↦ C
+  > def g : Gel Top Top R () () ≔ (ungel ≔ c)
+  > def g3 ≔ refl (refl g)
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > echo rf _ (g3⁽²³¹⁾) : Same _ (g3⁽²³¹⁾) (_⁽²³¹⁾)
+  > echo rf _ (g3⁽³¹²⁾) : Same _ (g3⁽³¹²⁾) (_⁽³¹²⁾)
+  > echo rf _ (g3⁽²³¹⁾) : Same _ (g3⁽²³¹⁾) (_⁽³¹²⁾)
+  > EOF
+  rf ((Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²³¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ () ())
+    g⁽ᵉᵉ¹⁾
+    : Same
+        ((Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²³¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ () ())
+        g⁽ᵉᵉ¹⁾ g⁽ᵉᵉ¹⁾
+  
+  rf
+    ((Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²¹³⁾ (refl g) (refl g) {()} {()} () {()}
+       {()} () g⁽ᵉ¹⁾ g⁽ᵉ¹⁾) g⁽ᵉ¹ᵉ⁾
+    : Same
+        ((Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²¹³⁾ (refl g) (refl g) {()} {()} ()
+           {()} {()} () g⁽ᵉ¹⁾ g⁽ᵉ¹⁾) g⁽ᵉ¹ᵉ⁾ g⁽ᵉ¹ᵉ⁾
+  
+  rf ((Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²³¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ () ())
+    g⁽ᵉᵉ¹⁾
+    : Same
+        ((Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²³¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ () ())
+        g⁽ᵉᵉ¹⁾ g⁽ᵉᵉ¹⁾
+  
+
 A metavariable with a permutation isn't equal to itself without it, even if the two have the same type.  This applies to holes too.
 
   $ narya -parametric - <<EOF
@@ -1063,6 +1141,37 @@ A metavariable with a permutation isn't equal to itself without it, even if the 
           m
         does not equal
           sym m
+  
+  [1]
+
+A projection from a symmetrized metavariable doesn't expand it yet.
+
+  $ narya -parametric - <<EOF
+  > def Top : Type ≔ sig ()
+  > axiom C : Type
+  > axiom c : C
+  > axiom cc : Id C c c
+  > def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )
+  > def R : Top → Top → Type ≔ x y ↦ C
+  > def g : Gel Top Top R () () ≔ (ungel ≔ c)
+  > def t : Top ≔ ()
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > def U : Type ≔ (Gel Top Top R)⁽ᵉ¹⁾ {t} {t} g {t} {t} g (refl t) (refl t)
+  > axiom use : (m : U) → Same (Id C c c) (sym m .ungel) cc → Type
+  > echo use _ (rf _ cc)
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   13 | echo use _ (rf _ cc)
+      ^ term synthesized type
+          Same (Id C c c) cc cc
+        but is being checked against type
+          Same (Id C c c) (sym ?u0 .ungel) cc
+        unequal head terms:
+          cc
+        does not equal
+          sym ?u0
   
   [1]
 
