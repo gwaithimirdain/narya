@@ -8,6 +8,8 @@ Placeholders "_" in term positions create unification metavariables.  Any comman
   > def g (y : A) : A ≔ match y [ _ ↦ _ ]
   > echo (_ : A)
   > def ok : A ≔ a
+  > echo x
+  > def y (z : A) : A ≔ x
   > EOF
    ￫ info[I0001]
    ￮ axiom A assumed
@@ -29,6 +31,9 @@ Placeholders "_" in term positions create unification metavariables.  Any comman
   
    ￫ info[I0000]
    ￮ constant ok defined
+  
+   ￫ info[I0000]
+   ￮ constant y defined
   
   [1]
 

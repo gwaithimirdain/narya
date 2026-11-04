@@ -424,20 +424,23 @@ let meta_ty : type mode a b s e.
   | Global_meta -> (find_meta meta).ty
   | Unif_meta _ -> (find_unif meta).ty
 
-(* At the end of a command, all its unification metavariables must be solved, or else it fails.  If they are and it succeeds, we write their solutions into them.  If the command has already failed for some other reason, we don't report its unsolved unification metavariables, since they are likely to be consequences of that failure. *)
+(* At the end of a command, all its unification metavariables must be solved, or else it fails, and we write their solutions into them.  If the command has already failed for some other reason, we don't report its unsolved unification metavariables, since they are likely to be consequences of that failure. *)
 let count_unsolved_unifs () =
   Uniftable.fold
     { fold = (fun { solution; _ } n -> if Option.is_none solution then n + 1 else n) }
     (Speculable.get current_command).unifs 0
 
 let finish_unifs () =
-  if not (moribund ()) then
-    let unsolved = count_unsolved_unifs () in
-    if unsolved > 0 then mortal (Unsolved_unification_metas unsolved)
-    else
-      Uniftable.fold
-        { fold = (fun { unif; solution; _ } () -> unif := solution) }
-        (Speculable.get current_command).unifs ()
+  if (not (moribund ())) && count_unsolved_unifs () > 0 then
+    mortal (Unsolved_unification_metas (count_unsolved_unifs ()));
+  (* Even if the command failed, the constants it was defining may still be used by later commands, with their failed parts failing silently if they are inspected.  Thus, an unsolved unification metavariable, whose table is about to go away, must become such a failed part. *)
+  Uniftable.fold
+    {
+      fold =
+        (fun { unif; solution; _ } () ->
+          unif := Some (Option.value solution ~default:(Term.Failed Kinetic)));
+    }
+    (Speculable.get current_command).unifs ()
 
 (* Whether the current command has created any unification metavariables that are not yet solved, and hence will fail at its end unless they are.  A command that produces output before then, such as echo, can check this to avoid producing it. *)
 let unsolved_unifs () = count_unsolved_unifs () > 0
