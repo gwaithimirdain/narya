@@ -7,11 +7,12 @@ open Reporter
 open Term
 open Value
 open Norm
+open Act
 open Domvars
 open Readback
 
 (* Try to solve a unification metavariable u with a value v, which are being compared in a context, at a type if known.  We can do this if u is a neutral unification metavariable with an identity insertion, and an environment and arguments that are a renaming (see Readback.renamed_ctx), and v reads back in the corresponding renamed context without containing u or any undefined variable (see Readback.Unifying).  Then the solution, substituted into u's environment, is v. *)
-let try_solve : type mode a b.
+let try_solve_direct : type mode a b.
     (mode, a, b) Ctx.t ->
     (mode, kinetic) value ->
     (mode, kinetic) value ->
@@ -61,6 +62,53 @@ let try_solve : type mode a b.
                   true
               | None -> false)))
   | _ -> false
+
+(* The inverse of the permutation represented by a nonidentity insertion. *)
+let inverse_of_ins : type a b c. (a, b, c) insertion -> any_deg option =
+ fun ins ->
+  match is_id_ins ins with
+  | Some _ -> None
+  | None ->
+      let (Perm_to p) = perm_of_ins ins in
+      Some (Any_deg (deg_of_perm (perm_inv p)))
+
+(* Try to solve a unification metavariable that may have a permutation on the outside, as in "sym ?m".  Since a permutation is invertible, the equation "p ?m = v" is equivalent to "?m = p⁻¹ v", which has the same solutions and which we can try to solve directly, at the type acted on by the same permutation.  If the type wasn't known then we must check that the types agree before acting on v, since it might not have enough dimensions otherwise. *)
+let try_solve : type mode a b.
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value option ->
+    bool =
+ fun ctx u v ty ->
+  let inverse, uty =
+    match u with
+    | Neu { head = Live (Meta { kind = Unif_meta _; ins; _ }); args = Emp; ty = uty; _ } ->
+        (inverse_of_ins ins, Some uty)
+    | Neu
+        {
+          head = Live (Meta { kind = Unif_meta _; _ });
+          args = Snoc (_, Arg (_, _, ins));
+          ty = uty;
+          _;
+        } -> (inverse_of_ins ins, Some uty)
+    | _ -> (None, None) in
+  match (inverse, uty) with
+  | Some (Any_deg pinv), Some uty -> (
+      let ty =
+        match (ty, v) with
+        | Some _, _ -> ty
+        | None, Neu { ty = vty; _ } -> (
+            match Equal.equal_val ctx (Lazy.force vty) (Lazy.force uty) with
+            | Ok () -> Some (Lazy.force uty)
+            | Error _ -> None)
+        | None, _ -> None in
+      match ty with
+      | None -> false
+      | Some ty ->
+          let idc = Modalcell.id2 (Ctx.mode ctx) in
+          try_solve_direct ctx (act_value u pinv idc) (act_value v pinv idc)
+            (Some (gact_ty None ty pinv idc)))
+  | _ -> try_solve_direct ctx u v ty
 
 (* A metavariable that is projected from, perhaps after being applied to some arguments, has to be solved by a tuple, since we can only get information about one field from the projection, and the other fields have to be left unknown.  This is always correct, by eta-conversion, so it doesn't affect whether the solution is most general; but it does create more metavariables, so we do it only when solving an equation that requires it.  To avoid having to duplicate the logic for typechecking tuples, particularly regarding modal fields (whose components live in a locked context, and possibly a different mode), we do this by constructing a raw term out of abstractions, tuples, and placeholders, and typechecking it at the type of the metavariable.  Since typechecking comes later, we record here just the shape of the term, consisting of an abstraction for each argument (with a name, and whether it is a cube abstraction) and a tuple for each projection (with all the field names and the one that continues).  There is no need for a final sequence of abstractions, since the metavariables created for the tuple components can just be applied to the same arguments. *)
 type expansion =
