@@ -949,9 +949,15 @@ An instantiation of a higher-dimensional Gel is a record, so it can be a singlet
   > echo bysym
   > def symmed : (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} ((),) {a₁} {b₁} ((),) a₂ b₂ ≔ _
   > echo symmed
+  > def symplace : (Gel A B R)⁽ᵉ¹⁾ {a₀} {b₀} ((),) {a₁} {b₁} ((),) a₂ b₂ ≔ sym _
+  > echo symplace
   > EOF
   (ungel ≔ ())
     : Gel⁽ᵉ⁾ (Id A) (Id B) (Id R) a₂ b₂ (ungel ≔ ()) (ungel ≔ ())
+  
+  sym (ungel ≔ ())
+    : sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)) {a₀} {b₀} (_ ≔ ()) {a₁} {b₁} (_ ≔ ())
+        a₂ b₂
   
   sym (ungel ≔ ())
     : sym (Gel⁽ᵉ⁾ (Id A) (Id B) (Id R)) {a₀} {b₀} (_ ≔ ()) {a₁} {b₁} (_ ≔ ())
