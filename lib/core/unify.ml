@@ -14,7 +14,8 @@ let try_solve : type mode a b.
     bool =
  fun ctx u v ty ->
   match u with
-  | Neu { head = Live (Meta { meta; kind = Unif_meta unif; env; ins }); args; ty = uty; _ } -> (
+  | Neu { head = Live (Meta { meta; kind = Unif_meta unif as kind; env; ins }); args; ty = uty; _ }
+    -> (
       match (is_id_ins ins, arg_spine args, v) with
       | None, _, _ | _, None, _ -> false
       (* Two occurrences of the same metavariable are compared by their environments and arguments instead. *)
@@ -25,9 +26,10 @@ let try_solve : type mode a b.
       | Some _, Some Eq, _ -> (
           (Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta)
           &&
-          match renamed_ctx meta ctx env args (Global.unif_ctx meta) with
+          let mty = Global.meta_ty meta kind in
+          match renamed_ctx meta ctx env args mty (Global.unif_ctx meta) with
           | None -> false
-          | Some (Renamed_ctx (rctx, check_type, wrap)) -> (
+          | Some (Renamed_ctx { ctx = rctx; check_type; wrap }) -> (
               (* If we don't know the type at which they are being compared, we must check that the type of v is that of u. *)
               let typed =
                 match ty with
