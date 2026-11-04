@@ -746,6 +746,116 @@ The component of a modal field lives behind a lock, and possibly at a different 
     : N
   
 
+A comparison of two neutral spines can fail and then succeed by unfolding them, so it can't solve anything unless the spines are forced to be equal.  Here g ignores its arguments, so the first is not constrained, and the second can be solved by a later constraint.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a1 : A
+  > axiom a2 : A
+  > axiom b1 : A
+  > axiom b2 : A
+  > axiom c : A
+  > def g (x y : A) : A ≔ c
+  > def unconstrained : A ≔ let v : A ≔ _ in let k : Id A (g v b1) (g a1 b2) ≔ refl (g a1 b2) in v
+  > def later : A ≔ let v : A ≔ _ in let k : Id A (g v b1) (g a1 b2) ≔ refl (g a1 b2) in let j : Id A v a2 ≔ refl a2 in v
+  > echo later
+  > EOF
+   ￫ error[E2004]
+   ￮ there is 1 unsolved unification metavariable
+  
+  a2
+    : A
+  
+  [1]
+
+Spines are forced to be equal if the head is a variable or an axiom, or a canonical type (including function-types and instantiated identity types), or a case tree stuck on something other than a metavariable.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a1 : A
+  > axiom F : Type → Type
+  > def Pr (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
+  > def Vec (X : Type) : Type ≔ data [ nil. | cons. (_ : X) (_ : Vec X) ]
+  > def inj1 : Type ≔ let X : Type ≔ _ in let k : Id Type (F X) (F A) ≔ refl (F A) in X
+  > echo inj1
+  > def inj2 : Type ≔ let X : Type ≔ _ in let k : Id Type (Vec X) (Vec A) ≔ refl (Vec A) in X
+  > echo inj2
+  > def inj3 : Type ≔ let X : Type ≔ _ in let k : Id Type (Pr X A) (Pr A A) ≔ refl (Pr A A) in X
+  > echo inj3
+  > def inj4 : Type ≔ let X : Type ≔ _ in let k : Id Type (X → A) (A → A) ≔ refl (A → A) in X
+  > echo inj4
+  > def inj5 : Type ≔ let X : Type ≔ _ in let k : Id Type (A → X) (A → A) ≔ refl (A → A) in X
+  > echo inj5
+  > def inj6 (e : A → A) : A ≔ let x : A ≔ _ in let k : Id A (e x) (e a1) ≔ refl (e a1) in x
+  > echo inj6 (x ↦ x)
+  > def inj7 : A ≔ let x : A ≔ _ in let k : Id Type (Id A x a1) (Id A a1 a1) ≔ refl (Id A a1 a1) in x
+  > echo inj7
+  > def Bool : Type ≔ data [ t. | f. ]
+  > def st (b : Bool) (y : A) : A ≔ match b [ t. ↦ y | f. ↦ y ]
+  > def inj8 (b : Bool) : A ≔ let x : A ≔ _ in let k : Id A (st b x) (st b a1) ≔ refl (st b a1) in x
+  > echo inj8 t.
+  > EOF
+  A
+    : Type
+  
+  A
+    : Type
+  
+  A
+    : Type
+  
+  A
+    : Type
+  
+  A
+    : Type
+  
+  a1
+    : A
+  
+  a1
+    : A
+  
+  a1
+    : A
+  
+
+But they aren't forced if it is stuck on a metavariable, or if the head is a metavariable, since a solution of that metavariable could ignore them.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a1 : A
+  > def Bool : Type ≔ data [ t. | f. ]
+  > def st (b : Bool) (y : A) : A ≔ match b [ t. ↦ y | f. ↦ y ]
+  > def stuck : A ≔ let c : Bool ≔ _ in let x : A ≔ _ in let k : Id A (st c x) (st c a1) ≔ refl (st c a1) in a1
+  > def head : A ≔ let m : A → A ≔ _ in let x : A ≔ _ in let k : Id A (m x) (m a1) ≔ refl (m a1) in a1
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   5 | def stuck : A ≔ let c : Bool ≔ _ in let x : A ≔ _ in let k : Id A (st c x) (st c a1) ≔ refl (st c a1) in a1
+     ^ term synthesized type
+         Id A (st c a1) (st c a1)
+       but is being checked against type
+         Id A (st c x) (st c a1)
+       unequal head terms:
+         a1
+       does not equal
+         x
+  
+   ￫ error[E0401]
+   ￭ stdin
+   6 | def head : A ≔ let m : A → A ≔ _ in let x : A ≔ _ in let k : Id A (m x) (m a1) ≔ refl (m a1) in a1
+     ^ term synthesized type
+         Id A (m a1) (m a1)
+       but is being checked against type
+         Id A (m x) (m a1)
+       unequal head terms:
+         a1
+       does not equal
+         x
+  
+  [1]
+
 A case tree stuck on an unsolved metavariable is blocked, and is recomputed once the metavariable is solved, even if its blocked value has been computed and cached in the meantime.  Here the type Z, i.e. T ?u, is forced while ?u is unsolved, by comparing two terms of type Z; then ?u is solved by comparing b with true., after which Z must compute to ℕ.
 
   $ narya -v - <<EOF
