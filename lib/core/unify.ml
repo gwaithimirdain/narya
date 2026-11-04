@@ -1,11 +1,13 @@
 (* Unification: solving unification metavariables by comparing them with other values.  For now, we only implement the simplest case. *)
 
-open Util
+open Bwd
+open Modal
 open Dim
 open Reporter
 open Term
 open Value
 open Norm
+open Domvars
 open Readback
 
 (* Try to solve a unification metavariable u with a value v, which are being compared in a context, at a type if known.  We can do this if u is a neutral unification metavariable with an identity insertion, and an environment and arguments that are a renaming (see Readback.renamed_ctx), and v reads back in the corresponding renamed context without containing u or any undefined variable (see Readback.Unifying).  Then the solution, substituted into u's environment, is v. *)
@@ -72,6 +74,18 @@ type expander = {
 let expander : expander ref =
   ref { expand = (fun _ _ _ -> fatal (Anomaly "unification not installed")) }
 
+(* The names of the fields that a tuple at a record type must have, at some dimension.  A modal field whose modality is nonparametric disappears at a dimension it filters nontrivially, and must be omitted. *)
+let field_names : type mode a m n et.
+    (mode * a * D.zero * n * et) Term.CodatafieldAbwd.t -> m D.t -> string list =
+ fun fields m ->
+  Bwd.fold_right
+    (fun (Term.CodatafieldAbwd.Entry (f, Codatafield (_, Adjunction { left; _ }, _, _))) names ->
+      let (Has_filter filter) = Modality.filter left m in
+      match Modality.filter_is_trivial m filter with
+      | Some _ -> Field.to_string f :: names
+      | None -> names)
+    fields []
+
 (* Compute the shape of the expansion needed by a metavariable with an application spine, given the value of the metavariable with no spine, if it is possible.  We replay the spine on that value in order to be able to compute the type at each point. *)
 let expansion_shape : type hmode mode any.
     (hmode, kinetic) value -> (hmode, mode, any, live) apps -> expansion list option =
@@ -98,12 +112,8 @@ let expansion_shape : type hmode mode any.
               | _ -> raise_notrace Stuck)
           | Field (_, fld, _, _) -> (
               match tyof cur with
-              | Canonical (_, Codata { eta = Eta; fields; _ }, _, _) ->
-                  let names =
-                    Bwd_extra.to_list_map
-                      (fun (Term.CodatafieldAbwd.Entry (f, _)) -> Field.to_string f)
-                      fields in
-                  Tuple (names, Field.to_string fld) :: shape
+              | Canonical (_, Codata { eta = Eta; fields; _ }, ins, _) ->
+                  Tuple (field_names fields (cod_left_ins ins), Field.to_string fld) :: shape
               | _ -> raise_notrace Stuck)
           | Inst _ -> raise_notrace Stuck in
         let (Val next) = app_eval_entry (Val cur) entry in
@@ -154,8 +164,57 @@ let try_expand : type mode a b.
               | Error _ -> false)))
   | _ -> false
 
+(* A type is a singleton if any two of its elements are equal, by eta-conversion: this holds for records all of whose fields are singletons, and functions whose codomains are.  We test this by comparing two fresh variables, without solving any metavariables. *)
+let is_singleton : type mode a b. (mode, a, b) Ctx.t -> (mode, kinetic) value -> bool =
+ fun ctx ty ->
+  let id = Modality.id (Ctx.mode ctx) in
+  let filter = Modality.filter_zero id in
+  let doms = CubeOf.singleton ty in
+  let vars = singleton_variables D.zero (`Anon no_hints) in
+  let xs, xnfs = dom_vars ctx id doms in
+  let (Any_ctx ctx) = Ctx.variables_vis ctx filter vars xnfs in
+  let ys, ynfs = dom_vars ctx id doms in
+  let (Any_ctx ctx) = Ctx.variables_vis ctx filter vars ynfs in
+  Reporter.discard_errors ~fallback:(fun () -> false) @@ fun () ->
+  match
+    Equal.flexibly (fun () -> Equal.equal_at ctx (CubeOf.find_top xs) (CubeOf.find_top ys) ty)
+  with
+  | Ok () -> true
+  | Error _ -> false
+
+(* An unsolved unification metavariable at a singleton type has a unique solution even if nothing has constrained it.  Without eta-expanding all metavariables when they are created, we have to find these at the end of a command.  We expand them one level, using the same mechanism as for field projections, which produces new metavariables at singleton types, until no more remain. *)
+let rec solve_singletons () =
+  let changed = ref false in
+  Global.iter_unsolved_unifs
+    {
+      it =
+        (fun meta ctx ty ->
+          if Global.unif_assignable meta then
+            let ety = eval_term (Ctx.env ctx) ty in
+            if is_singleton ctx ety then
+              let shape =
+                match view_type ~severity:Asai.Diagnostic.Error ety "solve_singletons" with
+                | Canonical (_, Pi { x; doms; _ }, _, _) ->
+                    let cube =
+                      match D.compare_zero (CubeOf.dim doms) with
+                      | Zero -> false
+                      | Pos _ -> true in
+                    Some (Abs (option_of_binder_name (top_variable x), cube))
+                | Canonical (_, Codata { eta = Eta; fields; _ }, ins, _)
+                  when Option.is_some (is_id_ins ins) ->
+                    Some (Tuple (field_names fields (cod_left_ins ins), ""))
+                | _ -> None in
+              match shape with
+              | Some shape ->
+                  Global.solve_unif meta (!expander.expand ctx ety [ shape ]);
+                  changed := true
+              | None -> ());
+    };
+  if !changed then solve_singletons ()
+
 let install (expand : expander) =
   expander := expand;
+  Global.set_singleton_unif_solver solve_singletons;
   Equal.solver :=
     {
       solve =
