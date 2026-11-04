@@ -607,6 +607,145 @@ The arguments count as part of the renaming, so the value can't use an argument 
   
   [1]
 
+A metavariable that is projected from is expanded into a tuple of new metavariables, when solving an equation that requires it, which is correct by eta-conversion.  This includes dependent and nested records, and metavariables that are also applied to arguments.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom a0 : A
+  > axiom a1 : A
+  > axiom b0 : B a0
+  > def Pr : Type ≔ sig (fst : A, snd : A)
+  > def Si : Type ≔ sig (fst : A, snd : B fst)
+  > def both : Pr ≔ let p : Pr ≔ _ in let k : Id A (p .fst) a0 ≔ refl a0 in let j : Id A (p .snd) a1 ≔ refl a1 in p
+  > about both
+  > def dep : Si ≔ let p : Si ≔ _ in let k : Id A (p .fst) a0 ≔ refl a0 in let j : Id (B a0) (p .snd) b0 ≔ refl b0 in p
+  > about dep
+  > def fn : A → Pr ≔ let f : A → Pr ≔ _ in let k : (x : A) → Id A (f x .fst) x ≔ x ↦ refl x in let j : (x : A) → Id A (f x .snd) x ≔ x ↦ refl x in f
+  > about fn
+  > echo fn a0 .snd
+  > def nested : A ≔ let q : sig (l : Pr, r : A) ≔ _ in let k : Id A (q .l .snd) a0 ≔ refl a0 in let j : Id A (q .l .fst) a1 ≔ refl a1 in let m : Id A (q .r) a0 ≔ refl a0 in q .l .fst
+  > echo nested
+  > def swap : Pr → Pr ≔ let f : Pr → Pr ≔ _ in let k : (z : Pr) → Id A (f z .fst) (z .snd) ≔ z ↦ refl (z .snd) in let j : (z : Pr) → Id A (f z .snd) (z .fst) ≔ z ↦ refl (z .fst) in f
+  > about swap
+  > EOF
+  let p ≔ (fst ≔ a0, snd ≔ a1) in let k ≔ refl a0 in let j ≔ refl a1 in p
+    : Pr
+  
+  let p ≔ (fst ≔ a0, snd ≔ b0) in let k ≔ refl a0 in let j ≔ refl b0 in p
+    : Si
+  
+  let f ≔ 𝑥 ↦ (fst ≔ 𝑥, snd ≔ 𝑥) in
+  let k ≔ x ↦ refl x in
+  let j ≔ x ↦ refl x in
+  f
+    : A → Pr
+  
+  a0
+    : A
+  
+  a1
+    : A
+  
+  let f ≔ 𝑥 ↦ (fst ≔ 𝑥 .snd, snd ≔ 𝑥 .fst) in
+  let k ≔ z ↦ refl (z .snd) in
+  let j ≔ z ↦ refl (z .fst) in
+  f
+    : Pr → Pr
+  
+
+The other fields stay unknown, and can leave unsolved metavariables.  A codatatype without eta can't be expanded.  And for now, neither can a metavariable with different fields on both sides.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a0 : A
+  > def Pr : Type ≔ sig (fst : A, snd : A)
+  > def S : Type ≔ codata [ x .head : A | x .tail : S ]
+  > def onefield : A ≔ let p : Pr ≔ _ in let k : Id A (p .fst) a0 ≔ refl a0 in a0
+  > def stream : A ≔ let s : S ≔ _ in let k : Id A (s .head) a0 ≔ refl a0 in a0
+  > def samem : A ≔ let p : Pr ≔ _ in let k : Id A (p .fst) (p .snd) ≔ refl (p .snd) in a0
+  > EOF
+   ￫ error[E2004]
+   ￮ there is 1 unsolved unification metavariable
+  
+   ￫ error[E0401]
+   ￭ stdin
+   6 | def stream : A ≔ let s : S ≔ _ in let k : Id A (s .head) a0 ≔ refl a0 in a0
+     ^ term synthesized type
+         Id A a0 a0
+       but is being checked against type
+         Id A (s .head) a0
+       unequal head terms:
+         a0
+       does not equal
+         s
+  
+   ￫ error[E0401]
+   ￭ stdin
+   7 | def samem : A ≔ let p : Pr ≔ _ in let k : Id A (p .fst) (p .snd) ≔ refl (p .snd) in a0
+     ^ term synthesized type
+         Id A (p .snd) (p .snd)
+       but is being checked against type
+         Id A (p .fst) (p .snd)
+       unequal fields:
+         snd
+       does not equal
+         fst
+  
+  [1]
+
+The component of a modal field lives behind a lock, and possibly at a different mode, and so does the metavariable created for it.  Its environment involves the counit of the adjunction, so for now it can only be solved by a value that doesn't use the variables behind that lock.
+
+  $ narya -adjunction - <<EOF
+  > axiom C : Type
+  > axiom c : C
+  > axiom c2 : C
+  > def □′ (A :□| Type) : Disc ≔ sig ( (x :△| _) .□ : A )
+  > def closed : C ≔ let r :△| □′ C ≔ _ in let k : Id C ((r :△| _) .□) c ≔ refl c in (r :△| _) .□
+  > echo closed
+  > about closed
+  > def param (z :△□| C) : C ≔ let r :△| □′ C ≔ _ in let k : Id C ((r :△| _) .□) c ≔ refl c in (r :△| _) .□
+  > echo param c2
+  > def twofields : C ≔ let r :△| sig ( (x :△| _) .a : C, (x :△| _) .b : C ) ≔ _ in let k : Id C ((r :△| _) .a) c ≔ refl c in let j : Id C ((r :△| _) .b) c2 ≔ refl c2 in (r :△| _) .b
+  > echo twofields
+  > def varrhs (z :△□| C) : C ≔ let r :△| □′ C ≔ _ in let k : Id C ((r :△| _) .□) z ≔ refl z in (r :△| _) .□
+  > EOF
+  c
+    : C
+  
+  let r :△| _ ≔ (□ ≔ c) in let k ≔ refl c in (r :△| _) .□
+    : C
+  
+  c
+    : C
+  
+  c2
+    : C
+  
+   ￫ error[E0401]
+   ￭ stdin
+   12 | def varrhs (z :△□| C) : C ≔ let r :△| □′ C ≔ _ in let k : Id C ((r :△| _) .□) z ≔ refl z in (r :△| _) .□
+      ^ term synthesized type
+          Id C z z
+        but is being checked against type
+          Id C ?u8 z
+        unequal head terms:
+          z
+        does not equal
+          ?u8
+  
+  [1]
+
+  $ narya -spatial - <<EOF
+  > def N : Type ≔ data [ zero. | suc. (_ : N) ]
+  > def R : Type ≔ sig ( (x :♭| _) .fst : N )
+  > def samemode : N ≔ let r :♭| R ≔ _ in let k : Id N ((r :♭| _) .fst) zero. ≔ refl (zero. : N) in (r :♭| _) .fst
+  > echo samemode
+  > EOF
+  0
+    : N
+  
+
 A case tree stuck on an unsolved metavariable is blocked, and is recomputed once the metavariable is solved, even if its blocked value has been computed and cached in the meantime.  Here the type Z, i.e. T ?u, is forced while ?u is unsolved, by comparing two terms of type Z; then ?u is solved by comparing b with true., after which Z must compute to ℕ.
 
   $ narya -v - <<EOF

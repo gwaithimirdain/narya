@@ -206,9 +206,6 @@ let run_with_definition : type mode a c.
   | Constant (c, mode, _) -> Global.with_definition c mode (`Defined tm) f
   | Meta (m, _) -> Global.with_meta_definition m tm f
 
-(* Install the unification algorithm into the equality checker. *)
-let () = Unify.install ()
-
 (* Create a new unification metavariable in a given context, of a given type, returning it as a term in that context.  Its type is read back now, but its context is read back only if needed (see Global.Unifdata), and then not for display, since it is also used for internal purposes like comparing environments. *)
 let make_unif : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, b, kinetic) term =
@@ -5244,3 +5241,27 @@ and synth_mode_tel : type a b ab. (a, b, ab) Raw.tel -> Modal.Mode.wrapped optio
           | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
           | Error _ -> None)
       | None -> synth_mode_tel tel)
+
+(* Construct the raw term that expands a unification metavariable (see Unify), with placeholders for the unknown parts. *)
+let rec raw_of_expansion : type a. Unify.expansion list -> a check located = function
+  | [] -> locate_opt None Unif
+  | Abs (name, cube) :: rest ->
+      locate_opt None
+        (Lam
+           {
+             name = locate_opt None name;
+             cube = locate_opt None (if cube then `Cube (ref None) else `Normal);
+             implicit = `Explicit;
+             dom = None;
+             body = raw_of_expansion rest;
+           })
+  | Tuple (fields, fld) :: rest ->
+      let component f =
+        ( Some (f, []),
+          (locate_opt None `Normal, if f = fld then raw_of_expansion rest else locate_opt None Unif)
+        ) in
+      locate_opt None (Struct (Eta, Bwd.of_list (List.map component fields)))
+
+(* Install the unification algorithm into the equality checker. *)
+let () =
+  Unify.install { expand = (fun ctx ty shape -> check Kinetic ctx (raw_of_expansion shape) ty) }
