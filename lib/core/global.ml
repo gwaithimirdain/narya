@@ -262,6 +262,7 @@ type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos
 module Unifdata = struct
   type ('mode, 'a, 'b, 's) t = {
     unif : ('mode, 'b, kinetic) term option ref;
+    ctx : ('mode, 'a, 'b) Ctx.t;
     ty : ('mode, 'b, kinetic) term;
     termctx : ('mode, 'a, 'b) termctx Lazy.t;
     solution : ('mode, 'b, kinetic) term option;
@@ -313,16 +314,17 @@ let get_parametric () =
 let add_unif : type mode a b.
     (mode, a, b, kinetic) Meta.t ->
     (mode, b, kinetic) term option ref ->
+    ctx:(mode, a, b) Ctx.t ->
     ty:(mode, b, kinetic) term ->
     termctx:(mode, a, b) termctx Lazy.t ->
     unit =
- fun meta unif ~ty ~termctx ->
+ fun meta unif ~ctx ~ty ~termctx ->
   Speculable.modify current_command (fun d ->
       {
         d with
         unifs =
           Uniftable.add meta
-            { unif; ty; termctx; solution = None; depth = Origin.speculation_depth () }
+            { unif; ctx; ty; termctx; solution = None; depth = Origin.speculation_depth () }
             d.unifs;
       })
 
@@ -335,6 +337,10 @@ let find_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, a, b, kine
       fatal
         (Anomaly
            ("unification metavariable used outside the command that created it: " ^ Meta.name meta))
+
+(* The context in which a unification metavariable was created. *)
+let unif_ctx : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, a, b) Ctx.t =
+ fun meta -> (find_unif meta).ctx
 
 (* Whether a unification metavariable can be solved at the current depth of speculation, i.e. whether it was created inside the innermost current speculation (or a speculation that has since succeeded into it). *)
 let unif_assignable : type mode a b. (mode, a, b, kinetic) Meta.t -> bool =

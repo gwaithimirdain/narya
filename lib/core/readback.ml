@@ -372,7 +372,8 @@ let readback_meta_at_idenv : type mode a b n c d x s.
         restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
       if Modalcell.is_id pre then search ctx env
       else
-        let (Remove_lock (kctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt pre) in
+        (* If the context doesn't have the locks that the prekey needs, which can happen when reading back the solution of a unification metavariable, then the search fails. *)
+        let* (Remove_lock (kctx, plus_tgt)) = Ctx.remove_lock_opt ctx (Modalcell.vtgt pre) in
         let (Locked (plus_src, kctx)) = Ctx.lock kctx (Modalcell.vsrc pre) in
         let* tm = search kctx (Lock (lenv, g)) in
         return (Key { tm; cell = pre; plus_tgt; plus_src })
@@ -393,6 +394,17 @@ let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mod
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta.
 
    In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible.  A case tree that is stuck, however, is not reconstructed: it is displayed as the application spine of the neutral whose value it is. *)
+
+(* Remove locks from a context during readback.  When reading back the solution of a unification metavariable, the context might not have the required locks, which means there is no solution. *)
+let remove_lock : type mode modality cod a bc.
+    (mode, a, bc) Ctx.t ->
+    (mode, modality, cod) Modality.t ->
+    (cod, modality, mode, bc) Ctx.remove_lock =
+ fun ctx modality ->
+  match Ctx.remove_lock_opt ctx modality with
+  | Some result -> result
+  | None when Option.is_some (Unifying.read ()) -> raise Unsolvable
+  | None -> Ctx.remove_lock ctx modality
 
 (* ********** Primary readback functions ********** *)
 
@@ -855,7 +867,7 @@ and readback_head : type mode c z.
   match h with
   | Var { level; deg; key } -> (
       (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context. *)
-      let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt key) in
+      let (Remove_lock (ctx, plus_tgt)) = remove_lock ctx (Modalcell.vtgt key) in
       (* Now we look for the level variable in the remaining context. *)
       let (Lookup
              { result; value; dirt = _; modality; filter; insert; plus = Plus_with_locks (c, _) }) =
@@ -883,6 +895,9 @@ and readback_head : type mode c z.
           match (Modality.compare_id modality, plus_src, plus_tgt) with
           | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
           | _ -> Key { tm; cell = key; plus_tgt; plus_src })
+      (* When reading back the solution of a unification metavariable, the variable might have been found in the wrong modal position in the metavariable's context, which means there is no solution. *)
+      | Neq, _, _ when Option.is_some (Unifying.read ()) -> raise Unsolvable
+      | _, _, Suc _ when Option.is_some (Unifying.read ()) -> raise Unsolvable
       | Neq, _, _ ->
           fatal (Modality_mismatch (`Internal, "reading back var", Modalcell.vsrc key, modality))
       | _, _, Suc _ -> fatal (Anomaly "reading back var: key has insufficient codomain")
@@ -1089,13 +1104,13 @@ and readback_ordered_env : type mode n a b c d.
         restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
       if Modalcell.is_id pre then
         (* If there is no prekey action, we just remove the lock from the context we're reading back *into*, and read back the residual environment as a locked term environment. *)
-        let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modality.of_gen g) in
+        let (Remove_lock (ctx, plus_tgt)) = remove_lock ctx (Modality.of_gen g) in
         Term.Lock { env = readback_ordered_env ctx env envctx; gen = g; plus_tgt }
       else
         (* A prekey action mediates between a context locked by its vertical source (where the keyed value was created, e.g. behind a key or a parametric locker's locks) and one locked by its vertical target (the actual ambient context, e.g. after the locker's counit discharged those locks).  So before removing the lock, we remove the target of the prekey from the context and re-lock it with the prekey's source, recording both in the term-level Prekey. *)
-        let (Remove_lock (ctx, pre_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt pre) in
+        let (Remove_lock (ctx, pre_tgt)) = remove_lock ctx (Modalcell.vtgt pre) in
         let (Locked (pre_src, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre) in
-        let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modality.of_gen g) in
+        let (Remove_lock (ctx, plus_tgt)) = remove_lock ctx (Modality.of_gen g) in
         Prekey
           {
             env = Term.Lock { env = readback_ordered_env ctx env envctx; gen = g; plus_tgt };
@@ -1558,28 +1573,98 @@ let rec readback_about : type mode a b.
 
 (* ********** Solutions of unification metavariables ********** *)
 
-(* A context whose checked variables are those of a metavariable. *)
-type (_, _) unif_prefix = Unif_prefix : ('mode, 'a, 'b) Ctx.t -> ('mode, 'b) unif_prefix
+(* A unification metavariable with context mctx, occurring with a zero-dimensional environment menv in a context cctx, can be solved easily if menv is a *renaming*: it sends the variables of mctx to distinct variables of cctx.  Then we don't need to compute an inverse substitution: a context that has the same shape as mctx, but in which each variable has the level of the variable of cctx that menv sends it to, already acts as that inverse.  Reading back a value of cctx in such a context finds each variable in menv's image by its level, producing a term in mctx, and fails if it encounters any other variable (see Readback.Unifying). *)
+type (_, _) renamed_ctx = Renamed_ctx : ('mode, 'a, 'b) Ctx.t -> ('mode, 'b) renamed_ctx
 
-(* If the environment of a metavariable is the identity on some prefix of the given context, obtained by removing only variables, aliases, and weakenings (not locks), return that prefix. *)
-let unif_prefix : type mode a b c d n.
-    (mode, a, b) Ctx.t -> (mode, n, d) env -> (mode, c, d) termctx -> (mode, d) unif_prefix option =
- fun (Permute { level; ctx; _ }) env (Permute (_, envctx)) ->
-  let rec go : type a b.
-      (mode, a, b) Ctx.Ordered.t -> (mode, D.zero, d) env -> (mode, d) unif_prefix option =
-   fun ctx env ->
-    match is_identity_ordered_env ctx env envctx with
-    | Some Eq -> Some (Unif_prefix (Ctx.of_ordered ~level ctx))
-    | None -> (
-        match ctx with
-        | Snoc (rest, _, _, _) -> go rest env
-        | Weaken (rest, _) -> go rest env
-        | Lock _ | Emp _ -> None) in
-  match D.compare (dim_env env) D.zero with
-  | Eq -> Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () -> go ctx env
-  | Neq -> None
+type (_, _) renamed_ordered =
+  | Renamed_ordered : ('mode, 'a, 'b) Ctx.Ordered.t -> ('mode, 'b) renamed_ordered
 
-(* Read back a value, at a type, as the solution of a unification metavariable in (a prefix context of) its context, or return None if that's impossible. *)
+(* Given the current context, a metavariable's environment, and its context, compute the renamed context, or return None if the environment isn't a renaming.  Since the entries of the new context have values and types in the current context, and all the levels of its variables are levels of the current context, new variables created in it are given levels above those of the current context. *)
+let renamed_ctx : type mode a b c d n.
+    (mode, a, b) Ctx.t -> (mode, n, d) env -> (mode, c, d) Ctx.t -> (mode, d) renamed_ctx option =
+ fun ctx env (Permute { ctx = mctx; _ }) ->
+  let level = Ctx.level ctx in
+  let exception Not_renaming in
+  (* We check that the variables are distinct, since otherwise a solution would be non-unique. *)
+  let seen = Hashtbl.create 20 in
+  let rec go : type mode a d.
+      (mode, a, d) Ctx.Ordered.t -> (mode, D.zero, d) env -> (mode, d) renamed_ordered =
+   fun mctx env ->
+    match mctx with
+    | Emp mode -> Renamed_ordered (Emp mode)
+    (* Weakening entries and aliases contribute nothing to the checked length, the environment, or readback. *)
+    | Weaken (mctx, _) -> go mctx env
+    | Lock (mctx, g) ->
+        let (Restrict_keys (env, pre)) =
+          restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
+        (* Any nonidentity prekey encountered in the environment means it is not a renaming. *)
+        if not (Modalcell.is_id pre) then raise_notrace Not_renaming;
+        let (Renamed_ordered mctx) = go mctx env in
+        Renamed_ordered (Lock (mctx, g))
+    | Snoc (mctx, entry, af, comp) -> (
+        match Ctx.Ordered.ext_kind entry comp with
+        | Ext_alias -> go mctx env
+        | Ext_dim -> (
+            let modality = Ctx.modality_entry entry in
+            let bindings = Ctx.bindings_entry entry in
+            let k = CubeOf.dim bindings in
+            let (Looked_up { act; op; entry = xs; pre }) =
+              lookup_cube env (D.zero_plus k) modality modality Now (id_opt_op k) in
+            match (is_id_opt_op op, Modalcell.is_id pre) with
+            | Some Eq, true ->
+                let s = id_deg k in
+                let new_bindings =
+                  CubeOf.build k
+                    {
+                      build =
+                        (fun fa ->
+                          let v = act (CubeOf.find xs fa) s pre in
+                          match Binding.level (CubeOf.find bindings fa) with
+                          (* A let-bound variable isn't a variable of the renaming: its value in the environment is determined by the rest of the environment.  It has no level for readback to find, so nothing ever looks at the type of its binding. *)
+                          | None ->
+                              Binding.make None
+                                {
+                                  tm = v;
+                                  ty =
+                                    lazy
+                                      (fatal
+                                         (Anomaly "type of let-bound variable in renamed context"));
+                                }
+                          (* For a free variable, the value must be a plain variable, with the same modal annotation as the entry, which we haven't seen before.  Its type is the type of the entry, substituted by the environment. *)
+                          | Some _ -> (
+                              match view_term v with
+                              | Neu { head = Live (Var { level; deg; key }); args = Emp; ty; _ } as
+                                tm -> (
+                                  match
+                                    ( is_id_deg deg,
+                                      Modalcell.is_id key,
+                                      Modality.compare (Modalcell.vsrc key) modality,
+                                      Hashtbl.mem seen level )
+                                  with
+                                  | Some _, true, Eq, false ->
+                                      Hashtbl.add seen level ();
+                                      Binding.make (Some level) { tm; ty }
+                                  | _ -> raise_notrace Not_renaming)
+                              | _ -> raise_notrace Not_renaming));
+                    } in
+                let (Renamed_ordered mctx) = go mctx (remove_top env) in
+                let (Plus a_x) = N.plus (N.plus_right af) in
+                Renamed_ordered (Snoc (mctx, { entry with bindings = new_bindings }, a_x, comp))
+            | _ -> raise_notrace Not_renaming)) in
+  match env with
+  (* If the environment is literally the identity environment of a context, that context itself is what we want. *)
+  | Ctx mctx -> Some (Renamed_ctx (Ctx.of_ordered ~level mctx))
+  | _ -> (
+      match D.compare (dim_env env) D.zero with
+      | Neq -> None
+      | Eq -> (
+          Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
+          try
+            let (Renamed_ordered mctx) = go mctx env in
+            Some (Renamed_ctx (Ctx.of_ordered ~level mctx))
+          with Not_renaming -> None))
+
+(* Read back a value, at a type, as the solution of a unification metavariable in a renamed version of its context, or return None if that's impossible. *)
 let readback_unif_solution : type mode a b x.
     (mode, x, b, kinetic) Meta.t ->
     (mode, a, b) Ctx.t ->

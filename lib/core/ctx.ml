@@ -647,29 +647,45 @@ module Ordered = struct
         ('cod, 'a, 'b) t * ('b, 'cod, 'modality, 'mode, 'bc) plus_with_locks
         -> ('cod, 'modality, 'mode, 'bc) remove_lock
 
-  let rec remove_lock : type mode modality cod a bc.
-      (mode, a, bc) t -> (mode, modality, cod) Modality.t -> (cod, modality, mode, bc) remove_lock =
+  let rec remove_lock_opt : type mode modality cod a bc.
+      (mode, a, bc) t ->
+      (mode, modality, cod) Modality.t ->
+      (cod, modality, mode, bc) remove_lock option =
    fun ctx modality ->
     match Modality.compare_id modality with
-    | Eq -> Remove_lock (ctx, plus_with_no_locks (mode ctx))
+    | Eq -> Some (Remove_lock (ctx, plus_with_no_locks (mode ctx)))
     | Neq -> (
         match ctx with
-        | Emp _ -> fatal (Anomaly "Ctx.remove_lock: empty context but nonidentity lock")
+        | Emp _ -> None
         | Snoc (ctx, e, _, comp) -> (
-            let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
-            match ext_kind e comp with
-            | Ext_dim -> Remove_lock (ctx, plus_with_locks_dim plus (dim_entry e) (filter_entry e))
-            | Ext_alias -> Remove_lock (ctx, plus))
-        | Weaken (ctx, code) ->
+            match remove_lock_opt ctx modality with
+            | None -> None
+            | Some (Remove_lock (ctx, plus)) -> (
+                match ext_kind e comp with
+                | Ext_dim ->
+                    Some
+                      (Remove_lock (ctx, plus_with_locks_dim plus (dim_entry e) (filter_entry e)))
+                | Ext_alias -> Some (Remove_lock (ctx, plus))))
+        | Weaken (ctx, code) -> (
             (* A weakening entry isn't a lock and doesn't appear in the checked context, so we skip past it and re-add it on the way out. *)
-            let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
-            Remove_lock (Weaken (ctx, code), plus)
+            match remove_lock_opt ctx modality with
+            | None -> None
+            | Some (Remove_lock (ctx, plus)) -> Some (Remove_lock (Weaken (ctx, code), plus)))
         | Lock (ctx, l) -> (
             match Modality.factor modality (Modality.of_gen l) with
-            | Some (Factor (modality, Suc (Zero, _))) ->
-                let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
-                Remove_lock (ctx, plus_with_locks_lock plus l)
-            | None -> fatal (Anomaly "Ctx.remove_lock: modalities don't factor")))
+            | Some (Factor (modality, Suc (Zero, _))) -> (
+                match remove_lock_opt ctx modality with
+                | None -> None
+                | Some (Remove_lock (ctx, plus)) ->
+                    Some (Remove_lock (ctx, plus_with_locks_lock plus l)))
+            | None -> None))
+
+  let remove_lock : type mode modality cod a bc.
+      (mode, a, bc) t -> (mode, modality, cod) Modality.t -> (cod, modality, mode, bc) remove_lock =
+   fun ctx modality ->
+    match remove_lock_opt ctx modality with
+    | Some result -> result
+    | None -> fatal (Anomaly "Ctx.remove_lock: context doesn't have the required locks")
 
   (* The same, but with a supplied plus_with_locks *)
 
@@ -899,6 +915,16 @@ let remove_lock : type mode modality cod a bc.
   let (Remove_lock (ctx, bc)) = Ordered.remove_lock ctx modality in
   (* We save the level of the old, longer, context, so that when new level variables are created in the new shorter context there's no chance they'll conflict with level variables from the old context.  *)
   Remove_lock (of_ordered ~level ctx, bc)
+
+(* The same, but returning None if the context doesn't have the required locks. *)
+let remove_lock_opt : type mode modality cod a bc.
+    (mode, a, bc) t ->
+    (mode, modality, cod) Modality.t ->
+    (cod, modality, mode, bc) remove_lock option =
+ fun (Permute { ctx; level; _ }) modality ->
+  match Ordered.remove_lock_opt ctx modality with
+  | Some (Remove_lock (ctx, bc)) -> Some (Remove_lock (of_ordered ~level ctx, bc))
+  | None -> None
 
 let remove_locks : type cod mode modality a b bc.
     (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, b) any =

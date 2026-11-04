@@ -221,7 +221,7 @@ let make_unif : type mode a b.
     lazy
       ( Readback.Displaying.run ~env:false @@ fun () ->
         Readback.Unifying.run ~env:None @@ fun () -> readback_ctx ctx ) in
-  Global.add_unif meta unif ~ty ~termctx;
+  Global.add_unif meta unif ~ctx ~ty ~termctx;
   Meta (meta, Unif_meta unif, Kinetic)
 
 (* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  The constructor's argument types and output are stored together as its function-type "ty" (as in a Value.dataconstr); the argument variables are introduced, and the type indices of this branch read off, by ext_pi at typechecking time.  *)

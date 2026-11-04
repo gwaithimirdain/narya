@@ -76,10 +76,12 @@ val set_meta :
 val add_unif :
   ('mode, 'a, 'b, kinetic) Meta.t ->
   ('mode, 'b, kinetic) term option ref ->
+  ctx:('mode, 'a, 'b) Ctx.t ->
   ty:('mode, 'b, kinetic) term ->
   termctx:('mode, 'a, 'b) termctx Lazy.t ->
   unit
 
+val unif_ctx : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'a, 'b) Ctx.t
 val unif_assignable : ('mode, 'a, 'b, kinetic) Meta.t -> bool
 val solve_unif : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'b, kinetic) term -> unit
 
