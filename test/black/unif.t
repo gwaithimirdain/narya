@@ -138,13 +138,17 @@ A metavariable can also be solved when its environment is a renaming, sending th
     : Type⁽ᵉ⁾ (f0 a0) (f0 a1)
   
 
-But the value must not involve variables outside the image of the renaming, and the environment can't repeat a variable, since then a solution wouldn't be unique.
+But the value must not involve variables outside the image of the renaming.  And if the environment repeats a variable, the value can't use it, since then there would be more than one solution.
 
   $ narya - <<EOF
   > axiom A : Type
   > axiom B : A → Type
   > def scope (h : (w : A) → B w) : A → A → Type ≔ let G : A → Type ≔ x ↦ B _ in y w ↦ let k : G y ≔ h w in A
   > def repeated (a : A) (b : B a) : Type ≔ let G : A → Type ≔ x ↦ B _ in let k : G a ≔ b in A
+  > def repeated2 : A → Type ≔ let G : A → A → Type ≔ p q ↦ B _ in y ↦ let k : Id Type (G y y) (B y) ≔ refl (B y) in A
+  > axiom K : Type → Type → Type
+  > axiom kk : (X : Type) → K X X
+  > def repeated3 : A → Type ≔ let G : A → A → Type ≔ p q ↦ K _ _ in y ↦ let k : G y y ≔ kk _ in A
   > EOF
    ￫ error[E0401]
    ￭ stdin
@@ -170,9 +174,81 @@ But the value must not involve variables outside the image of the renaming, and 
        does not equal
          let only … in ?u1
   
+   ￫ error[E0401]
+   ￭ stdin
+   5 | def repeated2 : A → Type ≔ let G : A → A → Type ≔ p q ↦ B _ in y ↦ let k : Id Type (G y y) (B y) ≔ refl (B y) in A
+     ^ term synthesized type
+         Type⁽ᵉ⁾ (B y) (B y)
+       but is being checked against type
+         Type⁽ᵉ⁾ (B (let only … in ?u2)) (B y)
+       unequal head terms:
+         y
+       does not equal
+         let only … in ?u2
+  
+   ￫ error[E0401]
+   ￭ stdin
+   8 | def repeated3 : A → Type ≔ let G : A → A → Type ≔ p q ↦ K _ _ in y ↦ let k : G y y ≔ kk _ in A
+     ^ term synthesized type
+         K (let only … in ?u3) (let only … in ?u3)
+       but is being checked against type
+         K (let only … in ?u3) (let only … in ?u4)
+       unequal head metavariables:
+         ?u3
+       does not equal
+         ?u4
+  
   [1]
 
-A renaming can send variables with a modal annotation to variables with the same annotation, and can pass through matching locks.  The value can use the variables with keys, or under locks that it introduces itself.
+If the value doesn't use a repeated variable, then the solution is unique, since substituting variables for variables can't trigger any computation.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > def rep (b : A) : A → Type ≔ let G : A → A → Type ≔ p q ↦ _ in y ↦ let k : Id Type (G y y) (B b) ≔ refl (B b) in G y y
+  > axiom a0 : A
+  > axiom a1 : A
+  > echo rep a0 a1
+  > EOF
+  B a0
+    : Type
+  
+
+But the solution must still be well-typed, so it can't be solved if the type of the metavariable depends on a repeated variable, nor can it use a variable whose type does.  Below, the type of the first metavariable would be X → Y → Y, while in the second the solution would be e c with c : X and e : Y → Type.
+
+  $ narya - <<EOF
+  > def tydep : (Z : Type) → Type ≔ let m : (X Y : Type) → X → Y → Y ≔ X Y ↦ _ in Z ↦ let k : Id (Z → Z → Z) (m Z Z) ((x y ↦ y) : Z → Z → Z) ≔ refl ((x y ↦ y) : Z → Z → Z) in Z
+  > def vardep : (Z : Type) (z : Z) (e : Z → Type) → Type ≔ let G : (X Y : Type) (c : X) (e : Y → Type) → Type ≔ X Y c e ↦ _ in Z z e ↦ let k : Id Type (G Z Z z e) (e z) ≔ refl (e z) in Type
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   1 | def tydep : (Z : Type) → Type ≔ let m : (X Y : Type) → X → Y → Y ≔ X Y ↦ _ in Z ↦ let k : Id (Z → Z → Z) (m Z Z) ((x y ↦ y) : Z → Z → Z) ≔ refl ((x y ↦ y) : Z → Z → Z) in Z
+     ^ term synthesized type
+         {𝑥₀ : Z} {𝑥₁ : Z} (𝑥₂ : Id Z 𝑥₀ 𝑥₁) {𝑦₀ : Z} {𝑦₁ : Z} (𝑦₂ : Id Z 𝑦₀ 𝑦₁)
+         →⁽ᵉ⁾ Id Z 𝑦₀ 𝑦₁
+       but is being checked against type
+         {𝑥₀ : Z} {𝑥₁ : Z} (𝑥₂ : Id Z 𝑥₀ 𝑥₁) {𝑦₀ : Z} {𝑦₁ : Z} (𝑦₂ : Id Z 𝑦₀ 𝑦₁)
+         →⁽ᵉ⁾ Id Z ((let only … in ?u0) 𝑥₀ 𝑦₀) 𝑦₁
+       unequal head terms:
+         𝑦
+       does not equal
+         let only … in ?u0
+  
+   ￫ error[E0401]
+   ￭ stdin
+   2 | def vardep : (Z : Type) (z : Z) (e : Z → Type) → Type ≔ let G : (X Y : Type) (c : X) (e : Y → Type) → Type ≔ X Y c e ↦ _ in Z z e ↦ let k : Id Type (G Z Z z e) (e z) ≔ refl (e z) in Type
+     ^ term synthesized type
+         Type⁽ᵉ⁾ (e z) (e z)
+       but is being checked against type
+         Type⁽ᵉ⁾ (let only … in ?u1) (e z)
+       unequal head terms:
+         e
+       does not equal
+         let only … in ?u1
+  
+  [1]
+
+A renaming can send variables with a modal annotation to variables with the same annotation, and can pass through matching locks.  The value can use the variables with keys, or under locks that it introduces itself.  If a variable has a different annotation than the one it renames, the value can't use it (see below), but it can be solved by a value that doesn't.
 
   $ narya -spatial - <<EOF
   > axiom A : Type
@@ -190,6 +266,8 @@ A renaming can send variables with a modal annotation to variables with the same
   > echo keyed c0 a0
   > axiom d1 : D ((z : A) → C z)
   > def ambient : Type ≔ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d1 in A
+  > axiom t : (y :♭| A) → D Type
+  > def mismatch : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in (_ : Type)) ≔ t y in A
   > EOF
   B a0
     : Type
@@ -201,15 +279,15 @@ A renaming can send variables with a modal annotation to variables with the same
     : Type
   
 
-An environment entry with a nonidentity key isn't a renaming.  Nor is an entry whose variable has a different annotation than the corresponding variable of the metavariable's context, even if the value doesn't use it.  And when the current context has locks that the metavariable's context doesn't, the value can't use variables behind them.
+An environment entry with a nonidentity key isn't a renaming.  A value can't use a variable with a different annotation than the one it renames.  And when the current context has locks that the metavariable's context doesn't, the value can't use variables behind them.
 
   $ narya -spatial - <<EOF
   > axiom A : Type
   > axiom C : A → Type
   > axiom D : (_ :♭| Type) → Type
   > def keyenv (h : (y :♭| A) → C y) : (y :♭| A) → Type ≔ let G : A → Type ≔ x ↦ C _ in y ↦ let k : G y ≔ h y in A
-  > axiom t : (y :♭| A) → D Type
-  > def mismatch : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in (_ : Type)) ≔ t y in A
+  > axiom e : (y :♭| A) → D (C y)
+  > def mismatch2 : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in C (_ : A)) ≔ e y in A
   > axiom d2 : (y :♭| A) → D ((z : A) → C y)
   > def lockscope : (y :♭| A) → Type ≔ y ↦ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d2 y in A
   > EOF
@@ -227,13 +305,13 @@ An environment entry with a nonidentity key isn't a renaming.  Nor is an entry w
   
    ￫ error[E0401]
    ￭ stdin
-   6 | def mismatch : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in (_ : Type)) ≔ t y in A
+   6 | def mismatch2 : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in C (_ : A)) ≔ e y in A
      ^ term synthesized type
-         D Type
+         D (C y)
        but is being checked against type
-         D (let only … in ?u1)
+         D (C (let only … in ?u1))
        unequal head terms:
-         Type
+         y
        does not equal
          let only … in ?u1
   
