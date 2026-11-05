@@ -160,6 +160,7 @@ let remake : type mode a b s. (File.t -> File.t) -> (mode, a, b, s) t -> (mode, 
 
 (* Printable names. *)
 let mode : type mode a b s. (mode, a, b, s) t -> mode Mode.t = fun (_, m) -> m.mode
+let tctx : type mode a b s. (mode, a, b, s) t -> (mode, b) Tctx.t = fun (_, m) -> m.len
 
 (* A defined metavariable bound to a named variable is named like "foo.bar._baz", where "foo.bar" is the name of its owner, as computed by the supplied function, and "baz" its local name.  If it has no owner, or the function isn't supplied, then the owner is replaced by its origin and autonumber, as in "F3.17._baz".  A defined metavariable not bound to a named variable, such as one inserted automatically to hold a bare case tree construct, is named like "foo.bar.__match.F3.17", with its sort, origin, and autonumber.  The owner and local name are stored in the definition of the metavariable, so they have to be supplied (see Global.meta_name). *)
 let name : type mode a b s.
