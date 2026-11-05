@@ -3906,8 +3906,18 @@ and synth : type mode a b s.
                                             Ctx.cube_vis ctx
                                               (Modality.filter_idempotent sfilter)
                                               x (CubeOf.subcube fb binds) in
-                                          Cod (sfilter, readback_nf sctx (TubeOf.find ecodt t))
-                                    in
+                                          (* As for the domains of an instantiated higher function-type, No_such_level indicates that some boundary of the codomain used an unavailable variable. *)
+                                          let cod =
+                                            Reporter.try_with ~fatal:(fun d ->
+                                                match d.message with
+                                                | No_such_level _ ->
+                                                    fatal ?loc:cod.loc
+                                                      (Invalid_higher_function
+                                                         "invalid codomain scope")
+                                                | _ -> fatal_diagnostic d)
+                                            @@ fun () -> readback_nf sctx (TubeOf.find ecodt t)
+                                          in
+                                          Cod (sfilter, cod) in
                                     CodCube.build n { build } in
                                   let tyargstbl = Hashtbl.create 10 in
                                   let tyargs =
