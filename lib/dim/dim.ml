@@ -80,6 +80,13 @@ let deg_of_name : string -> any_deg option =
   else if str = "sym" then Some (Any_deg sym)
   else None
 
+(* The second reflexivity name, such as "Id", is the one used for types. *)
+let is_type_deg_name : string -> bool =
+ fun str ->
+  match Endpoints.refl_names () with
+  | _ :: name :: _ -> str = name
+  | _ -> false
+
 (* A degeneracy with zero codomain is an iterated reflexivity: it degenerates a zero-dimensional term to some dimension k, which the user can write as k iterated applications of a reflexivity name, like "refl (refl x)" or "Id (Id X)".  (As in strings_of_deg, we assume that all the generators of the domain are reflexivity ones.)  We display it that way only when k is at most the caller-supplied maximum, which the user configures with the "display degeneracy names" command; otherwise we fall back on the superscript notation.  Thus name_of_deg returns the number of times its name should be applied, along with that name. *)
 let name_of_deg : type a b.
     sort:[ `Type | `Function | `Other ] * [ `Canonical | `Other ] ->

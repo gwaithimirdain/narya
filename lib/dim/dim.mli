@@ -7,6 +7,7 @@ open Monoid
 module D : sig
   include MonoidPos
 
+  val length : 'n t -> int
   val minus : 'mn t -> ('m, 'n, 'mn) plus -> 'm t
   val minus_uniq : ('m1, 'n, 'mn) plus -> ('m2, 'n, 'mn) plus -> ('m1, 'm2) Eq.t
   val minus_uniq' : 'm t -> ('m, 'n1, 'mn) plus -> ('m, 'n2, 'mn) plus -> ('n1, 'n2) Eq.t
@@ -964,6 +965,7 @@ val except_comp :
 
 (* *)
 val deg_of_name : string -> any_deg option
+val is_type_deg_name : string -> bool
 
 (* Returns the name a degeneracy should be displayed with, if any, and the number of times it should be applied ("max" is the greatest number of iterations the user wants displayed with names rather than a superscript). *)
 val name_of_deg :

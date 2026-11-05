@@ -1516,7 +1516,7 @@ They can also be unequal.
   
   [1]
 
-But a metavariable that is itself a higher-dimensional type isn't solved by an instantiation of it, although its arguments are.
+Since instantiation is generative, this can also solve a metavariable that is itself a higher-dimensional type.
 
   $ narya - <<EOF
   > axiom A : Type
@@ -1527,19 +1527,239 @@ But a metavariable that is itself a higher-dimensional type isn't solved by an i
   > axiom use : (F : Id Type A A) (x y : A) → Same Type (F x y) (Id A a₀ a₁) → Type
   > echo use _ _ _ (rf _ (Id A a₀ a₁))
   > EOF
-   ￫ error[E0401]
+  use (Id A) a₀ a₁ (rf Type (Id A a₀ a₁))
+    : Type
+  
+
+A degeneracy of a placeholder that is applied to arguments, using the name of the degeneracy for types, is a degeneracy of a placeholder for a zero-dimensional type.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > axiom a₂₀ : Id A a₀₀ a₁₀
+  > axiom a₂₁ : Id A a₀₁ a₁₁
+  > axiom t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > echo a₂ : Id _ a₀ a₁
+  > echo a₂ : Id _ _ _
+  > echo t : Id (Id _) a₀₂ a₁₂ a₂₀ a₂₁
+  > def f (x : A) : Id _ x x ≔ refl x
+  > echo f a₀
+  > EOF
+  a₂
+    : Id A a₀ a₁
+  
+  a₂
+    : Id A a₀ a₁
+  
+  t
+    : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁
+  
+  refl a₀
+    : Id A a₀ a₀
+  
+
+This uses the same name that is displayed for degeneracies of types, which can be changed.
+
+  $ narya -parametric -direction p,rel,Br - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Br A a₀ a₁
+  > echo a₂ : Br _ a₀ a₁
+  > EOF
+  a₂
+    : Br A a₀ a₁
+  
+
+Its other names and its superscript don't do this, since they could also be degeneracies of functions.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > axiom f : A → A
+  > echo a₂ : refl _ a₀ a₁
+  > echo a₂ : ap _ a₀ a₁
+  > echo a₂ : _⁽ᵉ⁾ a₀ a₁
+  > echo refl _ a₂ : Id A (f a₀) (f a₁)
+  > EOF
+   ￫ error[E0400]
    ￭ stdin
-   7 | echo use _ _ _ (rf _ (Id A a₀ a₁))
-     ^ term synthesized type
-         Same Type (Id A a₀ a₁) (Id A a₀ a₁)
-       but is being checked against type
-         Same Type (?u0 a₀ a₁) (Id A a₀ a₁)
-       unequal head terms:
-         Id A
-       does not equal
-         ?u0
+   6 | echo a₂ : refl _ a₀ a₁
+     ^ non-synthesizing term in synthesizing position (degeneracy of placeholder function)
+  
+   ￫ error[E0400]
+   ￭ stdin
+   7 | echo a₂ : ap _ a₀ a₁
+     ^ non-synthesizing term in synthesizing position (degeneracy of placeholder function)
+  
+   ￫ error[E0400]
+   ￭ stdin
+   8 | echo a₂ : _⁽ᵉ⁾ a₀ a₁
+     ^ non-synthesizing term in synthesizing position (degeneracy of placeholder function)
+  
+   ￫ error[E0400]
+   ￭ stdin
+   9 | echo refl _ a₂ : Id A (f a₀) (f a₁)
+     ^ non-synthesizing term in synthesizing position (degeneracy of placeholder function)
   
   [1]
+
+The dimension of the placeholder is determined by the number of explicit arguments, assuming that the type is fully instantiated.  Thus, it can be a higher-dimensional type that isn't a degeneracy of anything, and can be solved by comparing it with one.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > axiom a₂₀ : Id A a₀₀ a₁₀
+  > axiom a₂₁ : Id A a₀₁ a₁₁
+  > axiom t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > echo t : Id _ a₀₂ a₁₂ a₂₀ a₂₁
+  > echo t : Id _ {a₀₀} {a₀₁} a₀₂ {a₁₀} {a₁₁} a₁₂ a₂₀ a₂₁
+  > echo t : Id _ {_} {_} _ {_} {_} _ _ _
+  > EOF
+  t
+    : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁
+  
+  t
+    : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁
+  
+  t
+    : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁
+  
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > axiom R : A → B → Type
+  > def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > axiom b₀ : B
+  > axiom b₁ : B
+  > axiom b₂ : Id B b₀ b₁
+  > axiom x₀ : Gel A B R a₀ b₀
+  > axiom x₁ : Gel A B R a₁ b₁
+  > axiom t : Id (Gel A B R) a₂ b₂ x₀ x₁
+  > echo t : Id _ a₂ b₂ x₀ x₁
+  > EOF
+  t
+    : Gel⁽ᵉ⁾ (Id A) (Id B) (Id R) a₂ b₂ x₀ x₁
+  
+
+The number of arguments for a given dimension depends on the arity.
+
+  $ narya -arity 1 -direction r,refl,Id -parametric - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : Id A a₀
+  > axiom a₂ : Id (Id A) a₁ a₁
+  > echo a₁ : Id _ a₀
+  > echo a₂ : Id _ a₁ a₁
+  > EOF
+  a₁
+    : Id A a₀
+  
+  a₂
+    : A⁽ʳʳ⁾ a₁ a₁
+  
+
+  $ narya -parametric -arity 3 -direction r,refl,Id - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : Id A a₀ a₀ a₀
+  > echo a₁ : Id _ a₀ a₀ a₀
+  > EOF
+  a₁
+    : Id A a₀ a₀ a₀
+  
+
+With arity zero, however, there is no boundary to determine the placeholder.
+
+  $ narya -parametric -arity 0 -direction w,wk,Wk - <<EOF
+  > axiom A : Type
+  > axiom a : Wk A .
+  > echo a : Wk _ .
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   3 | echo a : Wk _ .
+     ^ term synthesized type
+         Wk A .
+       but is being checked against type
+         wk ?u0 .
+       unequal head terms:
+         Wk A
+       does not equal
+         wk ?u0
+  
+  [1]
+
+If the type is only partially instantiated, the placeholder has the wrong dimension, and has to be given by hand.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > echo Id (Id A) a₀₂ a₁₂
+  > echo Id (Id _) a₀₂ a₁₂
+  > echo Id _ a₀₂ a₁₂
+  > EOF
+  A⁽ᵉᵉ⁾ a₀₂ a₁₂
+    : Type⁽ᵉ⁾ (Id A a₀₀ a₁₀) (Id A a₀₁ a₁₁)
+  
+  A⁽ᵉᵉ⁾ a₀₂ a₁₂
+    : Type⁽ᵉ⁾ (Id A a₀₀ a₁₀) (Id A a₀₁ a₁₁)
+  
+   ￫ error[E0401]
+   ￭ stdin
+   10 | echo Id _ a₀₂ a₁₂
+      ^ term synthesized type
+          Id A a₁₀ a₁₁
+        but is being checked against type
+          Id A a₀₀ a₀₁
+        unequal head constants:
+          a₁₀
+        does not equal
+          a₀₀
+  
+  [1]
+
+And the primary arguments have to synthesize if their boundaries are implicit.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > axiom t : Id (Id A) a₂ a₂ (refl a₀) (refl a₁)
+  > echo t : Id _ _ _ _ _
+  > EOF
+   ￫ error[E0400]
+   ￭ stdin
+   6 | echo t : Id _ _ _ _ _
+     ^ non-synthesizing term in synthesizing position (primary argument with implicit instantiation boundaries)
+  
+  [1]
+
 
 An ascribed type is checked speculatively.  A metavariable created inside a speculation that succeeds can be solved outside it afterwards.  But a speculation can't solve a metavariable created outside it, since if the speculation were backtracked, values created outside it might retain consequences of the solution.
 
