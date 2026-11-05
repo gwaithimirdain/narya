@@ -125,11 +125,15 @@ type expansion =
 type expander = {
   expand :
     'mode 'a 'b.
-    ('mode, 'a, 'b) Ctx.t -> ('mode, kinetic) value -> expansion list -> ('mode, 'b, kinetic) term;
+    ('mode, 'a, 'b) Ctx.t ->
+    ('mode, kinetic) value ->
+    ('mode, 'a, 'b, kinetic) Meta.t ->
+    expansion list ->
+    ('mode, 'b, kinetic) term;
 }
 
 let expander : expander ref =
-  ref { expand = (fun _ _ _ -> fatal (Anomaly "unification not installed")) }
+  ref { expand = (fun _ _ _ _ -> fatal (Anomaly "unification not installed")) }
 
 (* The names of the fields that a tuple at a record type must have, at some dimension.  A modal field whose modality is nonparametric disappears at a dimension it filters nontrivially, and must be omitted. *)
 let field_names : type mode a m n et.
@@ -224,7 +228,7 @@ let try_expand : type mode a b.
           | None -> false
           | Some shape -> (
               let mty = eval_term (Ctx.env mctx) (Global.meta_ty meta kind) in
-              Global.solve_unif meta (!expander.expand mctx mty shape);
+              Global.solve_unif meta (!expander.expand mctx mty meta shape);
               (* Now u has a value, whose head is a metavariable created for a tuple component, so we can try again to solve that. *)
               let result =
                 match ty with
@@ -283,7 +287,7 @@ let rec solve_singletons () =
               match shape with
               | [] -> ()
               | _ :: _ ->
-                  Global.solve_unif meta (!expander.expand ctx ety shape);
+                  Global.solve_unif meta (!expander.expand ctx ety meta shape);
                   changed := true);
     };
   if !changed then solve_singletons ()

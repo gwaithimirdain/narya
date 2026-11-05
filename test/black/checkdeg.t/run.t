@@ -272,6 +272,8 @@
    ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/degblank.nyo
   
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ command-line exec string
+   1 | import "degblank" echo sym _ : Id (Id A) a2 a2 (refl a0) (refl a1)
+     ^ can't determine a value for this placeholder
   
   [1]

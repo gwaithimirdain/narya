@@ -79,9 +79,12 @@ val add_unif :
   ctx:('mode, 'a, 'b) Ctx.t ->
   ty:('mode, 'b, kinetic) term ->
   termctx:('mode, 'a, 'b) termctx Lazy.t ->
+  loc:Asai.Range.t option ->
+  err:Reporter.Code.t ->
   unit
 
 val unif_ctx : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'a, 'b) Ctx.t
+val unif_error : ('mode, 'a, 'b, kinetic) Meta.t -> Asai.Range.t option * Reporter.Code.t
 val unif_assignable : ('mode, 'a, 'b, kinetic) Meta.t -> bool
 val solve_unif : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'b, kinetic) term -> unit
 

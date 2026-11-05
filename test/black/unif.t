@@ -18,16 +18,24 @@ Placeholders "_" in term positions create unification metavariables.  Any comman
    ￮ axiom a assumed
   
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   3 | def x : A ≔ _
+     ^ can't determine a value for this placeholder
   
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   4 | def f (y : _) : A ≔ a
+     ^ can't determine a value for this placeholder
   
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   5 | def g (y : A) : A ≔ match y [ _ ↦ _ ]
+     ^ can't determine a value for this placeholder
   
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   6 | echo (_ : A)
+     ^ can't determine a value for this placeholder
   
    ￫ info[I0000]
    ￮ constant ok defined
@@ -666,7 +674,9 @@ The other fields stay unknown, and can leave unsolved metavariables.  A codataty
   > def samem : A ≔ let p : Pr ≔ _ in let k : Id A (p .fst) (p .snd) ≔ refl (p .snd) in a0
   > EOF
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   5 | def onefield : A ≔ let p : Pr ≔ _ in let k : Id A (p .fst) a0 ≔ refl a0 in a0
+     ^ can't determine a value for this placeholder
   
    ￫ error[E0401]
    ￭ stdin
@@ -761,7 +771,9 @@ A comparison of two neutral spines can fail and then succeed by unfolding them, 
   > echo later
   > EOF
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   8 | def unconstrained : A ≔ let v : A ≔ _ in let k : Id A (g v b1) (g a1 b2) ≔ refl (g a1 b2) in v
+     ^ can't determine a value for this placeholder
   
   a2
     : A
@@ -1006,16 +1018,29 @@ Other types aren't singletons, even if they have one constructor, and neither is
   > def metaty : Top ≔ let X : Type ≔ _ in let y : X ≔ _ in ()
   > EOF
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   5 | def notsing : Pr ≔ _
+     ^ can't determine a value for this placeholder
   
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   6 | def data1 : One ≔ _
+     ^ can't determine a value for this placeholder
   
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   7 | def neutralty (T : Type) : T ≔ _
+     ^ can't determine a value for this placeholder
   
    ￫ error[E2004]
-   ￮ there are 2 unsolved unification metavariables
+   ￭ stdin
+   8 | def metaty : Top ≔ let X : Type ≔ _ in let y : X ≔ _ in ()
+     ^ can't determine a value for this placeholder
+  
+   ￫ error[E2004]
+   ￭ stdin
+   8 | def metaty : Top ≔ let X : Type ≔ _ in let y : X ≔ _ in ()
+     ^ can't determine a value for this placeholder
   
   [1]
 
@@ -1487,7 +1512,19 @@ An instantiation is determined even if the metavariable in the head is the same,
   > echo use _ _ _ _ _ (rf _ _)
   > EOF
    ￫ error[E2004]
-   ￮ there are 3 unsolved unification metavariables
+   ￭ stdin
+   4 | echo use _ _ _ _ _ (rf _ _)
+     ^ can't determine a value for this placeholder
+  
+   ￫ error[E2004]
+   ￭ stdin
+   4 | echo use _ _ _ _ _ (rf _ _)
+     ^ can't determine a value for this placeholder
+  
+   ￫ error[E2004]
+   ￭ stdin
+   4 | echo use _ _ _ _ _ (rf _ _)
+     ^ can't determine a value for this placeholder
   
   [1]
 
@@ -1844,15 +1881,62 @@ But one that does have them is still synthesized.
     : Id A (f a₀) (f a₁)
   
 
-If nothing determines them, they are left unsolved.
+If nothing determines them, then the primary argument didn't have enough information.
 
   $ narya - <<EOF
   > axiom A : Type
   > axiom f : A → A
   > echo refl f ?
   > EOF
+   ￫ error[E0400]
+   ￭ stdin
+   3 | echo refl f ?
+     ^ non-synthesizing term in synthesizing position (primary argument with implicit higher-dimensional application boundaries)
+  
+  [1]
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom f : A → A
+  > echo refl f _
+  > EOF
+   ￫ error[E0400]
+   ￭ stdin
+   3 | echo refl f _
+     ^ non-synthesizing term in synthesizing position (primary argument with implicit higher-dimensional application boundaries)
+  
+  [1]
+
+Every unsolved metavariable with a different location is reported, while metavariables created together for the same term are reported once.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > def Pr : Type ≔ sig ( fst : A, snd : A )
+  > axiom g : A → A → A
+  > echo g _ a
+  > echo g _ _
+  > def two : Pr ≔ let p : Pr ≔ _ in p
+  > EOF
    ￫ error[E2004]
-   ￮ there are 2 unsolved unification metavariables
+   ￭ stdin
+   5 | echo g _ a
+     ^ can't determine a value for this placeholder
+  
+   ￫ error[E2004]
+   ￭ stdin
+   6 | echo g _ _
+     ^ can't determine a value for this placeholder
+  
+   ￫ error[E2004]
+   ￭ stdin
+   6 | echo g _ _
+     ^ can't determine a value for this placeholder
+  
+   ￫ error[E2004]
+   ￭ stdin
+   7 | def two : Pr ≔ let p : Pr ≔ _ in p
+     ^ can't determine a value for this placeholder
   
   [1]
 
@@ -2060,6 +2144,8 @@ A unification metavariable whose environment is not a renaming can't be solved y
          let only a : A ≔ a and b : B a ≔ b and x : A ≔ a in ?u2
   
    ￫ error[E2004]
-   ￮ there is 1 unsolved unification metavariable
+   ￭ stdin
+   8 | def H (a : A) : Type ≔ let G : A → Type ≔ x ↦ B _ in let k : G a → G a ≔ y ↦ y in A
+     ^ can't determine a value for this placeholder
   
   [1]
