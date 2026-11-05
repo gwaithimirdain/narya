@@ -512,6 +512,35 @@ and synth_has_case_tree : type a. a synth -> bool = function
   | ImplicitSApp _
   | Calc _ -> false
 
+(* Whether a term that is syntactically synthesizing has all the synthesizing subterms that it needs in order to actually synthesize.  This is used to decide up front, without backtracking, whether to synthesize a term or check it.  It's only syntactic, so a term may of course still fail to synthesize for other reasons, such as a failure in typechecking one of its subterms. *)
+let rec synth_has_synth : type a. a synth -> bool = function
+  | Var _ | Const _ | UU _ | Pi _ | InstHigherPi _ | Asc _ | Fail _ -> true
+  | Field (tm, _, _) | Key (tm, _) -> synth_has_synth tm.value
+  | HigherPi (_, _, dom, cod) -> synth_has_synth dom.value && synth_has_synth cod.value
+  | AscLam (_, _, _, body) -> synth_has_synth body.value
+  | App (fn, _, _) -> head_has_synth fn.value
+  | Let (_, _, v, body) -> synth_has_synth v.value && check_has_synth body.value
+  | Letrec (_, _, body) -> check_has_synth body.value
+  | Letonly (_, _, body) -> synth_has_synth body.value
+  | Act (_, _, Some x) -> check_has_synth x.value
+  | Act (_, _, None) -> false
+  | Match { tm; sort = `Explicit _; _ } -> synth_has_synth tm.value
+  | Match { tm; branches; _ } ->
+      synth_has_synth tm.value
+      && Bwd.exists (fun (_, Branch (_, _, body)) -> check_has_synth body.value) branches
+  | ImplicitSApp (fn, _, arg) -> synth_has_synth fn.value && synth_has_synth arg.value
+  | SFirst (alts, _) -> List.exists (fun (_, tm, _) -> synth_has_synth tm) alts
+  | Calc (x, _) -> synth_has_synth x.value
+
+and check_has_synth : type a. a check -> bool = function
+  | Synth tm -> synth_has_synth tm
+  | _ -> false
+
+(* The head of an application can also be a degeneracy of a placeholder, if it is one for types (see synth_or_check_apps). *)
+and head_has_synth : type a. a check -> bool = function
+  | Synth (Act (_, _, Some x)) -> head_has_synth x.value
+  | tm -> check_has_synth tm
+
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential). *)
 let rec check : type mode a b s.
     (mode, b, s) status ->
@@ -4594,7 +4623,8 @@ and synth_arg_cube : type dom modality mode a b n c.
     (* If the first argument is implicit, or if the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
     | (_, _, { value = `Implicit; _ }) :: _, Pos _, false | _, Zero, _ | _, _, true -> Take
     (* Otherwise, the first argument must be explicit and synthesizing. *)
-    | (_, { value = Some (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false -> (
+    | (_, { value = Some (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false
+      when synth_has_synth toptm -> (
         (* We synthesize its type, extract the instantiation arguments, and store them to fill in the boundary arguments. *)
         let _, argty = synth Kinetic lctx (locate_opt loc toptm) in
         let (Full_tube argtyargs) = get_tyargs argty "primary argument" in
