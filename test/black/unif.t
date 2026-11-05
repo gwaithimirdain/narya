@@ -1940,7 +1940,7 @@ Every unsolved metavariable with a different location is reported, while metavar
   
   [1]
 
-And a constructor can't yet determine them, since it requires its boundary to already be constructors.
+A constructor can determine them too, since its boundary must consist of instances of the same constructor.  So if a metavariable appears in that boundary, it is solved by an application of that constructor to new metavariables.
 
   $ narya - <<EOF
   > axiom A : Type
@@ -1950,15 +1950,105 @@ And a constructor can't yet determine them, since it requires its boundary to al
   > axiom n₁ : N
   > axiom n₂ : Id N n₀ n₁
   > echo refl g (suc. n₂)
+  > echo refl g zero.
+  > echo refl g (suc. (suc. n₂))
+  > echo suc. n₂ : Id N _ _
+  > axiom n₀₀ : N
+  > axiom n₀₁ : N
+  > axiom n₀₂ : Id N n₀₀ n₀₁
+  > axiom n₁₀ : N
+  > axiom n₁₁ : N
+  > axiom n₁₂ : Id N n₁₀ n₁₁
+  > axiom n₂₀ : Id N n₀₀ n₁₀
+  > axiom n₂₁ : Id N n₀₁ n₁₁
+  > axiom t : Id (Id N) n₀₂ n₁₂ n₂₀ n₂₁
+  > echo suc. t : Id (Id N) _ _ _ _
+  > def Vec (T : Type) : N → Type ≔ data [ nil. : Vec T zero. | cons. (n : N) (x : T) (xs : Vec T n) : Vec T (suc. n) ]
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > echo nil. : Id (Vec A zero.) _ _
+  > axiom v₀ : Vec A n₀
+  > axiom v₁ : Vec A n₁
+  > axiom v₂ : Id (Vec A) n₂ v₀ v₁
+  > echo cons. n₂ a₂ v₂ : Id (Vec A) (suc. n₂) _ _
+  > EOF
+  ap g {suc. n₀} {suc. n₁} (suc. n₂)
+    : Id A (g (suc. n₀)) (g (suc. n₁))
+  
+  ap g {0} {0} (refl 0)
+    : Id A (g 0) (g 0)
+  
+  ap g {suc. (suc. n₀)} {suc. (suc. n₁)} (suc. (suc. n₂))
+    : Id A (g (suc. (suc. n₀))) (g (suc. (suc. n₁)))
+  
+  suc. n₂
+    : N⁽ᵉ⁾ (suc. n₀) (suc. n₁)
+  
+  suc. t
+    : N⁽ᵉᵉ⁾ {suc. n₀₀} {suc. n₀₁} (suc. n₀₂) {suc. n₁₀} {suc. n₁₁} (suc. n₁₂)
+        (suc. n₂₀) (suc. n₂₁)
+  
+  nil.
+    : Vec⁽ᵉ⁾ (Id A) {0} {0} (refl 0) nil. nil.
+  
+  cons. n₂ a₂ v₂
+    : Vec⁽ᵉ⁾ (Id A) {suc. n₀} {suc. n₁} (suc. n₂) (cons. n₀ a₀ v₀)
+        (cons. n₁ a₁ v₁)
+  
+
+This also works when the environment of the metavariable is a renaming, or it is applied to variables, since then a substitution can't produce a constructor from something else.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > def N : Type ≔ data [ zero. | suc. (_ : N) ]
+  > def ren : N → Type ≔ let G : N → N ≔ x ↦ _ in y ↦ let p : Id N (G y) (suc. y) ≔ suc. (refl y) in A
+  > about ren
+  > axiom use : (f : N → N) → ((y : N) → Id N (f y) (suc. y)) → Type
+  > echo use _ (y ↦ suc. (refl y))
+  > EOF
+  let G ≔ x ↦ suc. x in y ↦ let p ≔ suc. (refl y) in A
+    : N → Type
+  
+  use (𝑥 ↦ suc. 𝑥) (y ↦ suc. (refl y))
+    : Type
+  
+
+But not otherwise, since then the metavariable could be something that is not a constructor.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > def N : Type ≔ data [ zero. | suc. (_ : N) ]
+  > def nonren (y : N) : Type ≔ let G : N → N ≔ x ↦ _ in let p : Id N (G (suc. y)) (G (suc. y)) ≔ suc. (refl y) in A
   > EOF
    ￫ error[E1002]
    ￭ stdin
-   7 | echo refl g (suc. n₂)
+   3 | def nonren (y : N) : Type ≔ let G : N → N ≔ x ↦ _ in let p : Id N (G (suc. y)) (G (suc. y)) ≔ suc. (refl y) in A
      ^ instantiation arguments of datatype must be matching constructors:
        expected
          suc
        but got
-         ?u0
+         let only … in ?u0
+  
+  [1]
+
+And the boundary must still consist of the same constructor.
+
+  $ narya - <<EOF
+  > def N : Type ≔ data [ zero. | suc. (_ : N) ]
+  > axiom n₀ : N
+  > axiom n₁ : N
+  > axiom n₂ : Id N n₀ n₁
+  > echo suc. n₂ : Id N _ zero.
+  > EOF
+   ￫ error[E1002]
+   ￭ stdin
+   5 | echo suc. n₂ : Id N _ zero.
+     ^ instantiation arguments of datatype must be matching constructors:
+       expected
+         suc
+       but got
+         zero
   
   [1]
 
