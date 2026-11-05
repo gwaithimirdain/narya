@@ -110,7 +110,7 @@ let try_solve : type mode a b.
             (Some (gact_ty None ty pinv idc)))
   | _ -> try_solve_direct ctx u v ty
 
-(* A metavariable that is projected from, perhaps after being applied to some arguments, has to be solved by a tuple, since we can only get information about one field from the projection, and the other fields have to be left unknown.  This is always correct, by eta-conversion, so it doesn't affect whether the solution is most general; but it does create more metavariables, so we do it only when solving an equation that requires it.  To avoid having to duplicate the logic for typechecking tuples, particularly regarding modal fields (whose components live in a locked context, and possibly a different mode), we do this by constructing a raw term out of abstractions, tuples, and placeholders, and typechecking it at the type of the metavariable.  Since typechecking comes later, we record here just the shape of the term, consisting of an abstraction for each argument (with a name, and whether it is a cube abstraction) and a tuple for each projection (with all the field names and the one that continues).  There is no need for a final sequence of abstractions, since the metavariables created for the tuple components can just be applied to the same arguments. *)
+(* A metavariable that is projected from, perhaps after being applied to some arguments, has to be solved by a tuple, since we can only get information about one field from the projection, and the other fields have to be left unknown.  This is always correct, by eta-conversion, so it doesn't affect whether the solution is most general; but it does create more metavariables, so we do it only when solving an equation that requires it.  To avoid having to duplicate the logic for typechecking tuples, particularly regarding modal fields (whose components live in a locked context, and possibly a different mode), we do this by constructing a raw term out of abstractions, tuples, and placeholders, and typechecking it at the type of the metavariable.  Since typechecking comes later, we record here just the shape of the term, consisting of an abstraction for each argument (with a name, and whether it is a cube abstraction), a tuple for each projection (with all the field names and the one that continues), and a permutation wherever the occurrence of the metavariable has one, since then the term that is projected from is that permutation of the metavariable and hence the metavariable must be its inverse acting on a tuple.  There is no need for a final sequence of abstractions, since the metavariables created for the tuple components can just be applied to the same arguments. *)
 type expansion =
   | Abs : string option * bool -> expansion
   | Tuple : string list * string -> expansion
@@ -139,27 +139,33 @@ let field_names : type mode a m n et.
 
 (* Compute the shape of the expansion needed by a metavariable with an application spine, given the value of the metavariable with no spine, if it is possible.  We replay the spine on that value in order to be able to compute the type at each point. *)
 let expansion_shape : type hmode mode any.
-    (hmode, kinetic) value -> (hmode, mode, any, live) apps -> expansion list option =
- fun head args ->
+    (hmode, kinetic) value ->
+    expansion list ->
+    (hmode, mode, any, live) apps ->
+    expansion list option =
+ fun head start args ->
   let exception Stuck in
   let tyof : type m. (m, kinetic) value -> m View.view_type = function
     | Neu { ty; _ } -> view_type ~severity:Asai.Diagnostic.Error (Lazy.force ty) "expansion_shape"
     | _ -> raise_notrace Stuck in
   let rec go : type m any. (hmode, m, any, live) apps -> (m, kinetic) value * expansion list =
     function
-    | Emp -> (head, [])
+    | Emp -> (head, start)
     | Snoc (args, entry) ->
         let cur, shape = go args in
         let shape =
           match entry with
-          | Arg (_, xs, _) -> (
+          | Arg (_, xs, ins) -> (
               match tyof cur with
-              | Canonical (_, Pi { x; _ }, _, _) ->
+              | Canonical (_, Pi { x; _ }, _, _) -> (
                   let cube =
                     match D.compare_zero (CubeOf.dim xs) with
                     | Zero -> false
                     | Pos _ -> true in
-                  Abs (option_of_binder_name (top_variable x), cube) :: shape
+                  let shape = Abs (option_of_binder_name (top_variable x), cube) :: shape in
+                  match inverse_of_ins ins with
+                  | Some (Any_deg pinv) -> Perm pinv :: shape
+                  | None -> shape)
               | _ -> raise_notrace Stuck)
           | Field (_, fld, _, _) -> (
               match tyof cur with
@@ -170,7 +176,7 @@ let expansion_shape : type hmode mode any.
         let (Val next) = app_eval_entry (Val cur) entry in
         (next, shape) in
   let rec trim = function
-    | Abs _ :: shape -> trim shape
+    | (Abs _ | Perm _) :: shape -> trim shape
     | shape -> shape in
   try
     match trim (snd (go args)) with
@@ -188,21 +194,29 @@ let try_expand : type mode a b.
  fun ctx u v ty ->
   match u with
   | Neu { head = Live (Meta { meta; kind = Unif_meta unif as kind; env; ins }); args; _ } -> (
-      match (is_id_ins ins, arg_spine args, v) with
-      | None, _, _ | _, Some _, _ -> false
-      | _, _, Neu { head = Live (Meta { meta = meta'; _ }); _ }
+      match (arg_spine args, v) with
+      | Some _, _ -> false
+      | _, Neu { head = Live (Meta { meta = meta'; _ }); _ }
         when match Meta.compare meta meta' with
              | Eq -> true
              | Neq -> false -> false
-      | Some _, None, _ -> (
+      | None, _ -> (
           (Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta)
           &&
+          let mctx = Global.unif_ctx meta in
           let head = eval_term env (Meta (meta, kind, Kinetic)) in
+          (* A permutation on the metavariable itself only acts on the dimensions of its type if its environment doesn't contribute any others. *)
+          let start =
+            match (inverse_of_ins ins, D.compare_zero (cod_left_ins ins)) with
+            | None, _ -> Some (head, [])
+            | Some (Any_deg pinv), Zero ->
+                let (Perm_to p) = perm_of_ins ins in
+                Some (act_value head (deg_of_perm p) (Modalcell.id2 (Ctx.mode mctx)), [ Perm pinv ])
+            | Some _, Pos _ -> None in
           Reporter.discard_errors ~fallback:(fun () -> false) @@ fun () ->
-          match expansion_shape head args with
+          match Option.bind start (fun (head, start) -> expansion_shape head start args) with
           | None -> false
           | Some shape -> (
-              let mctx = Global.unif_ctx meta in
               let mty = eval_term (Ctx.env mctx) (Global.meta_ty meta kind) in
               Global.solve_unif meta (!expander.expand mctx mty shape);
               (* Now u has a value, whose head is a metavariable created for a tuple component, so we can try again to solve that. *)
