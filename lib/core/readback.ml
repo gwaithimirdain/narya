@@ -782,7 +782,7 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
   (* A failed term is read back as Failed, without forcing its value (which would fail). *)
   | Neu { head = Failed _; _ } -> Failed Kinetic
   | Neu { head = Live head; args; value; ty } -> (
-      match unfold_for_unifying head value with
+      match unfold_solved head value with
       | Some v -> readback_at Kinetic ctx v (Lazy.force ty)
       | None -> (
           match (force_eval value, Displaying.read ()) with
@@ -794,12 +794,18 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
   | Canonical _ -> fatal (Anomaly "unexpected canonical type in synthesizing readback")
 
-(* When reading back the solution of a unification metavariable (see Unifying), decide whether a neutral with a given head must be unfolded to its value, which is then returned, or whether the readback fails. *)
-and unfold_for_unifying : type hmode mode.
+(* A solved unification metavariable is always read back as its solution, since that is what it will become when the term is linked.  This matters because its environment contains its whole context, and thus might use variables that aren't in the context we are reading back in, even if the solution doesn't.  Moreover, when reading back the solution of another unification metavariable (see Unifying), decide whether a neutral with a given head must be unfolded to its value, which is then returned, or whether the readback fails. *)
+and unfold_solved : type hmode mode.
     hmode head -> (mode, potential) lazy_eval -> (mode, kinetic) value option =
  fun head value ->
   match Unifying.read () with
-  | None -> None
+  | None -> (
+      match head with
+      | Meta { meta; kind = Unif_meta unif; _ } when Global.unif_status meta unif <> `Unsolved -> (
+          match force_eval value with
+          | Realize v -> Some v
+          | _ -> None)
+      | _ -> None)
   | Some (Wrap target) -> (
       let unfold () =
         match force_eval value with
@@ -1651,7 +1657,7 @@ type (_, _) renamed_args =
 type _ contractible =
   | Contractible : 'hmode head * ('hmode, 'mode, 'any, live) apps -> 'mode contractible
 
-(* A prefix of a neutral doesn't have a stored value, so we can only contract neutrals whose readback doesn't need to look at it (see unfold_for_unifying). *)
+(* A prefix of a neutral doesn't have a stored value, so we can only contract neutrals whose readback doesn't need to look at it (see unfold_solved). *)
 let contractible : type mode. (mode, kinetic) value -> mode contractible option = function
   | Neu { head = Live (Var _ as head); args; _ } -> Some (Contractible (head, args))
   | Neu { head = Live (Const _ as head); args; _ } -> Some (Contractible (head, args))
