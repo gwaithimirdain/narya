@@ -4853,7 +4853,42 @@ and synth_or_check_apps : type mode a b.
       let stm, sty = synth_apps ctx { value = sfn; loc = fn.loc } sty fn args in
       (stm, sty)
   (* Otherwise, we try getting information from the arguments. *)
-  | _, (_, None) -> fatal (Nonsynthesizing "degeneracy of placeholder function")
+  (* A degeneracy of a placeholder has no type to apply to the arguments.  In general we can't guess one, since "refl ?g x y" and "refl ?A x y" could both make sense.  But if the user wrote the name of the degeneracy that is used for types, such as "Id ?A x y", we take them at their word that it is a degeneracy of a type.  We guess the dimension of that type from the number of explicit arguments, assuming that it is to be fully instantiated.  (If it is only partially instantiated, the user will have to give it a type.) *)
+  | _, (_, None) ->
+      let (Wrap arity) = Endpoints.wrapped () in
+      let arity = N.to_int (Endpoints.len arity) in
+      let explicit =
+        List.length (List.filter (fun (_, _, (i : _ located)) -> i.value = `Explicit) args) in
+      let rec depth : a check located -> int =
+       fun fn ->
+        match fn.value with
+        | Synth (Act (_, s, x)) ->
+            D.length (dom_deg s) - D.length (cod_deg s) + Option.fold ~none:0 ~some:depth x
+        | _ -> 0 in
+      let total = if arity > 0 && explicit mod arity = 0 then explicit / arity else 0 in
+      let dim = max 0 (total - depth fn) in
+      let located x = locate_opt fn.loc x in
+      let app i fn = located (Synth (App (fn, located (Some Unif), located i))) in
+      (* The type of a dim-dimensional type is an instantiation of an iterated degeneracy of the universe, at placeholders. *)
+      let rec iterate : 'x. int -> ('x -> 'x) -> 'x -> 'x =
+       fun n f x -> if n = 0 then x else iterate (n - 1) f (f x) in
+      let rec with_type : a check located -> a check located =
+       fun fn ->
+        match fn.value with
+        | Synth (Act (str, s, None)) when is_type_deg_name str.value ->
+            let act x = located (Synth (Act (str, s, Some x))) in
+            let uu = iterate dim act (located (Synth (UU (Ctx.mode ctx)))) in
+            (* Instantiating by one dimension from j takes a whole cube of dimension j-1 for each endpoint, all but the last argument of which are implicit. *)
+            let rec inst j ty =
+              if j = 0 then ty
+              else
+                let faces = iterate (j - 1) (fun x -> x * (arity + 1)) 1 in
+                let cube ty = app `Explicit (iterate (faces - 1) (app `Implicit) ty) in
+                inst (j - 1) (iterate arity cube ty) in
+            act (located (Synth (Asc (located Unif, inst dim uu))))
+        | Synth (Act (str, s, Some x)) -> located (Synth (Act (str, s, Some (with_type x))))
+        | _ -> fatal (Nonsynthesizing "degeneracy of placeholder function") in
+      synth_or_check_apps ctx (with_type fn) args ty
   | _, (Any_deg s, Some fn) -> (
       match D.compare_zero (cod_deg s) with
       | Zero ->

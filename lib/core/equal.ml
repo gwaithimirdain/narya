@@ -155,10 +155,17 @@ and equal_neu_or_unfold : type mode a b.
         match equal_instantiations ctx x y with
         | None -> Error err
         | Some (Error _ as result) -> result
-        | Some (Ok ()) ->
+        | Some (Ok ()) -> (
             let vx = view_term x in
             let vy = view_term y in
-            if vx != x || vy != y then retry vx vy else flexibly (fun () -> equal_neu ctx x y))
+            if vx != x || vy != y then retry vx vy
+            else
+              match flexibly (fun () -> equal_neu ctx x y) with
+              | Ok () -> Ok ()
+              | Error _ ->
+                  (* The types that are being instantiated must also be equal, which may solve a metavariable that is itself a higher-dimensional type. *)
+                  let mode = Ctx.mode ctx in
+                  equal_nf ctx (uninstantiate mode x) (uninstantiate mode y)))
 
 (* Compare the instantiation arguments of two types that are both instantiated, comparing the types of those arguments first. *)
 and equal_instantiations : type mode a b.
