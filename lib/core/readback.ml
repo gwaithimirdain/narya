@@ -198,7 +198,10 @@ let rec is_identity_ordered_env : type mode a b c d.
                                if
                                  not
                                    (match (Binding.level b, Binding.value_opt b) with
-                                   | Some level, _ -> is_plain_var level (act x s pre)
+                                   (* A free variable's value is itself, except in a renamed context, where it may be a permutation of a variable (see renamed_var), and then a plain occurrence of that variable is not the same as the variable bound here. *)
+                                   | Some level, Some v ->
+                                       is_plain_var level v.tm && is_plain_var level (act x s pre)
+                                   | Some level, None -> is_plain_var level (act x s pre)
                                    | None, Some v -> v.tm == act x s pre
                                    | None, None -> false)
                                then raise_notrace Not_identity);
@@ -417,6 +420,18 @@ type (_, _, _, _, _, _) readback_entry =
       -> ('mode, 'ax, 'bb, 'modality, 'dom, 'n) readback_entry
 
 (* These functions deal primarily with kinetic values, and with the value types that are shared between kinetic and potential values, but they include hooks to detect when readback of potential values is called for and pass off to those functions defined later. *)
+
+(* In a renamed context (see below), a variable of the metavariable's context may be sent to a permutation p of a variable y of the current context.  Inverting this, y is the inverse permutation of the variable of the metavariable's context, and so a degeneracy acting on y acts on that.  In any other context, the value of a free variable is that variable itself, so this does nothing. *)
+let renamed_deg : type mode s m n. (mode, s) value -> (m, n) deg -> any_deg =
+ fun value deg ->
+  match value with
+  | Neu { head = Live (Var { deg = p; _ }); args = Emp; _ } -> (
+      match (is_id_deg p, perm_of_deg p) with
+      | None, Some p ->
+          let (DegExt (_, _, deg)) = comp_deg_extending (deg_of_perm (perm_inv p)) deg in
+          Any_deg deg
+      | _ -> Any_deg deg)
+  | _ -> Any_deg deg
 
 (* To read back a normal form, we simply dispatch to type-directed readback at its stored type.  *)
 let rec readback_nf : type mode a z.
@@ -883,6 +898,7 @@ and readback_head : type mode c z.
           let (Has_plus_lock plus_src) = plus_lock modality in
           (* If there's a nontrivial degeneracy, we act by it; otherwise we leave it off. *)
           let iplus = plus_with_locks_of_plus_lock plus_src in
+          let (Any_deg deg) = renamed_deg value.tm deg in
           let tm =
             match is_id_deg deg with
             | Some _ -> Term.Var (Index (insert, fa, filter, iplus))
@@ -1577,7 +1593,9 @@ let rec readback_about : type mode a b.
 
    The renaming need not be injective, nor preserve modal annotations.  A variable of cctx that is the image of more than one variable of mctx, or of a variable with a different annotation, is "undefined": it has no inverse, so if the value contains it we fail.  But if the value doesn't contain it, then the resulting solution is most general.  This is because substituting variables for variables can't trigger any computation, so if some solution of the metavariable used a variable of mctx sent to such a variable, then the value would contain that variable too.  (This argument doesn't apply if the image is not a plain variable, so in that case we don't have a renaming at all.)
 
-   The metavariable can also be applied to arguments, as long as they are also plain variables.  We treat these like further entries of its environment, so that the renamed context extends it by one entry for each argument (whose types we don't need to know, since they are only for readback), and the solution is then an abstraction over them.
+   The image of a variable can also be a permutation of a plain variable.  Since permutations are invertible, and a permutation of a variable is still neutral, this is no different: the corresponding variable of mctx has that permuted variable as its value, and readback inverts the permutation when it finds that variable (see renamed_deg).
+
+   The metavariable can also be applied to arguments, as long as they are also plain variables or permutations of them.  We treat these like further entries of its environment, so that the renamed context extends it by one entry for each argument (whose types we don't need to know, since they are only for readback), and the solution is then an abstraction over them.
 
    We prefer eta-short solutions, so if the value being compared with the metavariable ends with some of the same arguments, we first try to omit them from both, since a solution of ?f =? g is also one of ?f y =? g y.  We only do this if nothing is undefined, since otherwise we could change the problem: ?f x x =? g x has no most general solution, but ?f x =? g does.
 
@@ -1594,8 +1612,8 @@ type (_, _) renamed_ctx =
 type (_, _) renamed_ordered =
   | Renamed_ordered : ('mode, 'a, 'b) Ctx.Ordered.t -> ('mode, 'b) renamed_ordered
 
-(* A value in an environment that is a plain variable, and whether it has the annotation of the corresponding variable in the metavariable's context. *)
-type 'mode renamed_var = { var : level; normal : 'mode normal; annotated : bool }
+(* A value in an environment that is a permutation of a plain variable, and whether it has the annotation of the corresponding variable in the metavariable's context. *)
+type 'mode renamed_var = { var : level; deg : any_deg; normal : 'mode normal; annotated : bool }
 
 exception Not_renaming
 
@@ -1604,13 +1622,13 @@ let renamed_var : type dom modality mode.
  fun modality v ->
   match view_term v with
   | Neu { head = Live (Var { level; deg; key }); args = Emp; ty; _ } as tm -> (
-      match (is_id_deg deg, Modalcell.is_id key) with
+      match (perm_of_deg deg, Modalcell.is_id key) with
       | Some _, true ->
           let annotated =
             match Modality.compare (Modalcell.vsrc key) modality with
             | Eq -> true
             | Neq -> false in
-          { var = level; normal = { tm; ty }; annotated }
+          { var = level; deg = Any_deg deg; normal = { tm; ty }; annotated }
       | _ -> raise_notrace Not_renaming)
   | _ -> raise_notrace Not_renaming
 
@@ -1641,7 +1659,15 @@ let contractible : type mode. (mode, kinetic) value -> mode contractible option 
     when Global.unif_status meta unif = `Unsolved -> Some (Contractible (head, args))
   | _ -> None
 
-(* Whether an argument of a metavariable, which is a cube of plain variables, is the same as the last argument of another neutral. *)
+(* Whether a value is literally the variable with a given level and degeneracy, with no key or arguments. *)
+let is_var_with_deg : type mode s m n. level -> (m, n) deg -> (mode, s) value -> bool =
+ fun var deg x ->
+  match x with
+  | Neu { head = Live (Var { level; deg = xdeg; key }); args = Emp; _ } ->
+      level = var && Modalcell.is_id key && Option.is_some (deg_equiv deg xdeg)
+  | _ -> false
+
+(* Whether an argument of a metavariable, which is a cube of permutations of plain variables, is the same as the last argument of another neutral. *)
 let same_arg : type dom1 modality1 n1 m1 dom2 modality2 n2 m2 mode x1 y1 x2 y2.
     (dom1, modality1, mode, n1, m1) Modality.filter_dim ->
     (n1, dom1 normal) CubeOf.t ->
@@ -1664,8 +1690,8 @@ let same_arg : type dom1 modality1 n1 m1 dom2 modality2 n2 m2 mode x1 y1 x2 y2.
         {
           it2 =
             (fun _ (x1 : _ normal) (x2 : _ normal) ->
-              let { var; _ } = renamed_var modality1 x1.tm in
-              if not (is_plain_var var (view_term x2.tm)) then same := false);
+              let { var; deg = Any_deg deg; _ } = renamed_var modality1 x1.tm in
+              if not (is_var_with_deg var deg (view_term x2.tm)) then same := false);
         }
         xs1 xs2;
       !same
@@ -1788,7 +1814,7 @@ let renamed_ctx : type mode a b c d n x any.
         it2 =
           (fun fa v vb ->
             if CubeOf.find free fa then
-              let { var; normal; annotated } = renamed_var modality v in
+              let { var; normal; annotated; _ } = renamed_var modality v in
               let defined =
                 Hashtbl.find_opt counts var = Some 1
                 && annotated

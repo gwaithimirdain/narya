@@ -1144,6 +1144,225 @@ A metavariable with a permutation isn't equal to itself without it, even if the 
   
   [1]
 
+A variable can also be sent to a permutation of a variable, since this is invertible, and a permutation of a variable is still neutral.  The solution acts on the variable by the inverse permutation, composed with any permutation of the variable in the value.  Arguments can also be permutations of variables, and are eta-contracted if they agree.
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > axiom a₂₀ : Id A a₀₀ a₁₀
+  > axiom a₂₁ : Id A a₀₁ a₁₁
+  > axiom t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > def U : Type ≔ Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > def V : Type ≔ Id (Id A) a₂₀ a₂₁ a₀₂ a₁₂
+  > def s1 : U → Type ≔ let G : V → U ≔ x ↦ _ in y ↦ let k : Same U (G (sym y)) y ≔ rf U y in Same U y y
+  > about s1
+  > def s2 (h : U → U) : U → Type ≔ let G : V → U ≔ x ↦ _ in y ↦ let k : Same U (G (sym y)) (h y) ≔ rf U (h y) in Same U y y
+  > about s2
+  > axiom B : Type
+  > axiom b : B
+  > axiom g : V → B
+  > axiom use1 : (f : V → B) → ((y : U) → Same B (f (sym y)) (g (sym y))) → Type
+  > echo use1 _ (y ↦ rf _ (g (sym y)))
+  > EOF
+  let G ≔ x ↦ sym x in y ↦ let k ≔ rf U y in Same U y y
+    : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁ → Type
+  
+  h ↦ let G ≔ x ↦ h (sym x) in y ↦ let k ≔ rf U (h y) in Same U y y
+    : (h : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁ → A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁) →
+      A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁
+      → Type
+  
+  use1 g (y ↦ rf B (g (sym y)))
+    : Type
+  
+
+Like other variables, one that is repeated in this way can't be used, even with a different permutation.
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > axiom a₂₀ : Id A a₀₀ a₁₀
+  > axiom a₂₁ : Id A a₀₁ a₁₁
+  > axiom t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > def U : Type ≔ Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > def V : Type ≔ Id (Id A) a₂₀ a₂₁ a₀₂ a₁₂
+  > axiom B : Type
+  > axiom b : B
+  > axiom k : U → B
+  > axiom use1 : (f : V → U → B) → ((y : U) → Same B (f (sym y) y) b) → Type
+  > echo use1 _ (y ↦ rf _ b)
+  > axiom use2 : (f : V → U → B) → ((y : U) → Same B (f (sym y) y) (k y)) → Type
+  > echo use2 _ (y ↦ rf _ (k y))
+  > EOF
+  use1 (𝑥 𝑦 ↦ b) (y ↦ rf B b)
+    : Type
+  
+   ￫ error[E0401]
+   ￭ stdin
+   21 | echo use2 _ (y ↦ rf _ (k y))
+      ^ term synthesized type
+          Same B (k y) (k y)
+        but is being checked against type
+          Same B (?u2 (sym y) y) (k y)
+        unequal head terms:
+          k
+        does not equal
+          ?u2
+  
+  [1]
+
+A permutation of a variable isn't the same as that variable, when reading back an occurrence of another metavariable to test whether its environment is the identity.
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > axiom a₂₀ : Id A a₀₀ a₁₀
+  > axiom a₂₁ : Id A a₀₁ a₁₁
+  > axiom t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > def U : Type ≔ Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > def V : Type ≔ Id (Id A) a₂₀ a₂₁ a₀₂ a₁₂
+  > def s : U → Type ≔ let H : U → U ≔ z ↦ _ in let G : V → U ≔ x ↦ _ in y ↦ let k : Same U (G (sym y)) (H y) ≔ rf U (G (sym y)) in let k2 : Same U (H y) y ≔ rf U y in Same U y y
+  > about s
+  > EOF
+  let H ≔ z ↦ z in
+  let G ≔ x ↦ let only z : U ≔ sym x in z in
+  y ↦
+  let k ≔ rf U (G (sym y)) in
+  let k2 ≔ rf U y in
+  Same U y y
+    : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁ → Type
+  
+
+This works for permutations that aren't their own inverse too.
+
+  $ narya -parametric - <<EOF
+  > def Top : Type ≔ sig ()
+  > 
+  > axiom C : Type
+  > 
+  > axiom c : C
+  > 
+  > def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig (
+  >   a .ungel : R a.0 a.1 )
+  > 
+  > def R : Top → Top → Type ≔ x y ↦ C
+  > 
+  > def g : Gel Top Top R () () ≔ (ungel ≔ c)
+  > 
+  > def t : Top ≔ ()
+  > 
+  > axiom Same : (X : Type) → X → X → Type
+  > 
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > 
+  > def V : Type
+  >   ≔ Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾ t⁽ᵉᵉ⁾ t⁽ᵉᵉ⁾ (refl g) (refl g) (refl g)
+  >       (refl g)
+  > 
+  > def U : Type
+  >   ≔ (Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²³¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ t⁽ᵉᵉ⁾
+  >       t⁽ᵉᵉ⁾
+  > 
+  > def s1 : V → Type ≔
+  >   let G : U → V ≔ x ↦ _ in
+  >   y ↦
+  >   let k : Same V (G (y⁽²³¹⁾)) y ≔ rf V y in
+  >   Same V y y
+  > 
+  > about s1
+  > 
+  > axiom h : V → C
+  > 
+  > axiom use : (f : U → C) → ((y : V) → Same C (f (y⁽²³¹⁾)) (h y)) → Type
+  > 
+  > echo use _ (y ↦ rf _ (h y))
+  > EOF
+  let G ≔ x ↦ x⁽³¹²⁾ in y ↦ let k ≔ rf V y in Same V y y
+    : Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾ t⁽ᵉᵉ⁾ t⁽ᵉᵉ⁾ (refl g) (refl g) (refl g)
+        (refl g)
+      → Type
+  
+  use (𝑥 ↦ h 𝑥⁽³¹²⁾) (y ↦ rf C (h y))
+    : Type
+  
+
+A permutation on a metavariable applied to arguments, rather than on the application, also permutes the arguments, including permuting entire cubes of variables.
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > 
+  > axiom B : Type
+  > 
+  > axiom f : A → B
+  > 
+  > axiom Same : (X : Type) → X → X → Type
+  > 
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > 
+  > def T : Type ≔ Id (Id (A → B)) (refl f) (refl f) (refl f) (refl f)
+  > 
+  > axiom q
+  >   : (x00 x01 : A) (x02 : Id A x00 x01) (x10 x11 : A) (x12 : Id A x10 x11)
+  >     (x20 : Id A x00 x10) (x21 : Id A x01 x11)
+  >     (x22 : Id (Id A) x02 x12 x20 x21)
+  >     → B⁽ᵉᵉ⁾ (refl f x02) (refl f x12) (refl f x20) (refl f x21)
+  > 
+  > axiom use
+  >   : (F : T) →
+  >     ((x00 x01 : A) (x02 : Id A x00 x01) (x10 x11 : A) (x12 : Id A x10 x11)
+  >      (x20 : Id A x00 x10) (x21 : Id A x01 x11)
+  >      (x22 : Id (Id A) x02 x12 x20 x21)
+  >      → Same (B⁽ᵉᵉ⁾ (refl f x02) (refl f x12) (refl f x20) (refl f x21))
+  >          (sym F {x00} {x01} {x02} {x10} {x11} {x12} {x20} {x21} x22)
+  >          (q x00 x01 x02 x10 x11 x12 x20 x21 x22))
+  >     → Type
+  > 
+  > echo use _
+  >        (x00 x01 x02 x10 x11 x12 x20 x21 x22 ↦
+  >         rf _ (q x00 x01 x02 x10 x11 x12 x20 x21 x22))
+  > axiom w : T
+  > axiom use2 : (F : T) →
+  >   ((x00 x01 : A) (x02 : Id A x00 x01) (x10 x11 : A) (x12 : Id A x10 x11)
+  >    (x20 : Id A x00 x10) (x21 : Id A x01 x11) (x22 : Id (Id A) x02 x12 x20 x21) →
+  >    Same (B⁽ᵉᵉ⁾ (refl f x02) (refl f x12) (refl f x20) (refl f x21))
+  >      (sym F {x00} {x01} {x02} {x10} {x11} {x12} {x20} {x21} x22)
+  >      (sym w {x00} {x01} {x02} {x10} {x11} {x12} {x20} {x21} x22))
+  >   → Type
+  > echo use2 _ (x00 x01 x02 x10 x11 x12 x20 x21 x22 ↦ rf _ (sym w {x00} {x01} {x02} {x10} {x11} {x12} {x20} {x21} x22))
+  > EOF
+  use (𝑥 ⤇ sym (q 𝑥.00 𝑥.10 𝑥.20 𝑥.01 𝑥.11 𝑥.21 𝑥.02 𝑥.12 (sym 𝑥.22)))
+    (x00 x01 x02 x10 x11 x12 x20 x21 x22 ↦
+     rf (B⁽ᵉᵉ⁾ (ap f x02) (ap f x12) (ap f x20) (ap f x21))
+       (q x00 x01 x02 x10 x11 x12 x20 x21 x22))
+    : Type
+  
+  use2 w
+    (x00 x01 x02 x10 x11 x12 x20 x21 x22 ↦
+     rf (B⁽ᵉᵉ⁾ (ap f x02) (ap f x12) (ap f x20) (ap f x21)) (sym w x22))
+    : Type
+  
+
 A projection from a metavariable with a permutation on it, or on its application to arguments, expands it to the inverse permutation of a tuple.
 
   $ narya -parametric - <<EOF

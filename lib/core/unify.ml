@@ -72,7 +72,22 @@ let inverse_of_ins : type a b c. (a, b, c) insertion -> any_deg option =
       let (Perm_to p) = perm_of_ins ins in
       Some (Any_deg (deg_of_perm (perm_inv p)))
 
-(* Try to solve a unification metavariable that may have a permutation on the outside, as in "sym ?m".  Since a permutation is invertible, the equation "p ?m = v" is equivalent to "?m = p⁻¹ v", which has the same solutions and which we can try to solve directly, at the type acted on by the same permutation.  If the type wasn't known then we must check that the types agree before acting on v, since it might not have enough dimensions otherwise. *)
+(* The permutation that removes all the insertions from a metavariable applied to arguments.  Acting on an application by a permutation composes it with the insertion of that application, and then pushes the part of the result that acts on the function inside, where it composes with the next insertion and also permutes the arguments.  Thus, we start from the outside by undoing the outermost insertion, and follow that by the permutation that undoes the rest, which is extended by an identity on the dimensions of the output.  We return None if there is nothing to undo, or if the spine contains anything other than arguments. *)
+let rec inverse_of_spine : type a b c hmode mode any.
+    (a, b, c) insertion -> (hmode, mode, any, live) apps -> any_deg option =
+ fun ins args ->
+  match args with
+  | Emp -> inverse_of_ins ins
+  | Snoc (rest, Arg (_, _, argins)) -> (
+      match (inverse_of_ins argins, inverse_of_spine ins rest) with
+      | None, inner -> inner
+      | outer, None -> outer
+      | Some (Any_deg outer), Some (Any_deg inner) ->
+          let (DegExt (_, _, s)) = comp_deg_extending outer inner in
+          Some (Any_deg s))
+  | Snoc (_, Field _) | Snoc (_, Inst _) -> None
+
+(* Try to solve a unification metavariable that may have permutations on it or on its arguments, as in "sym ?m" or "(sym ?f) x".  Since a permutation is invertible, the equation "p ?m = v" is equivalent to "?m = p⁻¹ v", which has the same solutions and which we can try to solve directly, at the type acted on by the same permutation.  This may also permute the arguments, but permuted variables are still a renaming.  If the type wasn't known then we must check that the types agree before acting on v, since it might not have enough dimensions otherwise. *)
 let try_solve : type mode a b.
     (mode, a, b) Ctx.t ->
     (mode, kinetic) value ->
@@ -80,34 +95,25 @@ let try_solve : type mode a b.
     (mode, kinetic) value option ->
     bool =
  fun ctx u v ty ->
-  let inverse, uty =
-    match u with
-    | Neu { head = Live (Meta { kind = Unif_meta _; ins; _ }); args = Emp; ty = uty; _ } ->
-        (inverse_of_ins ins, Some uty)
-    | Neu
-        {
-          head = Live (Meta { kind = Unif_meta _; _ });
-          args = Snoc (_, Arg (_, _, ins));
-          ty = uty;
-          _;
-        } -> (inverse_of_ins ins, Some uty)
-    | _ -> (None, None) in
-  match (inverse, uty) with
-  | Some (Any_deg pinv), Some uty -> (
-      let ty =
-        match (ty, v) with
-        | Some _, _ -> ty
-        | None, Neu { ty = vty; _ } -> (
-            match Equal.equal_val ctx (Lazy.force vty) (Lazy.force uty) with
-            | Ok () -> Some (Lazy.force uty)
-            | Error _ -> None)
-        | None, _ -> None in
-      match ty with
-      | None -> false
-      | Some ty ->
-          let idc = Modalcell.id2 (Ctx.mode ctx) in
-          try_solve_direct ctx (act_value u pinv idc) (act_value v pinv idc)
-            (Some (gact_ty None ty pinv idc)))
+  match u with
+  | Neu { head = Live (Meta { kind = Unif_meta _; ins; _ }); args; ty = uty; _ } -> (
+      match inverse_of_spine ins args with
+      | None -> try_solve_direct ctx u v ty
+      | Some (Any_deg pinv) -> (
+          let ty =
+            match (ty, v) with
+            | Some _, _ -> ty
+            | None, Neu { ty = vty; _ } -> (
+                match Equal.equal_val ctx (Lazy.force vty) (Lazy.force uty) with
+                | Ok () -> Some (Lazy.force uty)
+                | Error _ -> None)
+            | None, _ -> None in
+          match ty with
+          | None -> false
+          | Some ty ->
+              let idc = Modalcell.id2 (Ctx.mode ctx) in
+              try_solve_direct ctx (act_value u pinv idc) (act_value v pinv idc)
+                (Some (gact_ty None ty pinv idc))))
   | _ -> try_solve_direct ctx u v ty
 
 (* A metavariable that is projected from, perhaps after being applied to some arguments, has to be solved by a tuple, since we can only get information about one field from the projection, and the other fields have to be left unknown.  This is always correct, by eta-conversion, so it doesn't affect whether the solution is most general; but it does create more metavariables, so we do it only when solving an equation that requires it.  To avoid having to duplicate the logic for typechecking tuples, particularly regarding modal fields (whose components live in a locked context, and possibly a different mode), we do this by constructing a raw term out of abstractions, tuples, and placeholders, and typechecking it at the type of the metavariable.  Since typechecking comes later, we record here just the shape of the term, consisting of an abstraction for each argument (with a name, and whether it is a cube abstraction), a tuple for each projection (with all the field names and the one that continues), and a permutation wherever the occurrence of the metavariable has one, since then the term that is projected from is that permutation of the metavariable and hence the metavariable must be its inverse acting on a tuple.  There is no need for a final sequence of abstractions, since the metavariables created for the tuple components can just be applied to the same arguments. *)
