@@ -27,6 +27,9 @@ module Origin : sig
   val do_command_then_undo : (unit -> 'a) -> 'a
   val rewind_command : Instant.t -> (unit -> 'a) -> 'a
   val rewind_command_then_undo : Instant.t -> (unit -> 'a) -> 'a
+  val speculate : (unit -> ('a, 'b) Result.t) -> ('a, 'b) Result.t
+  val speculate_exn : (unit -> 'a) -> 'a
+  val speculate_discard : (unit -> 'b) -> 'b
 end
 
 module Versioned : sig
@@ -41,4 +44,13 @@ module Versioned : sig
   val set_at : 'a t -> Origin.t -> 'a -> unit option
   val fold : 'a t -> ('acc -> 'a -> 'acc) -> 'acc -> 'acc
   val foldi : 'a t -> ('acc -> Origin.t -> 'a -> 'acc) -> 'acc -> 'acc
+end
+
+module Speculable : sig
+  type 'a t
+
+  val get : 'a t -> 'a
+  val set : 'a t -> 'a -> unit
+  val modify : 'a t -> ('a -> 'a) -> unit
+  val make : 'a -> 'a t
 end

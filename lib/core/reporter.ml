@@ -295,6 +295,8 @@ module Code = struct
     | Synthesizing_recursion : printable -> t
     | Invalid_synthesized_type : string * printable -> t
     | Unrecognized_attribute : t
+    | Display_only_syntax : string -> t
+    | Generative_copy : t
     | Invalid_degeneracy_action : string * 'nk D.t * 'n D.t -> t
     | Wrong_number_of_patterns : t
     | Inconsistent_patterns : t
@@ -482,6 +484,8 @@ module Code = struct
     | Synthesizing_recursion _ -> Error
     | Invalid_synthesized_type _ -> Error
     | Unrecognized_attribute -> Error
+    | Display_only_syntax _ -> Error
+    | Generative_copy -> Warning
     | Invalid_degeneracy_action _ -> Bug
     | Wrong_number_of_patterns -> Error
     | Inconsistent_patterns -> Error
@@ -550,6 +554,8 @@ module Code = struct
     | Invalid_degeneracy _ -> "E0206"
     | No_relative_precedence _ -> "E0207"
     | Unrecognized_attribute -> "E0208"
+    | Display_only_syntax _ -> "E0209"
+    | Generative_copy -> "W0210"
     | Comment_end_in_string -> "E0250"
     | Encoding_error -> "E0299"
     (* Scope errors *)
@@ -1207,6 +1213,9 @@ module Code = struct
       | Invalid_synthesized_type (str, ty) ->
           textf "type %a synthesized by %s is invalid for entire term" pp_printed (print ty) str
       | Unrecognized_attribute -> textf "unrecognized attribute"
+      | Display_only_syntax str -> textf "display-only syntax can't be parsed: %s" str
+      | Generative_copy ->
+          textf "a term copied from a printed local case tree won't be equal to the original"
       | Invalid_degeneracy_action (str, nk, n) ->
           textf
             "invalid degeneracy action on %s: dimension '%s' doesn't factor through codomain '%s'"
@@ -1466,7 +1475,14 @@ let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
        (fun () -> diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
        ~fatal:(fun d -> if is_dependent d then d else fatal_diagnostic d))
 
-(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost.  If the optional [emits_only] is true, collect only emitted non-errors and fail as soon as any mortal or fatal error is encountered, returning that error as the Error result (even if it was originally only mortal).  In that case the callback is abandoned by unwinding it with an exception, during which some cleanup code (such as an inner [collect]) may report more mortal errors; these are ignored, so that the error returned is the first one. *)
+(* Exceptions are used both for reporting errors and for nonlocal control flow.  For the latter we use this exception, with an extensible payload, to abandon an attempt at doing something, such as a typechecking attempt that will be redone in a different way.  The diagnostics reported during an abandoned attempt belong to it, so they are discarded along with it: in particular, [collect] discards rather than releases them when a [Backtrack] passes through it.  (See also Control.) *)
+type backtrack = ..
+
+exception Backtrack of backtrack
+
+(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost; except that if it is a [Backtrack], they are discarded.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost.  If the optional [emits_only] is true, collect only emitted non-errors and fail as soon as any mortal or fatal error is encountered, returning that error as the Error result (even if it was originally only mortal).  In that case the callback is abandoned by unwinding it with an exception, during which some cleanup code (such as an inner [collect]) may report more mortal errors; these are ignored, so that the error returned is the first one.
+
+   This is an internal function that should not be called outside Reporter, except by white-box tests. *)
 let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
     ('a, Code.t Asai.Diagnostic.t) Result.t * pending Bwd.t =
   let exception Killed of Code.t Asai.Diagnostic.t in
@@ -1504,12 +1520,16 @@ let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
   with
   | result -> (result, !pendings)
   | exception Killed p -> (Error p, !pendings)
+  | exception (Backtrack _ as exn) ->
+      let bt = Printexc.get_raw_backtrace () in
+      Printexc.raise_with_backtrace exn bt
   | exception exn ->
       let bt = Printexc.get_raw_backtrace () in
       release !pendings;
       Printexc.raise_with_backtrace exn bt
 
-(* Pass on the results of [collect] as if it hadn't happened, releasing the delayed diagnostics and either returning the result or re-raising the fatal error. *)
+(* Pass on the results of [collect] as if it hadn't happened, releasing the delayed diagnostics and either returning the result or re-raising the fatal error.
+   This is an internal function that should not be called outside Reporter, except by white-box tests.  *)
 let uncollect (result, ps) =
   release ps;
   match result with

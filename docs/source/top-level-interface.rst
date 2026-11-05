@@ -223,10 +223,14 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display unique keys ≔ on
     display unique keys ≔ off
     display unique keys ≔ toggle
+    display let ≔ names
+    display let ≔ environments
+    display let ≔ definitions
+    display let ≔ cycle
     display degeneracy names ≔ N
     display variables ≔ X,Y,Z
 
-See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, :ref:`Keys` for more information about unique keys, and :ref:`Symmetries and degeneracies` for more information about degeneracy names.
+See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, :ref:`Keys` for more information about unique keys, :ref:`Symmetries and degeneracies` for more information about degeneracy names, and :ref:`Matches in terms and case trees` for more information about the display of local definitions and holes with ``display let``.
 
 
 Chdir
@@ -328,6 +332,8 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 - ``C-c C-y`` : Split in the hole under point based on its type.
 - ``C-c C-d C-u``: Toggle display of unicode characters.
 - ``C-c C-d C-i``: Toggle display of implicit arguments.
+- ``C-c C-d C-k``: Toggle display of unique keys.
+- ``C-c C-d C-l``: Cycle the display of local definitions and holes between names, environments, and definitions.
 - ``C-c C-d C-v``: Set the default variable names.
 - ``C-c C-d C-d``: Set the dimension up to which degeneracies are displayed with names.
 

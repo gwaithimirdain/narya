@@ -122,6 +122,7 @@ module Command = struct
         what :
           [ `Chars of Whitespace.t list * Display.chars Display.toggle * Whitespace.t list
           | `Implicits of Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Lets of Whitespace.t list * [ `Set of Display.lets | `Cycle ] * Whitespace.t list
           | `Unique_keys of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Degeneracy_names of Whitespace.t list * Whitespace.t list * int * Whitespace.t list
@@ -656,6 +657,7 @@ module Parse = struct
           match tok with
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
           | Ident [ "implicits" ] -> Some ((`Implicits, ws), state)
+          | Let -> Some ((`Lets, ws), state)
           | Ident [ "degeneracy" ] -> Some ((`Degeneracy, ws), state)
           | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
@@ -673,6 +675,18 @@ module Parse = struct
             let open Monad.Ops (Monad.Maybe) in
             let* show = show_of_token tok in
             return (Display { wsdisplay; wscoloneq; what = `Implicits (wswhat, show, ws) }, state))
+    | `Lets ->
+        let* wscoloneq = token Coloneq in
+        step "" (fun state _ (tok, ws) ->
+            let open Monad.Ops (Monad.Maybe) in
+            let* lets =
+              match tok with
+              | Ident [ "names" ] -> Some (`Set `Names)
+              | Ident [ "environments" ] -> Some (`Set `Environments)
+              | Ident [ "definitions" ] -> Some (`Set `Definitions)
+              | Ident [ "cycle" ] -> Some `Cycle
+              | _ -> None in
+            return (Display { wsdisplay; wscoloneq; what = `Lets (wswhat, lets, ws) }, state))
     | `Degeneracy ->
         let* wsnames = token (Ident [ "names" ]) in
         let* wscoloneq = token Coloneq in
@@ -836,16 +850,9 @@ let parse_single (content : string) : Whitespace.t list * Command.t option =
       else (ws, None)
   | _ -> Core.Reporter.fatal (Anomaly "interactive parse doesn't start with Bof")
 
-(* The context and type of a hole are stored as terms, read back at the moment the hole was created.  Since then, other holes appearing in them may have been solved, and constants that were being defined may have acquired definitions.  Thus, before displaying a hole we re-evaluate its context and type in the current global state and read them back again, so that the user sees an up-to-date goal.  (This is also what happens when the hole is actually solved: "solve" evaluates the stored context and type in the current state, so the type displayed here is the one that a solution will be checked against.) *)
+(* Display a hole's context and type.  The printer for PHole re-evaluates them in the current global state, so that the user sees an up-to-date goal. *)
 let show_hole = function
   | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
-      let termctx, ty =
-        (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)
-        Reporter.discard_errors ~fallback:(fun () -> (termctx, ty)) @@ fun () ->
-        let ctx = Norm.eval_ctx termctx in
-        let ety = Norm.eval_term (Ctx.env ctx) ty in
-        Readback.Displaying.run ~env:true @@ fun () -> (readback_ctx ctx, readback_val ctx ety)
-      in
       emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
 let string_of_mode = function
@@ -912,7 +919,7 @@ let split_match_cases : type mode a b.
     | (_, Wrap tm) :: tms -> (
         match process vars tm with
         | { value = Synth rtm; loc } -> (
-            let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
+            let _, sty = Check.synth Kinetic ctx (locate_opt loc rtm) in
             match View.view_type sty "split" with
             | Canonical (_, Data { dim; constrs; _ }, _, _) ->
                 let* () =
@@ -1013,18 +1020,21 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               Global.run_command_then_undo ~holes_allowed:(Ok ()) )
         | Some number ->
             let num = Global.find_hole number in
-            let (Found_hole { instant; termctx; vars; parametric; _ }) = num in
+            let (Found_hole { meta; instant; termctx; vars; parametric; _ }) = num in
             show_hole num;
             ( Scope_and_ctx (vars, fun _ -> Of_raw (Norm.eval_ctx termctx)),
-              Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant ) in
+              fun f ->
+                Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant
+                @@ fun () -> Global.with_owner_of meta f ) in
       run @@ fun () ->
       let rtm = process vars tm in
       action_taken ();
       match rtm.value with
       | Synth stm ->
           let (Of_raw ctx) = ctx rtm in
+          (* The term is checked with internal readback, like any other term, so that the contexts of any metavariables it creates are not read back for display.  Only the results are read back for display. *)
+          let ctm, ety = Check.synth Kinetic ctx { value = stm; loc = rtm.loc } in
           Readback.Displaying.run ~env:true @@ fun () ->
-          let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
           let names = Names.of_ctx ctx in
           (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
           let utm =
@@ -1153,7 +1163,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       (* Now we typecheck the supplied term, in an occurrence-analysis scope with the set of constants that were being defined when the hole was created, and record the resulting recursion verdict on the metavariable so that it can be chased by the window checks of datatypes whose constructor types contained this hole. *)
       let ctx = Norm.eval_ctx termctx in
       let ety = Norm.eval_term (Ctx.env ctx) ty in
+      (* The metavariables created, such as by let-bindings, have the same owner as the hole. *)
       let ctm, recursion =
+        Global.with_owner_of meta @@ fun () ->
         Positivity.run_beingdefined beingdefined @@ fun () ->
         Positivity.scope @@ fun () -> Check.check status ctx ptm ety in
       Global.set_meta meta ~recursion ctm;
@@ -1334,7 +1346,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               | (_, Wrap tm) :: tms -> (
                   match process vars tm with
                   | { value = Synth rtm; loc } -> (
-                      let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
+                      let _, sty = Check.synth Kinetic ctx (locate_opt loc rtm) in
                       match View.view_type sty "split" with
                       | Canonical (_, Data { dim; constrs; _ }, _, _) ->
                           let* () =
@@ -1398,6 +1410,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Implicits (_, im, _) ->
           let im = Display.modify_implicits im in
           emit (Display_set ("implicits", Display.to_string (im :> Display.values)))
+      | `Lets (_, lets, _) ->
+          let lets = Display.modify_lets lets in
+          emit (Display_set ("let", Display.string_of_lets lets))
       | `Unique_keys (_, _, uk, _) ->
           let uk = Display.modify_unique_keys uk in
           emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))

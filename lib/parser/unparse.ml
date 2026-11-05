@@ -253,9 +253,94 @@ let rec get_bwd : type mode n.
       | _ -> None)
   | _ -> None
 
-(* Whether we expect a given term to synthesize, after being unparsed. *)
-let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
-  | Var _ | Const _ | Meta _ | MetaEnv _ | Field _ | UU _ | Inst _ | Pi _ -> true
+(* Data about metavariables we are currently unparsing *)
+
+module MetaDefsData = struct
+  type t = {
+    (* The metavariables whose definitions we are currently unparsing. *)
+    unparsing : Meta.WrapSet.t;
+    (* Whether we are unparsing the definition of a metavariable and aren't yet inside any of its case-tree-only constructs.  We mark each outermost such construct (there can be more than one, e.g. in different fields of a tuple) with the attribute #(gen), so that if the user copies and re-enters it they will be warned that it is generative, and hence won't be equal to the original metavariable. *)
+    pending_gen : bool;
+  }
+
+  let empty : t = { unparsing = Meta.WrapSet.empty; pending_gen = false }
+end
+
+module MetaDefs = struct
+  include Algaeff.Reader.Make (MetaDefsData)
+
+  (* Whether we are unparsing the definition of a metavariable, or of one of its "let rec" siblings.  In the latter case it is referred to directly (by an alias, see Check.check_letrec_bindings), and we display it by name just like a recursive occurrence of the metavariable in its own definition. *)
+  let unparsing v =
+    let { MetaDefsData.unparsing; _ } = read () in
+    Meta.WrapSet.mem (Wrap v) unparsing
+    || Meta.WrapSet.exists (fun (Wrap w) -> Meta.letrec_siblings w v) unparsing
+
+  let run_empty f = run ~env:MetaDefsData.empty f
+
+  (* Descend into the definition of a metavariable, adding it to the list of those whose definitions we are unparsing, and remembering that we are pending a "gen" attribute on its outermost case-tree-only constructs. *)
+  let while_unparsing v f =
+    scope (fun d -> { unparsing = Meta.WrapSet.add (Wrap v) d.unparsing; pending_gen = true }) f
+
+  (* Add the attribute #(gen) to the observations of a case-tree-only construct, if it is an outermost one in the definition of a metavariable, and clear the pending flag for its subterms.  This must be wrapped around the unparsing of the subterms of the construct, since those might contain other such constructs, which should not be marked. *)
+  let with_gen : type a. (observation Bwd.t -> a) -> a =
+   fun f ->
+    if (read ()).pending_gen then
+      scope (fun d -> { d with pending_gen = false }) @@ fun () ->
+      f
+        (Emp
+        <: mktok (Op "#")
+        <: mktok LParen
+        <: Term (unlocated (Ident ([ "gen" ], [])))
+        <: mktok RParen)
+    else f Emp
+end
+
+let () = MetaDefs.register_printer (function `Read -> Some "unhandled MetaDefs effect")
+
+(* A metavariable inserted automatically to hold a bare case tree construct is displayed as its definition, which lives in the context of the metavariable.  So are other metavariables (such as those bound by let-bindings), if the user asks for it with "display let ≔ definitions".  If it has no definition (e.g. a hole, or because we are displaying an error that occurred while checking it), we fall back to its name.  We also use its name for occurrences inside its own definition, as in the constructor types of a datatype or a recursive let-binding. *)
+let displayed_metadef : type mode x b s. (mode, x, b, s) Meta.t -> (mode, x, b, s) Metadef.t option
+    =
+ fun v ->
+  if (Meta.is_bare v || Display.lets () = `Definitions) && not (MetaDefs.unparsing v) then
+    match
+      Reporter.discard_errors ~fallback:(fun () -> None) (fun () -> Some (Global.find_meta v))
+    with
+    | Some ({ tm = `Defined _; _ } as def) -> Some def
+    | _ -> None
+  else None
+
+(* The full name of a metavariable, using the name currently in scope for the constant that owns it. *)
+let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
+ fun v -> Global.meta_name ~owner_name:(fun c -> String.concat "." (Scope.name_of c)) v
+
+(* The name with which a variable whose value is a metavariable is displayed in place of being bound. *)
+let meta_var_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
+ fun v -> if Display.metas () == `Numbered then meta_name v else "?"
+
+(* That name as an unparsed Ident. *)
+let unparse_meta_name : type mode x b s lt ls rt rs.
+    (mode, x, b, s) Meta.t -> (lt, ls, rt, rs) parse located =
+ fun v -> unlocated (Ident ([ meta_var_name v ], []))
+
+(* Whether the context of a let-only has no clauses to display, because it contains only aliases and weakenings. *)
+let rec letonly_empty : type mode i b. (mode, i, b) ordered_termctx -> bool = function
+  | Emp _ -> true
+  | Ext (ctx, { vis = Vis (Alias, _); _ }, _, Zero) -> letonly_empty ctx
+  | Weaken (ctx, _) -> letonly_empty ctx
+  | Ext _ | Lock _ -> false
+
+(* Whether we expect a given term to synthesize, after being unparsed.  This applies to potential terms as well as kinetic ones, since a metavariable can be displayed as its definition, which is a potential term.  The set ~visiting contains the metavariables whose definitions we are inside of, whose occurrences are displayed by name. *)
+let rec synths : type mode n s. (mode, n, s) term -> bool =
+ fun tm ->
+  match tm with
+  (* A metavariable displayed as its definition synthesizes if that definition does, while one displayed as its name synthesizes. *)
+  | Meta (v, _) -> (
+      match displayed_metadef v with
+      | Some { tm = `Defined def; _ } ->
+          (* When asking whether the definition synthesizes, we assume temporarily that we're unparsing that metavariable, so it doesn't again get displayed as its definition. *)
+          MetaDefs.while_unparsing v @@ fun () -> synths def
+      | _ -> true)
+  | Var _ | Const _ | Field _ | UU _ | Inst _ | Pi _ -> true
   (* A let-only always synthesizes, since its body is ascribed if necessary. *)
   | Letonly _ -> true
   | Constr _ | Lam _ | Struct _ -> false
@@ -269,8 +354,22 @@ let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   | Unshift (_, _, tm) -> synths tm
   | Unact (_, tm) -> synths tm
   | Shift (_, _, tm) -> synths tm
-  | Weaken (_, tm, _) -> synths tm
   | Failed _ -> false
+  (* Of the potential terms, a leaf synthesizes if its term does, while canonical types don't synthesize.  A match synthesizes if its discriminee does, and either it has an explicit motive or it is non-dependent and one of its branches synthesizes (giving the type of the match).  An implicitly dependent match doesn't synthesize, since its branches may have different types. *)
+  | Realize tm -> synths tm
+  | Canonical _ -> false
+  | Match { tm; motive; branches; _ } -> (
+      synths tm
+      &&
+      match motive with
+      | `Explicit _ -> true
+      | `Nondep ->
+          Constr.Map.exists
+            (fun _ -> function
+              | Branch { tm; _ } -> synths tm
+              | Failed_branch -> false)
+            branches
+      | `Implicit -> false)
 
 (* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
 let show_ins : type nk n k. (nk, n, k) insertion -> int list =
@@ -489,12 +588,16 @@ let rec unparse : type mode n lt ls rt rs s.
       | Some { keys = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (constant_name vars (Scope.name_of c), [])))
-  | Meta (v, _) ->
-      unlocated (Ident ([ (if Display.metas () == `Numbered then Meta.name v else "?") ], []))
-  (* NB: We don't currently print the arguments of a metavariable. *)
-  | MetaEnv (v, _) ->
-      unlocated
-        (Ident ([ (if Display.metas () == `Numbered then Meta.name v ^ "{…}" else "?") ], []))
+  | Meta (v, _) -> (
+      (* A metavariable to which an alias in scope refers, such as the metavariable of a let-rec variable in a hole in the definition of one of its siblings, is displayed as the name of that alias, just as a variable let-bound to it would be. *)
+      match Names.alias_name vars v with
+      | Some x -> unlocated (Ident ([ x ], []))
+      | None -> (
+          (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
+          match displayed_metadef v with
+          | Some { tm = `Defined def; _ } ->
+              MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
+          | _ -> unparse_meta_name v))
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
@@ -561,6 +664,25 @@ let rec unparse : type mode n lt ls rt rs s.
                (prefix ~notn:letin
                   ~inner:(Multiple (wstok Let, binding, wstok In))
                   ~last:body ~right_ok)))
+  (* If a let-only has no clauses to display, we display just its body, without its ascription. *)
+  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; _ } when letonly_empty ctx ->
+      let _, bodyvars = unparse_letonly_clauses vars ctx tmenv in
+      unparse bodyvars body li ri
+  (* A let-only whose body is a metavariable that isn't a bare one arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
+  | Letonly { env = tmenv; tm = Meta (v, _); _ }
+    when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
+      let inner =
+        Multiple
+          (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Ellipsis), wstok In)
+      in
+      match No.Interval.contains ri No.minus_omega_plus_one with
+      | Some right_ok ->
+          unlocated (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v) ~right_ok)
+      | None ->
+          parenthesize
+            (unlocated
+               (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v)
+                  ~right_ok:No.minusomega_lt_minusomegaplusone)))
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty } -> (
       (* The bound terms are unparsed in the ambient context, while the types and the body are unparsed in the context of only the bound variables. *)
       let binding, bodyvars = unparse_letonly_clauses vars ctx tmenv in
@@ -681,9 +803,6 @@ let rec unparse : type mode n lt ls rt rs s.
   (* An Unact only changes the dimension/action, not which variables are in scope, so for display we can simply unparse its body. *)
   | Unact (_, tm) -> unparse vars tm li ri
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
-  | Weaken (plus_lock, tm, Plus_lock (_, comp)) ->
-      (* We remove the names of the locks, then the weakened variable, and then put back the locks. *)
-      unparse (Names.add_lock (Names.remove (Names.split vars comp) Now) plus_lock) tm li ri
   (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
   | Failed _ -> fatal (Dependent "unparsing failed component")
 
@@ -710,15 +829,24 @@ and unparse_letonly_clauses_pending : type mode n i k b.
  fun vars ctx tmenv ->
   match (ctx, tmenv) with
   | Emp _, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty)
-  | ( Ext (ctx, Vis { vars = xs; plus_lock; bindings; _ }, _),
+  (* An alias has no checked variables, so it isn't substituted for. *)
+  | Ext (ctx, { vis = Vis (Alias, _); _ }, _, Zero), _ ->
+      unparse_letonly_clauses_pending vars ctx tmenv
+  | ( Ext (ctx, ({ bindings; plus_lock; filter = _; vis } as e), _, (Suc (Zero, Dim _) as comp)),
       Ext { env; values = Modal (modality, plus, tms); _ } ) ->
+      let Ext_dim = ext_kind e comp in
+      let top = CubeOf.find_top bindings in
       let acc, names = unparse_letonly_clauses vars ctx env in
       let n = CubeOf.dim bindings in
-      let x, names = Names.add_cube n names (NICubeOf.find_top xs) in
+      (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
+      let name =
+        match vis with
+        | Vis (_, { vars = xs; _ }) -> NICubeOf.find_top xs
+        | Invis { hints } -> `Anon hints in
+      let x, names = Names.add_cube n names name in
       let ty =
-        unparse (Names.add_lock names plus_lock)
-          (uninst_letonly_type n (CubeOf.find_top bindings).ty)
-          No.Interval.entire No.Interval.entire in
+        unparse (Names.add_lock names plus_lock) (uninst_letonly_type n top.ty) No.Interval.entire
+          No.Interval.entire in
       let tm =
         unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
           No.Interval.entire in
@@ -728,6 +856,8 @@ and unparse_letonly_clauses_pending : type mode n i k b.
         | Eq -> acc
         | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
       (acc <: Term ty <: mktok Coloneq <: Term tm, No_letonly_lock, names)
+  (* A weakening entry, which can occur in the context of a metavariable, contributes nothing. *)
+  | Weaken (ctx, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
   | Lock (ctx, cgen), Lock { env; gen; plus_tgt = Plus_with_locks (comp, _) } ->
       let Eq = Modality.Gen.tgt_uniq cgen gen in
       let acc, pending, names = unparse_letonly_clauses_pending (Names.split vars comp) ctx env in
@@ -746,9 +876,6 @@ and unparse_letonly_clauses_pending : type mode n i k b.
           acc (Modalcell.name cell),
         No_letonly_lock,
         names )
-  | Lock _, _ | _, Lock _ -> fatal (Anomaly "mismatched lock in let-only")
-  | Ext (_, Invis _, _), _ | Weaken _, _ ->
-      fatal (Anomaly "invisible or weakened variable in let-only")
 
 and flush_letonly_lock : type mode. observation Bwd.t -> mode letonly_lock -> observation Bwd.t =
  fun acc pending ->
@@ -898,6 +1025,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
       match eta with
       | Noeta -> (Token.Codata, codata, mktok LBracket, wstok RBracket)
       | Eta -> (Token.Sig, record, mktok LParen, wstok RParen) in
+    MetaDefs.with_gen @@ fun gen ->
     let inner, _ =
       Bwd.fold_left
         (fun (acc, tok) { self_var; Instance.adj = Any_adjunction adj; name; suffix; ty } ->
@@ -909,7 +1037,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
             match tok with
             | [] -> [ mktok (Op ",") ]
             | _ :: _ -> tok ))
-        ( Snoc (Emp, ldelim),
+        ( gen <: ldelim,
           match eta with
           | Noeta -> [ mktok (Op "|") ]
           | Eta -> [] )
@@ -936,6 +1064,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
                 (fun v ->
                   fst (Names.add_fields selfdim v field_names <|> Anomaly "field name clash"));
             } in
+          MetaDefs.with_gen @@ fun gen ->
           let inner, _, _ =
             Bwd.fold_left
               (fun (acc, first, var_names) { Instance.ty; _ } ->
@@ -950,7 +1079,7 @@ and unparse_codata : type mode m n a et lt ls rt rs.
                   <: Term (ty self),
                   false,
                   var_names ))
-              (Snoc (Emp, mktok LParen), true, var_names)
+              (gen <: mktok LParen, true, var_names)
               instances in
           unlocated
             (outfix ~notn:record ~inner:(Multiple (dimtok Sig evaldim, inner, wstok RParen))))
@@ -985,13 +1114,14 @@ and unparse_data : type mode a m lt ls rt rs.
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
  fun vars evaldim constrs ~outputs _li _ri ->
+  MetaDefs.with_gen @@ fun gen ->
   let inner =
     Bwd.fold_left
       (fun acc (c, ty) ->
         let cterm =
           unparse_dataconstr vars c ty ~output:outputs No.Interval.entire No.Interval.entire in
         acc <: mktok (Op "|") <: Term cterm)
-      (Snoc (Emp, mktok LBracket))
+      (gen <: mktok LBracket)
       constrs in
   unlocated (outfix ~notn:data ~inner:(Multiple (dimtok Data evaldim, inner, wstok RBracket)))
 
@@ -1044,7 +1174,7 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
     (n, mode, window, dom, aw) plus_lock ->
     (dom, aw, kinetic) term ->
     m D.t ->
-    (mode, n, kinetic) term option ->
+    (mode, n) match_motive ->
     (mode, n, m) Term.branch Constr.Map.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -1058,12 +1188,13 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
     | Eq -> disc
     | Neq -> unparse_modal_ascription disc window in
   (* An explicit motive is displayed in a "return" clause, which is the explicit match notation; it is an abstraction over the datatype's indices, the boundary of the discriminee, and the discriminee itself, so it unparses in the ambient context.  A match without one is displayed as an implicit match. *)
+  MetaDefs.with_gen @@ fun gen ->
   let notn, start =
     match motive with
-    | Some motive ->
+    | `Explicit motive ->
         let umotive = unparse vars motive No.Interval.entire No.Interval.entire in
-        (explicit_mtch, Snoc (Emp, Term disc) <: mktok Return <: Term umotive <: mktok LBracket)
-    | None -> (implicit_mtch, Snoc (Emp, Term disc) <: mktok LBracket) in
+        (explicit_mtch, gen <: Term disc <: mktok Return <: Term umotive <: mktok LBracket)
+    | `Implicit | `Nondep -> (implicit_mtch, gen <: Term disc <: mktok LBracket) in
   let ubranches =
     Constr.Map.fold
       (fun c br acc ->
@@ -1150,10 +1281,11 @@ and unparse_comatch : type mode n a s et lt ls rt rs.
             acc <: mktok (Op "|") <: Term pat <: mktok Mapsto <: Term ubody)
       acc
       (all_pbij_between dim (Field.dim fld)) in
+  MetaDefs.with_gen @@ fun attr ->
   match fields with
   | Emp ->
       unlocated
-        (outfix ~notn:empty_co_match ~inner:(Multiple (wstok LBracket, Emp, wstok RBracket)))
+        (outfix ~notn:empty_co_match ~inner:(Multiple (wstok LBracket, attr, wstok RBracket)))
   | _ ->
       let inner =
         Bwd.fold_left
@@ -1172,7 +1304,7 @@ and unparse_comatch : type mode n a s et lt ls rt rs.
                 higher_fields acc fld plus_lock pbijmap
             | Term.Structfield.LazyHigher (_, plus_lock, pbijmap) ->
                 higher_fields acc fld plus_lock (Lazy.force pbijmap))
-          Emp fields in
+          attr fields in
       unlocated (outfix ~notn:comatch ~inner:(Multiple (wstok LBracket, inner, wstok RBracket)))
 
 (* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing.  The flag ~more indicates that the spine will be applied to more arguments, so that its right edge faces a juxtaposition (see word_like_notation). *)
@@ -1313,9 +1445,9 @@ and unparse_field_var : type mode n lt ls rt rs s.
   | _ -> None
 
 (* Unparse a key operation applied postfix to a synthesizing term.  The body is unparsed in the context locked by the key's source, obtained from the ambient names by splitting off the target locks ('comp') and re-adding the source lock ('plus_src').  We always omit printing keys that are identities, since those can always be reconstructed on parse.  Keys that are the unique one between their endpoints are also omittable, and are omitted unless the user has enabled 'display unique keys'.  Otherwise, we ask the mode theory for a normal form of the cell, as a vertical composite (outer list) of horizontal composites / whiskerings (inner list), and emit one syntactic key application "#a.b.c" for each entry of the vertical composite. *)
-and unparse_key : type mode n am mu nu cod b c lt ls rt rs.
+and unparse_key : type mode n am mu nu cod b c lt ls rt rs s.
     n Names.t ->
-    (mode, am, kinetic) term ->
+    (mode, am, s) term ->
     (mode, mu, nu, cod) Modalcell.t ->
     (mode, c, cod, b, unit, n) Tctx.comp ->
     (b, cod, mu, mode, am) plus_lock ->
@@ -1333,9 +1465,9 @@ and unparse_key : type mode n am mu nu cod b c lt ls rt rs.
       unparse_keys vars body (Bwd.of_list (Modalcell.name cell)) li ri
 
 (* Apply a sequence of syntactic key applications (the vertical composite, innermost first) to an unparsed body, as a postfix application spine at tightness +ω, mirroring the argument-application logic of unparse_spine. *)
-and unparse_keys : type mode n lt ls rt rs.
+and unparse_keys : type mode n lt ls rt rs s.
     n Names.t ->
-    (mode, n, kinetic) term ->
+    (mode, n, s) term ->
     string list Bwd.t ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
@@ -1811,7 +1943,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
                 ( lamvars,
                   App
                     ( Kinetic,
-                      weaken (Modality.tgt modality) nonlam,
+                      weaken_dim (dom_sface fb) sfilter' nonlam,
                       dom_tface s,
                       sfilter,
                       Modal (modality, plusm, lamargs) ) )) in
@@ -1912,19 +2044,20 @@ let rec unparse_ctx : type dom modality mode a b.
               ty = Wrap (unlocated (Placeholder []));
             } ) )
   | Ext
-      (type edom emod a' x b' bm n)
-      ((ctx, entry, af) :
+      (type edom emod a' x b' bm n b2)
+      ((ctx, ({ plus_lock; bindings; filter = _; vis } as e), af, comp) :
         (mode, a', b') ordered_termctx
-        * (edom, emod, mode, b', bm, x, n) Term.entry
-        * (a', x, a) N.plus) -> (
+        * (edom, emod, mode, b, bm, x, n, b2) Term.entry
+        * (a', x, a) N.plus
+        * (mode, b2, mode, b', unit, b) Tctx.comp) -> (
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
-      match entry with
-      | Invis { bindings; hints; _ } ->
+      match (ext_kind e comp, vis) with
+      | Ext_dim, Invis { hints; _ } ->
           (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device: the self-variable of a datatype's constructors, or a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
           let _, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           (names, result)
-      | Vis { dim; plusdim; vars; plus_lock; bindings; hasfields; fields; fplus; filter = _ } ->
+      | ext, Vis (kind, { dim; plusdim; vars; hasfields; fields; fplus }) ->
           let modality = Modality.name (plus_lock_modality plus_lock) in
           (* First we split off the field variables, if any. *)
           let xs, fs = Bwv.unappend fplus xs in
@@ -1947,10 +2080,14 @@ let rec unparse_ctx : type dom modality mode a b.
               (left, m, string) NFamOf.t =
            fun _ (NFamOf (x, _)) -> NFamOf x in
           let xs = NICubeOf.map { map = projector } vardata in
-          (* With the variables projected out, we add them to the Names.t.  We use Names.unsafe_add because at this point the variables have already been uniquified by Names.uniquify_vars. *)
+          (* With the variables projected out, we add them to the Names.t, if they are a cube of variables.  We use Names.unsafe_add because at this point the variables have already been uniquified by Names.uniquify_vars.  An alias doesn't extend the checked context, so it adds nothing to the list of cubes of names, but we display its values like those of let-bound variables. *)
           let fnames =
             Bwv.mmap (fun [ (x, _); (f, _, _) ] -> (Field.to_string f, x)) [ fs; fields ] in
-          let names = Names.unsafe_add names (Variables (dim, plusdim, xs)) (Bwv.to_bwd fnames) in
+          let (names : b Names.t) =
+            match (kind, ext) with
+            | Vars, Ext_dim ->
+                Names.unsafe_add names (Variables (dim, plusdim, xs)) (Bwv.to_bwd fnames)
+            | Alias, Ext_alias -> names in
           let xnames = Names.add_lock names plus_lock in
           let lock = Modality.name lock in
           (* Then we iterate forwards through the bindings, unparsing them with these names and adding them to the result. *)
@@ -1992,6 +2129,11 @@ let rec unparse_ctx : type dom modality mode a b.
               result :=
                 Snoc (!result, { var = x; modality; renamed; hidden = false; lock; tm = None; ty }))
             [ fs; fields ];
+          (* If an alias is zero-dimensional and its value is a metavariable, we record its name for that metavariable (see Names.add_alias). *)
+          let names =
+            match (kind, D.compare_zero (CubeOf.dim bindings), (CubeOf.find_top bindings).tm) with
+            | Alias, Zero, Some tm -> Names.add_alias names (fst (NICubeOf.find_top vardata)) tm
+            | _ -> names in
           (names, !result))
 
 (* See the explanation of this function in Core.Reporter. *)
@@ -2034,8 +2176,14 @@ let () =
                   No.Interval.entire))
             `None
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
-      | PMeta v -> utf8string (Meta.name v)
-      | PHole (origin, vars, (Permute (p, ctx) as termctx), ty) ->
+      | PMeta v -> utf8string (meta_name v)
+      | PHole (origin, vars, termctx, ty) ->
+          (* The context and type of a hole are stored as terms, read back (not for display) at the moment the hole was created.  Since then, other holes appearing in them may have been solved, and constants that were being defined may have acquired definitions.  Thus, before displaying a hole we re-evaluate its context and type in the current global state and read them back again for display, so that the user sees an up-to-date goal.  (This is also what happens when the hole is actually solved: "solve" evaluates the stored context and type in the current state, so the type displayed here is the one that a solution will be checked against.)  This must happen before we rewind to the hole's origin below, since that would undo later solutions and definitions.  If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)
+          let (Permute (p, ctx) as termctx), ty =
+            Reporter.discard_errors ~fallback:(fun () -> (termctx, ty)) @@ fun () ->
+            let ctx = Norm.eval_ctx termctx in
+            let ety = Norm.eval_term (Ctx.env ctx) ty in
+            (readback_ctx ctx, readback_val ctx ety) in
           let run =
             match origin with
             (* If the hole comes from an earlier time, we rewind to that time before displaying, so that the correct notations and names will be in scope. *)

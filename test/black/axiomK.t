@@ -13,7 +13,7 @@ Using the Martin-Löf "Jdentity type" as an indexed datatype, we can try to prov
    ￫ hint[E1101]
    ￭ command-line exec string
    1 | def USIP (A:Type) (a:A) (e:Jd A a a) : Jd (Jd A a a) e rfl. := match e [ rfl. |-> rfl. ]
-     ^ match will not refine the goal or context (no consistent permutation of context)
+     ^ match will not refine the goal or context (index variable occurs in parameter)
   
    ￫ error[E0401]
    ￭ command-line exec string
@@ -36,7 +36,7 @@ Using the Martin-Löf "Jdentity type" as an indexed datatype, we can try to prov
    ￫ hint[E1101]
    ￭ command-line exec string
    1 | def K (A:Type) (a:A) (P : Jd A a a -> Type) (p : P rfl.) (e : Jd A a a) : P e := match e [ rfl. |-> p ]
-     ^ match will not refine the goal or context (no consistent permutation of context)
+     ^ match will not refine the goal or context (index variable occurs in parameter)
   
    ￫ error[E0401]
    ￭ command-line exec string

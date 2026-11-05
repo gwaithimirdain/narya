@@ -23,12 +23,11 @@ let parse_term (tm : string) : N.zero check located =
 
 let check_type (rty : N.zero check located) : (_, test_mode emp, kinetic) term =
   Reporter.trace "when checking type" @@ fun () ->
-  check (Kinetic `Nolet) (Ctx.empty test_mode) rty (universe test_mode D.zero)
+  check Kinetic (Ctx.empty test_mode) rty (universe test_mode D.zero)
 
 let check_term (rtm : N.zero check located) (ety : (_, kinetic) value) :
     (_, test_mode emp, kinetic) term =
-  Reporter.trace "when checking term" @@ fun () ->
-  check (Kinetic `Nolet) (Ctx.empty test_mode) rtm ety
+  Reporter.trace "when checking term" @@ fun () -> check Kinetic (Ctx.empty test_mode) rtm ety
 
 let assume (name : string) (ty : string) : unit =
   Global.run @@ fun () ->
@@ -101,7 +100,7 @@ let print (tm : string) : unit =
   let rtm = parse_term tm in
   match rtm with
   | { value = Synth rtm; loc } ->
-      let ctm, ety = synth (Kinetic `Nolet) (Ctx.empty test_mode) { value = rtm; loc } in
+      let ctm, ety = synth Kinetic (Ctx.empty test_mode) { value = rtm; loc } in
       let etm = eval_term (Emp (test_mode, D.zero)) ctm in
       Readback.Displaying.run ~env:true @@ fun () ->
       let btm = readback_at Kinetic (Ctx.empty test_mode) etm ety in
@@ -113,10 +112,12 @@ let print (tm : string) : unit =
 let run f =
   Lexer.Specials.run @@ fun () ->
   Parser.Unparse.install ();
+  Unparse.MetaDefs.run_empty @@ fun () ->
   Display.run ~init:Display.default @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
   Positivity.run @@ fun () ->
+  Meta.run_owner @@ fun () ->
   Dim.Endpoints.set ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true ~hott:false;
   Reporter.run ~emit:Reporter.display
     ~mortal:(fun d ->

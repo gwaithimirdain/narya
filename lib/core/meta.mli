@@ -7,19 +7,36 @@ open Tctx
 
 type ('mode, 'a, 'b, 's) t
 
+(* A defined metavariable is either bound by a let or let rec, or else inserted automatically to hold the value of a case tree construct appearing bare in a kinetic position, in which case we record what sort of construct it was. *)
+type sort = [ `Let | `Letrec of letrec_block | `Bare of string ]
+
+(* The metavariables bound by the same "let rec … and …" block share a block identifier. *)
+and letrec_block
+
+val new_letrec_block : unit -> letrec_block
+val run_owner : (unit -> 'x) -> 'x
+val with_owner : Constant.t -> (unit -> 'x) -> 'x
+val with_owner_opt : Constant.t option -> (unit -> 'x) -> 'x
+val current_owner : unit -> Constant.t option
+val local_name : string option -> string option
+
 val make_def :
-  string ->
-  string option ->
-  'mode Mode.t ->
-  'a N.t ->
-  ('mode, 'b) Tctx.t ->
-  's energy ->
-  ('mode, 'a, 'b, 's) t
+  sort -> 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t
 
 val make_hole : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t
 val remake : (File.t -> File.t) -> ('mode, 'a, 'b, 's) t -> ('mode, 'a, 'b, 's) t
 val mode : ('mode, 'a, 'b, 's) t -> 'mode Mode.t
-val name : ('mode, 'a, 'b, 's) t -> string
+
+val name :
+  ?owner_name:(Constant.t -> string) ->
+  ?owner:Constant.t ->
+  ?local:string ->
+  ('mode, 'a, 'b, 's) t ->
+  string
+
+val sort_of : ('mode, 'a, 'b, 's) t -> sort option
+val is_bare : ('mode, 'a, 'b, 's) t -> bool
+val letrec_siblings : ('m1, 'a1, 'b1, 's1) t -> ('m2, 'a2, 'b2, 's2) t -> bool
 val origin : ('mode, 'a, 'b, 's) t -> Origin.t
 
 val compare :
@@ -36,6 +53,7 @@ module Wrapped : sig
 end
 
 module WrapSet : module type of Set.Make (Wrapped)
+module WrapMap : module type of Map.Make (Wrapped)
 
 val hole_number : ('mode, 'a, 'b, 's) t -> int
 

@@ -23,56 +23,8 @@ open Value
 
 (* To fourth approximation, a context (qua substitution) can also incorporate a permutation of the raw indices.  This is because the raw indices occur in the order that they are bound *textually*, whereas we require that the checked indices occur in a "logical" order so that the type and possible value of each variable involves only those appearing prior to it.  These can disconnect during a match, where the new variables bound as arguments of the matched constructor are last textually, but must be inserted earlier in the context to retain logical order.  We postpone this modification until later, first defining "Ordered" contexts and then adding the permutations. *)
 
-(* The binding of each variable in a context is a "level option * normal".  But instead of exposing this literally as a product type, we use an abstract type with a constructor "Binding.make" and accessors "Binding.level" and "Binding.value".  The reason is that in the "bind_some" machinery below, we work with contexts where the binding of a variable is "known but not yet available" or "not yet computed".  So the internal implementation of Binding is actually a reference cell that usually stores a "Known" "level option * normal", but sometimes is Unknown or other times a Delayed "level option * normal".
-
-   A binding also carries a mutable "dirt" verdict recording whether its value contains occurrences of constants currently being defined (see Positivity).  This applies only to let-bound variables, whose values were typechecked, and to the free variables in the body of a let-only, which inherit the verdicts of their bound terms; other free variables are always clean.  It is mutable, separately from the state reference, so that letrec can pre-mark its bindings as recursive while checking their bodies and update them to the real verdict afterwards.  (Note that bind_some's "specify" installs computed values without computing their dirt; free pattern variables are clean in practice, but this could be revisited along with strict positivity.) *)
-module Binding : sig
-  type 'mode t
-
-  val make : ?dirt:Positivity.recursion -> level option -> 'mode normal -> 'mode t
-  val level : 'mode t -> level option
-  val value : 'mode t -> 'mode normal
-  val dirt : 'mode t -> Positivity.recursion
-  val set_dirt : 'mode t -> Positivity.recursion -> unit
-
-  (* An unknown binding can be specified when we have its value. *)
-  val unknown : unit -> 'mode t
-  val specify : 'mode t -> level option -> 'mode normal -> unit
-
-  (* A known but not-yet-available value is created by delaying it, and can be made available by forcing it. *)
-  val delay : 'mode t -> 'mode t
-  val force : 'mode t -> unit
-end = struct
-  type 'mode state =
-    | Known of level option * 'mode normal
-    | Unknown
-    | Delayed of level option * 'mode normal
-
-  type 'mode t = { state : 'mode state ref; mutable dirt : Positivity.recursion }
-
-  let make ?(dirt = `Nonrecursive) i x = { state = ref (Known (i, x)); dirt }
-
-  let level b =
-    match !(b.state) with
-    | Known (i, _) -> i
-    | Unknown | Delayed _ -> None
-
-  let value b =
-    match !(b.state) with
-    | Known (_, x) -> x
-    | Unknown | Delayed _ -> fatal (Anomaly "Undetermined context variable")
-
-  let dirt b = b.dirt
-  let set_dirt b d = b.dirt <- d
-  let unknown () = { state = ref Unknown; dirt = `Nonrecursive }
-  let specify b i x = b.state := Known (i, x)
-  let delay b = { state = ref (Delayed (level b, value b)); dirt = b.dirt }
-
-  let force b =
-    match !(b.state) with
-    | Known _ | Unknown -> ()
-    | Delayed (i, x) -> b.state := Known (i, x)
-end
+(* Bindings, entries, and ordered contexts are defined in Value, mutually with environments, so that an environment can be the identity environment of a context. *)
+module Binding = Value.Binding
 
 (* Test whether all the variables in a cube of bindings are free (none are let-bound). *)
 let all_free : type mode n. (n, mode Binding.t) CubeOf.t -> bool =
@@ -85,58 +37,34 @@ let all_free : type mode n. (n, mode Binding.t) CubeOf.t -> bool =
     true
   with Bound -> false
 
-(* A context is a list of "entries", which can be either visible or invisible in the raw world.  An (f,n) entry contains f raw variables and an n-dimensional cube of checked variables. *)
-type (_, _, _, _, _) entry =
-  (* Add a cube of internal variables that are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn. *)
-  | Vis :
-      ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data
-      -> ('dom, 'modality, 'mode, 'f, 'mn) entry
-  (* Add a cube of internal variables that are not visible to the parser.  We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable. *)
-  | Invis : ('dom, 'modality, 'mode, 'n) invis_data -> ('dom, 'modality, 'mode, N.zero, 'n) entry
+include Value.Ctx_entry
 
-and ('dom, 'modality, 'mode, 'm, 'n, 'mn, 'f1, 'f2, 'f) vis_data = {
-  dim : 'm D.t;
-  plusdim : ('m, 'n, 'mn) D.plus;
-  filter : ('dom, 'modality, 'mode, 'mn, 'mn) Modality.filter_dim;
-  (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
-  vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
-  bindings : ('mn, 'dom Binding.t) CubeOf.t;
-  (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'vars' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
-  hasfields : ('m, 'f2) has_fields;
-  fields : (D.zero Field.t * string, 'f2) Bwv.t;
-  fplus : ('f1, 'f2, 'f) N.plus;
-}
-
-and ('dom, 'modality, 'mode, 'n) invis_data = {
-  filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
-  bindings : ('n, 'dom Binding.t) CubeOf.t;
-}
-
-let raw_entry : type dom modality mode f n. (dom, modality, mode, f, n) entry -> f N.t = function
-  | Vis { vars; fplus; _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
-  | Invis _ -> N.zero
-
-let modality_entry : type dom modality mode f n.
-    (dom, modality, mode, f, n) entry -> (dom, modality, mode) Modality.t = function
-  | Vis { filter; _ } -> Modality.filter_modality filter
-  | Invis { filter; _ } -> Modality.filter_modality filter
-
-let dim_entry : type dom modality mode f n. (dom, modality, mode, f, n) entry -> n D.t = function
-  | Vis { bindings; _ } | Invis { bindings; _ } -> CubeOf.dim bindings
-
-let filter_entry : type dom modality mode f n.
-    (dom, modality, mode, f, n) entry -> (dom, modality, mode, n, n) Modality.filter_dim = function
-  | Vis { filter; _ } | Invis { filter; _ } -> filter
-
-let bindings_entry : type dom modality mode f n.
-    (dom, modality, mode, f, n) entry -> (n, dom Binding.t) CubeOf.t = function
-  | Vis { bindings; _ } -> bindings
-  | Invis { bindings; _ } -> bindings
-
-let variables_entry : type dom modality mode f n. (dom, modality, mode, f, n) entry -> n variables =
+let raw_entry : type dom modality mode f n b2. (dom, modality, mode, f, n, b2) entry -> f N.t =
   function
-  | Vis { dim; plusdim; vars; _ } -> Variables (dim, plusdim, vars)
-  | Invis { bindings; _ } ->
+  | { vis = Vis (_, { vars; fplus; _ }); _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
+  | { vis = Invis; _ } -> N.zero
+
+let modality_entry : type dom modality mode f n b2.
+    (dom, modality, mode, f, n, b2) entry -> (dom, modality, mode) Modality.t = function
+  | { filter; _ } -> Modality.filter_modality filter
+
+let dim_entry : type dom modality mode f n b2. (dom, modality, mode, f, n, b2) entry -> n D.t =
+  function
+  | { bindings; _ } -> CubeOf.dim bindings
+
+let filter_entry : type dom modality mode f n b2.
+    (dom, modality, mode, f, n, b2) entry -> (dom, modality, mode, n, n) Modality.filter_dim =
+  function
+  | { filter; _ } -> filter
+
+let bindings_entry : type dom modality mode f n b2.
+    (dom, modality, mode, f, n, b2) entry -> (n, dom Binding.t) CubeOf.t = function
+  | { bindings; _ } -> bindings
+
+let variables_entry : type dom modality mode f n b2.
+    (dom, modality, mode, f, n, b2) entry -> n variables = function
+  | { vis = Vis (_, { dim; plusdim; vars; _ }); _ } -> Variables (dim, plusdim, vars)
+  | { vis = Invis; bindings; _ } ->
       (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
       let hints =
         Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
@@ -144,41 +72,34 @@ let variables_entry : type dom modality mode f n. (dom, modality, mode, f, n) en
       singleton_variables (CubeOf.dim bindings) (`Anon hints)
 
 (* Given an entry containing no let-bound variables, produce an "app" that says how to apply a function to its cube of (free) variables. *)
-let app_entry : type hmode dom modality mode f n any.
+let app_entry : type hmode dom modality mode f n b2 any.
     (hmode, mode, any, live) apps ->
-    (dom, modality, mode, f, n) entry ->
+    (dom, modality, mode, f, n, b2) entry ->
     (hmode, mode, noninst, live) apps =
- fun apps e ->
-  match e with
-  | Vis { bindings; filter; _ } | Invis { filter; bindings; _ } ->
-      if all_free bindings then
-        let n = CubeOf.dim bindings in
-        Snoc
-          ( apps,
-            Arg
-              ( filter,
-                CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ],
-                ins_zero n ) )
-      else fatal (Anomaly "let-bound variable in Ctx.apps")
+ fun apps { bindings; filter; _ } ->
+  if all_free bindings then
+    let n = CubeOf.dim bindings in
+    Snoc
+      ( apps,
+        Arg (filter, CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ], ins_zero n)
+      )
+  else fatal (Anomaly "let-bound variable in Ctx.apps")
+
+(* The extension of a checked context by one cube of variables, as contributed by a visible or invisible entry. *)
+let dim_comp : type dom modality mode b n.
+    (dom, modality, mode, n, n) Modality.filter_dim ->
+    (n, dom Binding.t) CubeOf.t ->
+    ( mode,
+      (mode id, (modality, n) dim_entry) snoc,
+      mode,
+      b,
+      unit,
+      (b, (modality, n) dim_entry) snoc )
+    Tctx.comp =
+ fun filter bindings -> Suc (Zero, Dim (CubeOf.dim bindings, filter))
 
 module Ordered = struct
-  type ('mode, _, _) t =
-    | Emp : 'mode Mode.t -> ('mode, N.zero, 'mode emp) t
-    | Snoc :
-        ('mode, 'a, 'b) t * ('dom, 'modality, 'mode, 'x, 'n) entry * ('a, 'x, 'ax) N.plus
-        -> ('mode, 'ax, ('b, ('modality, 'n) dim_entry) snoc) t
-    | Lock :
-        ('cod, 'a, 'b) t * ('dom, 'modality, 'cod) Modality.gen
-        -> ('dom, 'a, ('b, 'modality lock_entry) snoc) t
-    (* A "weakening" entry increases the raw length by one, but stores no checked variables or bindings.  It records a Code.t; looking up the added (dataless) raw variable raises that fatal error.  To weaken by more than one, stack several of these. *)
-    | Weaken : ('mode, 'a, 'b) t * Reporter.Code.t -> ('mode, 'a N.suc, 'b) t
-
-  let rec mode : type mode a b. (mode, a, b) t -> mode Mode.t = function
-    | Emp mode -> mode
-    | Snoc (ctx, Vis _, _) -> mode ctx
-    | Snoc (ctx, Invis _, _) -> mode ctx
-    | Lock (_, modality) -> Modality.src (Modality.of_gen modality)
-    | Weaken (ctx, _) -> mode ctx
+  include Ordered_ctx
 
   let vis : type dom modality mode a b f af m n mn.
       (mode, a, b) t ->
@@ -192,18 +113,35 @@ module Ordered = struct
    fun ctx filter dim plusdim vars bindings af ->
     Snoc
       ( ctx,
-        Vis
-          {
-            dim;
-            filter;
-            plusdim;
-            vars;
-            bindings;
-            hasfields = No_fields;
-            fields = Emp;
-            fplus = Zero;
-          },
-        af )
+        {
+          filter;
+          bindings;
+          vis = Vis (Vars, { dim; plusdim; vars; hasfields = No_fields; fields = Emp; fplus = Zero });
+        },
+        af,
+        dim_comp filter bindings )
+
+  (* An alias is like a visible entry, but it doesn't extend the checked context, and its bindings must all be let-bound. *)
+  let alias : type dom modality mode a b f af m n mn.
+      (mode, a, b) t ->
+      (dom, modality, mode, mn, mn) Modality.filter_dim ->
+      m D.t ->
+      (m, n, mn) D.plus ->
+      (N.zero, n, binder_name, f) NICubeOf.t ->
+      (mn, dom Binding.t) CubeOf.t ->
+      (a, f, af) N.plus ->
+      (mode, af, b) t =
+   fun ctx filter dim plusdim vars bindings af ->
+    Snoc
+      ( ctx,
+        {
+          filter;
+          bindings;
+          vis =
+            Vis (Alias, { dim; plusdim; vars; hasfields = No_fields; fields = Emp; fplus = Zero });
+        },
+        af,
+        Zero )
 
   let cube_vis : type dom modality mode a b n.
       (mode, a, b) t ->
@@ -215,11 +153,11 @@ module Ordered = struct
     let m = CubeOf.dim vars in
     vis ctx filter m (D.plus_zero m) (NICubeOf.singleton (binder_name_of_option x)) vars (Suc Zero)
 
-  let vis_fields : type mode a b f1 f2 f af n.
+  let vis_fields : type mode a b f1 f2 f af n fldty.
       (mode, a, b) t ->
       (N.zero, n, binder_name, f1) NICubeOf.t ->
       (n, mode Binding.t) CubeOf.t ->
-      (D.zero Field.t * string, f2) Bwv.t ->
+      (D.zero Field.t * string * fldty, f2) Bwv.t ->
       (f1, f2, f) N.plus ->
       (a, f, af) N.plus ->
       (mode, af, (b, (mode id, n) dim_entry) snoc) t =
@@ -228,33 +166,32 @@ module Ordered = struct
     let filter = Modality.filter_id (mode ctx) (CubeOf.dim bindings) in
     Snoc
       ( ctx,
-        Vis { dim = D.zero; filter; plusdim; vars; bindings; hasfields = Has_fields; fields; fplus },
-        af )
+        {
+          filter;
+          bindings;
+          vis = Vis (Vars, { dim = D.zero; plusdim; vars; hasfields = Has_fields; fields; fplus });
+        },
+        af,
+        dim_comp filter bindings )
 
   let invis : type dom modality mode a b n.
       (mode, a, b) t ->
       (dom, modality, mode, n, n) Modality.filter_dim ->
       (n, dom Binding.t) CubeOf.t ->
       (mode, a, (b, (modality, n) dim_entry) snoc) t =
-   fun ctx filter bindings -> Snoc (ctx, Invis { bindings; filter }, Zero)
-
-  let rec checked_length : type mode a b. (mode, a, b) t -> (mode, b) Tctx.t = function
-    | Emp mode -> Tctx.emp mode
-    | Snoc (ctx, e, _) -> Tctx.suc (checked_length ctx) (Dim (dim_entry e, filter_entry e))
-    | Lock (ctx, l) -> Tctx.suc (checked_length ctx) (Lock l)
-    | Weaken (ctx, _) -> checked_length ctx
-
-  let tctx = checked_length
+   fun ctx filter bindings ->
+    Snoc (ctx, { bindings; filter; vis = Invis }, Zero, dim_comp filter bindings)
 
   let rec raw_length : type mode a b. (mode, a, b) t -> a N.t = function
     | Emp _ -> N.zero
-    | Snoc (ctx, _, ax) -> N.plus_out (raw_length ctx) ax
+    | Snoc (ctx, _, ax, _) -> N.plus_out (raw_length ctx) ax
     | Lock (ctx, _) -> raw_length ctx
     | Weaken (ctx, _) -> N.suc (raw_length ctx)
 
   let rec length : type mode a b. (mode, a, b) t -> int = function
     | Emp _ -> 0
-    | Snoc (ctx, _, _) -> length ctx + 1
+    | Snoc (ctx, _, _, Suc _) -> length ctx + 1
+    | Snoc (ctx, _, _, Zero) -> length ctx
     | Lock (ctx, _) -> length ctx
     | Weaken (ctx, _) -> length ctx
 
@@ -262,7 +199,7 @@ module Ordered = struct
 
   let rec total_locks : type mode a b. (mode, a, b) t -> mode Modality.tgt_wrapped = function
     | Emp mode -> Wrap (Modality.id mode)
-    | Snoc (ctx, _, _) -> total_locks ctx
+    | Snoc (ctx, _, _, _) -> total_locks ctx
     | Weaken (ctx, _) -> total_locks ctx
     | Lock (ctx, g) ->
         let (Wrap (Path (m, mode))) = total_locks ctx in
@@ -307,7 +244,9 @@ module Ordered = struct
 
   let rec apps : type mode a b. (mode, a, b) t -> (mode, mode, noninst, live) apps = function
     | Emp _ -> Emp
-    | Snoc (ctx, e, _) -> app_entry (apps ctx) e
+    | Snoc (ctx, e, _, Suc _) -> app_entry (apps ctx) e
+    (* An alias contributes no checked variables. *)
+    | Snoc (ctx, _, _, Zero) -> apps ctx
     | Weaken (ctx, _) -> apps ctx
     | Lock _ -> fatal (Anomaly "context lock in Ctx.apps")
 
@@ -325,6 +264,20 @@ module Ordered = struct
         plus : ('an, 'cod, 'm, 'mode, 'anm) plus_with_locks;
       }
         -> ('mode, 'anm, 'field) lookup
+
+  (* A raw variable can also be an alias, which has no checked variable but only a value.  In this case we return its value, which lives in the context 'b at the position of the alias locked by its modality, and all the context entries and locks to its right. *)
+  type (_, _) alias_lookup =
+    | Alias_lookup : {
+        value : 'dom normal;
+        dirt : Positivity.recursion;
+        modality : ('dom, 'modality, 'cod) Modality.t;
+        plus : ('b, 'cod, 'm, 'mode, 'bm) plus_with_locks;
+      }
+        -> ('mode, 'bm) alias_lookup
+
+  type (_, _, _) looked_up =
+    | Found : ('mode, 'b, 'field) lookup -> ('mode, 'b, 'field) looked_up
+    | Aliased : ('mode, 'b) alias_lookup -> ('mode, 'b, 'field) looked_up
 
   let pop_lookup : type dom modality mode b n field.
       (dom, modality, mode) Modality.t ->
@@ -346,14 +299,94 @@ module Ordered = struct
       (dom, (b, modality lock_entry) snoc, field) lookup =
    fun mu (Lookup v) -> Lookup { v with plus = plus_with_locks_lock v.plus mu }
 
+  (* Pass a lookup result outwards past an entry, which adds a checked cube of variables unless it is an alias. *)
+  let pop_looked_up : type dom modality mode b b2 newb f n field.
+      (dom, modality, mode, f, n, b2) entry ->
+      (mode, b2, mode, b, unit, newb) Tctx.comp ->
+      (mode, b, field) looked_up ->
+      (mode, newb, field) looked_up =
+   fun { vis; filter; bindings } comp found ->
+    let modality = Modality.filter_modality filter in
+    let n = CubeOf.dim bindings in
+    match (vis, comp, found) with
+    | Vis (Alias, _), Zero, _ -> found
+    | Vis (Vars, _), Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
+    | Invis, Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
+    | Vis (Vars, _), Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
+        Aliased (Alias_lookup { v with plus = plus_with_locks_dim v.plus n filter })
+    | Invis, Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
+        Aliased (Alias_lookup { v with plus = plus_with_locks_dim v.plus n filter })
+
+  let lock_looked_up : type dom modality mode b field.
+      (dom, modality, mode) Modality.gen ->
+      (mode, b, field) looked_up ->
+      (dom, (b, modality lock_entry) snoc, field) looked_up =
+   fun mu -> function
+    | Found v -> Found (lock_lookup mu v)
+    | Aliased (Alias_lookup v) ->
+        Aliased (Alias_lookup { v with plus = plus_with_locks_lock v.plus mu })
+
+  (* Find the face of a cube of visible variables named by a raw index, if it is in that cube, or else the remaining raw index. *)
+  type (_, _) find_in_cube =
+    | Found_face : ('k, 'mn) sface -> ('a, 'mn) find_in_cube
+    | Not_found : 'a Raw.index -> ('a, 'mn) find_in_cube
+
+  let find_in_cube : type a f af m n mn.
+      m D.t ->
+      (m, n, mn) D.plus ->
+      (N.zero, n, binder_name, f) NICubeOf.t ->
+      (a, f, af) N.plus ->
+      af Raw.index ->
+      (a, mn) find_in_cube =
+   fun dim plusdim vars pf k ->
+    match N.index_in_plus pf (fst k) with
+    | Right i -> (
+        let module Lookup = struct
+          (* When we look up a visible variable in a context, we find the level (if any), the value, and the corresponding possibly-invisible variable.  To do this we have to iterate through each cube of variables from right-to-left as we decrement the raw index looking for the corresponding face.  So we need an auxiliary type family to keep track of where we are in that iteration and what result type we're expecting. *)
+          type 'right t =
+            | Unfound : (N.zero, 'right, 'rest) N.plus * 'rest N.index -> 'right t
+            | Found : ('l, n) sface -> 'right t
+        end in
+        let module Fold = NICubeOf.Traverse (Lookup) in
+        (* This function is called on every step of that iteration through a cube.  It appears that we have to define it with an explicit type signature in order for it to end up sufficiently polymorphic. *)
+        let lookup_folder : type left l.
+            (l, n) sface ->
+            (left, l, binder_name) NFamOf.t ->
+            left N.suc Lookup.t ->
+            left Lookup.t * (left, l, unit) NFamOf.t =
+         fun fb (NFamOf _) acc ->
+          match acc with
+          | Found fa -> (Found fa, NFamOf ())
+          | Unfound (Suc p, Pop k) -> (Unfound (p, k), NFamOf ())
+          | Unfound (_, Top) -> (Found fb, NFamOf ()) in
+        match
+          Fold.fold_map_right
+            { foldmap = (fun fb -> lookup_folder fb) }
+            vars
+            (Unfound (N.zero_plus (NICubeOf.out N.zero vars), i))
+        with
+        | Unfound (Zero, _), _ -> fatal (Anomaly "variable not found in cube")
+        | Found fb, _ ->
+            (* Once we find the face in the cube of visible variables, we add it to the face specified by the user for a cube variable, if any. *)
+            let (SFace_of fa) =
+              match snd k with
+              | None -> SFace_of (id_sface dim)
+              | Some (Any_sface fa) -> (
+                  match D.compare (cod_sface fa) dim with
+                  | Neq -> fatal (Invalid_variable_face (dim, fa))
+                  | Eq -> SFace_of fa) in
+            let (Plus kl) = D.plus (dom_sface fb) in
+            Found_face (sface_plus_sface fa plusdim kl fb))
+    | Left j -> Not_found (j, snd k)
+
   (* The lookup function iterates through entries. *)
   let rec lookup : type mode a b.
-      (mode, a, b) t -> a Raw.index -> (mode, b, level * D.zero Field.t) lookup =
+      (mode, a, b) t -> a Raw.index -> (mode, b, level * D.zero Field.t) looked_up =
    fun ctx k ->
     match (ctx, k) with
     | Emp _, _ -> .
-    | Snoc (ctx, e, pf), _ -> lookup_entry ctx e pf k
-    | Lock (ctx, mu), _ -> lock_lookup mu (lookup ctx k)
+    | Snoc (ctx, e, pf, comp), _ -> lookup_entry ctx e pf comp k
+    | Lock (ctx, mu), _ -> lock_looked_up mu (lookup ctx k)
     (* A weakening entry doesn't change the checked context.  If the raw index is the added (dataless) variable, we raise the stored fatal error; otherwise we skip past it. *)
     | Weaken (ctx, code), _ -> (
         match fst k with
@@ -361,96 +394,91 @@ module Ordered = struct
         | Pop j -> lookup ctx (j, snd k))
 
   (* For each entry, we iterate through the list of fields or the cube of names, as appropriate. *)
-  and lookup_entry : type dom modality mode a b f af mn.
+  and lookup_entry : type dom modality mode a b b2 newb f af mn.
       (mode, a, b) t ->
-      (dom, modality, mode, f, mn) entry ->
+      (dom, modality, mode, f, mn, b2) entry ->
       (a, f, af) N.plus ->
+      (mode, b2, mode, b, unit, newb) Tctx.comp ->
       af Raw.index ->
-      (mode, (b, (modality, mn) dim_entry) snoc, level * D.zero Field.t) lookup =
-   fun ctx e pf k ->
-    match e with
-    | Vis
-        (type m n f1 f2)
-        ({ dim; filter; plusdim; vars; bindings; hasfields = _; fields; fplus } :
-          (dom, modality, mode, m, n, mn, f1, f2, f) vis_data) -> (
-        let modality = Modality.filter_modality filter in
+      (mode, newb, level * D.zero Field.t) looked_up =
+   fun ctx ({ bindings; filter; vis } as e) pf comp k ->
+    let modality = Modality.filter_modality filter in
+    match (vis, comp) with
+    | ( Vis
+          (type m n f1 f2 c cm fldty)
+          ((kind, { dim; plusdim; vars; hasfields = _; fields; fplus }) :
+            (modality, mode, mn, f2, b2) vis_kind
+            * (dom, modality, mode, c, cm, m, n, mn, f1, f2, f, fldty) vis_data),
+        _ ) -> (
         let (Plus pf1) = N.plus (NICubeOf.out N.zero vars) in
         let pf12 = N.plus_assocl pf1 fplus pf in
         match N.index_in_plus pf12 (fst k) with
         | Right i -> (
-            let b = CubeOf.find_top bindings in
-            match Binding.level b with
-            | Some level ->
-                Lookup
-                  {
-                    result = `Field (level, fst (Bwv.nth i fields));
-                    value = Binding.value b;
-                    dirt = Binding.dirt b;
-                    insert = Now;
-                    modality;
-                    filter;
-                    plus = plus_with_no_locks (mode ctx);
-                  }
-            | None -> fatal (Anomaly "missing level in field view"))
+            (* Only a cube of variables can have field variables. *)
+            match (kind, comp) with
+            | Vars, Suc (Zero, Dim _) -> (
+                let b = CubeOf.find_top bindings in
+                match Binding.level b with
+                | Some level ->
+                    let x, _, _ = Bwv.nth i fields in
+                    Found
+                      (Lookup
+                         {
+                           result = `Field (level, x);
+                           value = Binding.value b;
+                           dirt = Binding.dirt b;
+                           insert = Now;
+                           modality;
+                           filter;
+                           plus = plus_with_no_locks (mode ctx);
+                         })
+                | None -> fatal (Anomaly "missing level in field view"))
+            | Alias, Zero -> (
+                match i with
+                | _ -> .))
         | Left i -> (
-            let module Lookup = struct
-              (* When we look up a visible variable in a context, we find the level (if any), the value, and the corresponding possibly-invisible variable.  To do this we have to iterate through each cube of variables from right-to-left as we decrement the raw index looking for the corresponding face.  So we need an auxiliary type family to keep track of where we are in that iteration and what result type we're expecting. *)
-              type 'right t =
-                | Unfound : (a, 'right, 'rest) N.plus * 'rest N.index -> 'right t
-                | Found : ('l, n) sface -> 'right t
-            end in
-            let module Fold = NICubeOf.Traverse (Lookup) in
-            (* This function is called on every step of that iteration through a cube.  It appears that we have to define it with an explicit type signature in order for it to end up sufficiently polymorphic. *)
-            let lookup_folder : type left l.
-                (l, n) sface ->
-                (left, l, binder_name) NFamOf.t ->
-                left N.suc Lookup.t ->
-                left Lookup.t * (left, l, unit) NFamOf.t =
-             fun fb (NFamOf _) acc ->
-              match acc with
-              | Found fa -> (Found fa, NFamOf ())
-              | Unfound (Suc p, Pop k) -> (Unfound (p, k), NFamOf ())
-              | Unfound (_, Top) -> (Found fb, NFamOf ()) in
-            match
-              Fold.fold_map_right { foldmap = (fun fb -> lookup_folder fb) } vars (Unfound (pf1, i))
-            with
-            | Unfound (Zero, j), _ ->
-                pop_lookup modality (CubeOf.dim bindings) filter (lookup ctx (j, snd k))
-            | Found fb, _ ->
-                (* Once we find the face in the cube of visible variables, we add it to the face specified by the user for a cube variable, if any, and look up the corresponding binding. *)
-                let (SFace_of fa) =
-                  match snd k with
-                  | None -> SFace_of (id_sface dim)
-                  | Some (Any_sface fa) -> (
-                      match D.compare (cod_sface fa) dim with
-                      | Neq -> fatal (Invalid_variable_face (dim, fa))
-                      | Eq -> SFace_of fa) in
-                let (Plus kl) = D.plus (dom_sface fb) in
-                let fab = sface_plus_sface fa plusdim kl fb in
+            match find_in_cube dim plusdim vars pf1 (i, snd k) with
+            | Not_found j -> pop_looked_up e comp (lookup ctx j)
+            | Found_face fab -> (
                 let x = CubeOf.find bindings fab in
-                Lookup
-                  {
-                    result = `Var (Binding.level x, fab);
-                    modality;
-                    filter;
-                    value = Binding.value x;
-                    dirt = Binding.dirt x;
-                    insert = Now;
-                    plus = plus_with_no_locks (Modality.tgt modality);
-                  }))
+                match (kind, comp) with
+                | Vars, Suc (Zero, Dim _) ->
+                    Found
+                      (Lookup
+                         {
+                           result = `Var (Binding.level x, fab);
+                           modality;
+                           filter;
+                           value = Binding.value x;
+                           dirt = Binding.dirt x;
+                           insert = Now;
+                           plus = plus_with_no_locks (Modality.tgt modality);
+                         })
+                (* The variables of an alias have only values. *)
+                | Alias, Zero ->
+                    Aliased
+                      (Alias_lookup
+                         {
+                           value = Binding.value x;
+                           dirt = Binding.dirt x;
+                           modality;
+                           plus = plus_with_no_locks (Modality.tgt modality);
+                         }))))
     (* By definition, an invisible entry can't be looked up into, and doesn't increment the raw indices. *)
-    | Invis { filter; bindings } ->
-        let modality = Modality.filter_modality filter in
+    | Invis, Suc (Zero, Dim _) ->
         let Zero = pf in
-        pop_lookup modality (CubeOf.dim bindings) filter (lookup ctx k)
+        pop_looked_up e comp (lookup ctx k)
 
   (* Look up a De Bruijn level in a context and find the corresponding possibly-invisible index, if one exists. *)
   let rec find_level : type mode a b. (mode, a, b) t -> level -> (mode, b, Empty.t) lookup option =
    fun ctx i ->
     match ctx with
     | Emp _ -> None
-    | Snoc (ctx, Vis { bindings; filter; _ }, _) -> find_level_in_cube ctx bindings filter i
-    | Snoc (ctx, Invis { bindings; filter }, _) -> find_level_in_cube ctx bindings filter i
+    | Snoc (ctx, ({ bindings; filter; _ } as e), _, comp) -> (
+        match ext_kind e comp with
+        | Ext_dim -> find_level_in_cube ctx bindings filter i
+        (* An alias has no checked variables to find. *)
+        | Ext_alias -> find_level ctx i)
     | Lock (ctx, mu) -> Option.map (lock_lookup mu) (find_level ctx i)
     | Weaken (ctx, _) -> find_level ctx i
 
@@ -486,39 +514,8 @@ module Ordered = struct
     | Some v -> Some v
     | None -> Option.map (pop_lookup modality (CubeOf.dim vars) filter) (find_level ctx i)
 
-  (* Every context has an underlying environment that substitutes each (level) variable for itself (index).  This environment ALWAYS HAS DIMENSION ZERO, and therefore in particular the variables don't need to come with any boundaries. *)
-
-  let env_entry : type mode n.
-      (n, mode Binding.t) CubeOf.t -> (n, (mode, kinetic) lazy_eval) CubeOf.t =
-   fun v ->
-    CubeOf.mmap
-      (* We defer the value because it might be Unknown or Delayed, but we don't want an error reported unless such a value is actually *used*. *)
-      { map = (fun _ [ x ] -> defer (fun () -> Val (Binding.value x).tm)) }
-      [ v ]
-
-  (* This function traverses the entire context and computes the corresponding environment.  However, when we add permutations to environments below, we will also store a precomputed environment, so this function only needs to be called when the context has been globally modified. *)
-  let rec env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = function
-    | Emp mode -> Emp (mode, D.zero)
-    | Snoc (ctx, Vis { bindings; filter; _ }, _) ->
-        Ext
-          {
-            env = env ctx;
-            plus = D.zero_plus (CubeOf.dim bindings);
-            filtered = filter;
-            filter = Modality.filter_zero (Modality.filter_modality filter);
-            values = `Lazy (env_entry bindings);
-          }
-    | Snoc (ctx, Invis { bindings; filter }, _) ->
-        Ext
-          {
-            env = env ctx;
-            plus = D.zero_plus (CubeOf.dim bindings);
-            filtered = filter;
-            filter = Modality.filter_zero (Modality.filter_modality filter);
-            values = `Lazy (env_entry bindings);
-          }
-    | Lock (ctx, lock) -> Lock (env ctx, lock)
-    | Weaken (ctx, _) -> env ctx
+  (* Every context has an underlying environment that substitutes each (level) variable for itself (index).  This environment ALWAYS HAS DIMENSION ZERO, and therefore in particular the variables don't need to come with any boundaries.  It is represented by the context itself (see Value.env), so computing it takes constant time. *)
+  let env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = fun ctx -> Ctx ctx
 
   (* Extend a context by one new variable, without a value but with an assigned type. *)
   let ext : type dom modality mode a b.
@@ -544,17 +541,44 @@ module Ordered = struct
     let b = Binding.make ?dirt None v in
     (cube_vis ctx (Modality.filter_zero modality) x (CubeOf.singleton b), b)
 
-  (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields. *)
+  (* Remove the last entry in a context.  Only works if that last entry is a fully-cube variable with no fields.  We also return the dimension and filter of that entry. *)
   type ('mode, _, _) pop =
     | Pop :
         ('mode, 'a, 'b) t
         * ('a N.suc, 'asuc) Eq.t
         * (('b, ('modality, 'n) dim_entry) snoc, 'bn) Eq.t
+        * 'n D.t
+        * ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim
         -> ('mode, 'asuc, 'bn) pop
 
   let pop : type mode a b. (mode, a, b) t -> (mode, a, b) pop option = function
-    | Snoc (ctx, _, Suc Zero) -> Some (Pop (ctx, Eq, Eq))
+    | Snoc (ctx, entry, Suc Zero, comp) -> (
+        match ext_kind entry comp with
+        | Ext_dim -> Some (Pop (ctx, Eq, Eq, dim_entry entry, filter_entry entry))
+        | Ext_alias -> None)
     | _ -> None
+
+  type (_, _) remove_top = Removed : ('mode, 'a, 'b) t -> ('mode, 'b) remove_top
+
+  let rec remove_top : type mode modality a k b c.
+      (mode, c, b) t -> (a, modality, k, b) insert -> (mode, a) remove_top =
+   fun ctx v ->
+    match (ctx, v) with
+    | Snoc (ctx, e, ax, comp), _ -> (
+        match (ext_kind e comp, v) with
+        | Ext_dim, Now -> Removed ctx
+        | Ext_dim, Later v ->
+            let (Removed ctx) = remove_top ctx v in
+            let (Plus bx) = N.plus (N.plus_right ax) in
+            Removed (Snoc (ctx, e, bx, dim_comp e.filter e.bindings))
+        | Ext_alias, _ ->
+            let (Removed ctx) = remove_top ctx v in
+            let (Plus bx) = N.plus (N.plus_right ax) in
+            Removed (Snoc (ctx, e, bx, Zero)))
+    | Weaken (ctx, _), _ ->
+        let (Removed ctx) = remove_top ctx v in
+        Removed ctx
+    | Lock (_, _), _ | Emp _, _ -> .
 
   (* Generate a case tree consisting of a sequence of abstractions corresponding to the (checked) variables in a context.  The context must contain NO LET-BOUND VARIABLES, including field-access variables, since abstracting over them would not be well-defined.  (In general, we couldn't just omit them, because some of the variables in a cube could be bound but not others, and cubes in the context yield cube abstractions.  However, at least when this comment was written, this function was only used for contexts consisting entirely of 0-dimensional cubes without let-bound variables.)  Likewise it must contain NO MODAL LOCKS. *)
   let rec lam : type mode a b.
@@ -564,10 +588,15 @@ module Ordered = struct
     | Emp _ -> tree
     | Weaken (ctx, _) -> lam ctx tree
     | Lock _ -> fatal (Anomaly "context lock in Ctx.lam")
-    | Snoc (ctx, Vis { dim; plusdim; vars; filter; bindings; fplus = Zero; _ }, _)
+    | Snoc (ctx, { vis = Vis (Alias, _); _ }, _, Zero) -> lam ctx tree
+    | Snoc
+        ( ctx,
+          { bindings; filter; vis = Vis (Vars, { dim; plusdim; vars; fplus = Zero; _ }) },
+          _,
+          Suc (Zero, Dim _) )
       when all_free bindings ->
         lam ctx (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, tree))
-    | Snoc (ctx, Invis { bindings; filter; _ }, _) when all_free bindings ->
+    | Snoc (ctx, { bindings; filter; vis = Invis }, _, Suc (Zero, Dim _)) when all_free bindings ->
         (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
         let hints =
           Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
@@ -599,9 +628,8 @@ module Ordered = struct
     | Emp mode -> Emp mode
     | Lock (ctx, lock) -> Lock (forget_levels ctx forget, lock)
     | Weaken (ctx, code) -> Weaken (forget_levels ctx forget, code)
-    | Snoc (ctx, Vis e, af) -> Snoc (ctx, Vis { e with bindings = forget_bindings e.bindings }, af)
-    | Snoc (ctx, Invis e, af) ->
-        Snoc (ctx, Invis { e with bindings = forget_bindings e.bindings }, af)
+    | Snoc (ctx, e, af, comp) ->
+        Snoc (forget_levels ctx forget, { e with bindings = forget_bindings e.bindings }, af, comp)
 
   (* Weaken the raw length by any specified amount. *)
   let rec weaken : type mode a x ax b.
@@ -627,9 +655,11 @@ module Ordered = struct
     | Neq -> (
         match ctx with
         | Emp _ -> fatal (Anomaly "Ctx.remove_lock: empty context but nonidentity lock")
-        | Snoc (ctx, e, _) ->
+        | Snoc (ctx, e, _, comp) -> (
             let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
-            Remove_lock (ctx, plus_with_locks_dim plus (dim_entry e) (filter_entry e))
+            match ext_kind e comp with
+            | Ext_dim -> Remove_lock (ctx, plus_with_locks_dim plus (dim_entry e) (filter_entry e))
+            | Ext_alias -> Remove_lock (ctx, plus))
         | Weaken (ctx, code) ->
             (* A weakening entry isn't a lock and doesn't appear in the checked context, so we skip past it and re-add it on the way out. *)
             let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
@@ -650,11 +680,18 @@ module Ordered = struct
    fun ctx (Plus_with_locks (comp, locks)) ->
     match (comp, locks, ctx) with
     | Zero, Zero _, _ -> Any (ctx, Zero)
-    | Suc (comp, Dim _), Suc (locks, Locks_dim _, _), Snoc (ctx, _, ax_y) ->
-        let (Any (ctx, a_x)) = remove_locks ctx (Plus_with_locks (comp, locks)) in
-        let (Plus x_y) = N.plus (N.plus_right ax_y) in
-        let a_xy = N.plus_assocr a_x x_y ax_y in
-        Any (ctx, a_xy)
+    (* An alias doesn't appear in the checked context, so we remove it along with the variables, without consuming any of the plus_with_locks. *)
+    | _, _, Snoc (ctx', e, ax_y, ecomp) -> (
+        match (ext_kind e ecomp, comp, locks) with
+        | Ext_alias, _, _ ->
+            let (Any (ctx, a_x)) = remove_locks ctx' (Plus_with_locks (comp, locks)) in
+            let (Plus x_y) = N.plus (N.plus_right ax_y) in
+            Any (ctx, N.plus_assocr a_x x_y ax_y)
+        | Ext_dim, Suc (comp, Dim _), Suc (locks, Locks_dim _, _) ->
+            let (Any (ctx, a_x)) = remove_locks ctx' (Plus_with_locks (comp, locks)) in
+            let (Plus x_y) = N.plus (N.plus_right ax_y) in
+            Any (ctx, N.plus_assocr a_x x_y ax_y)
+        | Ext_dim, Zero, Zero _ -> Any (ctx, Zero))
     | Suc (Zero, Lock g1), Suc (Zero _, Locks_lock _, _), Lock (ctx, g3) ->
         let Eq = Modality.Gen.tgt_uniq g1 g3 in
         Any (ctx, Zero)
@@ -692,12 +729,11 @@ module Ordered = struct
     Replaced (weakened_ctx, plus_src)
 end
 
-(* Now we define contexts that add a permutation of the raw indices.  For efficiency reasons we also precompute its environment as the context is built and store it.  We also store the next De Bruijn level (cube only, not internal face level) that may be added to the context; in most cases this equals the length of the context, but during bind_some we work temporarily with rearranged contexts containing old De Bruijn levels so it may be greater than the length.  The permutation acts only on variables, not on locks; it should only permute variables with other variables that have NO LOCKS IN BETWEEN, but we don't enforce that statically.  In particular, therefore, the mode of the permuted context is the same as the mode of its ordered version. *)
+(* Now we define contexts that add a permutation of the raw indices.  We also store the next De Bruijn level (cube only, not internal face level) that may be added to the context; in most cases this equals the length of the context, but during bind_some we work temporarily with rearranged contexts containing old De Bruijn levels so it may be greater than the length.  The permutation acts only on variables, not on locks; it should only permute variables with other variables that have NO LOCKS IN BETWEEN, but we don't enforce that statically.  In particular, therefore, the mode of the permuted context is the same as the mode of its ordered version. *)
 
 type ('mode, 'a, 'b) t =
   | Permute : {
       perm : ('a, 'i) N.permute;
-      env : ('mode, D.zero, 'b) env;
       level : int;
       ctx : ('mode, 'i, 'b) Ordered.t;
     }
@@ -705,20 +741,11 @@ type ('mode, 'a, 'b) t =
 
 (* Nearly all the operations on ordered contexts are lifted to either ignore the permutations or add identities on the right. *)
 
-let vis (Permute { perm; env; level; ctx }) filter m mn xs vars af =
+let vis (Permute { perm; level; ctx }) filter m mn xs vars af =
   let (Plus bf) = N.plus (N.plus_right af) in
   Permute
     {
       perm = N.perm_plus perm af bf;
-      env =
-        Ext
-          {
-            env;
-            plus = D.zero_plus (CubeOf.dim vars);
-            filtered = filter;
-            filter = Modality.filter_zero (Modality.filter_modality filter);
-            values = `Lazy (Ordered.env_entry vars);
-          };
       level = level + 1;
       ctx = Ordered.vis ctx filter m mn xs vars bf;
     }
@@ -740,38 +767,17 @@ let cube_vis ctx filter x vars =
   let m = CubeOf.dim vars in
   vis ctx filter m (D.plus_zero m) (NICubeOf.singleton (binder_name_of_option x)) vars (Suc Zero)
 
-let vis_fields (Permute { perm; env; level; ctx }) xs vars fields fplus af =
+let vis_fields (Permute { perm; level; ctx }) xs vars fields fplus af =
   let (Plus bf) = N.plus (N.plus_right af) in
-  let n = CubeOf.dim vars in
-  let mode = Ordered.mode ctx in
-  let modality = Modality.id mode in
-  let filtered = Modality.filter_id mode n in
-  let filter = Modality.filter_zero modality in
   Permute
     {
       perm = N.perm_plus perm af bf;
-      env =
-        Ext { env; plus = D.zero_plus n; filter; filtered; values = `Lazy (Ordered.env_entry vars) };
       level = level + 1;
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
 
-let invis (Permute { perm; env; level; ctx }) filter vars =
-  Permute
-    {
-      perm;
-      env =
-        Ext
-          {
-            env;
-            plus = D.zero_plus (CubeOf.dim vars);
-            filtered = filter;
-            filter = Modality.filter_zero (Modality.filter_modality filter);
-            values = `Lazy (Ordered.env_entry vars);
-          };
-      level = level + 1;
-      ctx = Ordered.invis ctx filter vars;
-    }
+let invis (Permute { perm; level; ctx }) filter vars =
+  Permute { perm; level = level + 1; ctx = Ordered.invis ctx filter vars }
 
 type (_, _, _, _, _) locked =
   | Locked :
@@ -780,20 +786,18 @@ type (_, _, _, _, _) locked =
 
 let lock : type dom modality cod a b.
     (cod, a, b) t -> (dom, modality, cod) Modality.t -> (cod, a, b, modality, dom) locked =
- fun (Permute { perm; env; level; ctx }) lock ->
+ fun (Permute { perm; level; ctx }) lock ->
   let (Locked (al, ctx)) = Ordered.lock ctx lock in
-  let env = lock_env env al in
-  Locked (al, Permute { env; perm; level; ctx })
+  Locked (al, Permute { perm; level; ctx })
 
 let lock_to : type dom modality cod a b bm.
     (cod, a, b) t ->
     (dom, modality, cod) Modality.t ->
     (b, cod, modality, dom, bm) plus_lock ->
     (dom, a, bm) t =
- fun (Permute { perm; env; level; ctx }) lock al ->
+ fun (Permute { perm; level; ctx }) lock al ->
   let ctx = Ordered.lock_to ctx lock al in
-  let env = lock_env env al in
-  Permute { env; perm; level; ctx }
+  Permute { perm; level; ctx }
 
 let raw_length (Permute { perm; ctx; _ }) = N.perm_dom perm (Ordered.raw_length ctx)
 let level (Permute { level; _ }) = level
@@ -814,57 +818,35 @@ let maybe_lock : type mode a b x y.
     Maybe_locked (ctx, plus_lock, counit)
   else Maybe_locked (ctx, plus_no_lock (mode ctx), Modalcell.id2 (mode ctx))
 
-let empty mode =
-  Permute { perm = N.perm_id N.zero; env = Emp (mode, D.zero); level = 0; ctx = Ordered.empty mode }
+let empty mode = Permute { perm = N.perm_id N.zero; level = 0; ctx = Ordered.empty mode }
 
 let total_locks : type mode a b. (mode, a, b) t -> mode Modality.tgt_wrapped =
  fun (Permute { ctx; _ }) -> Ordered.total_locks ctx
 
-let tctx (Permute { ctx; _ }) = Ordered.tctx ctx
+let tctx (Permute { ctx; _ }) = Ordered.checked_length ctx
 let apps (Permute { ctx; _ }) = Ordered.apps ctx
 
 (* Lookup is the only place where the permutations are used nontrivially: we apply the permutation to the raw index before looking it up. *)
 let lookup (Permute { perm; ctx; _ }) i = Ordered.lookup ctx (N.perm_apply perm (fst i), snd i)
 let find_level (Permute { ctx; _ }) x = Ordered.find_level ctx x
+let env (Permute { ctx; _ }) = Ordered.env ctx
 
-(* To get the environment, we can now just return the precomputed one. *)
-let env (Permute { env; _ }) = env
+let ext (Permute { perm; level; ctx }) modality xs ty =
+  let ctx, _ = Ordered.ext ctx modality xs ty in
+  Permute { perm = Insert (perm, Top); level = level + 1; ctx }
 
-let ext (Permute { perm; env; level; ctx }) modality xs ty =
-  let ctx, b = Ordered.ext ctx modality xs ty in
-  Permute
-    {
-      perm = Insert (perm, Top);
-      env =
-        Ext
-          {
-            env;
-            plus = D.zero_plus D.zero;
-            filter = Modality.filter_zero modality;
-            filtered = Modality.filter_zero modality;
-            values = `Lazy (Ordered.env_entry (CubeOf.singleton b));
-          };
-      level = level + 1;
-      ctx;
-    }
+let ext_let ?dirt (Permute { perm; level; ctx }) modality xs tm =
+  let ctx, _ = Ordered.ext_let ?dirt ctx modality xs tm in
+  Permute { perm = Insert (perm, Top); level = level + 1; ctx }
 
-let ext_let ?dirt (Permute { perm; env; level; ctx }) modality xs tm =
-  let ctx, b = Ordered.ext_let ?dirt ctx modality xs tm in
-  Permute
-    {
-      perm = Insert (perm, Top);
-      env =
-        Ext
-          {
-            env;
-            plus = D.zero_plus D.zero;
-            filter = Modality.filter_zero modality;
-            filtered = Modality.filter_zero modality;
-            values = `Lazy (Ordered.env_entry (CubeOf.singleton b));
-          };
-      level = level + 1;
-      ctx;
-    }
+(* Extend a context by an alias: a raw variable whose name refers directly to a given value, without extending the checked context.  Unlike with ext_let, the value is not wrapped as a let-bound variable, since there is no variable for it to be read back as. *)
+let ext_alias ?dirt (Permute { perm; level; ctx }) modality x v =
+  let b = Binding.make ?dirt None v in
+  let ctx =
+    Ordered.alias ctx (Modality.filter_zero modality) D.zero (D.plus_zero D.zero)
+      (NICubeOf.singleton (binder_name_of_option x))
+      (CubeOf.singleton b) (Suc Zero) in
+  Permute { perm = Insert (perm, Top); level; ctx }
 
 (* Extend a context by a let-bound variable whose value failed to typecheck, so that it is bound to a failed value, of a failed type since we don't know its type.  Anything that needs to inspect it then fails silently. *)
 let ext_failed_let ctx modality xs =
@@ -872,32 +854,30 @@ let ext_failed_let ctx modality xs =
   ext_let ctx modality xs
     { tm = failed (Modality.src modality) (Lazy.from_val ty); ty = Lazy.from_val ty }
 
-(* Remove the last cube entry in a context.  This only works if it is a pure cube variable with no fields and the context has not been permuted after its addition. *)
+(* Remove the last cube entry in a context.  This only works if it is a pure cube variable with no fields and the context has not been permuted after its addition.  We also return the dimension and filter of that entry. *)
 type (_, _, _) pop =
   | Pop :
-      ('mode, 'a, 'b) t * ('a N.suc, 'asuc) Eq.t * (('b, ('modality, 'n) dim_entry) snoc, 'bn) Eq.t
+      ('mode, 'a, 'b) t
+      * ('a N.suc, 'asuc) Eq.t
+      * (('b, ('modality, 'n) dim_entry) snoc, 'bn) Eq.t
+      * 'n D.t
+      * ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim
       -> ('mode, 'asuc, 'bn) pop
 
 let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
- fun (Permute { ctx; perm; level; env }) ->
-  match (Ordered.pop ctx, perm, env) with
-  | Some (Pop (ctx, Eq, Eq)), Insert (perm, Top), Ext { env; _ } ->
-      Ok (Pop (Permute { ctx; perm; level; env }, Eq, Eq))
-  | Some (Pop (ctx, Eq, Eq)), Id, Ext { env; _ } ->
-      Ok (Pop (Permute { ctx; perm = Id; level; env }, Eq, Eq))
-  | Some (Pop (_, Eq, Eq)), _, Permute _ -> Error "env is permuted"
-  | Some (Pop (_, Eq, Eq)), _, Act _ -> Error "env is acted"
-  | Some (Pop (_, Eq, Eq)), _, Prekey _ -> Error "env is prekeyed"
-  | Some (Pop (_, Eq, Eq)), _, Shift _ -> Error "env is shifted"
-  | Some (Pop (_, Eq, Eq)), _, Unshift _ -> Error "env is unshifted"
-  | Some (Pop (_, Eq, Eq)), Insert (_, Pop _), _ -> Error "nonidentity permutation"
-  | None, _, _ -> Error "empty or locked"
+ fun (Permute { ctx; perm; level }) ->
+  match (Ordered.pop ctx, perm) with
+  | Some (Pop (ctx, Eq, Eq, n, f)), Insert (perm, Top) ->
+      Ok (Pop (Permute { ctx; perm; level }, Eq, Eq, n, f))
+  | Some (Pop (ctx, Eq, Eq, n, f)), Id -> Ok (Pop (Permute { ctx; perm = Id; level }, Eq, Eq, n, f))
+  | Some (Pop (_, Eq, Eq, _, _)), Insert (_, Pop _) -> Error "nonidentity permutation"
+  | None, _ -> Error "empty or locked"
 
 let lam (Permute { ctx; _ }) tm = Ordered.lam ctx tm
 
 let forget_levels (Permute { perm; ctx; level; _ }) forget =
   let ctx = Ordered.forget_levels ctx forget in
-  Permute { perm; env = Ordered.env ctx; level; ctx }
+  Permute { perm; level; ctx }
 
 (* Augment an ordered context by the identity permutation *)
 let of_ordered ?level ctx =
@@ -905,7 +885,7 @@ let of_ordered ?level ctx =
     match level with
     | None -> Ordered.length ctx
     | Some level -> level in
-  Permute { perm = N.perm_id (Ordered.raw_length ctx); env = Ordered.env ctx; level; ctx }
+  Permute { perm = Id; level; ctx }
 
 (* Peel off enough locks to make up a supplied modality, along with any entries between them. *)
 type (_, _, _, _) remove_lock =
@@ -930,7 +910,7 @@ let remove_locks_weakened : type cod mode modality a b bc.
     (mode, a, bc) t -> Code.t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, a, b) t =
  fun (Permute { ctx; level; perm; _ }) code plus ->
   let ctx = Ordered.remove_locks_weakened ctx code plus in
-  Permute { ctx; level; perm; env = Ordered.env ctx }
+  Permute { ctx; level; perm }
 
 type (_, _, _, _, _) replaced_locks =
   | Replaced :
@@ -945,4 +925,4 @@ let replace_locks : type cod mode tgt src a b bt.
     (mode, src, cod, a, b) replaced_locks =
  fun (Permute { ctx; level; perm; _ }) code plus_tgt src ->
   let (Replaced (ctx, plus_src)) = Ordered.replace_locks ctx code plus_tgt src in
-  Replaced (Permute { ctx; level; perm; env = Ordered.env ctx }, plus_src)
+  Replaced (Permute { ctx; level; perm }, plus_src)

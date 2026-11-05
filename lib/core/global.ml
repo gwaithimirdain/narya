@@ -68,6 +68,18 @@ let find_meta m =
   | Some (Error e) -> fatal e
   | None -> fatal (Anomaly ("undefined metavariable: " ^ Meta.name m))
 
+(* The name of a metavariable, using the owner and local name stored in its definition, if it has one. *)
+let meta_name : type mode a b s.
+    ?owner_name:(Constant.t -> string) -> (mode, a, b, s) Meta.t -> string =
+ fun ?owner_name m ->
+  match Metatable.find_opt m metas with
+  | Some (Ok { owner; local; _ }) -> Meta.name ?owner_name ?owner ?local m
+  | _ -> Meta.name ?owner_name m
+
+(* Run a callback with the same owner as a given metavariable, such as a hole being solved, so that the metavariables created by the callback have that owner. *)
+let with_owner_of : type mode a b s x. (mode, a, b, s) Meta.t -> (unit -> x) -> x =
+ fun m f -> Meta.with_owner_opt (find_meta m).owner f
+
 (* Combine all the data for a hole, to return them when looked up. *)
 type find_hole =
   | Found_hole : {
@@ -189,10 +201,11 @@ let set : type mode.
 (* Add a new constant, but make it an error to access it. *)
 let add_error c e = consttable_add c (Error e)
 
-(* Add a new Global metavariable (e.g. local let-definition) to the new metas associated to the current command. *)
-let add_meta m ~termctx ~ty ~tm ~energy =
+(* Add a new Global metavariable (e.g. local let-definition) to the new metas associated to the current command.  Its owner is the current one, and its local name, if any, should have been computed with Meta.local_name when it was created. *)
+let add_meta ?local m ~termctx ~ty ~tm ~energy =
   let tm = (tm :> [ `Defined of ('mode, 'b, 's) term | `Axiom | `Undefined ]) in
-  metatable_add m (Ok { tm; termctx; ty; energy; recursion = `Nonrecursive })
+  metatable_add m
+    (Ok { tm; termctx; ty; energy; recursion = `Nonrecursive; owner = Meta.current_owner (); local })
 
 let add_meta_error m e = metatable_add m (Error e)
 
@@ -237,83 +250,81 @@ let notify_holes () =
   let n = unsolved_holes () in
   if n > 0 then Reporter.emit (Open_holes n)
 
-(* Since holes are not allowed inside all commands, we need to keep track of whether we're in a command that allows holes and check for it.  We use a state effect for this.  We also record all the holes *created* by the current command in a separate list so they can be reported to the user, and what is known so far about whether the currently executing command must be parametric.. *)
+(* Since holes are not allowed inside all commands, we need to keep track of whether we're in a command that allows holes and check for it.  We use a global mutable state for this.  We also record all the holes *created* by the current command in a separate list so they can be reported to the user, and what is known so far about whether the currently executing command must be parametric.. *)
 
-module Command_state = struct
-  type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
+type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
 
-  type t = {
-    holes_allowed : (unit, string) Result.t;
-    current_holes : hole Bwd.t;
-    parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
-  }
-end
+type current_command = {
+  holes_allowed : (unit, string) Result.t;
+  current_holes : hole Bwd.t;
+  parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
+}
 
-module Current_command = State.Make (Command_state)
-
-let () =
-  Current_command.register_printer (function
-    | `Get -> Some "unhandled Current_command.get effect"
-    | `Set _ -> Some "unhandled Current_command.set effect")
+let current_command : current_command Speculable.t =
+  Speculable.make
+    { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric }
 
 (* Set and get parametric-ness *)
 
 let set_nonparametric name =
-  Current_command.modify (fun d ->
-      if d.parametric = `Must_be_parametric then
-        match name with
-        | Some name -> fatal (Axiom_in_parametric_definition (PConstant name))
-        | None -> fatal (Anomaly "set_nonparametric found must_be without constant")
-      else { d with parametric = `Nonparametric })
+  if (Speculable.get current_command).parametric = `Must_be_parametric then
+    match name with
+    | Some name -> fatal (Axiom_in_parametric_definition (PConstant name))
+    | None -> fatal (Anomaly "set_nonparametric found must_be without constant")
+  else Speculable.modify current_command (fun d -> { d with parametric = `Nonparametric })
 
 let set_parametric name =
-  Current_command.modify (fun d ->
-      if d.parametric = `Nonparametric then fatal (Locked_constant (PConstant name))
-      else { d with parametric = `Must_be_parametric })
+  if (Speculable.get current_command).parametric = `Nonparametric then
+    fatal (Locked_constant (PConstant name))
+  else Speculable.modify current_command (fun d -> { d with parametric = `Must_be_parametric })
 
 let set_maybe_parametric () =
-  Current_command.modify (fun d -> { d with parametric = `Maybe_parametric })
+  Speculable.modify current_command (fun d -> { d with parametric = `Maybe_parametric })
 
 let get_parametric () =
-  match (Current_command.get ()).parametric with
+  match (Speculable.get current_command).parametric with
   | `Nonparametric -> `Nonparametric
   | `Must_be_parametric | `Maybe_parametric -> `Parametric
 
 (* At successful completion of a command, notify the user of generated holes.  Use make_msg to show the number of holes, and also emit the holes separately to be shown in the goals buffer.  This is a subroutine of run_command and friends, below. *)
 let end_command (offset, make_msg) =
-  let d = Current_command.get () in
   (* If the command ended up being parametric, we must retroactively label all the holes as parametric, so that they can only be filled using parametric constants, and oppositely. *)
   let update_parametric : type mode a b s.
       (mode, a, b, s) Metadef.hole -> (mode, a, b, s) Metadef.hole =
    fun h ->
     let parametric =
-      match d.parametric with
+      match (Speculable.get current_command).parametric with
       | `Must_be_parametric -> `Parametric
       | `Maybe_parametric when not (Dim.Endpoints.internal ()) -> `Parametric
       | _ -> `Nonparametric in
     { h with parametric } in
   (* If the command had any errors, it will fail, so its holes won't exist; thus we don't display either the message about the command or the hole goals. *)
   let failed = moribund () in
-  if not failed then Option.iter emit (make_msg (Bwd.length d.current_holes));
+  if not failed then
+    Option.iter emit (make_msg (Bwd.length (Speculable.get current_command).current_holes));
   Mbwd.miter
-    (fun [ ({ meta = Meta.Wrap m; printable; _ } : Command_state.hole) ] ->
+    (fun [ ({ meta = Meta.Wrap m; printable; _ } : hole) ] ->
       (* We intentionally do not "locate" this emission, since we want to display only the hole context and type, not its location in the source. *)
       if not failed then emit (Hole (Meta.name m, printable));
       match Holetable.find_opt m holes with
       | Some h -> Holetable.add m (update_parametric h) holes
       | None -> ())
-    [ d.current_holes ];
+    [ (Speculable.get current_command).current_holes ];
   (* Current_command.modify (fun d -> { d with current_holes = Emp; parametric = `Maybe_parametric }) *)
   ( offset,
     Bwd_extra.to_list_map
-      (fun ({ meta = Wrap meta; startpos; endpos; _ } : Command_state.hole) ->
+      (fun ({ meta = Wrap meta; startpos; endpos; _ } : hole) ->
         (Meta.hole_number meta, startpos, endpos))
-      d.current_holes )
+      (Speculable.get current_command).current_holes )
 
 (* Run a command.  If it reports any errors, even if it returns, it fails with a silent fatal error.  This has to happen inside the Origin command functions, so that in interactive mode they undo its effects, such as definitions with failed parts or partially failed hole solutions. *)
 let in_command init f =
   Reporter.failing_on_errors ~why:"command" @@ fun () ->
-  Current_command.run ~init @@ fun () -> end_command (f ())
+  (* A command can run other commands, as when an import loads a file, so afterwards we restore the state of the command that was running before. *)
+  let old = Speculable.get current_command in
+  Speculable.set current_command init;
+  Fun.protect ~finally:(fun () -> Speculable.set current_command old) @@ fun () ->
+  end_command (f ())
 
 (* The different versions correspond to the Origin command functions that they call. *)
 
@@ -344,14 +355,13 @@ let rewind_command_then_undo ~parametric ~holes_allowed instant f =
 
 (* For white box testing *)
 let run f =
-  Current_command.run
-    ~init:{ holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric }
-    f
+  Speculable.set current_command
+    { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric };
+  f ()
 
 (* Add a new hole. *)
 let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
-  let cmd = Current_command.get () in
-  match (Origin.holes_allowed (), cmd.holes_allowed) with
+  match (Origin.holes_allowed (), (Speculable.get current_command).holes_allowed) with
   | Error where, _ ->
       fatal
         (No_holes_allowed (where :> [ `Command of string | `File of string | `Other of string ]))
@@ -365,6 +375,8 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
              ty;
              energy = Status.energy status;
              recursion = `Nonrecursive;
+             owner = Meta.current_owner ();
+             local = None;
            });
       Holetable.add m
         {
@@ -377,12 +389,12 @@ let add_hole m loc ~vars ~termctx ~ty ~status ~li ~ri =
         }
         holes;
       let s, e = Asai.Range.split loc in
-      Current_command.set
+      Speculable.set current_command
         {
-          cmd with
+          (Speculable.get current_command) with
           current_holes =
             Snoc
-              ( cmd.current_holes,
+              ( (Speculable.get current_command).current_holes,
                 {
                   meta = Wrap m;
                   printable = PHole (Origin.current (), vars, termctx, ty);
@@ -401,9 +413,8 @@ let with_definition : type mode a.
  fun c m tm f ->
   match Constant.Table.find_opt c constants with
   | Some (Ok (Definition { mode; ty; _ }) as old) -> (
-      let d = Current_command.get () in
       let parametric =
-        match d.parametric with
+        match (Speculable.get current_command).parametric with
         | `Nonparametric -> `Nonparametric
         | `Must_be_parametric | `Maybe_parametric -> `Maybe_parametric in
       match Mode.compare mode m with
