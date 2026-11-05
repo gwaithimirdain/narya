@@ -1776,6 +1776,54 @@ A primary argument that doesn't synthesize can't supply its implicit boundary, s
     : Id A (h (𝑥 ↦ 𝑥)) (h (𝑥 ↦ 𝑥))
   
 
+This also applies to a primary argument that looks like it synthesizes, but doesn't have all the synthesizing subterms it would need to.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > axiom f : A → A
+  > echo refl f (refl _) : Id A (f a₀) (f a₀)
+  > axiom t : Id (Id A) a₂ a₂ (refl a₀) (refl a₁)
+  > echo t : Id (Id A) _ _ (refl _) _
+  > axiom B : Type
+  > axiom b₀ : B
+  > axiom b₁ : B
+  > axiom b₂ : Id B b₀ b₁
+  > def S : Type ≔ sig ( fst : A, snd : B )
+  > axiom g : S → A
+  > echo refl g (let z ≔ a₂ in (fst ≔ z, snd ≔ b₂))
+  > axiom h : (A → A) → A
+  > echo refl h (refl (y ↦ y))
+  > EOF
+  ap f (refl a₀)
+    : Id A (f a₀) (f a₀)
+  
+  t
+    : A⁽ᵉᵉ⁾ a₂ a₂ (refl a₀) (refl a₁)
+  
+  ap g {(fst ≔ a₀, snd ≔ b₀)} {(fst ≔ a₁, snd ≔ b₁)} (fst ≔ a₂, snd ≔ b₂)
+    : Id A (g (fst ≔ a₀, snd ≔ b₀)) (g (fst ≔ a₁, snd ≔ b₁))
+  
+  ap h {y ↦ y} {y ↦ y} (y ⤇ y.2)
+    : Id A (h (y ↦ y)) (h (y ↦ y))
+  
+
+But one that does have them is still synthesized.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > axiom f : A → A
+  > echo refl f (let z ≔ a₀ in a₂)
+  > EOF
+  ap f a₂
+    : Id A (f a₀) (f a₁)
+  
+
 If nothing determines them, they are left unsolved.
 
   $ narya - <<EOF
