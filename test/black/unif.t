@@ -1776,6 +1776,26 @@ A primary argument that doesn't synthesize can't supply its implicit boundary, s
     : Id A (h (𝑥 ↦ 𝑥)) (h (𝑥 ↦ 𝑥))
   
 
+A solved metavariable in the boundary of the codomain of a higher function-type has an environment that uses the whole cube of variables, but its solution doesn't have to.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom C : Type
+  > def S : Type ≔ sig ( fst : A, snd : C )
+  > axiom G : S → Type
+  > echo (x : Id S) ⇒ Id G x.2
+  > echo (x : Id S) ⇒ Id G (fst ≔ x.2 .fst, snd ≔ x.2 .snd)
+  > EOF
+  (x : S⁽ᵉ⁾) ⇒ Id G x.2
+    : Type⁽ᵉ⁾ ((x : S) → G x) ((x : S) → G x)
+  
+  (x : S⁽ᵉ⁾)
+  ⇒ Id G {(fst ≔ x.0 .fst, snd ≔ x.0 .snd)}
+      {(fst ≔ x.1 .fst, snd ≔ x.1 .snd)} (fst ≔ x.2 .fst, snd ≔ x.2 .snd)
+    : Type⁽ᵉ⁾ ((x : S) → G (fst ≔ x .fst, snd ≔ x .snd))
+        ((x : S) → G (fst ≔ x .fst, snd ≔ x .snd))
+  
+
 This also applies to a primary argument that looks like it synthesizes, but doesn't have all the synthesizing subterms it would need to.
 
   $ narya - <<EOF
