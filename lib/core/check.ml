@@ -553,6 +553,7 @@ and check_has_synth : type a. a check -> bool = function
 
 (* The head of an application can also be a degeneracy of a placeholder, if it is one for types (see synth_or_check_apps). *)
 and head_has_synth : type a. a check -> bool = function
+  | Synth (Act (str, _, None)) -> is_type_deg_name str.value
   | Synth (Act (_, _, Some x)) -> head_has_synth x.value
   | tm -> check_has_synth tm
 
@@ -4647,6 +4648,7 @@ and synth_arg_cube : type dom modality mode a b n c.
       | Given :
           Asai.Range.t option * (n, 'k, 'nk) D.plus * (D.zero, 'nk, 'nk, dom normal) TubeOf.t
           -> t
+      | Placeholders : Asai.Range.t option -> t
   end in
   let n = CubeOf.dim doms in
   let (Locked (plus, lctx)) = Ctx.lock ctx modality in
@@ -4655,7 +4657,7 @@ and synth_arg_cube : type dom modality mode a b n c.
     | [], _, _ -> fatal not_enough
     (* If the first argument is implicit, or if the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
     | (_, _, { value = `Implicit; _ }) :: _, Pos _, false | _, Zero, _ | _, _, true -> Take
-    (* Otherwise, the first argument must be explicit and synthesizing. *)
+    (* Otherwise, the first argument must be explicit.  If it is synthesizing, we can get the boundary from its type. *)
     | (_, { value = Some (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false
       when synth_has_synth toptm -> (
         (* We synthesize its type, extract the instantiation arguments, and store them to fill in the boundary arguments. *)
@@ -4668,6 +4670,8 @@ and synth_arg_cube : type dom modality mode a b n c.
             fatal ~severity:Asai.Diagnostic.Error ?loc
               (Insufficient_dimension
                  { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
+    (* If it isn't, the boundary has to be determined by something else, so we leave placeholders for it, as if the user had written them. *)
+    | (_, { value = Some _; loc }, { value = `Explicit; _ }) :: _, Pos _, false -> Placeholders loc
     | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
         fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
   in
@@ -4713,6 +4717,9 @@ and synth_arg_cube : type dom modality mode a b n c.
                                }));
                   let ctm = readback_at Kinetic lctx etm (Lazy.force ety) in
                   (ctm, ready (Val etm))
+              | `Proper _, Placeholders loc ->
+                  let ctm = check Kinetic lctx { value = Unif; loc } ty in
+                  (ctm, lazy_eval_at (Ctx.env lctx) ctm ty)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
               | _ ->
                   let tm =
