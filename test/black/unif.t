@@ -1019,6 +1019,53 @@ Other types aren't singletons, even if they have one constructor, and neither is
   
   [1]
 
+A metavariable with a permutation isn't equal to itself without it, even if the two have the same type.  This applies to holes too.
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > axiom a₂₀ : Id A a₀₀ a₁₀
+  > axiom a₂₁ : Id A a₀₁ a₁₁
+  > axiom t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > axiom a : A
+  > def T : Type ≔ Id (Id A) (refl a) (refl a) (refl a) (refl a)
+  > axiom use : (m : T) → Same T m (sym m) → Type
+  > echo use _ (rf T _)
+  > def eqn : Type ≔ let m : T ≔ ? in use m (rf T m)
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   16 | echo use _ (rf T _)
+      ^ term synthesized type
+          Same (A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)) ?u0 ?u0
+        but is being checked against type
+          Same (A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)) ?u0 (sym ?u0)
+        unequal head terms:
+          ?u0
+        does not equal
+          sym ?u0
+  
+   ￫ error[E0401]
+   ￭ stdin
+   17 | def eqn : Type ≔ let m : T ≔ ? in use m (rf T m)
+      ^ term synthesized type
+          Same (A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)) m m
+        but is being checked against type
+          Same (A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)) m (sym m)
+        unequal head terms:
+          m
+        does not equal
+          sym m
+  
+  [1]
+
 A case tree stuck on an unsolved metavariable is blocked, and is recomputed once the metavariable is solved, even if its blocked value has been computed and cached in the meantime.  Here the type Z, i.e. T ?u, is forced while ?u is unsolved, by comparing two terms of type Z; then ?u is solved by comparing b with true., after which Z must compute to ℕ.
 
   $ narya -v - <<EOF
