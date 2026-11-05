@@ -208,8 +208,12 @@ let run_with_definition : type mode a c.
 
 (* Create a new unification metavariable in a given context, of a given type, returning it as a term in that context.  Its type is read back now, but its context is read back only if needed (see Global.Unifdata), and then not for display, since it is also used for internal purposes like comparing environments. *)
 let make_unif : type mode a b.
-    (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, b, kinetic) term =
- fun ctx ty ->
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    Asai.Range.t option ->
+    Code.t option ->
+    (mode, b, kinetic) term =
+ fun ctx ty loc err ->
   let meta = Meta.make_unif (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) in
   let unif : (mode, b, kinetic) term option ref = ref None in
   let ty = readback_val ctx ty in
@@ -218,7 +222,8 @@ let make_unif : type mode a b.
     lazy
       ( Readback.Displaying.run ~env:false @@ fun () ->
         Readback.Unifying.run ~env:None @@ fun () -> readback_ctx ctx ) in
-  Global.add_unif meta unif ~ctx ~ty ~termctx;
+  Global.add_unif meta unif ~ctx ~ty ~termctx ~loc
+    ~err:(Option.value err ~default:Code.Unsolved_unification_meta);
   Meta (meta, Unif_meta unif, Kinetic)
 
 (* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  The constructor's argument types and output are stored together as its function-type "ty" (as in a Value.dataconstr); the argument variables are introduced, and the type indices of this branch read off, by ext_pi at typechecking time.  *)
@@ -499,7 +504,7 @@ let rec check_has_case_tree : type a. a check -> bool = function
   | Realize tm -> check_has_case_tree tm
   | Weaken (tm, _) -> check_has_case_tree tm
   | First alts -> List.exists (fun (_, tm, _) -> check_has_case_tree tm) alts
-  | Constr _ | Numeral _ | Hole _ | Unif | ImplicitApp _ | Oracle _ -> false
+  | Constr _ | Numeral _ | Hole _ | Unif _ | ImplicitApp _ | Oracle _ -> false
   | Embed _ -> .
 
 and synth_has_case_tree : type a. a synth -> bool = function
@@ -581,7 +586,7 @@ let rec check : type mode a b s.
         match (perm_of_deg fa, x) with
         | Some pfa, x -> (
             (* It can check if its degeneracy is a pure permutation, since then the type of the argument can be inferred by applying the inverse permutation to the ambient type.  Unlike the type, the argument isn't determined by this, so if it is a placeholder then it is an ordinary placeholder for a term, i.e. a unification metavariable. *)
-            let x = Option.value x ~default:(locate_opt tm.loc Unif) in
+            let x = Option.value x ~default:(locate_opt tm.loc (Unif None)) in
             let fainv = deg_of_perm (perm_inv pfa) in
             match
               Reporter.try_with ~fatal:(fun d ->
@@ -953,10 +958,10 @@ let rec check : type mode a b s.
     | Data _, Kinetic -> kinetic_of_potential ctx tm ty "data"
     (* If the user left a hole, we create an eternal metavariable. *)
     (* A placeholder creates a unification metavariable.  In a case tree, it is a leaf. *)
-    | Unif, _ -> (
+    | Unif err, _ -> (
         match status with
-        | Kinetic -> make_unif ctx ty
-        | Potential _ -> Realize (make_unif ctx ty))
+        | Kinetic -> make_unif ctx ty tm.loc err
+        | Potential _ -> Realize (make_unif ctx ty tm.loc err))
     | Hole { scope = vars; loc = pos; li; ri; num }, _ ->
         (* Holes aren't numbered by the file they appear in. *)
         let meta =
@@ -4648,7 +4653,7 @@ and synth_arg_cube : type dom modality mode a b n c.
       | Given :
           Asai.Range.t option * (n, 'k, 'nk) D.plus * (D.zero, 'nk, 'nk, dom normal) TubeOf.t
           -> t
-      | Placeholders : Asai.Range.t option -> t
+      | Placeholders : Asai.Range.t option * Code.t -> t
   end in
   let n = CubeOf.dim doms in
   let (Locked (plus, lctx)) = Ctx.lock ctx modality in
@@ -4671,7 +4676,9 @@ and synth_arg_cube : type dom modality mode a b n c.
               (Insufficient_dimension
                  { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
     (* If it isn't, the boundary has to be determined by something else, so we leave placeholders for it, as if the user had written them. *)
-    | (_, { value = Some _; loc }, { value = `Explicit; _ }) :: _, Pos _, false -> Placeholders loc
+    | (_, { value = Some _; loc }, { value = `Explicit; _ }) :: _, Pos _, false ->
+        Placeholders
+          (loc, Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
     | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
         fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
   in
@@ -4717,8 +4724,8 @@ and synth_arg_cube : type dom modality mode a b n c.
                                }));
                   let ctm = readback_at Kinetic lctx etm (Lazy.force ety) in
                   (ctm, ready (Val etm))
-              | `Proper _, Placeholders loc ->
-                  let ctm = check Kinetic lctx { value = Unif; loc } ty in
+              | `Proper _, Placeholders (loc, err) ->
+                  let ctm = check Kinetic lctx { value = Unif (Some err); loc } ty in
                   (ctm, lazy_eval_at (Ctx.env lctx) ctm ty)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
               | _ ->
@@ -4875,7 +4882,7 @@ and synth_or_check_apps : type mode a b.
       let total = if arity > 0 && explicit mod arity = 0 then explicit / arity else 0 in
       let dim = max 0 (total - depth fn) in
       let located x = locate_opt fn.loc x in
-      let app i fn = located (Synth (App (fn, located (Some Unif), located i))) in
+      let app i fn = located (Synth (App (fn, located (Some (Unif None)), located i))) in
       (* The type of a dim-dimensional type is an instantiation of an iterated degeneracy of the universe, at placeholders. *)
       let rec iterate : 'x. int -> ('x -> 'x) -> 'x -> 'x =
        fun n f x -> if n = 0 then x else iterate (n - 1) f (f x) in
@@ -4892,7 +4899,7 @@ and synth_or_check_apps : type mode a b.
                 let faces = iterate (j - 1) (fun x -> x * (arity + 1)) 1 in
                 let cube ty = app `Explicit (iterate (faces - 1) (app `Implicit) ty) in
                 inst (j - 1) (iterate arity cube ty) in
-            act (located (Synth (Asc (located Unif, inst dim uu))))
+            act (located (Synth (Asc (located (Unif None), inst dim uu))))
         | Synth (Act (str, s, Some x)) -> located (Synth (Act (str, s, Some (with_type x))))
         | _ -> fatal (Nonsynthesizing "degeneracy of placeholder function") in
       synth_or_check_apps ctx (with_type fn) args ty
@@ -5185,7 +5192,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
       | Data _ | Codata _ | Record _ | SelfRecord _ -> None
       | Refute (_, _) -> None
       | Hole _ -> None
-      | Unif -> None
+      | Unif _ -> None
       | Realize _ -> None
       | ImplicitApp (_, _, _) -> None
       | Embed _ -> .
@@ -5285,27 +5292,36 @@ and synth_mode_tel : type a b ab. (a, b, ab) Raw.tel -> Modal.Mode.wrapped optio
       | None -> synth_mode_tel tel)
 
 (* Construct the raw term that expands a unification metavariable (see Unify), with placeholders for the unknown parts. *)
-let rec raw_of_expansion : type a. Unify.expansion list -> a check located = function
-  | [] -> locate_opt None Unif
+let rec raw_of_expansion : type a.
+    Asai.Range.t option -> Code.t -> Unify.expansion list -> a check located =
+ fun loc err shape ->
+  let unif = locate_opt loc (Unif (Some err)) in
+  match shape with
+  | [] -> unif
   | Abs (name, cube) :: rest ->
-      locate_opt None
+      locate_opt loc
         (Lam
            {
-             name = locate_opt None name;
-             cube = locate_opt None (if cube then `Cube (ref None) else `Normal);
+             name = locate_opt loc name;
+             cube = locate_opt loc (if cube then `Cube (ref None) else `Normal);
              implicit = `Explicit;
              dom = None;
-             body = raw_of_expansion rest;
+             body = raw_of_expansion loc err rest;
            })
   | Perm fa :: rest ->
-      locate_opt None (Synth (Act (locate_opt None "sym", fa, Some (raw_of_expansion rest))))
+      locate_opt loc (Synth (Act (locate_opt loc "sym", fa, Some (raw_of_expansion loc err rest))))
   | Tuple (fields, fld) :: rest ->
       let component f =
         ( Some (f, []),
-          (locate_opt None `Normal, if f = fld then raw_of_expansion rest else locate_opt None Unif)
-        ) in
-      locate_opt None (Struct (Eta, Bwd.of_list (List.map component fields)))
+          (locate_opt loc `Normal, if f = fld then raw_of_expansion loc err rest else unif) ) in
+      locate_opt loc (Struct (Eta, Bwd.of_list (List.map component fields)))
 
 (* Install the unification algorithm into the equality checker. *)
 let () =
-  Unify.install { expand = (fun ctx ty shape -> check Kinetic ctx (raw_of_expansion shape) ty) }
+  Unify.install
+    {
+      expand =
+        (fun ctx ty meta shape ->
+          let loc, err = Global.unif_error meta in
+          check Kinetic ctx (raw_of_expansion loc err shape) ty);
+    }

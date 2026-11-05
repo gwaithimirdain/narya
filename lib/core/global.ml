@@ -268,6 +268,9 @@ module Unifdata = struct
     termctx : ('mode, 'a, 'b) termctx Lazy.t;
     solution : ('mode, 'b, kinetic) term option;
     depth : int;
+    (* Where the metavariable came from, and the error to report there if it isn't solved. *)
+    loc : Asai.Range.t option;
+    err : Reporter.Code.t;
   }
 end
 
@@ -318,14 +321,26 @@ let add_unif : type mode a b.
     ctx:(mode, a, b) Ctx.t ->
     ty:(mode, b, kinetic) term ->
     termctx:(mode, a, b) termctx Lazy.t ->
+    loc:Asai.Range.t option ->
+    err:Reporter.Code.t ->
     unit =
- fun meta unif ~ctx ~ty ~termctx ->
+ fun meta unif ~ctx ~ty ~termctx ~loc ~err ->
   Speculable.modify current_command (fun d ->
       {
         d with
         unifs =
           Uniftable.add meta
-            { meta; unif; ctx; ty; termctx; solution = None; depth = Origin.speculation_depth () }
+            {
+              meta;
+              unif;
+              ctx;
+              ty;
+              termctx;
+              solution = None;
+              depth = Origin.speculation_depth ();
+              loc;
+              err;
+            }
             d.unifs;
       })
 
@@ -342,6 +357,13 @@ let find_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, a, b, kine
 (* The context in which a unification metavariable was created. *)
 let unif_ctx : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, a, b) Ctx.t =
  fun meta -> (find_unif meta).ctx
+
+(* The location of a unification metavariable, and the error to report there if it isn't solved. *)
+let unif_error : type mode a b.
+    (mode, a, b, kinetic) Meta.t -> Asai.Range.t option * Reporter.Code.t =
+ fun meta ->
+  let d = find_unif meta in
+  (d.loc, d.err)
 
 (* Whether a unification metavariable can be solved at the current depth of speculation, i.e. whether it was created inside the innermost current speculation (or a speculation that has since succeeded into it). *)
 let unif_assignable : type mode a b. (mode, a, b, kinetic) Meta.t -> bool =
@@ -451,10 +473,22 @@ let count_unsolved_unifs () =
     { fold = (fun { solution; _ } n -> if Option.is_none solution then n + 1 else n) }
     (Speculable.get current_command).unifs 0
 
+(* Report the error of each unsolved unification metavariable.  Metavariables can be created together for the same term, such as the boundary of a primary argument, the fields of an expansion, or the type of a placeholder, and these have the same location.  Since at most one error is useful for each term, we report only the first. *)
+let report_unsolved_unifs () =
+  let seen = ref [] in
+  Uniftable.fold
+    {
+      fold =
+        (fun { solution; loc; err; _ } () ->
+          if Option.is_none solution && not (List.mem loc !seen) then (
+            seen := loc :: !seen;
+            mortal ?loc err));
+    }
+    (Speculable.get current_command).unifs ()
+
 let finish_unifs () =
   if not (moribund ()) then solve_singleton_unifs ();
-  if (not (moribund ())) && count_unsolved_unifs () > 0 then
-    mortal (Unsolved_unification_metas (count_unsolved_unifs ()));
+  if not (moribund ()) then report_unsolved_unifs ();
   (* Even if the command failed, the constants it was defining may still be used by later commands, with their failed parts failing silently if they are inspected.  Thus, an unsolved unification metavariable, whose table is about to go away, must become such a failed part. *)
   Uniftable.fold
     {
