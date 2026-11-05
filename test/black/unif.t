@@ -1743,7 +1743,7 @@ If the type is only partially instantiated, the placeholder has the wrong dimens
   
   [1]
 
-And the primary arguments have to synthesize if their boundaries are implicit.
+A primary argument that doesn't synthesize can't supply its implicit boundary, so that boundary is filled with placeholders, as if the user had written them.  Then something else has to determine them, such as the type being checked against, or the components of a tuple or abstraction.
 
   $ narya - <<EOF
   > axiom A : Type
@@ -1752,11 +1752,61 @@ And the primary arguments have to synthesize if their boundaries are implicit.
   > axiom a₂ : Id A a₀ a₁
   > axiom t : Id (Id A) a₂ a₂ (refl a₀) (refl a₁)
   > echo t : Id _ _ _ _ _
+  > echo t : Id (Id A) _ _ _ _
+  > axiom B : Type
+  > axiom b₀ : B
+  > axiom b₁ : B
+  > axiom b₂ : Id B b₀ b₁
+  > def S : Type ≔ sig ( fst : A, snd : B )
+  > axiom f : S → A
+  > echo refl f (fst ≔ a₂, snd ≔ b₂)
+  > axiom h : (A → A) → A
+  > echo refl h (x ⤇ x.2)
   > EOF
-   ￫ error[E0400]
+  t
+    : A⁽ᵉᵉ⁾ a₂ a₂ (refl a₀) (refl a₁)
+  
+  t
+    : A⁽ᵉᵉ⁾ a₂ a₂ (refl a₀) (refl a₁)
+  
+  ap f {(fst ≔ a₀, snd ≔ b₀)} {(fst ≔ a₁, snd ≔ b₁)} (fst ≔ a₂, snd ≔ b₂)
+    : Id A (f (fst ≔ a₀, snd ≔ b₀)) (f (fst ≔ a₁, snd ≔ b₁))
+  
+  ap h {𝑥 ↦ 𝑥} {𝑥 ↦ 𝑥} (x ⤇ x.2)
+    : Id A (h (𝑥 ↦ 𝑥)) (h (𝑥 ↦ 𝑥))
+  
+
+If nothing determines them, they are left unsolved.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom f : A → A
+  > echo refl f ?
+  > EOF
+   ￫ error[E2004]
+   ￮ there are 2 unsolved unification metavariables
+  
+  [1]
+
+And a constructor can't yet determine them, since it requires its boundary to already be constructors.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > def N : Type ≔ data [ zero. | suc. (_ : N) ]
+  > axiom g : N → A
+  > axiom n₀ : N
+  > axiom n₁ : N
+  > axiom n₂ : Id N n₀ n₁
+  > echo refl g (suc. n₂)
+  > EOF
+   ￫ error[E1002]
    ￭ stdin
-   6 | echo t : Id _ _ _ _ _
-     ^ non-synthesizing term in synthesizing position (primary argument with implicit instantiation boundaries)
+   7 | echo refl g (suc. n₂)
+     ^ instantiation arguments of datatype must be matching constructors:
+       expected
+         suc
+       but got
+         ?u0
   
   [1]
 
