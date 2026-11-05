@@ -1963,6 +1963,28 @@ And a constructor can't yet determine them, since it requires its boundary to al
   [1]
 
 
+A degeneracy can act on a term whose type is a metavariable, and that metavariable can be solved later.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > axiom use : Id A a a → Type
+  > def t : Type ≔ let x ≔ refl (_ : _) in use x
+  > echo t
+  > EOF
+  use (refl a)
+    : Type
+  
+
+  $ narya -parametric -arity 1 -direction d -external -discrete-tconn - <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > echo (_ : _)⁽ᵈ⁾ : A⁽ᵈ⁾ a
+  > EOF
+  a⁽ᵈ⁾
+    : A⁽ᵈ⁾ a
+  
+
 An ascribed type is checked speculatively.  A metavariable created inside a speculation that succeeds can be solved outside it afterwards.  But a speculation can't solve a metavariable created outside it, since if the speculation were backtracked, values created outside it might retain consequences of the solution.
 
   $ narya -v - <<EOF

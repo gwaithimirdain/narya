@@ -446,11 +446,12 @@ module Act = struct
           match D.compare_zero (TubeOf.inst new_inst_args) with
           | Zero -> Any base_args
           | Pos k -> Any (Snoc (new_base_args, Inst (k, new_inst_args))) in
-        (* Since we've normalized the type already, its 'value' can't be a 'Realize'; it must be a Val Canonical or an Unrealized.  In the Canonical case, we act on its instantiation arguments (which should really be the same arguments) in the same way.  We defer this computation, since it forces the type's stored value and rebuilds its instantiation tube, and the acted type's value is frequently never inspected; any dimension errors were already reported by the eager action on the outer instantiation arguments above, which are the same arguments. *)
+        (* Since we've normalized the type already, its 'value' can't be a 'Realize' yet; it must be a Val Canonical, an Unrealized, or Blocked.  In the Canonical case, we act on its instantiation arguments (which should really be the same arguments) in the same way.  We defer this computation, since it forces the type's stored value and rebuilds its instantiation tube, and the acted type's value is frequently never inspected; any dimension errors were already reported by the eager action on the outer instantiation arguments above, which are the same arguments. *)
         let value =
           defer @@ fun () ->
           match force_eval value with
-          | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
+          (* The one way a normalized type can be realized is if it was stuck on a unification metavariable that has been solved since we normalized it, in which case we act on what it now realizes. *)
+          | Realize v -> Realize (gact_ty ?err tm v s cell)
           | Unrealized -> Unrealized
           | Blocked b -> Blocked b
           | Val
