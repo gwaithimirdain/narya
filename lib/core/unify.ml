@@ -121,6 +121,7 @@ type expansion =
   | Abs : string option * bool -> expansion
   | Tuple : string list * string -> expansion
   | Perm : ('m, 'n) deg -> expansion
+  | Constructor : Constr.t * int -> expansion
 
 type expander = {
   expand :
@@ -152,8 +153,9 @@ let expansion_shape : type hmode mode any.
     (hmode, kinetic) value ->
     expansion list ->
     (hmode, mode, any, live) apps ->
+    expansion option ->
     expansion list option =
- fun head start args ->
+ fun head start args last ->
   let exception Stuck in
   let tyof : type m. (m, kinetic) value -> m View.view_type = function
     | Neu { ty; _ } -> view_type ~severity:Asai.Diagnostic.Error (Lazy.force ty) "expansion_shape"
@@ -189,10 +191,30 @@ let expansion_shape : type hmode mode any.
     | (Abs _ | Perm _) :: shape -> trim shape
     | shape -> shape in
   try
-    match trim (snd (go args)) with
-    | [] -> None
-    | shape -> Some (List.rev shape)
+    let shape = snd (go args) in
+    match (last, trim shape) with
+    (* If we know how the expansion ends, we need all of the abstractions. *)
+    | Some last, _ -> Some (List.rev (last :: shape))
+    | None, [] -> None
+    | None, shape -> Some (List.rev shape)
   with Stuck -> None
+
+(* The value of a metavariable at which to start computing the shape of its expansion, and the start of that shape, if any.  A permutation on the metavariable itself only acts on the dimensions of its type if its environment doesn't contribute any others. *)
+let expansion_start : type hmode a b n x y z.
+    (hmode, a, b) Ctx.t ->
+    (hmode, a, b, kinetic) Meta.t ->
+    (hmode, b, kinetic, kinetic) meta_kind ->
+    (hmode, n, b) env ->
+    (x, y, z) insertion ->
+    ((hmode, kinetic) value * expansion list) option =
+ fun mctx meta kind env ins ->
+  let head = eval_term env (Meta (meta, kind, Kinetic)) in
+  match (inverse_of_ins ins, D.compare_zero (cod_left_ins ins)) with
+  | None, _ -> Some (head, [])
+  | Some (Any_deg pinv), Zero ->
+      let (Perm_to p) = perm_of_ins ins in
+      Some (act_value head (deg_of_perm p) (Modalcell.id2 (Ctx.mode mctx)), [ Perm pinv ])
+  | Some _, Pos _ -> None
 
 (* Expand a unification metavariable that is projected from, and then compare the result to the other value. *)
 let try_expand : type mode a b.
@@ -214,17 +236,11 @@ let try_expand : type mode a b.
           (Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta)
           &&
           let mctx = Global.unif_ctx meta in
-          let head = eval_term env (Meta (meta, kind, Kinetic)) in
-          (* A permutation on the metavariable itself only acts on the dimensions of its type if its environment doesn't contribute any others. *)
-          let start =
-            match (inverse_of_ins ins, D.compare_zero (cod_left_ins ins)) with
-            | None, _ -> Some (head, [])
-            | Some (Any_deg pinv), Zero ->
-                let (Perm_to p) = perm_of_ins ins in
-                Some (act_value head (deg_of_perm p) (Modalcell.id2 (Ctx.mode mctx)), [ Perm pinv ])
-            | Some _, Pos _ -> None in
           Reporter.discard_errors ~fallback:(fun () -> false) @@ fun () ->
-          match Option.bind start (fun (head, start) -> expansion_shape head start args) with
+          match
+            Option.bind (expansion_start mctx meta kind env ins) (fun (head, start) ->
+                expansion_shape head start args None)
+          with
           | None -> false
           | Some shape -> (
               let mty = eval_term (Ctx.env mctx) (Global.meta_ty meta kind) in
@@ -238,6 +254,32 @@ let try_expand : type mode a b.
               | Ok () -> true
               | Error _ -> false)))
   | _ -> false
+
+(* A constructor can only check at a higher-dimensional datatype if its boundary consists of instances of the same constructor.  So if a term in that boundary is a unification metavariable, then it must be solved by that constructor applied to some arguments, which we fill in with new metavariables.  This doesn't affect whether solutions are most general, as long as its environment and arguments are a renaming, since then substituting into a term can't turn something else into a constructor.  If it isn't, or the metavariable can't be solved here, we do nothing, and it will be reported as not being a constructor. *)
+let refine_to_constr : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> Constr.t -> int -> unit =
+ fun ctx u constr arity ->
+  match view_term u with
+  | Neu { head = Live (Meta { meta; kind = Unif_meta unif as kind; env; ins }); args; _ } as u -> (
+      match arg_spine args with
+      | None -> ()
+      | Some Eq -> (
+          if Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta then
+            let mctx = Global.unif_ctx meta in
+            let mty = Global.meta_ty meta kind in
+            Reporter.discard_errors ~fallback:(fun () -> ()) @@ fun () ->
+            match renamed_ctx meta ctx env args mty mctx u with
+            | None -> ()
+            | Some _ -> (
+                match
+                  Option.bind (expansion_start mctx meta kind env ins) (fun (head, start) ->
+                      expansion_shape head start args (Some (Constructor (constr, arity))))
+                with
+                | None -> ()
+                | Some shape ->
+                    let emty = eval_term (Ctx.env mctx) mty in
+                    Global.solve_unif meta (!expander.expand mctx emty meta shape))))
+  | _ -> ()
 
 (* A type is a singleton if any two of its elements are equal, by eta-conversion: this holds for records all of whose fields are singletons, and functions whose codomains are.  We test this by comparing two fresh variables, without solving any metavariables. *)
 let is_singleton : type mode a b. (mode, a, b) Ctx.t -> (mode, kinetic) value -> bool =

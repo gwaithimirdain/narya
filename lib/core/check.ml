@@ -1131,6 +1131,10 @@ and check_constr : type mode a b s.
       | Some (Dataconstr { env; ty = constr_ty; fnty = _ }) ->
           (* We recover the constructor's arity from the pi-depth of its stored function-type, to drive the conversion of the instantiation arguments below. *)
           let (Wrap lgth) = pi_arity constr_ty in
+          (* If the boundary contains unification metavariables, they must be instances of this constructor too. *)
+          TubeOf.miter
+            { it = (fun _ [ arg ] -> Unify.refine_to_constr ctx arg.tm constr (Fwn.to_int lgth)) }
+            [ tyargs ];
           (* To typecheck a higher-dimensional instance of our constructor constr at the datatype, all the instantiation arguments must also be applications of lower-dimensional versions of that same constructor.  We check this, and extract the arguments of those lower-dimensional constructors.  What we naturally have is a *tube of lists*, but what check_at_pi wants is a *vector of tubes*, one per constructor argument; we do the conversion with a multiple-output traversal, as in readback and equality. *)
           let tyarg_args =
             find_tyarg_args ~check_dim:"checking constr" constr lgth tyargs
@@ -5310,6 +5314,9 @@ let rec raw_of_expansion : type a.
            })
   | Perm fa :: rest ->
       locate_opt loc (Synth (Act (locate_opt loc "sym", fa, Some (raw_of_expansion loc err rest))))
+  | Constructor (c, arity) :: _ ->
+      let args = List.init arity (fun _ -> (unif, locate_opt loc `Explicit)) in
+      locate_opt loc (Constr (locate_opt loc c, args))
   | Tuple (fields, fld) :: rest ->
       let component f =
         ( Some (f, []),
