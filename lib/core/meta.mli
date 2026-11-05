@@ -27,6 +27,7 @@ val make_unif : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> ('mode, 'a, 'b, 
 val make_hole : 'mode Mode.t -> 'a N.t -> ('mode, 'b) Tctx.t -> 's energy -> ('mode, 'a, 'b, 's) t
 val remake : (File.t -> File.t) -> ('mode, 'a, 'b, 's) t -> ('mode, 'a, 'b, 's) t
 val mode : ('mode, 'a, 'b, 's) t -> 'mode Mode.t
+val tctx : ('mode, 'a, 'b, 's) t -> ('mode, 'b) Tctx.t
 
 val name :
   ?owner_name:(Constant.t -> string) ->
