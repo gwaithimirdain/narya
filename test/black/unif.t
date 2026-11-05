@@ -1144,7 +1144,7 @@ A metavariable with a permutation isn't equal to itself without it, even if the 
   
   [1]
 
-A projection from a symmetrized metavariable doesn't expand it yet.
+A projection from a metavariable with a permutation on it, or on its application to arguments, expands it to the inverse permutation of a tuple.
 
   $ narya -parametric - <<EOF
   > def Top : Type ≔ sig ()
@@ -1160,20 +1160,38 @@ A projection from a symmetrized metavariable doesn't expand it yet.
   > def U : Type ≔ (Gel Top Top R)⁽ᵉ¹⁾ {t} {t} g {t} {t} g (refl t) (refl t)
   > axiom use : (m : U) → Same (Id C c c) (sym m .ungel) cc → Type
   > echo use _ (rf _ cc)
+  > axiom A : Type
+  > axiom cca : A → Id C c c
+  > axiom use2 : (f : A → U) → ((x : A) → Same (Id C c c) (sym (f x) .ungel) (cca x)) → Type
+  > echo use2 _ (x ↦ rf _ (cca x))
   > EOF
-   ￫ error[E0401]
-   ￭ stdin
-   13 | echo use _ (rf _ cc)
-      ^ term synthesized type
-          Same (Id C c c) cc cc
-        but is being checked against type
-          Same (Id C c c) (sym ?u0 .ungel) cc
-        unequal head terms:
-          cc
-        does not equal
-          sym ?u0
+  use (sym (ungel ≔ cc)) (rf (Id C c c) cc)
+    : Type
   
-  [1]
+  use2 (𝑥 ↦ sym (ungel ≔ cca 𝑥)) (x ↦ rf (Id C c c) (cca x))
+    : Type
+  
+
+This works for permutations that aren't their own inverse too.
+
+  $ narya -parametric - <<EOF
+  > def Top : Type ≔ sig ()
+  > axiom C : Type
+  > axiom c : C
+  > axiom ccc : C⁽ᵉᵉ⁾ (refl c) (refl c) (refl c) (refl c)
+  > def Gel (A B : Type) (R : A → B → Type) : Id Type A B ≔ sig ( a .ungel : R a.0 a.1 )
+  > def R : Top → Top → Type ≔ x y ↦ C
+  > def g : Gel Top Top R () () ≔ (ungel ≔ c)
+  > def t : Top ≔ ()
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > def U : Type ≔ (Gel⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ Top⁽ᵉᵉ⁾ R⁽ᵉᵉ⁾)⁽²³¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ g⁽ᵉ¹⁾ t⁽ᵉᵉ⁾ t⁽ᵉᵉ⁾
+  > axiom use : (m : U) → Same (C⁽ᵉᵉ⁾ (refl c) (refl c) (refl c) (refl c)) (m⁽³¹²⁾ .ungel) ccc → Type
+  > echo use _ (rf _ ccc)
+  > EOF
+  use (ungel ≔ ccc)⁽²³¹⁾ (rf (C⁽ᵉᵉ⁾ (refl c) (refl c) (refl c) (refl c)) ccc)
+    : Type
+  
 
 A case tree stuck on an unsolved metavariable is blocked, and is recomputed once the metavariable is solved, even if its blocked value has been computed and cached in the meantime.  Here the type Z, i.e. T ?u, is forced while ?u is unsolved, by comparing two terms of type Z; then ?u is solved by comparing b with true., after which Z must compute to ℕ.
 
