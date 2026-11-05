@@ -1441,6 +1441,106 @@ A case tree stuck on an unsolved metavariable is blocked, and is recomputed once
     : ℕ
   
 
+An instantiation of a degenerated metavariable isn't a place where the metavariable can be solved directly, and its type doesn't mention the metavariable.  But the instantiation arguments are determined by the type, and their types do mention the metavariable.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > axiom a₃ : A
+  > axiom s : (X : Type) (x y : X) → Id X x y → Id X y x
+  > echo s _ _ _ a₂
+  > axiom B : Type
+  > axiom f : A → B
+  > axiom g : A → B
+  > axiom h : Id (A → B) f g
+  > echo s _ _ _ h
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > axiom a₂₀ : Id A a₀₀ a₁₀
+  > axiom a₂₁ : Id A a₀₁ a₁₁
+  > axiom t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁
+  > axiom s2 : (X : Type) (x00 x01 : X) (x02 : Id X x00 x01) (x10 x11 : X) (x12 : Id X x10 x11) (x20 : Id X x00 x10) (x21 : Id X x01 x11) → Id (Id X) x02 x12 x20 x21 → X
+  > echo s2 _ _ _ _ _ _ _ _ _ t
+  > EOF
+  s A a₀ a₁ a₂
+    : Id A a₁ a₀
+  
+  s (A → B) f g h
+    : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id B (g 𝑥₀) (f 𝑥₁)
+  
+  s2 A a₀₀ a₀₁ a₀₂ a₁₀ a₁₁ a₁₂ a₂₀ a₂₁ t
+    : A
+  
+
+An instantiation is determined even if the metavariable in the head is the same, in which case the arguments can be equated although the metavariable remains unknown.
+
+  $ narya - <<EOF
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > axiom use : (X : Type) (x y z w : X) → Same Type (Id X x y) (Id X z w) → Type
+  > echo use _ _ _ _ _ (rf _ _)
+  > EOF
+   ￫ error[E2004]
+   ￮ there are 3 unsolved unification metavariables
+  
+  [1]
+
+They can also be unequal.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > axiom a₃ : A
+  > axiom s : (X : Type) (x y : X) → Id X x y → Id X y x
+  > echo s _ a₃ _ a₂
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   7 | echo s _ a₃ _ a₂
+     ^ term synthesized type
+         Id A a₀ a₁
+       but is being checked against type
+         Id A a₃ ?u1
+       unequal head constants:
+         a₀
+       does not equal
+         a₃
+  
+  [1]
+
+But a metavariable that is itself a higher-dimensional type isn't solved by an instantiation of it, although its arguments are.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom Same : (X : Type) → X → X → Type
+  > axiom rf : (X : Type) (x : X) → Same X x x
+  > axiom use : (F : Id Type A A) (x y : A) → Same Type (F x y) (Id A a₀ a₁) → Type
+  > echo use _ _ _ (rf _ (Id A a₀ a₁))
+  > EOF
+   ￫ error[E0401]
+   ￭ stdin
+   7 | echo use _ _ _ (rf _ (Id A a₀ a₁))
+     ^ term synthesized type
+         Same Type (Id A a₀ a₁) (Id A a₀ a₁)
+       but is being checked against type
+         Same Type (?u0 a₀ a₁) (Id A a₀ a₁)
+       unequal head terms:
+         Id A
+       does not equal
+         ?u0
+  
+  [1]
+
 An ascribed type is checked speculatively.  A metavariable created inside a speculation that succeeds can be solved outside it afterwards.  But a speculation can't solve a metavariable created outside it, since if the speculation were backtracked, values created outside it might retain consequences of the solution.
 
   $ narya -v - <<EOF

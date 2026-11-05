@@ -144,13 +144,30 @@ and equal_neu_or_unfold : type mode a b.
  fun ctx x y retry ->
   match flexibly (fun () -> equal_neu ctx x y) with
   | Ok () -> Ok ()
-  | Error err ->
+  | Error err -> (
       let vx = view_term x in
       let vy = view_term y in
       if vx != x || vy != y then retry vx vy
-      else if (not !flexible) && Global.unsolved_unifs () && forces_spine x && forces_spine y then
-        equal_neu ctx x y
-      else Error err
+      else if !flexible || not (Global.unsolved_unifs ()) then Error err
+      else if forces_spine x && forces_spine y then equal_neu ctx x y
+      else
+        (* Even if the spines aren't forced to be equal, the instantiation arguments of a type are.  Comparing them, with their types, may solve the metavariable that is blocking the comparison, as with ?X in "Id ?X ?x ?y" and "Id A a b", since that metavariable appears in the types of those arguments even though it doesn't appear in the type of the instantiated type. *)
+        match equal_instantiations ctx x y with
+        | None -> Error err
+        | Some (Error _ as result) -> result
+        | Some (Ok ()) ->
+            let vx = view_term x in
+            let vy = view_term y in
+            if vx != x || vy != y then retry vx vy else flexibly (fun () -> equal_neu ctx x y))
+
+(* Compare the instantiation arguments of two types that are both instantiated, comparing the types of those arguments first. *)
+and equal_instantiations : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit ErrOpt.t =
+ fun ctx x y ->
+  match (x, y) with
+  | Neu { args = Snoc (_, Inst (_, a1)); _ }, Neu { args = Snoc (_, Inst (_, a2)); _ } ->
+      equal_tyargs ~types:true ctx a1 a2
+  | _ -> None
 
 (* Compare two values at a type, which they are both assumed to belong to.  We do eta-expansion here if the type is one with an eta-rule, like a pi-type or a record type.  We also deal with the case of terms that don't synthesize, such as structs even in codatatypes without eta, and constructors in datatypes. *)
 and equal_at : type mode a b.
@@ -331,11 +348,12 @@ and equal_neu : type mode a b.
   | Constr _, _ | _, Constr _ -> fatal (Anomaly "unexpected constr in synthesizing equality-check")
 
 and equal_tyargs : type mode n1 k1 nk1 n2 k2 nk2 a b.
+    ?types:bool ->
     (mode, a, b) Ctx.t ->
     (n1, k1, nk1, mode normal) TubeOf.t ->
     (n2, k2, nk2, mode normal) TubeOf.t ->
     unit ErrOpt.t =
- fun n a1 a2 ->
+ fun ?(types = false) n a1 a2 ->
   match
     (D.compare (TubeOf.inst a1) (TubeOf.inst a2), D.compare (TubeOf.uninst a1) (TubeOf.uninst a2))
   with
@@ -344,7 +362,14 @@ and equal_tyargs : type mode n1 k1 nk1 n2 k2 nk2 a b.
       (* Because instantiation arguments are stored as normals, we use type-sensitive equality to compare them. *)
       Some
         (short_circuit_err (fun check ->
-             TubeOf.miter { it = (fun _ [ x; y ] -> check (equal_nf n x y)) } [ a1; a2 ]))
+             TubeOf.miter
+               {
+                 it =
+                   (fun _ [ x; y ] ->
+                     if types then check (equal_val n (Lazy.force x.ty) (Lazy.force y.ty));
+                     check (equal_nf n x y));
+               }
+               [ a1; a2 ]))
   | Neq, _ -> None
   | _, Neq -> None
 
