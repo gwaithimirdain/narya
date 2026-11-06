@@ -593,6 +593,9 @@ let rec check : type mode a b s.
     (* If the "type" is not a type here, or not fully instantiated, that's a user error, not a bug. *)
     let severity = Asai.Diagnostic.Error in
     match (tm.value, status) with
+    (* A term that can only be checked against a type of a particular shape, such as an abstraction against a function-type, can't be checked yet if the type is stuck on an unsolved unification metavariable.  Then we postpone checking it, using a delayed metavariable in its place. *)
+    | (Lam _ | Struct (Eta, _) | Constr _ | Numeral _), Kinetic
+      when Option.is_some (blocker_of (view_term ty)) -> postpone_check ctx tm ty
     (* A Let is a "synthesizing" term so that it *can* synthesize, but in checking position it checks instead. *)
     | Synth (Let (x, modality, v, body)), _ ->
         let clet, Not_some = synth_or_check_let status ctx x modality v body (Some ty) in
@@ -1112,6 +1115,34 @@ let rec check : type mode a b s.
   let result = go () in
   Annotate.tm ctx result;
   result
+
+(* Postpone checking a term whose type is stuck on unsolved unification metavariables, returning a delayed metavariable in its place.  We retry once the type is no longer stuck, which typically happens at the end of the command, outside the dynamic extent in which the term was to be checked.  So we restore the owner of new metavariables and the set of constants being defined, but we can't record occurrences in the occurrence-analysis scope that is active now, so we conservatively record it as recursive. *)
+and postpone_check : type mode a b.
+    (mode, a, b) Ctx.t -> a check located -> (mode, kinetic) value -> (mode, b, kinetic) term =
+ fun ctx tm ty ->
+  let meta, delayed = new_unif ~delayed:true ctx ty tm.loc None in
+  Positivity.record `Recursive;
+  let owner = Meta.current_owner () in
+  let beingdefined = Positivity.beingdefined () in
+  let attempt () =
+    let vty = view_term ty in
+    match blocker_of vty with
+    | Some _ -> `Stuck (Equal.blockers_of vty)
+    | None ->
+        let ctm =
+          Meta.with_owner_opt owner @@ fun () ->
+          Positivity.run @@ fun () ->
+          Positivity.run_beingdefined beingdefined @@ fun () ->
+          Reporter.try_with
+            ~fatal:(fun d ->
+              Global.release_unif meta (Failed Kinetic);
+              fatal_diagnostic d)
+            (fun () -> check Kinetic ctx tm ty) in
+        Global.release_unif meta ctm;
+        `Done in
+  let report () = mortal ?loc:tm.loc (Undetermined_checking_type (PVal (ctx, ty))) in
+  Global.postpone ~blockers:(Equal.blockers_of (view_term ty)) ~attempt ~report;
+  delayed
 
 (* Check an application of a constructor, against a datatype having that constructor or (by eta-expansion) against a function-type. *)
 and check_constr : type mode a b s.

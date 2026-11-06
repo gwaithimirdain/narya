@@ -124,6 +124,7 @@ module Code = struct
         why : Unequal.t;
       }
         -> t
+    | Undetermined_checking_type : printable -> t
     | Undetermined_synthesized_type : {
         expected : printable;
         got : printable;
@@ -372,6 +373,7 @@ module Code = struct
     | Type_not_fully_instantiated _ -> Error
     | Unequal_synthesized_type _ -> Error
     | Undetermined_synthesized_type _ -> Error
+    | Undetermined_checking_type _ -> Error
     | Unequal_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
@@ -583,6 +585,7 @@ module Code = struct
     | Invalid_synthesized_type _ -> "E0404"
     | Type_expected _ -> "E0405"
     | Undetermined_synthesized_type _ -> "E0406"
+    | Undetermined_checking_type _ -> "E0407"
     (* Dimensions *)
     | Dimension_mismatch _ -> "E0500"
     | Not_enough_lambdas _ -> "E0501"
@@ -817,6 +820,10 @@ module Code = struct
                ~none:(fun _ () -> ())
                (fun ppf which -> fprintf ppf "@ (hint: %s boundaries are explicit)" which))
             which
+      | Undetermined_checking_type ty ->
+          textf
+            "@[<hv 0>can't check this term against type@;<1 2>%a@ since what kind of type it is depends on unsolved placeholders@]"
+            pp_printed (print ty)
       | Undetermined_synthesized_type { got; expected; why } ->
           let str, p1, p2 = Unequal.printables why in
           textf

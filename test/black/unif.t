@@ -2640,3 +2640,48 @@ A delayed metavariable displayed in a message is shown by name, with a remark po
          P
   
   [1]
+
+A term that can only be checked against a type of a particular shape, such as an abstraction or a tuple, can't be checked yet against a type that is stuck on a metavariable.  Then checking it is postponed, and retried once the type is known, which may reveal an error.
+
+  $ narya -v - <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > def t2 : A ≔ let T : Type ≔ _ in let h : T ≔ x ↦ x in (h : A → A) a
+  > def t4 : A ≔ let T : Type ≔ _ in let h : T ≔ x ↦ x in let k : Id Type T (A → A) ≔ refl (A → A) in h a
+  > echo let T : Type ≔ _ in let h : T ≔ x ↦ x in let k : Id Type T (A → A) ≔ refl (A → A) in h
+  > def bad : A ≔ let T : Type ≔ _ in let h : T ≔ x ↦ x in let k : Id Type T A ≔ refl A in a
+  > def t3 : A ≔ let T : Type ≔ _ in let h : T ≔ (a, a) in a
+  > EOF
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0000]
+   ￮ constant t2 defined
+  
+   ￫ info[I0000]
+   ￮ constant t4 defined
+  
+  x ↦ x
+    : A → A
+  
+   ￫ error[E0700]
+   ￭ stdin
+   6 | def bad : A ≔ let T : Type ≔ _ in let h : T ≔ x ↦ x in let k : Id Type T A ≔ refl A in a
+     ^ checking abstraction against non-function type A
+  
+   ￫ error[E0407]
+   ￭ stdin
+   7 | def t3 : A ≔ let T : Type ≔ _ in let h : T ≔ (a, a) in a
+     ^ can't check this term against type
+         T
+       since what kind of type it is depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   7 | def t3 : A ≔ let T : Type ≔ _ in let h : T ≔ (a, a) in a
+     ^ can't determine a value for this placeholder
+  
+  [1]
