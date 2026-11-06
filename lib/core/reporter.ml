@@ -1325,6 +1325,42 @@ end
 module Delegate = Asai.StructuredReporter.Make (Code)
 include Delegate
 
+(* A delayed metavariable (see Global.Unifdata) stands for a term whose type hasn't been checked yet.  When one is displayed in a message, we add a remark pointing to that term.  We don't display the term itself in place of the metavariable, since it may not have the type that would be expected there, which could lead to confusing messages such as two apparently identical terms being unequal.  The printer notices each delayed metavariable that it displays, by calling the function supplied by this reader effect with its displayed name and the location of its term.  Since messages are formatted when their diagnostic is constructed, in the state where the error occurred (see Code.default_text), we collect them there. *)
+module Delayed_metas = Algaeff.Reader.Make (struct
+  type t = string * Asai.Range.t option -> unit
+end)
+
+(* Notice a delayed metavariable being displayed.  When we aren't constructing a diagnostic, such as when displaying the result of a command, there is nothing to do. *)
+let notice_delayed_meta name loc =
+  match Delayed_metas.read () with
+  | exception Effect.Unhandled _ -> ()
+  | notice -> notice (name, loc)
+
+(* Construct a diagnostic, adding a remark for each delayed metavariable displayed in it. *)
+let diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  let delayed = ref Emp in
+  let notice (name, mloc) =
+    if not (Bwd.exists (fun (n, _) -> n = name) !delayed) then
+      delayed := Snoc (!delayed, (name, mloc)) in
+  let d =
+    Delayed_metas.run ~env:notice @@ fun () ->
+    Delegate.diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg in
+  let extra_remarks =
+    Bwd.fold_left
+      (fun remarks (name, loc) ->
+        Snoc
+          ( remarks,
+            Asai.Diagnostic.loctextf ?loc
+              "%s stands for this term, whose type hasn't been checked yet" name ))
+      d.extra_remarks !delayed in
+  { d with extra_remarks }
+
+let emit ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  emit_diagnostic (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+
+let fatal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  fatal_diagnostic (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+
 let ( <|> ) : type a. a option -> Code.t -> a =
  fun x e ->
   match x with

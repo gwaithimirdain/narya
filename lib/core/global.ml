@@ -466,6 +466,18 @@ let unif_solution_opt : type mode a b.
       Option.bind (Uniftable.find_opt meta (Speculable.get current_command).unifs) (fun d ->
           d.solution)
 
+(* If a unification metavariable is delayed and not yet released, the location of the term it stands for. *)
+let delayed_unif_loc : type mode a b.
+    (mode, a, b, kinetic) Meta.t -> (mode, b, kinetic) term option ref -> Asai.Range.t option option
+    =
+ fun meta unif ->
+  match !unif with
+  | Some _ -> None
+  | None -> (
+      match Uniftable.find_opt meta (Speculable.get current_command).unifs with
+      | Some { delayed = true; solution = None; loc; _ } -> Some loc
+      | _ -> None)
+
 (* Whether a unification metavariable has been solved, and if so whether its solution has been written into its cell (and hence is permanent) or is only in the table of the current command (and hence could still be backtracked). *)
 let unif_status : type mode a b.
     (mode, a, b, kinetic) Meta.t ->

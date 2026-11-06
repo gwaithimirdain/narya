@@ -328,10 +328,15 @@ let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
 let meta_var_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
  fun v -> if Display.metas () == `Numbered then meta_name v else "?"
 
-(* That name as an unparsed Ident. *)
-let unparse_meta_name : type mode x b s lt ls rt rs.
-    (mode, x, b, s) Meta.t -> (lt, ls, rt, rs) parse located =
- fun v -> unlocated (Ident ([ meta_var_name v ], []))
+(* That name as an unparsed Ident.  If it is a delayed metavariable, we notice that it is being displayed, so that a message containing it can point to the term it stands for. *)
+let unparse_meta_name : type mode x b l s lt ls rt rs.
+    (mode, x, b, l) Meta.t -> (mode, b, l, s) meta_kind -> (lt, ls, rt, rs) parse located =
+ fun v kind ->
+  (match kind with
+  | Global_meta -> ()
+  | Unif_meta unif ->
+      Option.iter (Reporter.notice_delayed_meta (meta_var_name v)) (Global.delayed_unif_loc v unif));
+  unlocated (Ident ([ meta_var_name v ], []))
 
 (* Whether the context of a let-only has no clauses to display, because it contains only aliases and weakenings. *)
 let rec letonly_empty : type mode i b. (mode, i, b) ordered_termctx -> bool = function
@@ -615,7 +620,7 @@ let rec unparse : type mode n lt ls rt rs s.
               match displayed_metadef v kind with
               | Some { tm = `Defined def; _ } ->
                   MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
-              | _ -> unparse_meta_name v)))
+              | _ -> unparse_meta_name v kind)))
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
@@ -696,11 +701,11 @@ let rec unparse : type mode n lt ls rt rs s.
       in
       match No.Interval.contains ri No.minus_omega_plus_one with
       | Some right_ok ->
-          unlocated (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v) ~right_ok)
+          unlocated (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v kind) ~right_ok)
       | None ->
           parenthesize
             (unlocated
-               (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v)
+               (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v kind)
                   ~right_ok:No.minusomega_lt_minusomegaplusone)))
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty } -> (
       (* The bound terms are unparsed in the ambient context, while the types and the body are unparsed in the context of only the bound variables. *)

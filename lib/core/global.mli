@@ -121,6 +121,11 @@ val unif_solution_opt :
   ('mode, 'b, kinetic) term option ref ->
   ('mode, 'b, kinetic) term option
 
+val delayed_unif_loc :
+  ('mode, 'a, 'b, kinetic) Meta.t ->
+  ('mode, 'b, kinetic) term option ref ->
+  Asai.Range.t option option
+
 val unif_status :
   ('mode, 'a, 'b, kinetic) Meta.t ->
   ('mode, 'b, kinetic) term option ref ->

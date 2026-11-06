@@ -2602,3 +2602,41 @@ A comparison that is stuck is still unequal if the metavariable can't be solved 
      ^ can't determine a value for this placeholder
   
   [1]
+
+A delayed metavariable displayed in a message is shown by name, with a remark pointing to the term it stands for.  Here the occurrence of T is checked at Type, but its type F A can't be compared to Type yet, so it is guarded.
+
+  $ narya -v - <<EOF
+  > axiom A : Type
+  > axiom a0 : A
+  > axiom P : Type → Type
+  > def t : Type ≔
+  >   let F : Type → Type ≔ _ in
+  >   let T : F A ≔ A in
+  >   let z : P T ≔
+  >     a0 in
+  >   A
+  > EOF
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom P assumed
+  
+   ￫ error[E0401]
+   ￭ stdin
+   7 |   let z : P T ≔
+     ^ ?u2 stands for this term, whose type hasn't been checked yet
+   8 |     a0 in
+     ^ term synthesized type
+         A
+       but is being checked against type
+         P ?u2
+       unequal head constants:
+         A
+       does not equal
+         P
+  
+  [1]
