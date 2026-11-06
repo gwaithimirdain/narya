@@ -124,6 +124,12 @@ module Code = struct
         why : Unequal.t;
       }
         -> t
+    | Undetermined_synthesized_type : {
+        expected : printable;
+        got : printable;
+        why : Unequal.t;
+      }
+        -> t
     | Unequal_synthesized_boundary : {
         face : ('a, 'b) sface;
         got : printable;
@@ -365,6 +371,7 @@ module Code = struct
     | Noncube_abstraction_in_higher_dimensional_match _ -> Error
     | Type_not_fully_instantiated _ -> Error
     | Unequal_synthesized_type _ -> Error
+    | Undetermined_synthesized_type _ -> Error
     | Unequal_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
@@ -575,6 +582,7 @@ module Code = struct
     | Bare_case_tree_construct _ -> "H0403"
     | Invalid_synthesized_type _ -> "E0404"
     | Type_expected _ -> "E0405"
+    | Undetermined_synthesized_type _ -> "E0406"
     (* Dimensions *)
     | Dimension_mismatch _ -> "E0500"
     | Not_enough_lambdas _ -> "E0501"
@@ -809,6 +817,12 @@ module Code = struct
                ~none:(fun _ () -> ())
                (fun ppf which -> fprintf ppf "@ (hint: %s boundaries are explicit)" which))
             which
+      | Undetermined_synthesized_type { got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
+          textf
+            "@[<hv 0>term synthesized type@;<1 2>%a@ and is being checked against type@;<1 2>%a@ but can't determine whether they are equal, since comparing %s@;<1 2>%a@ and@;<1 2>%a@ depends on unsolved placeholders@]"
+            pp_printed (print got) pp_printed (print expected) str pp_printed (print p1) pp_printed
+            (print p2)
       | Unequal_synthesized_boundary { face; got; expected; why } ->
           let str, p1, p2 = Unequal.printables why in
           textf

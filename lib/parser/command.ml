@@ -1034,8 +1034,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           let (Of_raw ctx) = ctx rtm in
           (* The term is checked with internal readback, like any other term, so that the contexts of any metavariables it creates are not read back for display.  Only the results are read back for display. *)
           let ctm, ety = Check.synth Kinetic ctx { value = stm; loc = rtm.loc } in
-          (* Any unification metavariables that can be solved at the end of the command, we solve now, so that we know whether we are going to print anything. *)
-          Global.solve_singleton_unifs ();
+          (* Any unification metavariables that can be solved at the end of the command, and any postponed constraints that can be decided then, we solve now, so that we know whether we are going to print anything. *)
+          Global.settle_unifs ();
           Readback.Displaying.run ~env:true @@ fun () ->
           let names = Names.of_ctx ctx in
           (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)

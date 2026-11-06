@@ -81,12 +81,23 @@ val add_unif :
   termctx:('mode, 'a, 'b) termctx Lazy.t ->
   loc:Asai.Range.t option ->
   err:Reporter.Code.t ->
+  delayed:bool ->
   unit
 
 val unif_ctx : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'a, 'b) Ctx.t
 val unif_error : ('mode, 'a, 'b, kinetic) Meta.t -> Asai.Range.t option * Reporter.Code.t
 val unif_assignable : ('mode, 'a, 'b, kinetic) Meta.t -> bool
 val solve_unif : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'b, kinetic) term -> unit
+val release_unif : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'b, kinetic) term -> unit
+
+val postpone :
+  blockers:Value.blocker list ->
+  attempt:(unit -> [ `Done | `Stuck of Value.blocker list ]) ->
+  report:(unit -> unit) ->
+  unit
+
+val retry_postponed : ?stale:bool -> unit -> bool
+val settle_unifs : unit -> unit
 
 val unif_solution :
   ('mode, 'a, 'b, kinetic) Meta.t ->

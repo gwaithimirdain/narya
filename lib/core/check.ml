@@ -206,14 +206,15 @@ let run_with_definition : type mode a c.
   | Constant (c, mode, _) -> Global.with_definition c mode (`Defined tm) f
   | Meta (m, _) -> Global.with_meta_definition m tm f
 
-(* Create a new unification metavariable in a given context, of a given type, returning it as a term in that context.  Its type is read back now, but its context is read back only if needed (see Global.Unifdata), and then not for display, since it is also used for internal purposes like comparing environments. *)
-let make_unif : type mode a b.
+(* Create a new unification metavariable in a given context, of a given type, returning it along with itself as a term in that context.  Its type is read back now, but its context is read back only if needed (see Global.Unifdata), and then not for display, since it is also used for internal purposes like comparing environments.  If [delayed], it can't be solved by unification, only released by a postponed constraint. *)
+let new_unif : type mode a b.
+    ?delayed:bool ->
     (mode, a, b) Ctx.t ->
     (mode, kinetic) value ->
     Asai.Range.t option ->
     Code.t option ->
-    (mode, b, kinetic) term =
- fun ctx ty loc err ->
+    (mode, a, b, kinetic) Meta.t * (mode, b, kinetic) term =
+ fun ?(delayed = false) ctx ty loc err ->
   let meta = Meta.make_unif (Ctx.mode ctx) (Ctx.raw_length ctx) (Ctx.tctx ctx) in
   let unif : (mode, b, kinetic) term option ref = ref None in
   let ty = readback_val ctx ty in
@@ -223,8 +224,26 @@ let make_unif : type mode a b.
       ( Readback.Displaying.run ~env:false @@ fun () ->
         Readback.Unifying.run ~env:None @@ fun () -> readback_ctx ctx ) in
   Global.add_unif meta unif ~ctx ~ty ~termctx ~loc
-    ~err:(Option.value err ~default:Code.Unsolved_unification_meta);
-  Meta (meta, Unif_meta unif, Kinetic)
+    ~err:(Option.value err ~default:Code.Unsolved_unification_meta)
+    ~delayed;
+  (meta, Meta (meta, Unif_meta unif, Kinetic))
+
+let make_unif : type mode a b.
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    Asai.Range.t option ->
+    Code.t option ->
+    (mode, b, kinetic) term =
+ fun ctx ty loc err -> snd (new_unif ctx ty loc err)
+
+(* The kinetic term underlying a term that was checked or synthesized with some status, if it is kinetic or the realization of one. *)
+let kinetic_of : type mode b s.
+    (mode, b, s) status -> (mode, b, s) term -> (mode, b, kinetic) term option =
+ fun status tm ->
+  match (status, tm) with
+  | Kinetic, _ -> Some tm
+  | Potential _, Realize tm -> Some tm
+  | Potential _, _ -> None
 
 (* A "checkable branch" stores all the information about a branch in a match, both that coming from what the user wrote in the match and what is stored as properties of the datatype.  The constructor's argument types and output are stored together as its function-type "ty" (as in a Value.dataconstr); the argument variables are introduced, and the type indices of this branch read off, by ext_pi at typechecking time.  *)
 type (_, _, _) checkable_branch =
@@ -632,7 +651,7 @@ let rec check : type mode a b s.
                     match pface_of_sface fs with
                     | `Id _ ->
                         fatal (Anomaly "non-permutation degeneracy doesn't have a proper section")
-                    | `Proper fs -> (
+                    | `Proper fs ->
                         if not (Modal.Mode.allows_deg (Ctx.mode ctx) fa) then
                           fatal (Nonparametric_mode_degeneracy (str.value, Ctx.mode ctx));
                         let arg = TubeOf.find tyargs fs in
@@ -652,35 +671,21 @@ let rec check : type mode a b s.
                           with_loc xloc @@ fun () ->
                           act_ty ex xty fa ~err:(low_dim_arg_err str.value)
                             (Modalcell.id2 (Ctx.mode ctx)) in
-                        match subtype_of ctx sty ty with
-                        | Ok () ->
-                            realize status
-                              (Term.Act
-                                 ( Kinetic,
-                                   cx,
-                                   fa,
-                                   (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx)
-                                 ))
-                        | Error (Unequal why | Stuck (why, _)) ->
-                            fatal
-                              (Unequal_synthesized_type
-                                 {
-                                   got = PVal (ctx, sty);
-                                   expected = PVal (ctx, ty);
-                                   which = None;
-                                   why;
-                                 }))))))
+                        realize status
+                          (check_synthesized ctx
+                             (Term.Act
+                                ( Kinetic,
+                                  cx,
+                                  fa,
+                                  (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx)
+                                ))
+                             sty ty tm.loc)))))
     (* Similarly, an application can always synthesize, but can also check, as a non-dependent application, if enough domains are ascribed or arguments are synthesizing. *)
-    | Synth (App _), _ -> (
+    | Synth (App _), _ ->
         let fn, args = spine tm in
         let ctm, sty = synth_or_check_apps ctx fn args (Some ty) in
         (* We still have to check that the synthesized type is correct, as in check_of_synth. *)
-        match subtype_of ctx sty ty with
-        | Ok () -> realize status ctm
-        | Error (Unequal why | Stuck (why, _)) ->
-            fatal
-              (Unequal_synthesized_type
-                 { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
+        realize status (check_synthesized ctx ctm sty ty tm.loc)
     | Lam { name = { value = x; loc = xloc }; cube; implicit; dom; body }, _ -> (
         match view_type ~severity ty "typechecking lambda" with
         | Canonical
@@ -1148,13 +1153,10 @@ and check_constr : type mode a b s.
             check_at_pi constr ctx (dim_env env) (eval_term env constr_ty) args tyarg_args in
           (* The last thing to do is check that this output type is the type we are checking against.  Since the constructor's function-type came from that very type, the parameters agree automatically, so this amounts to comparing the indices; thus a constructor application "checks against the parameters but synthesizes the indices" in some sense.  The output is uninstantiated, a "vertex" of the higher-dimensional type, so we instantiate it at the same arguments before comparing; this means those arguments will be unnecessarily compared against themselves, but they should always be physically (==) equal, so equality-checking will short-circuit and return instantly. *)
           let outty = inst out tyargs in
-          (match equal_val ctx outty ty with
-          | Ok () -> ()
-          | Error (Unequal why | Stuck (why, _)) ->
-              fatal
-                (Unequal_synthesized_type
-                   { got = PVal (ctx, outty); expected = PVal (ctx, ty); which = None; why }));
-          realize status (Term.Constr (constr, dim, newargs)))
+          realize status
+            (check_synthesized ~compare:equal_val ctx
+               (Term.Constr (constr, dim, newargs))
+               outty ty loc))
   (* A constructor can also check at a function-type by eta-expansion. *)
   | Canonical (_, Pi { x; _ }, _, _) ->
       let name = locate_opt None (option_of_binder_name (top_variable x)) in
@@ -1217,7 +1219,16 @@ and check_of_synth : type mode a b s.
           (* It suffices for the synthesized type to be a subtype of the checking type. *)
           match subtype_of ctx ety ty with
           | Ok () -> check status ctx ctm ety
-          | Error (Unequal why | Stuck (why, _)) -> (
+          (* If we can't tell yet whether the ascription agrees with the checking type, we check the term against the ascription and guard it by the comparison. *)
+          | Error (Stuck (why, _)) -> (
+              let tm = check status ctx ctm ety in
+              match kinetic_of status tm with
+              | Some ktm -> realize status (check_synthesized ctx ktm ety ty loc)
+              | None ->
+                  fatal
+                    (Unequal_synthesized_type
+                       { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why }))
+          | Error (Unequal why) -> (
               let mismatch =
                 Code.Unequal_synthesized_type
                   { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why } in
@@ -1248,12 +1259,55 @@ and check_of_synth : type mode a b s.
   | _ -> (
       let sval, sty = synth ?nosynth status ctx { value = stm; loc } in
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
-      match subtype_of ctx sty ty with
-      | Ok () -> sval
-      | Error (Unequal why | Stuck (why, _)) ->
-          fatal
-            (Unequal_synthesized_type
-               { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
+      match kinetic_of status sval with
+      | Some ktm -> realize status (check_synthesized ctx ktm sty ty loc)
+      | None -> (
+          match subtype_of ctx sty ty with
+          | Ok () -> sval
+          | Error (Unequal why | Stuck (why, _)) ->
+              fatal
+                (Unequal_synthesized_type
+                   { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why })))
+
+(* Check that the type synthesized by a term is a subtype of (or with [compare], equal to) the type it is being checked against, returning the term if so.  If this comparison is stuck on unsolved metavariables, the term can't be used yet, since it might be ill-typed.  So we return instead a "guarded" delayed metavariable at the checking type, and postpone the comparison, releasing the metavariable as the term once the types are known to agree. *)
+and check_synthesized : type mode a b.
+    ?compare:((mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t) ->
+    (mode, a, b) Ctx.t ->
+    (mode, b, kinetic) term ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value ->
+    Asai.Range.t option ->
+    (mode, b, kinetic) term =
+ fun ?(compare = subtype_of) ctx ktm sty ty loc ->
+  match compare ctx sty ty with
+  | Ok () -> ktm
+  | Error (Stuck (why, blockers)) ->
+      let meta, guarded = new_unif ~delayed:true ctx ty loc None in
+      let last = ref why in
+      let attempt () =
+        match compare ctx sty ty with
+        | Ok () ->
+            Global.release_unif meta ktm;
+            `Done
+        | Error (Stuck (why, blockers)) ->
+            last := why;
+            `Stuck blockers
+        | Error (Unequal why) ->
+            Global.release_unif meta (Failed Kinetic);
+            mortal ?loc
+              (Unequal_synthesized_type
+                 { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why });
+            `Done in
+      let report () =
+        mortal ?loc
+          (Undetermined_synthesized_type
+             { got = PVal (ctx, sty); expected = PVal (ctx, ty); why = !last }) in
+      Global.postpone ~blockers ~attempt ~report;
+      guarded
+  | Error (Unequal why) ->
+      fatal
+        (Unequal_synthesized_type
+           { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why })
 
 (* Deal with checking a potential term in kinetic position *)
 and kinetic_of_potential : type mode a b.
