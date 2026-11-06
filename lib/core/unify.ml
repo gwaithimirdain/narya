@@ -216,44 +216,43 @@ let expansion_start : type hmode a b n x y z.
       Some (act_value head (deg_of_perm p) (Modalcell.id2 (Ctx.mode mctx)), [ Perm pinv ])
   | Some _, Pos _ -> None
 
-(* Expand a unification metavariable that is projected from, and then compare the result to the other value. *)
+(* Expand a unification metavariable that is projected from, and then compare the result to the other value, returning the result of that comparison, or None if we couldn't expand.  If [swapped], the metavariable was originally on the right, and we compare in that order so that any mismatch is reported in the right order. *)
 let try_expand : type mode a b.
+    ?swapped:bool ->
     (mode, a, b) Ctx.t ->
     (mode, kinetic) value ->
     (mode, kinetic) value ->
     (mode, kinetic) value option ->
-    bool =
- fun ctx u v ty ->
+    unit Equal.Err.t option =
+ fun ?(swapped = false) ctx u v ty ->
   match u with
   | Neu { head = Live (Meta { meta; kind = Unif_meta unif as kind; env; ins }); args; _ } -> (
       match (arg_spine args, v) with
-      | Some _, _ -> false
+      | Some _, _ -> None
       | _, Neu { head = Live (Meta { meta = meta'; _ }); _ }
         when match Meta.compare meta meta' with
              | Eq -> true
-             | Neq -> false -> false
-      | None, _ -> (
-          (Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta)
-          &&
-          let mctx = Global.unif_ctx meta in
-          Reporter.discard_errors ~fallback:(fun () -> false) @@ fun () ->
-          match
-            Option.bind (expansion_start mctx meta kind env ins) (fun (head, start) ->
-                expansion_shape head start args None)
-          with
-          | None -> false
-          | Some shape -> (
-              let mty = eval_term (Ctx.env mctx) (Global.meta_ty meta kind) in
-              Global.solve_unif meta (!expander.expand mctx mty meta shape);
-              (* Now u has a value, whose head is a metavariable created for a tuple component, so we can try again to solve that. *)
-              let result =
-                match ty with
-                | Some ty -> Equal.equal_at ctx (view_term u) v ty
-                | None -> Equal.equal_val ctx (view_term u) v in
-              match result with
-              | Ok () -> true
-              | Error _ -> false)))
-  | _ -> false
+             | Neq -> false -> None
+      | None, _ ->
+          if Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta then (
+            let mctx = Global.unif_ctx meta in
+            Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
+            match
+              Option.bind (expansion_start mctx meta kind env ins) (fun (head, start) ->
+                  expansion_shape head start args None)
+            with
+            | None -> None
+            | Some shape ->
+                let mty = eval_term (Ctx.env mctx) (Global.meta_ty meta kind) in
+                Global.solve_unif meta (!expander.expand mctx mty meta shape);
+                (* Now u has a value, whose head is a metavariable created for a tuple component, so we can try again to solve that. *)
+                let x, y = if swapped then (v, view_term u) else (view_term u, v) in
+                Some
+                  (match ty with
+                  | Some ty -> Equal.equal_at ctx x y ty
+                  | None -> Equal.equal_val ctx x y))
+          else None)
+  | _ -> None
 
 (* A constructor can only check at a higher-dimensional datatype if its boundary consists of instances of the same constructor.  So if a term in that boundary is a unification metavariable, then it must be solved by that constructor applied to some arguments, which we fill in with new metavariables.  This doesn't affect whether solutions are most general, as long as its environment and arguments are a renaming, since then substituting into a term can't turn something else into a constructor.  If it isn't, or the metavariable can't be solved here, we do nothing, and it will be reported as not being a constructor. *)
 let refine_to_constr : type mode a b.
@@ -342,8 +341,9 @@ let install (expand : expander) =
       solve =
         (fun ctx x y ty ->
           (* We prefer not to expand, if the other side can be solved directly. *)
-          try_solve ctx x y ty
-          || try_solve ctx y x ty
-          || try_expand ctx x y ty
-          || try_expand ctx y x ty);
+          if try_solve ctx x y ty || try_solve ctx y x ty then Some (Ok ())
+          else
+            match try_expand ctx x y ty with
+            | Some _ as result -> result
+            | None -> try_expand ~swapped:true ctx y x ty);
     }

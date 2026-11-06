@@ -661,7 +661,7 @@ let rec check : type mode a b s.
                                    fa,
                                    (sort_of_ty ctx (view_type ty "checking act"), canonical_head cx)
                                  ))
-                        | Error why ->
+                        | Error (Unequal why | Stuck (why, _)) ->
                             fatal
                               (Unequal_synthesized_type
                                  {
@@ -677,7 +677,7 @@ let rec check : type mode a b s.
         (* We still have to check that the synthesized type is correct, as in check_of_synth. *)
         match subtype_of ctx sty ty with
         | Ok () -> realize status ctm
-        | Error why ->
+        | Error (Unequal why | Stuck (why, _)) ->
             fatal
               (Unequal_synthesized_type
                  { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
@@ -713,7 +713,7 @@ let rec check : type mode a b s.
                 let edom = eval_term (Ctx.env lctx) cdom in
                 match subtype_of lctx (CubeOf.find_top doms) edom with
                 | Ok () -> ()
-                | Error why ->
+                | Error (Unequal why | Stuck (why, _)) ->
                     fatal ?loc:dom.loc
                       (Unequal_synthesized_type
                          {
@@ -1040,7 +1040,7 @@ let rec check : type mode a b s.
                 (* Then we have to check that the resulting type of the whole application agrees with the one we're checking against. *)
                 match equal_val ctx sty ty with
                 | Ok () -> realize status stm
-                | Error why ->
+                | Error (Unequal why | Stuck (why, _)) ->
                     fatal
                       (Unequal_synthesized_type
                          { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
@@ -1150,7 +1150,7 @@ and check_constr : type mode a b s.
           let outty = inst out tyargs in
           (match equal_val ctx outty ty with
           | Ok () -> ()
-          | Error why ->
+          | Error (Unequal why | Stuck (why, _)) ->
               fatal
                 (Unequal_synthesized_type
                    { got = PVal (ctx, outty); expected = PVal (ctx, ty); which = None; why }));
@@ -1217,7 +1217,7 @@ and check_of_synth : type mode a b s.
           (* It suffices for the synthesized type to be a subtype of the checking type. *)
           match subtype_of ctx ety ty with
           | Ok () -> check status ctx ctm ety
-          | Error why -> (
+          | Error (Unequal why | Stuck (why, _)) -> (
               let mismatch =
                 Code.Unequal_synthesized_type
                   { got = PVal (ctx, ety); expected = PVal (ctx, ty); which = None; why } in
@@ -1250,7 +1250,7 @@ and check_of_synth : type mode a b s.
       (* It suffices for the synthesized type to be a subtype of the checking type. *)
       match subtype_of ctx sty ty with
       | Ok () -> sval
-      | Error why ->
+      | Error (Unequal why | Stuck (why, _)) ->
           fatal
             (Unequal_synthesized_type
                { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }))
@@ -1706,7 +1706,7 @@ and check_letonly_term : type mode a b mn.
           let expected = inst ty args in
           match subtype_of ctx sty expected with
           | Ok () -> (ctm, args)
-          | Error why ->
+          | Error (Unequal why | Stuck (why, _)) ->
               fatal ?loc:tm.loc
                 (Unequal_synthesized_type
                    { got = PVal (ctx, sty); expected = PVal (ctx, expected); which = None; why })))
@@ -2856,7 +2856,7 @@ and get_indices : type mode hmode1 hmode2 a b any1 any2.
   let Eq, tms = go output_indices in
   match equal_apps ctx current output_params with
   | None -> fatal (Invalid_constructor_type (c, Left "unequal parameters"))
-  | Some (Error why) -> fatal (Invalid_constructor_type (c, Right why))
+  | Some (Error (Unequal why | Stuck (why, _))) -> fatal (Invalid_constructor_type (c, Right why))
   | Some (Ok ()) -> Vec.of_list tms
 
 (* The common prefix of checking a codatatype or record type, which returns a (cube of) variables belonging to the up-until-now type so that later fields can refer to earlier ones.  It also dynamically binds the current constant or metavariable, if possible, to that value for recursive purposes.  Since this binding has to scope over the rest of the functions that are specific to codata or records, it uses CPS. *)
@@ -2950,7 +2950,8 @@ and check_codata : type mode a b n et.
               if name = pname then
                 match equal_apps ctx args pargs with
                 | None -> fatal (Invalid_self_variable_type (fld, Left "unequal parameters"))
-                | Some (Error why) -> fatal (Invalid_self_variable_type (fld, Right why))
+                | Some (Error (Unequal why | Stuck (why, _))) ->
+                    fatal (Invalid_self_variable_type (fld, Right why))
                 | Some (Ok ()) -> ()
               else fatal err
           | _ -> fatal err)
@@ -4422,7 +4423,7 @@ and synth : type mode a b s.
                                       (Modality.id mode, plus_no_lock mode, CubeOf.singleton sarg)
                                   ),
                                 tyof_app cods tyargs filter (CubeOf.singleton earg) )
-                          | Error why ->
+                          | Error (Unequal why | Stuck (why, _)) ->
                               fatal ?loc:arg.loc
                                 (Unequal_synthesized_type
                                    {
@@ -4717,7 +4718,7 @@ and synth_arg_cube : type dom modality mode a b n c.
                   with_loc toploc (fun () ->
                       match equal_val lctx (Lazy.force ety) ty with
                       | Ok () -> ()
-                      | Error why ->
+                      | Error (Unequal why | Stuck (why, _)) ->
                           fatal
                             (Unequal_synthesized_boundary
                                {
@@ -5073,7 +5074,7 @@ and check_at_pi : type mode n a c e.
                         let uetm = eval_term (Ctx.env lctx) uctm in
                         match equal_at lctx uetm t.tm uty with
                         | Ok () -> ()
-                        | Error why ->
+                        | Error (Unequal why | Stuck (why, _)) ->
                             fatal ?loc:utm.loc
                               (Unequal_boundary_argument
                                  {

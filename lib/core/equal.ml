@@ -11,15 +11,27 @@ open Domvars
 open Norm
 open Act
 open Readback
-module Err = Monad.Error (Unequal)
+
+(* An equality check has three possible outcomes: the values are equal, they are unequal, or they are stuck because their comparison depends on unsolved unification metavariables, so that they might become equal or unequal once one of those metavariables is solved.  In the latter two cases we record the mismatch that was found, to report if the values are never found to be equal; when stuck, we also record the metavariables that it is blocked on.  This blocker list is not necessarily complete: other metavariables appearing in the values might also unblock the comparison when solved. *)
+type failure = Unequal of Unequal.t | Stuck of Unequal.t * blocker list
+
+module Err = Monad.Error (struct
+  type t = failure
+end)
+
 open Monad.Ops (Err)
 
-let guard test err = if test then Ok () else Error err
-let fail err = Error err
+let guard test err = if test then Ok () else Error (Unequal err)
+let fail err = Error (Unequal err)
+
+(* Modify the mismatch recorded in a failure, preserving whether it is stuck. *)
+let map_why (f : Unequal.t -> Unequal.t) : failure -> failure = function
+  | Unequal why -> Unequal (f why)
+  | Stuck (why, blockers) -> Stuck (f why, blockers)
 
 (* Run a short-circuiting iteration in the equality error monad.  The body is given a [check] function to apply to the [unit Err.t] result of comparing each pair of sub-objects; the first [Error] breaks out of the iteration (via a local exception) and becomes the overall result.  This replaces what used to be a traversal in the Err monad. *)
 let short_circuit_err (body : (unit Err.t -> unit) -> unit) : unit Err.t =
-  let exception Stop of Unequal.t in
+  let exception Stop of failure in
   try
     body (function
       | Ok () -> ()
@@ -48,11 +60,6 @@ let prekey_equal : type mode m1 n1 c1 m2 n2 c2.
     | Neq -> false)
   || prekey_le pre1 pre2
   || prekey_le pre2 pre1
-
-let if_known (test : 'a Err.t option) err =
-  match test with
-  | None -> Error (err ())
-  | Some x -> x
 
 (* If an application spine crosses no modal field projection (every field has the identity left adjoint), then its head lives at the ambient mode; this returns a witness of that mode equality, or None if the spine is modal. *)
 let rec nonmodal_apps : type hmode mode any.
@@ -83,7 +90,7 @@ end
 
 (* Eta-expanding equality checks.  In all functions, the integer is the current De Bruijn level, i.e. the length of the current context (we don't need any other information about the context). *)
 
-(* Before comparing two values structurally, we try to solve a unification metavariable on either side with the other side.  The solver is defined in the downstream module Unify, since it needs readback, so we make it a forward reference set there.  It is passed the type at which the values are being compared, if known; otherwise it must check that the types agree.  It returns true if it solved a metavariable, so that the values are now equal. *)
+(* Before comparing two values structurally, we try to solve a unification metavariable on either side with the other side.  The solver is defined in the downstream module Unify, since it needs readback, so we make it a forward reference set there.  It is passed the type at which the values are being compared, if known; otherwise it must check that the types agree.  It returns None if it didn't apply, and otherwise the result of the comparison: if it solved a metavariable directly the values are now equal, while if it expanded one then it has also compared the result. *)
 type solver = {
   solve :
     'mode 'a 'b.
@@ -91,10 +98,10 @@ type solver = {
     ('mode, kinetic) value ->
     ('mode, kinetic) value ->
     ('mode, kinetic) value option ->
-    bool;
+    unit Err.t option;
 }
 
-let solver : solver ref = ref { solve = (fun _ _ _ _ -> false) }
+let solver : solver ref = ref { solve = (fun _ _ _ _ -> None) }
 
 (* A comparison of two neutral spines with the same head may fail and then succeed by unfolding them, so it shouldn't solve any metavariables while it might be abandoned, since those solutions may not be justified by the final comparison.  For example, if g ignores its arguments, then g ?v b1 and g a1 b2 are equal, and that says nothing about ?v.  Thus we first compare spines "flexibly", without solving anything. *)
 let flexible = ref false
@@ -105,7 +112,11 @@ let flexibly (f : unit -> 'a) : 'a =
     flexible := true;
     Fun.protect ~finally:(fun () -> flexible := false) f)
 
-let try_solve ctx x y ty = (not !flexible) && !solver.solve ctx x y ty
+(* Try to solve a metavariable in comparing two values; if that doesn't apply, continue with the given comparison. *)
+let with_solver ctx x y ty (compare : unit -> unit Err.t) : unit Err.t =
+  match if !flexible then None else !solver.solve ctx x y ty with
+  | Some result -> result
+  | None -> compare ()
 
 (* Whether an equality between neutrals forces their spines to be equal, even after any metavariables in them are solved.  This is so if the neutral is permanently stuck, because it is a variable, an axiom, or a case tree stuck on something other than a metavariable, or if it is a canonical type, since these are generative.  It is not so if it is stuck on a metavariable, or if its head is a metavariable, since that metavariable could turn out to ignore some of its arguments. *)
 let forces_spine : type mode s. (mode, s) value -> bool = function
@@ -115,6 +126,45 @@ let forces_spine : type mode s. (mode, s) value -> bool = function
       | Unrealized | Val (Canonical _) -> true
       | Realize _ | Blocked _ | Val _ -> false)
   | _ -> false
+
+(* Add blockers to a list, omitting duplicates. *)
+let union_blockers (bs1 : blocker list) (bs2 : blocker list) : blocker list =
+  List.fold_left
+    (fun acc (Blocker (m, _) as b) ->
+      if
+        List.exists
+          (fun (Blocker (m', _)) ->
+            match Meta.compare m m' with
+            | Eq -> true
+            | Neq -> false)
+          acc
+      then acc
+      else acc @ [ b ])
+    bs1 bs2
+
+(* The unification metavariables that a neutral is blocked on, so that solving one of them might change the result of comparing it.  These are the metavariable that its value is blocked on, which includes that of an unsolved unification metavariable head, together with any that its arguments are blocked on, since solving those might make the spine of a metavariable a renaming.  A neutral that is permanently stuck has no blockers. *)
+let blockers_of : type mode s. (mode, s) value -> blocker list =
+ fun x ->
+  let rec arg_blockers : type hmode mode any. (hmode, mode, any, live) apps -> blocker list =
+    function
+    | Emp -> []
+    | Snoc (rest, Arg (_, xs, _)) ->
+        union_blockers (arg_blockers rest) (Option.to_list (blocker_of (CubeOf.find_top xs).tm))
+    | Snoc (rest, Field _) -> arg_blockers rest
+    | Snoc (rest, Inst _) -> arg_blockers rest in
+  match (blocker_of x, x) with
+  | Some b, Neu { head = Live _; args; _ } -> union_blockers [ b ] (arg_blockers args)
+  | _ -> []
+
+(* A failure to compare two values is stuck if either of them is blocked on a metavariable, even if the mismatch that was found is not.  If neither is, we return the failure unchanged. *)
+let stuck_on : type mode s t. (mode, s) value -> (mode, t) value -> failure -> failure =
+ fun x y err ->
+  match union_blockers (blockers_of x) (blockers_of y) with
+  | [] -> err
+  | blockers -> (
+      match err with
+      | Unequal why -> Stuck (why, blockers)
+      | Stuck (why, inner) -> Stuck (why, union_blockers inner blockers))
 
 (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
 let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
@@ -148,12 +198,16 @@ and equal_neu_or_unfold : type mode a b.
       let vx = view_term x in
       let vy = view_term y in
       if vx != x || vy != y then retry vx vy
-      else if !flexible || not (Global.unsolved_unifs ()) then Error err
-      else if forces_spine x && forces_spine y then equal_neu ctx x y
+      else if not (Global.unsolved_unifs ()) then Error err
+      else if forces_spine x && forces_spine y then
+        if !flexible then Error err
+        else equal_neu ctx x y
+          (* If a spine isn't forced to be equal, then the comparison is stuck, unless we can make progress below. *)
+      else if !flexible then Error (stuck_on x y err)
       else
         (* Even if the spines aren't forced to be equal, the instantiation arguments of a type are.  Comparing them, with their types, may solve the metavariable that is blocking the comparison, as with ?X in "Id ?X ?x ?y" and "Id A a b", since that metavariable appears in the types of those arguments even though it doesn't appear in the type of the instantiated type. *)
         match equal_instantiations ctx x y with
-        | None -> Error err
+        | None -> Error (stuck_on x y err)
         | Some (Error _ as result) -> result
         | Some (Ok ()) -> (
             let vx = view_term x in
@@ -186,8 +240,8 @@ and equal_at : type mode a b.
  fun ctx x y ty ->
   (* Physically equal values are definitionally equal, and physical sharing is common (cached constants, shared let-bindings, shared forced values), so we short-circuit on it before any structural work. *)
   if x == y then Ok ()
-  else if try_solve ctx x y (Some ty) then Ok ()
   else
+    with_solver ctx x y (Some ty) @@ fun () ->
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
@@ -300,11 +354,14 @@ and equal_at_data : type mode m a b.
         (* A failed term can't be compared with a constructor, any more than with a neutral (see equal_head). *)
         | Neu { head = Failed _; _ }, _ | _, Neu { head = Failed _; _ } ->
             fatal (Dependent "comparing a failed term")
+        (* A constructor is unequal to a neutral, unless the neutral is blocked on a metavariable whose solution might make it compute to that constructor. *)
         | Constr _, _ | _, Constr _ ->
-            fail
-              (Unequal.Terms
-                 ( PNormal (ctx, { tm = x; ty = Lazy.from_val ty }),
-                   PNormal (ctx, { tm = y; ty = Lazy.from_val ty }) ))
+            Error
+              (stuck_on x y
+                 (Unequal
+                    (Terms
+                       ( PNormal (ctx, { tm = x; ty = Lazy.from_val ty }),
+                         PNormal (ctx, { tm = y; ty = Lazy.from_val ty }) ))))
         | _ -> equal_val ctx x y)
 
 (* "Synthesizing" equality check of two values, now *not* assumed a priori to have the same type.  If this function concludes that they are equal, then the equality of their types is part of that conclusion. *)
@@ -312,8 +369,8 @@ and equal_val : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
  fun ctx x y ->
   if x == y then Ok ()
-  else if try_solve ctx x y None then Ok ()
   else
+    with_solver ctx x y None @@ fun () ->
     match (x, y) with
     | Neu _, Neu _ -> equal_neu_or_unfold ctx x y (equal_val ctx)
     | Lam _, _ | _, Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing equality-check")
@@ -337,18 +394,18 @@ and equal_neu : type mode a b.
       (* If neither spine crosses a modal field projection, the heads are at the ambient mode and we can compare them first (as we always did before modal fields), which gives more precise "unequal heads" error messages. *)
       | Some Eq, Some Eq -> (
           match equal_head ctx head1 head2 with
-          | Some (Error err) -> Error (Unequal.Heads err)
+          | Some (Error err) -> Error (map_why (fun why -> Heads why) err)
           | None ->
               let h1, h2 = (readback_head ctx head1, readback_head ctx head2) in
-              Error (Unequal.Heads (Terms (PTerm (ctx, h1), PTerm (ctx, h2))))
+              fail (Heads (Terms (PTerm (ctx, h1), PTerm (ctx, h2))))
           | Some (Ok ()) -> (
               match equal_apps ctx apps1 apps2 with
-              | None -> Error (Unequal.Terms (PVal (ctx, x), PVal (ctx, y)))
+              | None -> fail (Terms (PVal (ctx, x), PVal (ctx, y)))
               | Some x -> x))
       (* Otherwise, the heads live at the mode at the head end of the spine, so the head comparison happens at the bottom of the spine recursion, in the context locked by the modal field projections crossed on the way. *)
       | _ -> (
           match equal_apps ctx apps1 apps2 ~heads:(head1, head2) with
-          | None -> Error (Unequal.Terms (PVal (ctx, x), PVal (ctx, y)))
+          | None -> fail (Terms (PVal (ctx, x), PVal (ctx, y)))
           | Some x -> x))
   | Lam _, _ | _, Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing equality-check")
   | Struct _, _ | _, Struct _ -> fatal (Anomaly "unexpected struct in synthesizing equality-check")
@@ -394,8 +451,7 @@ and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> 
           | Neq -> None
         else None
       else
-        Some
-          (Error (Variables (PTerm (ctx, readback_head ctx x), PTerm (ctx, readback_head ctx y))))
+        Some (fail (Variables (PTerm (ctx, readback_head ctx x), PTerm (ctx, readback_head ctx y))))
   | Const { name = c1; ins = i1 }, Const { name = c2; ins = i2 } -> (
       let* () = Some (guard (c1 = c2) (Unequal.Constants (c1, c2))) in
       match D.compare (cod_left_ins i1) (cod_left_ins i2) with
@@ -411,7 +467,7 @@ and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> 
           let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
           let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
           Some (equal_env ctx env1 env2 (Global.meta_termctx meta1 kind1))
-      | Neq, _ -> Some (Error (Metas (meta1, meta2)))
+      | Neq, _ -> Some (fail (Metas (meta1, meta2)))
       | _, Neq -> None)
   | UU (_, m), UU (_, n) -> (
       (* Two universes are equal precisely when they have the same dimension, in which case they also automatically have the same type (a standard instantiation of a (higher) universe of that same dimension).  We don't need to compare the modes because the type of this function guarantees they are at the same mode. *)
@@ -473,10 +529,10 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
       | Some (head1, head2) -> (
           match equal_head ctx head1 head2 with
           | Some (Ok ()) -> return ()
-          | Some (Error err) -> Some (Error (Unequal.Heads err))
+          | Some (Error err) -> Some (Error (map_why (fun why -> Heads why) err))
           | None ->
               let t1, t2 = (readback_head ctx head1, readback_head ctx head2) in
-              Some (Error (Unequal.Heads (Terms (PTerm (ctx, t1), PTerm (ctx, t2)))))))
+              Some (fail (Heads (Terms (PTerm (ctx, t1), PTerm (ctx, t2)))))))
   | Snoc (rest1, Arg (filter1, a1, i1)), Snoc (rest2, Arg (filter2, a2, i2)) -> (
       let modality1 = Modality.filter_modality filter1 in
       let modality2 = Modality.filter_modality filter2 in
@@ -511,7 +567,7 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
           (* The 'plus' parts must automatically be equal if the fields are equal and well-typed. *)
           match Field.equal f1 f2 with
           | Eq -> Some (Ok ())
-          | Neq -> Some (Error (Unequal.Fields (f1, f2)))))
+          | Neq -> Some (fail (Fields (f1, f2)))))
   | Snoc (rest1, Inst (_, a1)), Snoc (rest2, Inst (_, a2)) ->
       let* () = equal_apps ctx rest1 rest2 ?heads in
       equal_tyargs ctx a1 a2
