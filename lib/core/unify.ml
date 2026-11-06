@@ -139,6 +139,10 @@ type expander = {
 let expander : expander ref =
   ref { expand = (fun _ _ _ _ -> fatal (Anomaly "unification not installed")) }
 
+(* Expansion typechecks a term, but it happens in the middle of comparing values, so postponed constraints must not be retried during it. *)
+let expand ctx ty meta shape =
+  Global.without_retries @@ fun () -> !expander.expand ctx ty meta shape
+
 (* The names of the fields that a tuple at a record type must have, at some dimension.  A modal field whose modality is nonparametric disappears at a dimension it filters nontrivially, and must be omitted. *)
 let field_names : type mode a m n et.
     (mode * a * D.zero * n * et) Term.CodatafieldAbwd.t -> m D.t -> string list =
@@ -247,7 +251,7 @@ let try_expand : type mode a b.
             | None -> None
             | Some shape ->
                 let mty = eval_term (Ctx.env mctx) (Global.meta_ty meta kind) in
-                Global.solve_unif meta (!expander.expand mctx mty meta shape);
+                Global.solve_unif meta (expand mctx mty meta shape);
                 (* Now u has a value, whose head is a metavariable created for a tuple component, so we can try again to solve that. *)
                 let x, y = if swapped then (v, view_term u) else (view_term u, v) in
                 Some
@@ -280,7 +284,7 @@ let refine_to_constr : type mode a b.
                 | None -> ()
                 | Some shape ->
                     let emty = eval_term (Ctx.env mctx) mty in
-                    Global.solve_unif meta (!expander.expand mctx emty meta shape))))
+                    Global.solve_unif meta (expand mctx emty meta shape))))
   | _ -> ()
 
 (* A type is a singleton if any two of its elements are equal, by eta-conversion: this holds for records all of whose fields are singletons, and functions whose codomains are.  We test this by comparing two fresh variables, without solving any metavariables. *)
@@ -331,7 +335,7 @@ let rec solve_singletons () =
               match shape with
               | [] -> ()
               | _ :: _ ->
-                  Global.solve_unif meta (!expander.expand ctx ety meta shape);
+                  Global.solve_unif meta (expand ctx ety meta shape);
                   changed := true);
     };
   if !changed then solve_singletons ()

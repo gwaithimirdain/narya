@@ -582,6 +582,22 @@ and head_has_synth : type a. a check -> bool = function
   | tm -> check_has_synth tm
 
 (* Check a term or case tree (depending on the energy: terms are kinetic, case trees are potential). *)
+(* Before deciding that a comparison is stuck, we retry any postponed constraints that have been woken, since they might solve the metavariables it is stuck on, and if so we compare again.  This is a safe point for retrying, since it is in the typechecker rather than inside another comparison. *)
+let retrying (compare : unit -> unit Err.t) : unit Err.t =
+  match compare () with
+  | Error (Stuck _) when Global.retry_postponed () -> compare ()
+  | result -> result
+
+(* Similarly, before deciding that a value is stuck on a metavariable, we retry any woken postponed constraints, and if so we look again. *)
+let stuck_after_retry : type mode. (mode, kinetic) value -> bool =
+ fun v ->
+  let stuck () = Option.is_some (blocker_of (view_term v)) in
+  stuck () && ((not (Global.retry_postponed ())) || stuck ())
+
+(* Retry any woken postponed constraints before inspecting a value that is stuck, so that a decision based on it can use what they solve. *)
+let retry_if_stuck : type mode. (mode, kinetic) value -> unit =
+ fun v -> ignore (stuck_after_retry v)
+
 let rec check : type mode a b s.
     (mode, b, s) status ->
     (mode, a, b) Ctx.t ->
@@ -594,8 +610,8 @@ let rec check : type mode a b s.
     let severity = Asai.Diagnostic.Error in
     match (tm.value, status) with
     (* A term that can only be checked against a type of a particular shape, such as an abstraction against a function-type, can't be checked yet if the type is stuck on an unsolved unification metavariable.  Then we postpone checking it, using a delayed metavariable in its place. *)
-    | (Lam _ | Struct (Eta, _) | Constr _ | Numeral _), Kinetic
-      when Option.is_some (blocker_of (view_term ty)) -> postpone_check ctx tm ty
+    | (Lam _ | Struct (Eta, _) | Constr _ | Numeral _), Kinetic when stuck_after_retry ty ->
+        postpone_check ctx tm ty
     (* A Let is a "synthesizing" term so that it *can* synthesize, but in checking position it checks instead. *)
     | Synth (Let (x, modality, v, body)), _ ->
         let clet, Not_some = synth_or_check_let status ctx x modality v body (Some ty) in
@@ -690,6 +706,7 @@ let rec check : type mode a b s.
         (* We still have to check that the synthesized type is correct, as in check_of_synth. *)
         realize status (check_synthesized ctx ctm sty ty tm.loc)
     | Lam { name = { value = x; loc = xloc }; cube; implicit; dom; body }, _ -> (
+        retry_if_stuck ty;
         match view_type ~severity ty "typechecking lambda" with
         | Canonical
             ( _,
@@ -719,7 +736,7 @@ let rec check : type mode a b s.
                 let (Locked (_, lctx)) = Ctx.lock ctx modality in
                 let cdom = check Kinetic lctx dom (universe (Modality.src modality) D.zero) in
                 let edom = eval_term (Ctx.env lctx) cdom in
-                match subtype_of lctx (CubeOf.find_top doms) edom with
+                match retrying (fun () -> subtype_of lctx (CubeOf.find_top doms) edom) with
                 | Ok () -> ()
                 | Error (Unequal why | Stuck (why, _)) ->
                     fatal ?loc:dom.loc
@@ -834,12 +851,14 @@ let rec check : type mode a b s.
                     Lam (xs, m, filter, check (mkstatus xs status) ctx body output)))
         | _ -> fatal (Checking_lambda_at_nonfunction (PVal (ctx, ty))))
     | Struct (Noeta, tms), Potential _ -> (
+        retry_if_stuck ty;
         match view_type ~severity ty "typechecking comatch" with
         | Canonical (name, Codata ({ eta = Noeta; _ } as codata_args), ins, tyargs) ->
             let mn = is_id_ins ins <|> Comatching_at_degenerated_codata (phead name) in
             check_struct status Noeta ctx ty (cod_left_ins ins) mn codata_args tyargs tms
         | _ -> fatal (Comatching_at_noncodata (PVal (ctx, ty))))
     | Struct (Eta, tms), _ -> (
+        retry_if_stuck ty;
         match view_type ~severity ty "typechecking tuple" with
         | Canonical (name, Codata ({ eta = Eta; _ } as codata_args), ins, tyargs) ->
             let mn = is_id_ins ins <|> Checking_tuple_at_degenerated_record (phead name) in
@@ -1291,7 +1310,7 @@ and check_of_synth : type mode a b s.
       | Ok cty -> (
           let ety = eval_term (Ctx.env ctx) cty in
           (* It suffices for the synthesized type to be a subtype of the checking type. *)
-          match subtype_of ctx ety ty with
+          match retrying (fun () -> subtype_of ctx ety ty) with
           | Ok () -> check status ctx ctm ety
           (* If we can't tell yet whether the ascription agrees with the checking type, we check the term against the ascription and guard it by the comparison. *)
           | Error (Stuck (why, _)) -> (
@@ -1336,7 +1355,7 @@ and check_of_synth : type mode a b s.
       match kinetic_of status sval with
       | Some ktm -> realize status (check_synthesized ctx ktm sty ty loc)
       | None -> (
-          match subtype_of ctx sty ty with
+          match retrying (fun () -> subtype_of ctx sty ty) with
           | Ok () -> sval
           | Error (Unequal why | Stuck (why, _)) ->
               fatal
@@ -1353,7 +1372,7 @@ and check_synthesized : type mode a b.
     Asai.Range.t option ->
     (mode, b, kinetic) term =
  fun ?(compare = subtype_of) ctx ktm sty ty loc ->
-  match compare ctx sty ty with
+  match retrying (fun () -> compare ctx sty ty) with
   | Ok () -> ktm
   | Error (Stuck (why, blockers)) ->
       let meta, guarded = new_unif ~delayed:true ctx ty loc None in
@@ -1800,7 +1819,7 @@ and check_letonly_type : type mode a b.
           let Eq = eq_of_ins_zero ins in
           Letonly_type (cty, tyargs)
       | _ -> (
-          match subtype_of ctx tyty (universe mode D.zero) with
+          match retrying (fun () -> subtype_of ctx tyty (universe mode D.zero)) with
           | Ok () -> Letonly_type (cty, TubeOf.empty D.zero)
           | Error _ ->
               fatal ?loc:ty.loc (Universe_expected (`Synth, "let-only variable", PVal (ctx, tyty))))
@@ -1832,7 +1851,7 @@ and check_letonly_term : type mode a b mn.
           (* The instantiation arguments that we need are the last ones applied, which come first in the tube. *)
           let args, _ = TubeOf.split (D.zero_plus mn) mn_l tyargs in
           let expected = inst ty args in
-          match subtype_of ctx sty expected with
+          match retrying (fun () -> subtype_of ctx sty expected) with
           | Ok () -> (ctm, args)
           | Error (Unequal why | Stuck (why, _)) ->
               fatal ?loc:tm.loc
@@ -1936,6 +1955,7 @@ and check_match_branches : type dom window mode a b bm.
     (mode, b, potential) term * (mode, kinetic) value option =
  fun status ctx tm varty window plus_lock brs i highers loc (Motive callbacks) ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
+  retry_if_stuck varty;
   match view_type varty "check_match_branches" with
   | Canonical
     (* Data always has intrinsic dimension zero, but it seems that the syntax for binding type variables in a GADT match can't take that into account.  So we have to give "zero" a name here, and two different names for m. *)
@@ -2247,6 +2267,7 @@ and check_var_match : type dom modality mode a b bm.
     (mode, b, potential) term =
  fun status ctx level index varty window plus brs refutables highers motive loc ->
   (* We look up the type of the discriminee, which must be a datatype, without any degeneracy applied outside, and at the same dimension as its instantiation. *)
+  retry_if_stuck varty;
   match view_type varty "check_var_match" with
   | Canonical
       (type hmode mn m n)
@@ -2628,6 +2649,7 @@ and check_refute : type mode a b.
         let stm, sty = synth Kinetic wctx tm in
         (* The error to report if nothing can be refuted comes from the first term. *)
         let err default = Some (Option.value err ~default) in
+        retry_if_stuck sty;
         match view_type sty "check_refute" with
         | Canonical (_, Data { constrs = Emp as constrs; recursive; _ }, ins, _) ->
             check_window_transparency window constrs recursive;
@@ -2731,6 +2753,7 @@ and check_empty_match_lam : type mode a b.
               match d.message with
               | Invalid_refutation -> (
                   let firstty = firstty <|> Anomaly "missing firstty in checking []" in
+                  retry_if_stuck firstty;
                   match view_type firstty "is_empty" with
                   | Canonical (_, Data { constrs; _ }, _, _) -> missing_constructors constrs
                   | _ -> fatal (Matching_on_nondatatype (PVal (wctx, firstty))))
@@ -3928,7 +3951,7 @@ and synth : type mode a b s.
             let WithIns (fld, ins), newty = tyof_field_withname fm lctx etm sty fld in
             (Term.Field (Kinetic, Modal (fm, plus_lock, stm), fld, ins), newty) in
           (* If the type of the term is stuck on a metavariable, we don't know what fields it has, so we postpone the projection, as for applications in postpone_apps. *)
-          if Option.is_some (blocker_of (view_term sty)) then
+          if stuck_after_retry sty then
             let rty =
               make_unif ctx (universe mode D.zero) synth_loc
                 (Some (Dependent "type of postponed field projection")) in
@@ -4254,8 +4277,9 @@ and synth : type mode a b s.
                     it =
                       (fun t [ arg ] ->
                         match
-                          equal_nf xctx arg
-                            (Hashtbl.find varstbl (SFace_of (comp_sface s (sface_of_tface t))))
+                          retrying (fun () ->
+                              equal_nf xctx arg
+                                (Hashtbl.find varstbl (SFace_of (comp_sface s (sface_of_tface t)))))
                         with
                         | Ok () -> ()
                         | Error _ -> fatal (Invalid_higher_function "invalid domain boundary"));
@@ -4559,7 +4583,9 @@ and synth : type mode a b s.
                       | Eq, Eq -> (
                           (* The domain is the type we just supplied, so this can only fail if the
                              function's type isn't of the expected shape. *)
-                          match equal_val ctx sargty (CubeOf.find_top doms) with
+                          match
+                            retrying (fun () -> equal_val ctx sargty (CubeOf.find_top doms))
+                          with
                           | Ok () ->
                               let earg = eval_term (Ctx.env ctx) sarg in
                               ( Term.App
@@ -4734,7 +4760,7 @@ and synth : type mode a b s.
                                     | Error _ -> Reporter.replay errs)))
                         | None -> (
                             with_loc z.loc @@ fun () ->
-                            match equal_at ctx ny.tm ez ty with
+                            match retrying (fun () -> equal_at ctx ny.tm ez ty) with
                             | Ok () -> (cy, ny, xeqy)
                             | Error _ -> fatal (Calc_error (PString "unequal term"))) in
                       (cy, Some ny, xeqy)))
@@ -4761,7 +4787,7 @@ and synth_apps : type mode a b.
     (mode, b, kinetic) term * (mode, kinetic) value =
  fun ctx sfn sty fn args ->
   (* If the type of the function is stuck on a metavariable, we don't know what to do yet. *)
-  if Option.is_some (blocker_of (view_term sty)) then postpone_apps ctx sfn sty fn args
+  if stuck_after_retry sty then postpone_apps ctx sfn sty fn args
   else
     (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
     let asfn, aty, afn, aargs =
@@ -4867,7 +4893,7 @@ and synth_arg_cube : type dom modality mode a b n c.
                   let (Plus ml) = D.plus (D.plus_right nk) in
                   let { tm = etm; ty = ety } = TubeOf.find argtyargs (pface_plus pfa nk ml) in
                   with_loc toploc (fun () ->
-                      match equal_val lctx (Lazy.force ety) ty with
+                      match retrying (fun () -> equal_val lctx (Lazy.force ety) ty) with
                       | Ok () -> ()
                       | Error (Unequal why | Stuck (why, _)) ->
                           fatal
@@ -5223,7 +5249,7 @@ and check_at_pi : type mode n a c e.
                         let uty = Lazy.force t.ty in
                         let uctm = check Kinetic lctx utm uty in
                         let uetm = eval_term (Ctx.env lctx) uctm in
-                        match equal_at lctx uetm t.tm uty with
+                        match retrying (fun () -> equal_at lctx uetm t.tm uty) with
                         | Ok () -> ()
                         | Error (Unequal why | Stuck (why, _)) ->
                             fatal ?loc:utm.loc

@@ -2812,3 +2812,43 @@ Likewise, applying a function or projecting a field from a term whose type is st
       ^ can't determine a value for this placeholder
   
   [1]
+
+Before a comparison or another decision treats something stuck as a failure, or postpones it, the postponed constraints whose metavariables have since been solved are retried, in case that unsticks it.  Here T is guarded until F is solved, and the matches need to know that T is a datatype.
+
+  $ narya -v - <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def t1 (b : Bool) : A ≔
+  >   let F : Type → Type ≔ _ in
+  >   let T : F Type ≔ Bool in
+  >   let k : Id (Type → Type) F (X ↦ X) ≔ refl (X ↦ X) in
+  >   let c : T ≔ b in
+  >   match c [ true. ↦ a | false. ↦ a ]
+  > def t2 : Bool → A ≔
+  >   let F : Type → Type ≔ _ in
+  >   let T : F Type ≔ Bool in
+  >   let k : Id (Type → Type) F (X ↦ X) ≔ refl (X ↦ X) in
+  >   let g : T → A ≔ x ↦ match x [ true. ↦ a | false. ↦ a ] in
+  >   g
+  > EOF
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ hint[E1101]
+   ￭ stdin
+   9 |   match c [ true. ↦ a | false. ↦ a ]
+     ^ match will not refine the goal or context (discriminee is let-bound): c
+  
+   ￫ info[I0000]
+   ￮ constant t1 defined
+  
+   ￫ info[I0000]
+   ￮ constant t2 defined
+  

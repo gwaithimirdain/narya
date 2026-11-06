@@ -572,8 +572,14 @@ let woken ~stale (p : Postponed.t) =
   else
     List.exists (fun (Value.Blocker (meta, unif)) -> unif_status meta unif <> `Unsolved) p.blockers
 
-(* Retry the postponed constraints that have been woken, at the current depth of speculation, until none remain.  Return whether anything happened, i.e. a constraint was decided or a metavariable was solved.  Attempting a constraint may lead back here, e.g. by typechecking a term, but we don't retry re-entrantly. *)
+(* Retry the postponed constraints that have been woken, at the current depth of speculation, until none remain.  Return whether anything happened, i.e. a constraint was decided or a metavariable was solved.  Attempting a constraint may lead back here, e.g. by typechecking a term, but we don't retry re-entrantly.  Nor do we retry while disabled by [without_retries]. *)
 let retrying = ref false
+
+(* Disable retrying postponed constraints while running a callback.  This is for typechecking that happens in the middle of comparing values, such as expanding a unification metavariable, since a retried comparison would run in the state of the outer one (e.g. whether it is flexible). *)
+let without_retries f =
+  let old = !retrying in
+  retrying := true;
+  Fun.protect ~finally:(fun () -> retrying := old) f
 
 let retry_postponed ?(stale = false) () =
   if !retrying then false

@@ -97,6 +97,7 @@ val postpone :
   unit
 
 val retry_postponed : ?stale:bool -> unit -> bool
+val without_retries : (unit -> 'a) -> 'a
 val settle_unifs : unit -> unit
 
 val unif_solution :
