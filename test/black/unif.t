@@ -158,23 +158,17 @@ But the value must not involve variables outside the image of the renaming.  And
   > axiom kk : (X : Type) → K X X
   > def repeated3 : A → Type ≔ let G : A → A → Type ≔ p q ↦ K _ _ in y ↦ let k : G y y ≔ kk _ in A
   > EOF
-   ￫ error[E0406]
+   ￫ error[E0401]
    ￭ stdin
    3 | def scope (h : (w : A) → B w) : A → A → Type ≔ let G : A → Type ≔ x ↦ B _ in y w ↦ let k : G y ≔ h w in A
      ^ term synthesized type
          B w
-       and is being checked against type
+       but is being checked against type
          B (let only … in ?u0)
-       but can't determine whether they are equal, since comparing head terms
+       unequal head terms:
          w
-       and
+       does not equal
          let only … in ?u0
-       depends on unsolved placeholders
-  
-   ￫ error[E2004]
-   ￭ stdin
-   3 | def scope (h : (w : A) → B w) : A → A → Type ≔ let G : A → Type ≔ x ↦ B _ in y w ↦ let k : G y ≔ h w in A
-     ^ can't determine a value for this placeholder
   
    ￫ error[E0406]
    ￭ stdin
@@ -182,11 +176,11 @@ But the value must not involve variables outside the image of the renaming.  And
      ^ term synthesized type
          B a
        and is being checked against type
-         B (let only … in ?u2)
+         B (let only … in ?u1)
        but can't determine whether they are equal, since comparing head terms
          a
        and
-         let only … in ?u2
+         let only … in ?u1
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -200,11 +194,11 @@ But the value must not involve variables outside the image of the renaming.  And
      ^ term synthesized type
          Type⁽ᵉ⁾ (B y) (B y)
        and is being checked against type
-         Type⁽ᵉ⁾ (B (let only … in ?u4)) (B y)
+         Type⁽ᵉ⁾ (B (let only … in ?u3)) (B y)
        but can't determine whether they are equal, since comparing head terms
          y
        and
-         let only … in ?u4
+         let only … in ?u3
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -216,13 +210,13 @@ But the value must not involve variables outside the image of the renaming.  And
    ￭ stdin
    8 | def repeated3 : A → Type ≔ let G : A → A → Type ≔ p q ↦ K _ _ in y ↦ let k : G y y ≔ kk _ in A
      ^ term synthesized type
-         K (let only … in ?u6) (let only … in ?u6)
+         K (let only … in ?u5) (let only … in ?u5)
        and is being checked against type
-         K (let only … in ?u6) (let only … in ?u7)
+         K (let only … in ?u5) (let only … in ?u6)
        but can't determine whether they are equal, since comparing head metavariables
-         ?u6
+         ?u5
        and
-         ?u7
+         ?u6
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -657,41 +651,29 @@ The arguments count as part of the renaming, so the value can't use an argument 
    6 | def nonvar : Type ≔ let f : A → Type ≔ _ in let k : Id Type (f a0) (B a0) ≔ refl (B a0) in A
      ^ can't determine a value for this placeholder
   
-   ￫ error[E0406]
+   ￫ error[E0401]
    ￭ stdin
    7 | def scope : Type ≔ let f : A → Type ≔ _ in let k : (x w : A) → Id Type (f x) (B w) ≔ x w ↦ refl (B w) in A
      ^ term synthesized type
          Type⁽ᵉ⁾ (B w) (B w)
-       and is being checked against type
+       but is being checked against type
          Type⁽ᵉ⁾ (f x) (B w)
-       but can't determine whether they are equal, since comparing head terms
+       unequal head terms:
          B
-       and
+       does not equal
          f
-       depends on unsolved placeholders
   
-   ￫ error[E2004]
-   ￭ stdin
-   7 | def scope : Type ≔ let f : A → Type ≔ _ in let k : (x w : A) → Id Type (f x) (B w) ≔ x w ↦ refl (B w) in A
-     ^ can't determine a value for this placeholder
-  
-   ￫ error[E0406]
+   ￫ error[E0401]
    ￭ stdin
    8 | def occurs (F : Type → Type) : Type ≔ let f : A → Type ≔ _ in let k : (x : A) → Id Type (f x) (F (f x)) ≔ x ↦ refl (F (f x)) in A
      ^ term synthesized type
          Type⁽ᵉ⁾ (F (f x)) (F (f x))
-       and is being checked against type
+       but is being checked against type
          Type⁽ᵉ⁾ (f x) (F (f x))
-       but can't determine whether they are equal, since comparing head terms
+       unequal head terms:
          F
-       and
+       does not equal
          f
-       depends on unsolved placeholders
-  
-   ￫ error[E2004]
-   ￭ stdin
-   8 | def occurs (F : Type → Type) : Type ≔ let f : A → Type ≔ _ in let k : (x : A) → Id Type (f x) (F (f x)) ≔ x ↦ refl (F (f x)) in A
-     ^ can't determine a value for this placeholder
   
    ￫ error[E0406]
    ￭ stdin
@@ -2328,59 +2310,41 @@ A metavariable can be solved in an extended context, by a value not involving th
    ￫ info[I0000]
    ￮ constant weaken defined
   
-   ￫ error[E0406]
+   ￫ error[E0401]
    ￭ stdin
    5 | def strengthen (k : (X : Type) → ((Y : Type) → Y → X) → Type) : Type ≔ k _ (Y y ↦ y)
      ^ term synthesized type
          Y
-       and is being checked against type
+       but is being checked against type
          ?u1
-       but can't determine whether they are equal, since comparing head terms
+       unequal head terms:
          Y
-       and
+       does not equal
          ?u1
-       depends on unsolved placeholders
   
-   ￫ error[E2004]
-   ￭ stdin
-   5 | def strengthen (k : (X : Type) → ((Y : Type) → Y → X) → Type) : Type ≔ k _ (Y y ↦ y)
-     ^ can't determine a value for this placeholder
-  
-   ￫ error[E0406]
+   ￫ error[E0401]
    ￭ stdin
    6 | def occurs (k : (X : Type) → (Q X → Q (F X)) → Type) : Type ≔ k _ (y ↦ y)
      ^ term synthesized type
-         Q ?u3
-       and is being checked against type
-         Q (F ?u3)
-       but can't determine whether they are equal, since comparing head terms
-         ?u3
-       and
+         Q ?u2
+       but is being checked against type
+         Q (F ?u2)
+       unequal head terms:
+         ?u2
+       does not equal
          F
-       depends on unsolved placeholders
   
-   ￫ error[E2004]
-   ￭ stdin
-   6 | def occurs (k : (X : Type) → (Q X → Q (F X)) → Type) : Type ≔ k _ (y ↦ y)
-     ^ can't determine a value for this placeholder
-  
-   ￫ error[E0406]
+   ￫ error[E0401]
    ￭ stdin
    7 | def occurs_let : Type ≔ let X : Type ≔ _ in let w : Q X ≔ q X in X
      ^ term synthesized type
          Q (F X)
-       and is being checked against type
+       but is being checked against type
          Q X
-       but can't determine whether they are equal, since comparing head terms
+       unequal head terms:
          F
-       and
+       does not equal
          X
-       depends on unsolved placeholders
-  
-   ￫ error[E2004]
-   ￭ stdin
-   7 | def occurs_let : Type ≔ let X : Type ≔ _ in let w : Q X ≔ q X in X
-     ^ can't determine a value for this placeholder
   
   [1]
 
@@ -2599,5 +2563,42 @@ When the postponed comparison is retried, it may turn out to fail, which is repo
    ￭ stdin
    11 | def left : Type ≔ let F : A → Type ≔ _ in let y : F a0 ≔ b in A
       ^ can't determine a value for this placeholder
+  
+  [1]
+
+A comparison that is stuck is still unequal if the metavariable can't be solved however other metavariables are solved, because the value contains the metavariable itself or a variable outside its scope in a rigid position (see the examples above).  But a variable at a singleton type isn't rigid, since anything else of that type could replace it, so this is undetermined rather than unequal (even though ?X := c () would be a solution).
+
+  $ narya -v - <<EOF
+  > axiom A : Type
+  > def Unit : Type ≔ sig ()
+  > axiom c : Unit → A
+  > def sing (k : (X : A) → ((u : Unit) → Id A X (c u)) → Type) : Type ≔ k _ (u ↦ refl (c u))
+  > EOF
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0000]
+   ￮ constant Unit defined
+  
+   ￫ info[I0001]
+   ￮ axiom c assumed
+  
+   ￫ error[E0406]
+   ￭ stdin
+   4 | def sing (k : (X : A) → ((u : Unit) → Id A X (c u)) → Type) : Type ≔ k _ (u ↦ refl (c u))
+     ^ term synthesized type
+         Id A (c u) (c u)
+       and is being checked against type
+         Id A ?u0 (c u)
+       but can't determine whether they are equal, since comparing head terms
+         c
+       and
+         ?u0
+       depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   4 | def sing (k : (X : A) → ((u : Unit) → Id A X (c u)) → Type) : Type ≔ k _ (u ↦ refl (c u))
+     ^ can't determine a value for this placeholder
   
   [1]

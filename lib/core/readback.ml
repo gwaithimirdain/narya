@@ -16,15 +16,19 @@ module Binding = Ctx.Binding
 
 (* The "Displaying" reader records whether we're reading back for printing to the user or for internal purposes.  For instance, when printing we do more eta-expansion if the user requested it.  Wrapping the "Displaying" module in another module called "Readback" and opening that module allows us to refer to the module as just "Displaying" here, but exports it as "Readback.Displaying" to other files even when they open this file. *)
 
+(* When reading back the solution of a unification metavariable, we record that metavariable and which levels are undefined in its renamed context because they are the image of more than one variable or of one with the wrong annotation (see renamed_ctx), as opposed to outside the image of its renaming altogether. *)
+type unifying = { target : Meta.wrapped; undefined : level -> bool; under_rigid : bool }
+
 module Readback = struct
   module Displaying = Algaeff.Reader.Make (Bool)
 
   (* The "Unifying" reader records whether we're reading back a value to be the solution of a unification metavariable, and if so which one.  In that case the readback must fail, by raising Unsolvable, if the value refers to a variable that isn't in the context (since the solution lives in the smaller context of the metavariable), or if it contains the metavariable itself, either directly or through the definition of some other metavariable.  To avoid the latter, we unfold all solved unification metavariables and all definition metavariables of the current origin (such as let-bound variables), failing if any of the latter don't have a value to unfold to. *)
   module Unifying = Algaeff.Reader.Make (struct
-    type t = Meta.wrapped option
+    type t = unifying option
   end)
 
-  exception Unsolvable
+  (* A readback failure is rigid if the value can't be the solution of the metavariable however any other metavariables are solved, because the metavariable itself or a variable outside the image of its renaming occurs in a rigid position: not inside a neutral that is stuck on a metavariable or that might unfold, and not at a singleton type, where it could be replaced by anything else.  Otherwise it is flexible. *)
+  exception Unsolvable of [ `Rigid | `Flexible ]
 end
 
 open Readback
@@ -394,7 +398,7 @@ let remove_lock : type mode modality cod a bc.
  fun ctx modality ->
   match Ctx.remove_lock_opt ctx modality with
   | Some result -> result
-  | None when Option.is_some (Unifying.read ()) -> raise Unsolvable
+  | None when Option.is_some (Unifying.read ()) -> raise (Unsolvable `Flexible)
   | None -> Ctx.remove_lock ctx modality
 
 (* ********** Primary readback functions ********** *)
@@ -420,6 +424,15 @@ let renamed_deg : type mode s m n. (mode, s) value -> (m, n) deg -> any_deg =
           Any_deg deg
       | _ -> Any_deg deg)
   | _ -> Any_deg deg
+
+(* When reading back the solution of a unification metavariable, record that we are inside a rigid neutral or constructor. *)
+let rigidly (f : unit -> 'a) : 'a =
+  Unifying.scope (Option.map (fun u -> { u with under_rigid = true })) f
+
+(* Whether a type is a singleton, which is defined downstream in Unify. *)
+type singleton = { test : 'mode 'a 'b. ('mode, 'a, 'b) Ctx.t -> ('mode, kinetic) value -> bool }
+
+let singleton : singleton ref = ref { test = (fun _ _ -> false) }
 
 (* To read back a normal form, we simply dispatch to type-directed readback at its stored type.  *)
 let rec readback_nf : type mode a z.
@@ -455,7 +468,13 @@ and readback_at : type mode a z s.
   | Neu { head = Failed _; _ }, _ -> Failed Kinetic
   | Neu { head = Live _; _ }, Neu { head = Failed _; _ } -> readback_val ctx tm
   | _, Neu { head = Failed _; _ } -> fatal (Dependent "reading back at a failed type")
-  | _ -> readback_at_type ?eta status ctx tm ty
+  | _ -> (
+      match Unifying.read () with
+      | None -> readback_at_type ?eta status ctx tm ty
+      (* A rigid failure at a singleton type isn't really rigid, since anything else of that type could be used instead. *)
+      | Some _ -> (
+          try readback_at_type ?eta status ctx tm ty
+          with Unsolvable `Rigid when !singleton.test ctx ty -> raise (Unsolvable `Flexible)))
 
 (* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value for display (reading back the forced value of a neutral); in particular, that's the only way a comatch (a no-eta struct) reaches the readback-at-Codata branch.  All other callers read back only kinetic values, with neutral resulting in application spines. *)
 and readback_at_type : type mode a z s.
@@ -721,6 +740,7 @@ and readback_at_type : type mode a z s.
           Constr
             ( xconstr,
               dim_env env,
+              rigidly @@ fun () ->
               readback_at_pi ctx (dim_env env) (lazy (force_eval_term fnty)) xargs tyarg_args ))
   (* Reading back canonical types themselves (data, codata, record), *at* a universe, happens only for potential terms. *)
   | ( Canonical
@@ -775,8 +795,13 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
       | None -> (
           match (force_eval value, Displaying.read ()) with
           | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
-          | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
-          | _ -> readback_neu ~canonical:`Other ctx head args))
+          | Val (Canonical _), _ ->
+              rigidly @@ fun () -> readback_neu ~canonical:`Canonical ctx head args
+          (* A neutral that is permanently stuck is rigid, but one that is stuck on a metavariable or might unfold is not, since its arguments might go away. *)
+          | Unrealized, _ -> rigidly @@ fun () -> readback_neu ~canonical:`Other ctx head args
+          | _ -> (
+              try readback_neu ~canonical:`Other ctx head args
+              with Unsolvable `Rigid -> raise (Unsolvable `Flexible))))
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
@@ -794,16 +819,19 @@ and unfold_solved : type hmode mode.
           | Realize v -> Some v
           | _ -> None)
       | _ -> None)
-  | Some (Wrap target) -> (
+  | Some { target = Wrap target; _ } -> (
       let unfold () =
         match force_eval value with
         | Realize v -> Some v
-        | _ -> raise Unsolvable in
+        | _ -> raise (Unsolvable `Flexible) in
       match head with
       | Meta { meta; kind = Unif_meta unif; _ } -> (
           match Meta.compare meta target with
-          (* The metavariable being solved can't occur in its solution. *)
-          | Eq -> raise Unsolvable
+          (* The metavariable being solved can't occur in its solution.  This is rigid if the occurrence is strictly inside a rigid neutral or a constructor, since then the solution would have to be bigger than itself.  But an occurrence at the top of the value, perhaps under lambdas, tuples, or permutations, is not, since for instance the metavariable could be a symmetric square, or equal to its own eta-expansion. *)
+          | Eq ->
+              raise
+                (Unsolvable
+                   (if (Option.get (Unifying.read ())).under_rigid then `Rigid else `Flexible))
           | Neq -> (
               match Global.unif_status meta unif with
               | `Unsolved -> None
@@ -883,8 +911,11 @@ and readback_head : type mode c z.
         match Ctx.find_level ctx level with
         | Some lookup -> lookup
         (* When reading back the solution of a unification metavariable, a variable not in its context means there is no solution. *)
-        | None when Option.is_some (Unifying.read ()) -> raise Unsolvable
-        | None -> fatal (No_such_level (PLevel level)) in
+        | None -> (
+            match Unifying.read () with
+            | Some { undefined; _ } ->
+                raise (Unsolvable (if undefined level then `Flexible else `Rigid))
+            | None -> fatal (No_such_level (PLevel level))) in
       (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
       match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
       | Eq, `Var (_, fa), Zero -> (
@@ -906,8 +937,8 @@ and readback_head : type mode c z.
           | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
           | _ -> Key { tm; cell = key; plus_tgt; plus_src })
       (* When reading back the solution of a unification metavariable, the variable might have been found in the wrong modal position in the metavariable's context, which means there is no solution. *)
-      | Neq, _, _ when Option.is_some (Unifying.read ()) -> raise Unsolvable
-      | _, _, Suc _ when Option.is_some (Unifying.read ()) -> raise Unsolvable
+      | Neq, _, _ when Option.is_some (Unifying.read ()) -> raise (Unsolvable `Flexible)
+      | _, _, Suc _ when Option.is_some (Unifying.read ()) -> raise (Unsolvable `Flexible)
       | Neq, _, _ ->
           fatal (Modality_mismatch (`Internal, "reading back var", Modalcell.vsrc key, modality))
       | _, _, Suc _ -> fatal (Anomaly "reading back var: key has insufficient codomain")
@@ -1599,6 +1630,8 @@ type (_, _) renamed_ctx =
   | Renamed_ctx : {
       ctx : ('mode, 'a, 'bc) Ctx.t;
       check_type : bool;
+      (* Whether a level of the current context is in the image of the renaming, though possibly undefined. *)
+      in_image : level -> bool;
       wrap : ('mode, 'bc, kinetic) term -> ('mode, 'b, kinetic) term;
       contracted : (unit -> ('mode, 'b, kinetic) term option) list;
     }
@@ -1818,7 +1851,7 @@ let renamed_ctx : type mode a b c d n x any.
                      try
                        let _ = readback_val tyctx (Lazy.force normal.ty) in
                        true
-                     with Unsolvable -> false) in
+                     with Unsolvable _ -> false) in
               if defined then Binding.specify vb (Some var) normal
               else
                 (* An undefined variable gets a failed value, rather than the one in the environment, so that it won't be recognized as part of an identity environment of some other metavariable. *)
@@ -1885,8 +1918,11 @@ let renamed_ctx : type mode a b c d n x any.
             let rctx = Ctx.of_ordered ~level rest in
             let attempt () =
               Displaying.run ~env:false @@ fun () ->
-              Unifying.run ~env:(Some (Wrap meta)) @@ fun () ->
-              try Some (wrap (readback_neu rctx head vargs)) with Unsolvable -> None in
+              Unifying.run
+                ~env:
+                  (Some { target = Wrap meta; undefined = (fun _ -> false); under_rigid = false })
+              @@ fun () ->
+              try Some (wrap (readback_neu rctx head vargs)) with Unsolvable _ -> None in
             contracted := !contracted @ [ attempt ]
         | None -> ());
         let k = CubeOf.dim xs in
@@ -1906,6 +1942,7 @@ let renamed_ctx : type mode a b c d n x any.
            {
              ctx = Ctx.of_ordered ~level mctx;
              check_type = false;
+             in_image = (fun _ -> false);
              wrap = (fun tm -> tm);
              contracted = [];
            })
@@ -1915,7 +1952,9 @@ let renamed_ctx : type mode a b c d n x any.
       | Eq -> (
           Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
           Displaying.run ~env:false @@ fun () ->
-          Unifying.run ~env:(Some (Wrap meta)) @@ fun () ->
+          Unifying.run
+            ~env:(Some { target = Wrap meta; undefined = Hashtbl.mem counts; under_rigid = false })
+          @@ fun () ->
           try
             scan mctx env;
             scan_args args;
@@ -1931,23 +1970,25 @@ let renamed_ctx : type mode a b c d n x any.
                  {
                    ctx = Ctx.of_ordered ~level rest;
                    check_type = !undefined;
+                   in_image = Hashtbl.mem counts;
                    wrap;
                    contracted = !contracted;
                  })
           with Not_renaming -> None))
 
-(* Read back a value, at a type, as the solution of a unification metavariable in a renamed version of its context, or return None if that's impossible.  If anything is undefined in that context, the type can't contain it either. *)
+(* Read back a value, at a type, as the solution of a unification metavariable in a renamed version of its context, or say why that's impossible: either rigidly, so that the value can't equal the metavariable however other metavariables are solved, or flexibly.  If anything is undefined in that context, the type can't contain it either; if it does, the failure is flexible, since other metavariables might be solved to remove it. *)
 let readback_unif_solution : type mode a b x y.
     (mode, x, y, kinetic) Meta.t ->
     (mode, a, b) Ctx.t ->
     check_type:bool ->
+    in_image:(level -> bool) ->
     (mode, kinetic) value ->
     (mode, kinetic) value ->
-    (mode, b, kinetic) term option =
- fun meta ctx ~check_type v ty ->
+    ((mode, b, kinetic) term, [ `Rigid | `Flexible ]) Result.t =
+ fun meta ctx ~check_type ~in_image v ty ->
   Displaying.run ~env:false @@ fun () ->
-  Unifying.run ~env:(Some (Wrap meta)) @@ fun () ->
-  try
-    if check_type then ignore (readback_val ctx ty);
-    Some (readback_at Kinetic ctx v ty)
-  with Unsolvable -> None
+  Unifying.run ~env:(Some { target = Wrap meta; undefined = in_image; under_rigid = false })
+  @@ fun () ->
+  match if check_type then ignore (readback_val ctx ty) with
+  | exception Unsolvable _ -> Error `Flexible
+  | () -> ( try Ok (readback_at Kinetic ctx v ty) with Unsolvable rigidity -> Error rigidity)

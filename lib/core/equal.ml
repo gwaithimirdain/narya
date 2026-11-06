@@ -90,7 +90,9 @@ end
 
 (* Eta-expanding equality checks.  In all functions, the integer is the current De Bruijn level, i.e. the length of the current context (we don't need any other information about the context). *)
 
-(* Before comparing two values structurally, we try to solve a unification metavariable on either side with the other side.  The solver is defined in the downstream module Unify, since it needs readback, so we make it a forward reference set there.  It is passed the type at which the values are being compared, if known; otherwise it must check that the types agree.  It returns None if it didn't apply, and otherwise the result of the comparison: if it solved a metavariable directly the values are now equal, while if it expanded one then it has also compared the result. *)
+(* Before comparing two values structurally, we try to solve a unification metavariable on either side with the other side.  The solver is defined in the downstream module Unify, since it needs readback, so we make it a forward reference set there.  It is passed the type at which the values are being compared, if known; otherwise it must check that the types agree.  If it solved a metavariable directly the values are now equal, while if it expanded one then it has also compared the result.  Otherwise, it may have found that the metavariable can't be solved to make them equal, however any other metavariables are solved, in which case a comparison that is stuck means they are unequal. *)
+type attempt = Not_solved | Solved of unit Err.t | Impossible
+
 type solver = {
   solve :
     'mode 'a 'b.
@@ -98,10 +100,10 @@ type solver = {
     ('mode, kinetic) value ->
     ('mode, kinetic) value ->
     ('mode, kinetic) value option ->
-    unit Err.t option;
+    attempt;
 }
 
-let solver : solver ref = ref { solve = (fun _ _ _ _ -> None) }
+let solver : solver ref = ref { solve = (fun _ _ _ _ -> Not_solved) }
 
 (* A comparison of two neutral spines with the same head may fail and then succeed by unfolding them, so it shouldn't solve any metavariables while it might be abandoned, since those solutions may not be justified by the final comparison.  For example, if g ignores its arguments, then g ?v b1 and g a1 b2 are equal, and that says nothing about ?v.  Thus we first compare spines "flexibly", without solving anything. *)
 let flexible = ref false
@@ -114,9 +116,13 @@ let flexibly (f : unit -> 'a) : 'a =
 
 (* Try to solve a metavariable in comparing two values; if that doesn't apply, continue with the given comparison. *)
 let with_solver ctx x y ty (compare : unit -> unit Err.t) : unit Err.t =
-  match if !flexible then None else !solver.solve ctx x y ty with
-  | Some result -> result
-  | None -> compare ()
+  match if !flexible then Not_solved else !solver.solve ctx x y ty with
+  | Solved result -> result
+  | Not_solved -> compare ()
+  | Impossible -> (
+      match compare () with
+      | Error (Stuck (why, _)) -> Error (Unequal why)
+      | result -> result)
 
 (* Whether an equality between neutrals forces their spines to be equal, even after any metavariables in them are solved.  This is so if the neutral is permanently stuck, because it is a variable, an axiom, or a case tree stuck on something other than a metavariable, or if it is a canonical type, since these are generative.  It is not so if it is stuck on a metavariable, or if its head is a metavariable, since that metavariable could turn out to ignore some of its arguments. *)
 let forces_spine : type mode s. (mode, s) value -> bool = function
