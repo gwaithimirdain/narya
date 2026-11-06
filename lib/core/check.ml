@@ -1116,20 +1116,27 @@ let rec check : type mode a b s.
   Annotate.tm ctx result;
   result
 
-(* Postpone checking a term whose type is stuck on unsolved unification metavariables, returning a delayed metavariable in its place.  We retry once the type is no longer stuck, which typically happens at the end of the command, outside the dynamic extent in which the term was to be checked.  So we restore the owner of new metavariables and the set of constants being defined, but we can't record occurrences in the occurrence-analysis scope that is active now, so we conservatively record it as recursive. *)
-and postpone_check : type mode a b.
-    (mode, a, b) Ctx.t -> a check located -> (mode, kinetic) value -> (mode, b, kinetic) term =
- fun ctx tm ty ->
-  let meta, delayed = new_unif ~delayed:true ctx ty tm.loc None in
+(* Postpone a typechecking problem that can't be solved yet because some value, such as the type of the term, is stuck on unsolved unification metavariables.  We return a delayed metavariable of the given type in place of the term it would produce, and retry the problem once that value is no longer stuck.  This typically happens at the end of the command, outside the dynamic extent in which the problem arose.  So we restore the owner of new metavariables and the set of constants being defined, but we can't record occurrences in the occurrence-analysis scope that is active now, so we conservatively record the problem as recursive. *)
+and postpone_problem : type mode smode a b.
+    (mode, a, b) Ctx.t ->
+    stuck:(smode, kinetic) value ->
+    (mode, kinetic) value ->
+    Asai.Range.t option ->
+    run:(unit -> (mode, b, kinetic) term) ->
+    report:(unit -> unit) ->
+    (mode, b, kinetic) term =
+ fun ctx ~stuck ty loc ~run ~report ->
+  let meta, delayed = new_unif ~delayed:true ctx ty loc None in
   Positivity.record `Recursive;
   let owner = Meta.current_owner () in
   let beingdefined = Positivity.beingdefined () in
   let attempt () =
-    let vty = view_term ty in
-    match blocker_of vty with
-    | Some _ -> `Stuck (Equal.blockers_of vty)
+    let vstuck = view_term stuck in
+    match blocker_of vstuck with
+    | Some _ -> `Stuck (Equal.blockers_of vstuck)
     | None ->
         let ctm =
+          with_loc loc @@ fun () ->
           Meta.with_owner_opt owner @@ fun () ->
           Positivity.run @@ fun () ->
           Positivity.run_beingdefined beingdefined @@ fun () ->
@@ -1137,12 +1144,48 @@ and postpone_check : type mode a b.
             ~fatal:(fun d ->
               Global.release_unif meta (Failed Kinetic);
               fatal_diagnostic d)
-            (fun () -> check Kinetic ctx tm ty) in
+            run in
         Global.release_unif meta ctm;
         `Done in
-  let report () = mortal ?loc:tm.loc (Undetermined_checking_type (PVal (ctx, ty))) in
-  Global.postpone ~blockers:(Equal.blockers_of (view_term ty)) ~attempt ~report;
+  Global.postpone ~blockers:(Equal.blockers_of (view_term stuck)) ~attempt ~report;
   delayed
+
+(* Postpone checking a term whose type is stuck, such as an abstraction that has to know whether the type is a function-type. *)
+and postpone_check : type mode a b.
+    (mode, a, b) Ctx.t -> a check located -> (mode, kinetic) value -> (mode, b, kinetic) term =
+ fun ctx tm ty ->
+  postpone_problem ctx ~stuck:ty ty tm.loc
+    ~run:(fun () -> check Kinetic ctx tm ty)
+    ~report:(fun () -> mortal ?loc:tm.loc (Undetermined_checking_type (PVal (ctx, ty))))
+
+(* Postpone applying a function whose type is stuck, so that we don't know whether it is a function-type or a universe.  We don't know the type of the result either, so we make a new metavariable for it, which can be solved by later comparisons, and compare it to the actual type of the result once we know it. *)
+and postpone_apps : type mode a b.
+    (mode, a, b) Ctx.t ->
+    (mode, b, kinetic) term located ->
+    (mode, kinetic) value ->
+    a check located ->
+    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    (mode, b, kinetic) term * (mode, kinetic) value =
+ fun ctx sfn sty fn args ->
+  let loc =
+    match List.rev args with
+    | (loc, _, _) :: _ -> loc
+    | [] -> sfn.loc in
+  (* If the problem is never solved, it is reported, so we don't also report the metavariable for its type. *)
+  let rty =
+    make_unif ctx
+      (universe (Ctx.mode ctx) D.zero)
+      loc (Some (Dependent "type of postponed application")) in
+  let erty = eval_term (Ctx.env ctx) rty in
+  let tm =
+    postpone_problem ctx ~stuck:sty erty loc
+      ~run:(fun () ->
+        let tm, ty = synth_apps ctx sfn sty fn args in
+        check_synthesized ctx tm ty erty loc)
+      ~report:(fun () ->
+        mortal ?loc:sfn.loc (Undetermined_function_type (PTerm (ctx, sfn.value), PVal (ctx, sty))))
+  in
+  (tm, erty)
 
 (* Check an application of a constructor, against a datatype having that constructor or (by eta-expansion) against a function-type. *)
 and check_constr : type mode a b s.
@@ -3768,6 +3811,7 @@ and synth : type mode a b s.
     (mode, b, s) term * (mode, kinetic) value =
  fun ?nosynth ?synthed status ctx tm ->
   let mode = Ctx.mode ctx in
+  let synth_loc = tm.loc in
   (* We keep a flag to ensure that the ?synthed callback isn't called again at the end if it was called from a recursive call or from a branch of this function. *)
   let synth_called = ref false in
   (* This helper is for calls from this function, including the one at the end. *)
@@ -3880,8 +3924,27 @@ and synth : type mode a b s.
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
           let stm, sty = synth Kinetic lctx tm in
           let etm = eval_term (Ctx.env lctx) stm in
-          let WithIns (fld, ins), newty = tyof_field_withname fm lctx etm sty fld in
-          (realize status (Field (Kinetic, Modal (fm, plus_lock, stm), fld, ins)), newty) in
+          let project () =
+            let WithIns (fld, ins), newty = tyof_field_withname fm lctx etm sty fld in
+            (Term.Field (Kinetic, Modal (fm, plus_lock, stm), fld, ins), newty) in
+          (* If the type of the term is stuck on a metavariable, we don't know what fields it has, so we postpone the projection, as for applications in postpone_apps. *)
+          if Option.is_some (blocker_of (view_term sty)) then
+            let rty =
+              make_unif ctx (universe mode D.zero) synth_loc
+                (Some (Dependent "type of postponed field projection")) in
+            let erty = eval_term (Ctx.env ctx) rty in
+            let ptm =
+              postpone_problem ctx ~stuck:sty erty synth_loc
+                ~run:(fun () ->
+                  let ptm, pty = project () in
+                  check_synthesized ctx ptm pty erty synth_loc)
+                ~report:(fun () ->
+                  mortal ?loc:tm.loc
+                    (Undetermined_record_type (PTerm (lctx, stm), PVal (lctx, sty), fld))) in
+            (realize status ptm, erty)
+          else
+            let ptm, newty = project () in
+            (realize status ptm, newty) in
         match lock with
         | None -> synth_field (Modality.id (Ctx.mode ctx))
         | Some lockname -> (
@@ -4697,28 +4760,31 @@ and synth_apps : type mode a b.
     (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
     (mode, b, kinetic) term * (mode, kinetic) value =
  fun ctx sfn sty fn args ->
-  (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
-  let asfn, aty, afn, aargs =
-    match view_type sty "synthesizing application spine" with
-    (* The obvious thing we can "apply" is an element of a pi-type. *)
-    | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) ->
-        let Eq = eq_of_ins_zero ins in
-        synth_app ctx filter sfn doms cods tyargs fn args
-    (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
-    | Canonical (_, UU _, _, tyargs) -> synth_inst ctx sfn tyargs fn args
-    (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
-    | _ ->
-        fatal ?loc:sfn.loc (Applying_nonfunction_nontype (PTerm (ctx, sfn.value), PVal (ctx, sty)))
-  in
-  (* synth_app and synth_inst fail if there aren't enough arguments.  If they used up all the arguments, we're done; otherwise we continue with the rest of the arguments. *)
-  match aargs with
-  | [] -> (asfn.value, aty)
-  | _ :: _ ->
-      with_loc asfn.loc (fun () ->
-          Annotate.ctx Kinetic ctx afn;
-          Annotate.ty ctx aty;
-          Annotate.tm ctx asfn.value);
-      synth_apps ctx asfn aty afn aargs
+  (* If the type of the function is stuck on a metavariable, we don't know what to do yet. *)
+  if Option.is_some (blocker_of (view_term sty)) then postpone_apps ctx sfn sty fn args
+  else
+    (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
+    let asfn, aty, afn, aargs =
+      match view_type sty "synthesizing application spine" with
+      (* The obvious thing we can "apply" is an element of a pi-type. *)
+      | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) ->
+          let Eq = eq_of_ins_zero ins in
+          synth_app ctx filter sfn doms cods tyargs fn args
+      (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
+      | Canonical (_, UU _, _, tyargs) -> synth_inst ctx sfn tyargs fn args
+      (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
+      | _ ->
+          fatal ?loc:sfn.loc
+            (Applying_nonfunction_nontype (PTerm (ctx, sfn.value), PVal (ctx, sty))) in
+    (* synth_app and synth_inst fail if there aren't enough arguments.  If they used up all the arguments, we're done; otherwise we continue with the rest of the arguments. *)
+    match aargs with
+    | [] -> (asfn.value, aty)
+    | _ :: _ ->
+        with_loc asfn.loc (fun () ->
+            Annotate.ctx Kinetic ctx afn;
+            Annotate.ty ctx aty;
+            Annotate.tm ctx asfn.value);
+        synth_apps ctx asfn aty afn aargs
 
 (* This is a common subroutine for synth_app and synth_inst that picks up a whole cube of arguments and checks their types.  The checked arguments are evaluated lazily, since often their values aren't needed (e.g. if the codomain is non-dependent).  Since in one case we need a cube of lazy values and the other case a cube of normals, we let the caller choose, given each lazy value and its type. *)
 and synth_arg_cube : type dom modality mode a b n c.

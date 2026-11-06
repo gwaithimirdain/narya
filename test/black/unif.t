@@ -2685,3 +2685,130 @@ A term that can only be checked against a type of a particular shape, such as an
      ^ can't determine a value for this placeholder
   
   [1]
+
+Likewise, applying a function or projecting a field from a term whose type is stuck on a metavariable is postponed.  Its result gets a new metavariable as its type, which later comparisons can solve, and which is compared to the actual type once the application or projection can be done.
+
+  $ narya -v - <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > axiom h : A → A
+  > axiom B : Type
+  > axiom hb : B → B
+  > axiom f2 : (X : Type) → (X → A) → X → A
+  > def P : Type ≔ sig (fst : A, snd : A)
+  > axiom p : P
+  > def t1 : A ≔ f2 _ (g ↦ g a) h
+  > echo f2 _ (g ↦ g a) h
+  > def t2 : A ≔ f2 _ (g ↦ g (g a)) h
+  > def t3 : A ≔ f2 _ (g ↦ g .fst) p
+  > def t4 : A ≔ f2 _ (g ↦ g a .fst) h
+  > def bad : A ≔ f2 _ (g ↦ g a) hb
+  > def und : A ≔ let T : Type ≔ _ in let x : T ≔ _ in x .fst
+  > def und2 : A ≔ f2 _ (g ↦ g a) (x ↦ x)
+  > EOF
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0001]
+   ￮ axiom h assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0001]
+   ￮ axiom hb assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f2 assumed
+  
+   ￫ info[I0000]
+   ￮ constant P defined
+  
+   ￫ info[I0001]
+   ￮ axiom p assumed
+  
+   ￫ info[I0000]
+   ￮ constant t1 defined
+  
+  f2 (A → A) (g ↦ g a) h
+    : A
+  
+   ￫ info[I0000]
+   ￮ constant t2 defined
+  
+   ￫ info[I0000]
+   ￮ constant t3 defined
+  
+   ￫ error[E0800]
+   ￭ stdin
+   13 | def t4 : A ≔ f2 _ (g ↦ g a .fst) h
+      ^ term g a has no field named fst
+  
+   ￫ error[E0401]
+   ￭ stdin
+   14 | def bad : A ≔ f2 _ (g ↦ g a) hb
+      ^ term synthesized type
+          A
+        but is being checked against type
+          B
+        unequal head constants:
+          A
+        does not equal
+          B
+  
+   ￫ error[E0401]
+   ￭ stdin
+   14 | def bad : A ≔ f2 _ (g ↦ g a) hb
+      ^ term synthesized type
+          B
+        but is being checked against type
+          A
+        unequal head constants:
+          B
+        does not equal
+          A
+  
+   ￫ error[E0409]
+   ￭ stdin
+   15 | def und : A ≔ let T : Type ≔ _ in let x : T ≔ _ in x .fst
+      ^ can't project field fst from
+          x
+        of type
+          T
+        since what kind of type it is depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   15 | def und : A ≔ let T : Type ≔ _ in let x : T ≔ _ in x .fst
+      ^ can't determine a value for this placeholder
+  
+   ￫ error[E2004]
+   ￭ stdin
+   15 | def und : A ≔ let T : Type ≔ _ in let x : T ≔ _ in x .fst
+      ^ can't determine a value for this placeholder
+  
+   ￫ error[E0407]
+   ￭ stdin
+   16 | def und2 : A ≔ f2 _ (g ↦ g a) (x ↦ x)
+      ^ can't check this term against type
+          ?u24
+        since what kind of type it is depends on unsolved placeholders
+  
+   ￫ error[E0408]
+   ￭ stdin
+   16 | def und2 : A ≔ f2 _ (g ↦ g a) (x ↦ x)
+      ^ can't apply/instantiate
+          g
+        of type
+          ?u24
+        since what kind of type it is depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   16 | def und2 : A ≔ f2 _ (g ↦ g a) (x ↦ x)
+      ^ can't determine a value for this placeholder
+  
+  [1]
