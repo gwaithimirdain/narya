@@ -425,6 +425,15 @@ let renamed_deg : type mode s m n. (mode, s) value -> (m, n) deg -> any_deg =
       | _ -> Any_deg deg)
   | _ -> Any_deg deg
 
+(* When checking whether a value avoids some variables, we may want to know whether it does so up to the solutions of unsolved metavariables, i.e. whether its only occurrences of those variables are inside neutrals that are blocked on metavariables, whose solutions might eliminate them (see Check.check_var_match).  If so, this is set to a function to call with the blocker of such a neutral, which is then read back as a failed term, since the result of such a readback is discarded anyway. *)
+let blocked_dependence : (blocker -> unit) option ref = ref None
+
+(* Run a readback, calling the given function on the blocker of each blocked neutral that it can't read back because it refers to a variable not in the context. *)
+let with_blocked_dependence (f : blocker -> unit) (readback : unit -> 'a) : 'a =
+  let old = !blocked_dependence in
+  blocked_dependence := Some f;
+  Fun.protect ~finally:(fun () -> blocked_dependence := old) readback
+
 (* When reading back the solution of a unification metavariable, record that we are inside a rigid neutral or constructor. *)
 let rigidly (f : unit -> 'a) : 'a =
   Unifying.scope (Option.map (fun u -> { u with under_rigid = true })) f
@@ -799,6 +808,15 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
               rigidly @@ fun () -> readback_neu ~canonical:`Canonical ctx head args
           (* A neutral that is permanently stuck is rigid, but one that is stuck on a metavariable or might unfold is not, since its arguments might go away. *)
           | Unrealized, _ -> rigidly @@ fun () -> readback_neu ~canonical:`Other ctx head args
+          | Blocked b, _ when Option.is_some !blocked_dependence ->
+              Reporter.try_with
+                ~fatal:(fun d ->
+                  match d.message with
+                  | No_such_level _ ->
+                      Option.iter (fun f -> f b) !blocked_dependence;
+                      (Failed Kinetic : (_, _, kinetic) term)
+                  | _ -> Reporter.fatal_diagnostic d)
+                (fun () -> readback_neu ~canonical:`Other ctx head args)
           | _ -> (
               try readback_neu ~canonical:`Other ctx head args
               with Unsolvable `Rigid -> raise (Unsolvable `Flexible))))

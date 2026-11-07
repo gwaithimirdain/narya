@@ -2852,3 +2852,57 @@ Before a comparison or another decision treats something stuck as a failure, or 
    ￫ info[I0000]
    ￮ constant t2 defined
   
+
+Whether a match against a variable can refine the goal and context depends on its indices being distinct free variables that don't occur in its parameters.  If that depends on unsolved metavariables, then postponed constraints are retried first.  If an index is still stuck, we can't tell, so this is an error (unless another index already prevents refining); "return _" gives a non-refining match instead.  If the parameters might involve the indices only through unsolved metavariables, the match refines, and we check later that they don't.
+
+  $ narya -v - <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > def Vec (A : Type) : ℕ → Type ≔ data [ nil. : Vec A zero. | cons. (n : ℕ) (x : A) (xs : Vec A n) : Vec A (suc. n) ]
+  > def f (n : ℕ) : ℕ ≔ let A : Type ≔ _ in let g : Vec A n → ℕ ≔ v ↦ match v [ nil. ↦ zero. | cons. k x xs ↦ zero. ] in let e : Id Type A ℕ ≔ refl ℕ in zero.
+  > def f2 (n : ℕ) : ℕ ≔ let A : Type ≔ _ in let g : Vec A n → ℕ ≔ v ↦ match v [ nil. ↦ zero. | cons. k x xs ↦ zero. ] in let e : Id Type A (Vec ℕ n) ≔ refl (Vec ℕ n) in zero.
+  > def f3 (m : ℕ) : ℕ ≔ let N : ℕ ≔ _ in let g : Vec ℕ N → ℕ ≔ v ↦ match v [ nil. ↦ zero. | cons. k x xs ↦ zero. ] in let e : Id ℕ N m ≔ refl m in zero.
+  > def f3' (m : ℕ) : ℕ ≔ let N : ℕ ≔ _ in let g : Vec ℕ N → ℕ ≔ v ↦ match v return _ [ nil. ↦ zero. | cons. k x xs ↦ zero. ] in let e : Id ℕ N m ≔ refl m in zero.
+  > def f5 (m : ℕ) : ℕ ≔ let N : ℕ ≔ _ in let g : Vec ℕ (suc. N) → ℕ ≔ v ↦ match v [ cons. k x xs ↦ zero. ] in let e : Id ℕ N m ≔ refl m in zero.
+  > EOF
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant Vec defined
+  
+   ￫ info[I0000]
+   ￮ constant f defined
+  
+   ￫ error[E1104]
+   ￭ stdin
+   4 | def f2 (n : ℕ) : ℕ ≔ let A : Type ≔ _ in let g : Vec A n → ℕ ≔ v ↦ match v [ nil. ↦ zero. | cons. k x xs ↦ zero. ] in let e : Id Type A (Vec ℕ n) ≔ refl (Vec ℕ n) in zero.
+     ^ this match refines the goal and context, so the parameters of its datatype
+         Vec (Vec ℕ n)
+       can't depend on its indices, but as placeholders were solved they turned out to.
+       To match without refining, write "match … return _ [ … ]".
+       If you intended a refining match, check that the placeholders were solved as you intended; giving more arguments explicitly, so that they are solved before this match or not created at all, may help.
+  
+   ￫ error[E1103]
+   ￭ stdin
+   5 | def f3 (m : ℕ) : ℕ ≔ let N : ℕ ≔ _ in let g : Vec ℕ N → ℕ ≔ v ↦ match v [ nil. ↦ zero. | cons. k x xs ↦ zero. ] in let e : Id ℕ N m ≔ refl m in zero.
+     ^ can't tell whether this match can refine the goal and context, since its index
+         N
+       depends on unsolved placeholders.
+       To match without refining, write "match … return _ [ … ]".
+       If you intended a refining match, you may be able to get one by giving more arguments explicitly, so that the placeholders are solved before this match or not created at all.
+  
+   ￫ info[I0000]
+   ￮ constant f3' defined
+  
+   ￫ hint[E1101]
+   ￭ stdin
+   7 | def f5 (m : ℕ) : ℕ ≔ let N : ℕ ≔ _ in let g : Vec ℕ (suc. N) → ℕ ≔ v ↦ match v [ cons. k x xs ↦ zero. ] in let e : Id ℕ N m ≔ refl m in zero.
+     ^ match will not refine the goal or context (index is not a free variable):
+         suc. N
+  
+   ￫ error[E1300]
+   ￭ stdin
+   7 | def f5 (m : ℕ) : ℕ ≔ let N : ℕ ≔ _ in let g : Vec ℕ (suc. N) → ℕ ≔ v ↦ match v [ cons. k x xs ↦ zero. ] in let e : Id ℕ N m ≔ refl m in zero.
+     ^ missing match clause for constructor nil
+  
+  [1]

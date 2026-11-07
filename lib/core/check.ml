@@ -2305,6 +2305,8 @@ and check_var_match : type dom modality mode a b bm.
             fatal (Show ("tyfam is not a type family", PVal (lctx, Lazy.force tyfam.ty))) in
       (* In our simple version of pattern-matching against a variable, the "indices" and all their boundaries must be distinct free variables with no degeneracies, so that in the branch for each constructor they can be set equal to the computed value of that index for that constructor (and in which they cannot occur).  This is a special case of the unification algorithm described in CDP "Pattern-matching without K" where the only allowed rule is "Solution".  Later we can try to enhance it with their full unification algorithm, at least for non-higher datatypes.  In addition, for a higher-dimensional match, the instantiation arguments must also all be distinct variables, distinct from the indices.  If any of these conditions fail, we raise an exception, catch it, emit a hint, and revert to doing a non-dependent match. *)
       let seen = Hashtbl.create 10 in
+      (* An index that is stuck on a metavariable might become a free variable once it is solved, or might not, so we can't tell yet whether the match can refine.  Unless some other index already prevents that, this is an error, rather than falling back to a non-dependent match, since that would make the meaning of the match depend on the order in which metavariables are solved. *)
+      let stuck_index = ref None in
       let is_fresh (x : dom normal) =
         (* With glued evaluation, an index can be a glued neutral whose stored value unfolds to a free variable, e.g. a transport along a variable that has been refined to reflexivity.  Such an index refines just as well as a bare variable, so we look through the unfolding. *)
         match view_term x.tm with
@@ -2331,10 +2333,24 @@ and check_var_match : type dom modality mode a b bm.
                 Hashtbl.add seen level ();
                 level
             | _ -> fatal (Anomaly "local variable bound to a potential term"))
+        | vx when Option.is_some (blocker_of vx) ->
+            if Option.is_none !stuck_index then stuck_index := Some x;
+            level
         | _ ->
             let (Locked (_, lctx)) = Ctx.lock ctx window in
             fatal (Matching_wont_refine ("index is not a free variable", Some (PNormal (lctx, x))))
       in
+      (* Whether the parameters of the datatype avoid the index variables.  We check this by altering the context to replace all those level variables with unknowns and doing a readback of the pre-indices type family into that context.  If the readback encounters one of the missing level variables, it fails with No_such_level.  But if it encounters them only inside neutrals that are blocked on metavariables, then whether the parameters avoid them depends on how those metavariables are solved, so we return the blockers of those neutrals. *)
+      let parameter_blockers () =
+        let ctx_noindices = Ctx.forget_levels ctx (Hashtbl.mem seen) in
+        let (Locked (_, ctx_noindices)) = Ctx.lock ctx_noindices window in
+        let blockers = ref [] in
+        with_blocked_dependence
+          (fun b -> blockers := b :: !blockers)
+          (fun () -> ignore (readback_nf ctx_noindices tyfam));
+        !blockers in
+      (* Before making these decisions, we retry any postponed constraints that have been woken, in case they solve metavariables in the indices or parameters.  This must happen outside the speculation below, since inside it we can't solve metavariables from outside it. *)
+      ignore (Global.retry_postponed ());
       (* The branches are checked inside this, so if we fall back to a non-dependent match they will be checked again.  Thus we check them speculatively, so that the effects of checking them the first time, such as creating holes, are discarded, and we discard the diagnostics reported the first time as well. *)
       Control.recovering ~recover:(fun d ->
           match
@@ -2357,10 +2373,33 @@ and check_var_match : type dom modality mode a b bm.
           [ var_indices ] in
       let inst_vars = TubeOf.mmap { map = (fun _ [ x ] -> is_fresh x) } [ inst_args ] in
       let constr_vars = TubeOf.plus_cube inst_vars (CubeOf.singleton level) in
-      (* Now we also check that none of these free variables occur in the parameters.  We do this by altering the context to replace all these level variables with unknowns and doing a readback of the pre-indices type family into that context.  If the readback encounters one of the missing level variables, it fails with No_such_level; above we catch that, emit a hint, and fall back to matching against a term. *)
-      let ctx_noindices = Ctx.forget_levels ctx (Hashtbl.mem seen) in
-      let (Locked (_, ctx_noindices)) = Ctx.lock ctx_noindices window in
-      ignore (readback_nf ctx_noindices tyfam);
+      (match !stuck_index with
+      | Some x ->
+          let (Locked (_, lctx)) = Ctx.lock ctx window in
+          fatal (Undetermined_match_refinement (`Index (PNormal (lctx, x))))
+      | None -> ());
+      (* Now we also check that none of these free variables occur in the parameters.  If they do, then above we catch the No_such_level, emit a hint, and fall back to matching against a term.  If they might, depending on the solutions of metavariables, we proceed optimistically with a variable match, and postpone checking that the parameters avoid them. *)
+      (match parameter_blockers () with
+      | [] -> ()
+      | blockers ->
+          let (Locked (_, lctx)) = Ctx.lock ctx window in
+          let attempt () =
+            match
+              Reporter.try_with
+                ~fatal:(fun d ->
+                  match d.message with
+                  | No_such_level _ -> None
+                  | _ -> fatal_diagnostic d)
+                (fun () -> Some (parameter_blockers ()))
+            with
+            | Some [] -> `Done
+            | Some blockers -> `Stuck blockers
+            | None ->
+                mortal ?loc (Match_parameter_depends_on_index (PNormal (lctx, tyfam)));
+                `Done in
+          let report () =
+            mortal ?loc (Undetermined_match_refinement (`Parameters (PNormal (lctx, tyfam)))) in
+          Global.postpone ~blockers ~attempt ~report);
       (* If all of those checks succeed, we continue on the path of a variable match.  But note that this call is still inside the try_with, so it can still fail and revert back to a non-dependent term match. *)
       (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
       let user_branches = merge_branches name brs data_constrs in

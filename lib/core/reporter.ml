@@ -225,6 +225,8 @@ module Code = struct
     | Duplicate_constructor_in_data : Constr.t -> t
     | Matching_on_nondatatype : printable -> t
     | Matching_wont_refine : string * printable option -> t
+    | Undetermined_match_refinement : [ `Index of printable | `Parameters of printable ] -> t
+    | Match_parameter_depends_on_index : printable -> t
     | Dimension_mismatch : string * 'a D.t * 'b D.t -> t
     | Mode_mismatch :
         [ `User | `Internal ]
@@ -439,6 +441,8 @@ module Code = struct
     | Duplicate_constructor_in_data _ -> Error
     | Matching_on_nondatatype _ -> Error
     | Matching_wont_refine _ -> Hint
+    | Undetermined_match_refinement _ -> Error
+    | Match_parameter_depends_on_index _ -> Error
     | Nonrefutable_modal_variable _ -> Hint
     | Dimension_mismatch _ -> Bug (* Sometimes Error? *)
     | Mode_mismatch (`Internal, _, _, _, _) -> Bug
@@ -644,6 +648,8 @@ module Code = struct
     | Unnamed_variable_in_match -> "E1100"
     | Matching_wont_refine _ -> "E1101"
     | Nonrefutable_modal_variable _ -> "E1102"
+    | Undetermined_match_refinement _ -> "E1103"
+    | Match_parameter_depends_on_index _ -> "E1104"
     (* - Match type *)
     | Matching_on_nondatatype _ -> "E1200"
     | Matching_datatype_has_degeneracy _ -> "E1201"
@@ -1057,6 +1063,23 @@ module Code = struct
             (print d)
       | Matching_wont_refine (msg, None) ->
           textf "match will not refine the goal or context (%s)" msg
+      | Undetermined_match_refinement which ->
+          let which ppf () =
+            match which with
+            | `Index x ->
+                fprintf ppf "its index@;<1 2>%a@ depends on unsolved placeholders" pp_printed
+                  (print x)
+            | `Parameters ty ->
+                fprintf ppf
+                  "the parameters of its datatype@;<1 2>%a@ depend on unsolved placeholders that might involve its indices"
+                  pp_printed (print ty) in
+          textf
+            "@[<hv 0>can't tell whether this match can refine the goal and context, since %a.@ To match without refining, write \"match … return _ [ … ]\".@ If you intended a refining match, you may be able to get one by giving more arguments explicitly, so that the placeholders are solved before this match or not created at all.@]"
+            which ()
+      | Match_parameter_depends_on_index ty ->
+          textf
+            "@[<hv 0>this match refines the goal and context, so the parameters of its datatype@;<1 2>%a@ can't depend on its indices, but as placeholders were solved they turned out to.@ To match without refining, write \"match … return _ [ … ]\".@ If you intended a refining match, check that the placeholders were solved as you intended; giving more arguments explicitly, so that they are solved before this match or not created at all, may help.@]"
+            pp_printed (print ty)
       | Dimension_mismatch (op, a, b) ->
           textf "dimension mismatch in %s (%s ≠ %s)" op (string_of_dim0 a) (string_of_dim0 b)
       | Mode_mismatch (_, op, a, why, b) ->
