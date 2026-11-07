@@ -12,6 +12,9 @@ def contra (A C : Type) (a : A) (na : A → ⊥) : C ≔ match na a [ ]
 def doublematch (n : ℕ) : bool ≔ match n [ zero. ↦ false. | suc. k ↦ match n [ zero. ↦ true. | suc. _ ↦ false. ]]
 {` We can quiet the hint this way: `}
 def doublematch' (n : ℕ) : bool ≔ match n [ zero. ↦ false. | suc. k ↦ match n return _ ↦ _ [ zero. ↦ true. | suc. _ ↦ false. ]]
+{` Or more briefly this way, which doesn't need a variable for each index: `}
+def doublematch'' (n : ℕ) : bool ≔ match n [ zero. ↦ false. | suc. k ↦ match n return _ [ zero. ↦ true. | suc. _ ↦ false. ]]
+def contra' (A C : Type) (a : A) (na : A → ⊥) : C ≔ match na a return _ [ ]
 
 def ⊤ : Type ≔ sig ()
 def zero_or_suc : ℕ → Type ≔ [ zero. ↦ ⊤ | suc. _ ↦ ⊤ ]
@@ -23,3 +26,6 @@ def Vec (A : Type) : ℕ → Type ≔ data [ nil. : Vec A zero. | cons. (n:ℕ) 
 def idvec (A : Type) (n:ℕ) : Vec A n → Vec A n ≔ [ nil. ↦ nil. | cons. n x xs ↦ cons. n x (idvec A n xs) ]
 def nil_or_cons (n:ℕ) (A:Type) : Vec A n → Type ≔ [ nil. ↦ ⊤ | cons. _ _ _ ↦ ⊤ ]
 def idvec_nil_or_cons (n:ℕ) (A:Type) (v : Vec A n) : nil_or_cons n A (idvec A n v) ≔ match (idvec A n v) return m w ↦ nil_or_cons m A w [ nil. ↦ () | cons. _ _ _ ↦ () ]
+{` A non-dependent match against an element of an indexed type `}
+def vec_is_nil (A : Type) (n : ℕ) (v : Vec A n) : bool ≔ match v return _ [ nil. ↦ true. | cons. _ _ _ ↦ false. ]
+echo vec_is_nil ℕ 0 nil.

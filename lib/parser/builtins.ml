@@ -2500,17 +2500,26 @@ let () =
       processor =
         (fun ctx obs loc ->
           let ctx = Matchscope.make ctx in
+          (* Process the branches of a match with a return-type. *)
+          let with_return tm sort obs =
+            let branches =
+              match obs with
+              | [ Token (RBracket, _) ] -> []
+              | _ -> get_branches ctx Fwn.one (must_start_with (Op "|") obs) in
+            let mtch, highers =
+              process_branches ctx [ Left (get_discriminee_window (Wrap tm)) ] Emp branches loc sort
+            in
+            match (mtch.value, highers) with
+            | Synth (Match data), _ -> locate_opt mtch.loc (Synth (Match { data with highers }))
+            | _, [] -> mtch
+            | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match") in
           match strip_gen_attributes obs with
           | Token (Match, _)
             :: Term tm
             :: Token (Return, _) (* The motive is parsed as an abstraction sub-notation *)
             :: Term ({ value = Notn ((Abs, _), n); _ } as motive)
             :: Token (LBracket, _)
-            :: obs -> (
-              let branches =
-                match obs with
-                | [ Token (RBracket, _) ] -> []
-                | _ -> get_branches ctx Fwn.one (must_start_with (Op "|") obs) in
+            :: obs ->
               let sort =
                 match args n with
                 | [ Term vars; Token (Mapsto, _); Term { value = Placeholder _; _ } ] ->
@@ -2519,14 +2528,14 @@ let () =
                     `Nondep
                       (Some ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located))
                 | _ -> `Explicit (Wrap motive) in
-              let mtch, highers =
-                process_branches ctx
-                  [ Left (get_discriminee_window (Wrap tm)) ]
-                  Emp branches loc sort in
-              match (mtch.value, highers) with
-              | Synth (Match data), _ -> locate_opt mtch.loc (Synth (Match { data with highers }))
-              | _, [] -> mtch
-              | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match"))
+              with_return tm sort obs
+          (* A bare placeholder as the motive also indicates a non-dependent match, without having to give the right number of variables for the indices. *)
+          | Token (Match, _)
+            :: Term tm
+            :: Token (Return, _)
+            :: Term { value = Placeholder _; _ }
+            :: Token (LBracket, _)
+            :: obs -> with_return tm (`Nondep None) obs
           | Token (Match, _) :: _ :: Token (Return, _) :: Term nonabs :: Token (LBracket, _) :: _ ->
               fatal ?loc:nonabs.loc (Parse_error "match motive is not an abstraction")
           | _ -> invalid "match");
