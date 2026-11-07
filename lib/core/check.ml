@@ -594,6 +594,25 @@ let stuck_after_retry : type mode. (mode, kinetic) value -> bool =
   let stuck () = Option.is_some (blocker_of (view_term v)) in
   stuck () && ((not (Global.retry_postponed ())) || stuck ())
 
+(* Some comparisons only validate something the user wrote that doesn't affect the elaborated term, such as an ascribed domain or a supplied boundary.  If one is stuck, we can go on without it, so we postpone it, reporting the mismatch if it turns out to fail, or that it is undetermined if it never gets decided. *)
+let validate ?loc (compare : unit -> unit Err.t) ~(mismatch : Unequal.t -> Code.t)
+    ~(undetermined : Unequal.t -> Code.t) : unit =
+  match retrying compare with
+  | Ok () -> ()
+  | Error (Unequal why) -> fatal ?loc (mismatch why)
+  | Error (Stuck (why, blockers)) ->
+      let last = ref why in
+      let attempt () =
+        match compare () with
+        | Ok () -> `Done
+        | Error (Stuck (why, blockers)) ->
+            last := why;
+            `Stuck blockers
+        | Error (Unequal why) ->
+            mortal ?loc (mismatch why);
+            `Done in
+      Global.postpone ~blockers ~attempt ~report:(fun () -> mortal ?loc (undetermined !last))
+
 (* Retry any woken postponed constraints before inspecting a value that is stuck, so that a decision based on it can use what they solve. *)
 let retry_if_stuck : type mode. (mode, kinetic) value -> unit =
  fun v -> ignore (stuck_after_retry v)
@@ -724,7 +743,7 @@ let rec check : type mode a b s.
             (* If the domain was supplied, the lambda must be zero-dimensional, and the supplied domain must match the checking domain, including its modality, or at least contain it as a subtype (contravariance!).  Since the variable is bound at the checking domain anyway, if the supplied one is wrong we can go on to check the body. *)
             (match (dom, D.compare_zero m) with
             | Some _, Pos _ -> fatal (Unimplemented "domain-ascribed higher abstractions")
-            | Some (dmod, dom), Zero -> (
+            | Some (dmod, dom), Zero ->
                 Reporter.mortalize ~fallback:(fun () -> ()) @@ fun () ->
                 (match Modality.compare_name dmod.value modality with
                 | Ok () -> ()
@@ -736,17 +755,12 @@ let rec check : type mode a b s.
                 let (Locked (_, lctx)) = Ctx.lock ctx modality in
                 let cdom = check Kinetic lctx dom (universe (Modality.src modality) D.zero) in
                 let edom = eval_term (Ctx.env lctx) cdom in
-                match retrying (fun () -> subtype_of lctx (CubeOf.find_top doms) edom) with
-                | Ok () -> ()
-                | Error (Unequal why | Stuck (why, _)) ->
-                    fatal ?loc:dom.loc
-                      (Unequal_synthesized_type
-                         {
-                           got = PVal (lctx, edom);
-                           expected = PVal (lctx, CubeOf.find_top doms);
-                           which = None;
-                           why;
-                         }))
+                let got, expected = (PVal (lctx, edom), PVal (lctx, CubeOf.find_top doms)) in
+                validate ?loc:dom.loc
+                  (fun () -> subtype_of lctx (CubeOf.find_top doms) edom)
+                  ~mismatch:(fun why ->
+                    Unequal_synthesized_type { got; expected; which = None; why })
+                  ~undetermined:(fun why -> Undetermined_synthesized_type { got; expected; why })
             | _ -> ());
             let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus m) in
             (* Extend the context by one variable for each type in doms, instantiated at the appropriate previous ones. *)
@@ -1365,13 +1379,24 @@ and check_of_synth : type mode a b s.
 (* Check that the type synthesized by a term is a subtype of (or with [compare], equal to) the type it is being checked against, returning the term if so.  If this comparison is stuck on unsolved metavariables, the term can't be used yet, since it might be ill-typed.  So we return instead a "guarded" delayed metavariable at the checking type, and postpone the comparison, releasing the metavariable as the term once the types are known to agree. *)
 and check_synthesized : type mode a b.
     ?compare:((mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t) ->
+    ?mismatch:(Unequal.t -> Code.t) ->
+    ?undetermined:(Unequal.t -> Code.t) ->
     (mode, a, b) Ctx.t ->
     (mode, b, kinetic) term ->
     (mode, kinetic) value ->
     (mode, kinetic) value ->
     Asai.Range.t option ->
     (mode, b, kinetic) term =
- fun ?(compare = subtype_of) ctx ktm sty ty loc ->
+ fun ?(compare = subtype_of) ?mismatch ?undetermined ctx ktm sty ty loc ->
+  (* The errors to report if the types turn out to be unequal, or are never determined to be equal. *)
+  let mismatch =
+    Option.value mismatch ~default:(fun why ->
+        Code.Unequal_synthesized_type
+          { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why }) in
+  let undetermined =
+    Option.value undetermined ~default:(fun why ->
+        Code.Undetermined_synthesized_type { got = PVal (ctx, sty); expected = PVal (ctx, ty); why })
+  in
   match retrying (fun () -> compare ctx sty ty) with
   | Ok () -> ktm
   | Error (Stuck (why, blockers)) ->
@@ -1387,20 +1412,12 @@ and check_synthesized : type mode a b.
             `Stuck blockers
         | Error (Unequal why) ->
             Global.release_unif meta (Failed Kinetic);
-            mortal ?loc
-              (Unequal_synthesized_type
-                 { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why });
+            mortal ?loc (mismatch why);
             `Done in
-      let report () =
-        mortal ?loc
-          (Undetermined_synthesized_type
-             { got = PVal (ctx, sty); expected = PVal (ctx, ty); why = !last }) in
+      let report () = mortal ?loc (undetermined !last) in
       Global.postpone ~blockers ~attempt ~report;
       guarded
-  | Error (Unequal why) ->
-      fatal
-        (Unequal_synthesized_type
-           { got = PVal (ctx, sty); expected = PVal (ctx, ty); which = None; why })
+  | Error (Unequal why) -> fatal (mismatch why)
 
 (* Deal with checking a potential term in kinetic position *)
 and kinetic_of_potential : type mode a b.
@@ -1847,16 +1864,11 @@ and check_letonly_term : type mode a b mn.
                   "bound term has a type of dimension %s, which isn't an instantiation of a type of dimension %s"
                   (string_of_dim0 (TubeOf.out tyargs))
                   (string_of_dim0 mn)))
-      | Some (Factor mn_l) -> (
+      | Some (Factor mn_l) ->
           (* The instantiation arguments that we need are the last ones applied, which come first in the tube. *)
           let args, _ = TubeOf.split (D.zero_plus mn) mn_l tyargs in
           let expected = inst ty args in
-          match retrying (fun () -> subtype_of ctx sty expected) with
-          | Ok () -> (ctm, args)
-          | Error (Unequal why | Stuck (why, _)) ->
-              fatal ?loc:tm.loc
-                (Unequal_synthesized_type
-                   { got = PVal (ctx, sty); expected = PVal (ctx, expected); which = None; why })))
+          (check_synthesized ctx ctm sty expected tm.loc, args))
   | Pos _, _ -> fatal ?loc:tm.loc (Nonsynthesizing "bound term of higher-dimensional let-only")
 
 (* The "dirt" of a context variable bound to a let-rec metavariable: if the metavariable is still undefined, it is currently being defined, so a reference to it is a recursive occurrence; once it is defined, we use the recursion verdict that was recorded when its value was checked. *)
@@ -4931,20 +4943,19 @@ and synth_arg_cube : type dom modality mode a b n c.
               | `Proper pfa, Given (toploc, nk, argtyargs) ->
                   let (Plus ml) = D.plus (D.plus_right nk) in
                   let { tm = etm; ty = ety } = TubeOf.find argtyargs (pface_plus pfa nk ml) in
-                  with_loc toploc (fun () ->
-                      match retrying (fun () -> equal_val lctx (Lazy.force ety) ty) with
-                      | Ok () -> ()
-                      | Error (Unequal why | Stuck (why, _)) ->
-                          fatal
-                            (Unequal_synthesized_boundary
-                               {
-                                 face = fa;
-                                 got = PVal (lctx, Lazy.force ety);
-                                 expected = PVal (lctx, ty);
-                                 why;
-                               }));
                   let ctm = readback_at Kinetic lctx etm (Lazy.force ety) in
-                  (ctm, ready (Val etm))
+                  let got, expected = (PVal (lctx, Lazy.force ety), PVal (lctx, ty)) in
+                  (* If we can't yet tell whether the boundary has the right type, it is guarded by a delayed metavariable, whose value we must then use instead. *)
+                  let gtm =
+                    with_loc toploc (fun () ->
+                        check_synthesized ~compare:equal_val
+                          ~mismatch:(fun why ->
+                            Unequal_synthesized_boundary { face = fa; got; expected; why })
+                          ~undetermined:(fun why ->
+                            Undetermined_synthesized_boundary { face = fa; got; expected; why })
+                          lctx ctm (Lazy.force ety) ty toploc) in
+                  if gtm == ctm then (ctm, ready (Val etm))
+                  else (gtm, lazy_eval_at (Ctx.env lctx) gtm ty)
               | `Proper _, Placeholders (loc, err) ->
                   let ctm = check Kinetic lctx { value = Unif (Some err); loc } ty in
                   (ctm, lazy_eval_at (Ctx.env lctx) ctm ty)
@@ -5281,24 +5292,22 @@ and check_at_pi : type mode n a c e.
                              ( `Explicit,
                                "argument",
                                "expecting implicit argument of constructor " ^ Constr.to_string c ))
-                    | (utm, { value = `Implicit; _ }) :: rest -> (
+                    | (utm, { value = `Implicit; _ }) :: rest ->
                         args := rest;
                         (* Since the checked term doesn't use the supplied boundary (see below), if it is wrong we can just go on. *)
                         Reporter.mortalize ~fallback:(fun () -> ()) @@ fun () ->
                         let uty = Lazy.force t.ty in
                         let uctm = check Kinetic lctx utm uty in
                         let uetm = eval_term (Ctx.env lctx) uctm in
-                        match retrying (fun () -> equal_at lctx uetm t.tm uty) with
-                        | Ok () -> ()
-                        | Error (Unequal why | Stuck (why, _)) ->
-                            fatal ?loc:utm.loc
-                              (Unequal_boundary_argument
-                                 {
-                                   face = sface_of_tface fa;
-                                   got = PNormal (lctx, { tm = uetm; ty = t.ty });
-                                   expected = PNormal (lctx, t);
-                                   why;
-                                 }))));
+                        let face = sface_of_tface fa in
+                        let got, expected =
+                          (PNormal (lctx, { tm = uetm; ty = t.ty }), PNormal (lctx, t)) in
+                        validate ?loc:utm.loc
+                          (fun () -> equal_at lctx uetm t.tm uty)
+                          ~mismatch:(fun why ->
+                            Unequal_boundary_argument { face; got; expected; why })
+                          ~undetermined:(fun why ->
+                            Undetermined_boundary_argument { face; got; expected; why })));
                 (* Either way, the checked term keeps the boundary read back from the type, so that supplying it as documentation can't change the elaborated term. *)
                 readback_nf lctx t);
           }

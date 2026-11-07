@@ -2906,3 +2906,176 @@ Whether a match against a variable can refine the goal and context depends on it
      ^ missing match clause for constructor nil
   
   [1]
+
+The remaining comparisons in the typechecker are postponed too.  Those that only validate something written by the user that doesn't affect the elaborated term, such as an ascribed domain of an abstraction or a supplied boundary of a constructor, are postponed without guarding anything.  The boundary of a higher-dimensional primary argument, and the bound term of a higher-dimensional let-only, are guarded by delayed metavariables.
+
+  $ narya -v - <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > axiom a : A
+  > def ok : A ≔ let F : Type → Type ≔ _ in let h : A → A → A ≔ (x : F A) ↦ (y ↦ x) in let k : Id (Type → Type) F (X ↦ X) ≔ refl (X ↦ X) in h a a
+  > def bad : A ≔ let F : Type → Type ≔ _ in let h : A → A → A ≔ (x : F B) ↦ (y ↦ x) in let k : Id (Type → Type) F (X ↦ X) ≔ refl (X ↦ X) in h a a
+  > def und : A ≔ let F : Type → Type ≔ _ in let h : A → A → A ≔ (x : F A) ↦ (y ↦ x) in h a a
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > axiom n₀ : ℕ
+  > axiom n₁ : ℕ
+  > axiom n₂ : Id ℕ n₀ n₁
+  > def cok : ℕ ≔ let F : ℕ → ℕ ≔ _ in let s : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {F zero.} {n₁} n₂ in let k : (x : ℕ) → Id ℕ (F x) n₀ ≔ x ↦ refl n₀ in zero.
+  > def cbad : ℕ ≔ let F : ℕ → ℕ ≔ _ in let s : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {F zero.} {n₁} n₂ in let k : (x : ℕ) → Id ℕ (F x) n₁ ≔ x ↦ refl n₁ in zero.
+  > def cund : ℕ ≔ let F : ℕ → ℕ ≔ _ in let s : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {F zero.} {n₁} n₂ in zero.
+  > axiom b0 : B
+  > axiom b1 : B
+  > axiom b2 : Id B b0 b1
+  > def lok : B ≔ let only G : Type → Type ≔ _ and x : Id (G B) ≔ b2 and k : Id (Type → Type) G (X ↦ X) ≔ refl (X ↦ X) in x.0
+  > def aok : B ≔ let G : Type → Type ≔ _ in let f : G B → B ≔ _ ↦ b0 in let r ≔ refl f b2 in let k : Id (Type → Type) G (X ↦ X) ≔ refl (X ↦ X) in b0
+  > def aund : B ≔ let G : Type → Type ≔ _ in let f : G B → B ≔ _ ↦ b0 in let r ≔ refl f b2 in b0
+  > EOF
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0000]
+   ￮ constant ok defined
+  
+   ￫ error[E0401]
+   ￭ stdin
+   5 | def bad : A ≔ let F : Type → Type ≔ _ in let h : A → A → A ≔ (x : F B) ↦ (y ↦ x) in let k : Id (Type → Type) F (X ↦ X) ≔ refl (X ↦ X) in h a a
+     ^ term synthesized type
+         B
+       but is being checked against type
+         A
+       unequal head constants:
+         A
+       does not equal
+         B
+  
+   ￫ error[E0406]
+   ￭ stdin
+   6 | def und : A ≔ let F : Type → Type ≔ _ in let h : A → A → A ≔ (x : F A) ↦ (y ↦ x) in h a a
+     ^ term synthesized type
+         F A
+       and is being checked against type
+         A
+       but can't determine whether they are equal, since comparing head terms
+         A
+       and
+         F
+       depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   6 | def und : A ≔ let F : Type → Type ≔ _ in let h : A → A → A ≔ (x : F A) ↦ (y ↦ x) in h a a
+     ^ can't determine a value for this placeholder
+  
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0001]
+   ￮ axiom n₀ assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n₁ assumed
+  
+   ￫ info[I0001]
+   ￮ axiom n₂ assumed
+  
+   ￫ info[I0000]
+   ￮ constant cok defined
+  
+   ￫ error[E1004]
+   ￭ stdin
+   12 | def cbad : ℕ ≔ let F : ℕ → ℕ ≔ _ in let s : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {F zero.} {n₁} n₂ in let k : (x : ℕ) → Id ℕ (F x) n₁ ≔ x ↦ refl n₁ in zero.
+      ^ supplied 0-boundary argument
+          n₁
+        doesn't match the one determined by the type
+          n₀
+        unequal head constants:
+          n₁
+        does not equal
+          n₀
+  
+   ￫ error[E1005]
+   ￭ stdin
+   13 | def cund : ℕ ≔ let F : ℕ → ℕ ≔ _ in let s : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {F zero.} {n₁} n₂ in zero.
+      ^ can't determine whether supplied 0-boundary argument
+          F 0
+        matches the one determined by the type
+          n₀
+        since comparing head terms
+          F
+        and
+          n₀
+        depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   13 | def cund : ℕ ≔ let F : ℕ → ℕ ≔ _ in let s : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {F zero.} {n₁} n₂ in zero.
+      ^ can't determine a value for this placeholder
+  
+   ￫ info[I0001]
+   ￮ axiom b0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b2 assumed
+  
+   ￫ info[I0000]
+   ￮ constant lok defined
+  
+   ￫ info[I0000]
+   ￮ constant aok defined
+  
+   ￫ error[E0710]
+   ￭ stdin
+   19 | def aund : B ≔ let G : Type → Type ≔ _ in let f : G B → B ≔ _ ↦ b0 in let r ≔ refl f b2 in b0
+      ^ the 0-boundary synthesized type
+          B
+        and is being checked against type
+          G B
+        but can't determine whether they are equal, since comparing head terms
+          B
+        and
+          G
+        depends on unsolved placeholders
+  
+   ￫ error[E0710]
+   ￭ stdin
+   19 | def aund : B ≔ let G : Type → Type ≔ _ in let f : G B → B ≔ _ ↦ b0 in let r ≔ refl f b2 in b0
+      ^ the 1-boundary synthesized type
+          B
+        and is being checked against type
+          G B
+        but can't determine whether they are equal, since comparing head terms
+          B
+        and
+          G
+        depends on unsolved placeholders
+  
+   ￫ error[E0406]
+   ￭ stdin
+   19 | def aund : B ≔ let G : Type → Type ≔ _ in let f : G B → B ≔ _ ↦ b0 in let r ≔ refl f b2 in b0
+      ^ term synthesized type
+          Id B b0 b1
+        and is being checked against type
+          refl G (Id B) ?u13 ?u14
+        but can't determine whether they are equal, since comparing head terms
+          B
+        and
+          G
+        depends on unsolved placeholders
+      ^ ?u13 stands for this term, whose type hasn't been checked yet
+      ^ ?u14 stands for this term, whose type hasn't been checked yet
+  
+   ￫ error[E2004]
+   ￭ stdin
+   19 | def aund : B ≔ let G : Type → Type ≔ _ in let f : G B → B ≔ _ ↦ b0 in let r ≔ refl f b2 in b0
+      ^ can't determine a value for this placeholder
+  
+  [1]

@@ -142,6 +142,13 @@ module Code = struct
         why : Unequal.t;
       }
         -> t
+    | Undetermined_synthesized_boundary : {
+        face : ('a, 'b) sface;
+        got : printable;
+        expected : printable;
+        why : Unequal.t;
+      }
+        -> t
     | Not_enough_domains : 'a D.t -> t
     | Invalid_higher_function : string -> t
     | Invalid_higher_letonly : string -> t
@@ -198,6 +205,13 @@ module Code = struct
         -> t
     | Unequal_indices : printable * printable * Unequal.t -> t
     | Unequal_boundary_argument : {
+        face : ('a, 'b) sface;
+        got : printable;
+        expected : printable;
+        why : Unequal.t;
+      }
+        -> t
+    | Undetermined_boundary_argument : {
         face : ('a, 'b) sface;
         got : printable;
         expected : printable;
@@ -383,6 +397,7 @@ module Code = struct
     | Undetermined_function_type _ -> Error
     | Undetermined_record_type _ -> Error
     | Unequal_synthesized_boundary _ -> Error
+    | Undetermined_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
     | Invalid_higher_letonly _ -> Error
@@ -413,6 +428,7 @@ module Code = struct
     | Missing_instantiation_constructor _ -> Error
     | Unequal_indices _ -> Error
     | Unequal_boundary_argument _ -> Error
+    | Undetermined_boundary_argument _ -> Error
     | Unbound_variable _ -> Error
     | Undefined_constant _ -> Bug
     | Undefined_metavariable _ -> Bug
@@ -621,6 +637,7 @@ module Code = struct
     | Unexpected_implicitness _ -> "E0702"
     | Insufficient_dimension _ -> "E0703"
     | Unequal_synthesized_boundary _ -> "E0704"
+    | Undetermined_synthesized_boundary _ -> "E0710"
     | Not_enough_domains _ -> "E0705"
     | Invalid_higher_function _ -> "E0706"
     | Invalid_nullary_application -> "E0707"
@@ -643,6 +660,7 @@ module Code = struct
     | Missing_instantiation_constructor _ -> "E1002"
     | Unequal_indices _ -> "E1003"
     | Unequal_boundary_argument _ -> "E1004"
+    | Undetermined_boundary_argument _ -> "E1005"
     (* Matches *)
     (* - Match variable *)
     | Unnamed_variable_in_match -> "E1100"
@@ -861,6 +879,12 @@ module Code = struct
             "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
             (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
             (print p1) pp_printed (print p2)
+      | Undetermined_synthesized_boundary { face; got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
+          textf
+            "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ and is being checked against type@;<1 2>%a@ but can't determine whether they are equal, since comparing %s@;<1 2>%a@ and@;<1 2>%a@ depends on unsolved placeholders@]"
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
       | Not_enough_domains dim ->
           textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
       | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
@@ -982,6 +1006,12 @@ module Code = struct
           let str, p1, p2 = Unequal.printables why in
           textf
             "@[<hv 0>supplied %s-boundary argument@;<1 2>%a@ doesn't match the one determined by the type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
+      | Undetermined_boundary_argument { face; got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
+          textf
+            "@[<hv 0>can't determine whether supplied %s-boundary argument@;<1 2>%a@ matches the one determined by the type@;<1 2>%a@ since comparing %s@;<1 2>%a@ and@;<1 2>%a@ depends on unsolved placeholders@]"
             (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
             (print p1) pp_printed (print p2)
       | Unbound_variable (c, alt) -> (
