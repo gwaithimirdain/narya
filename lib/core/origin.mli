@@ -28,7 +28,6 @@ module Origin : sig
   val rewind_command : Instant.t -> (unit -> 'a) -> 'a
   val rewind_command_then_undo : Instant.t -> (unit -> 'a) -> 'a
   val speculate : (unit -> ('a, 'b) Result.t) -> ('a, 'b) Result.t
-  val speculate_exn : (unit -> 'a) -> 'a
   val speculate_discard : (unit -> 'b) -> 'b
 end
 

@@ -207,13 +207,6 @@ module Origin = struct
         backtrack ();
         Printexc.raise_with_backtrace e bt
 
-  (* Speculate, backtracking only if the callback raises an exception. *)
-  let speculate_exn : type a. (unit -> a) -> a =
-   fun callback ->
-    match speculate (fun () : (a, Util.Empty.t) Result.t -> Ok (callback ())) with
-    | Ok x -> x
-    | Error _ -> .
-
   (* Speculate, always backtracking, so that only the result of the callback is retained, not its effects on the state. *)
   let speculate_discard : type b. (unit -> b) -> b =
    fun callback ->

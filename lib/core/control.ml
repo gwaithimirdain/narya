@@ -21,12 +21,3 @@ let speculate (f : unit -> 'a) : ('a * Reporter.pending Bwd.t, Reporter.pending 
 (* Like [speculate], but its effects on the global state are always backtracked, even if it succeeds, so that only its result and its diagnostics are retained.  This is for an attempt whose result is used only to decide what to report. *)
 let trial (f : unit -> 'a) : ('a * Reporter.pending Bwd.t, Reporter.pending Bwd.t) Result.t =
   Origin.speculate_discard (fun () -> Reporter.speculate f)
-
-(* Run a callback that might fail with a fatal error from which the caller recovers by redoing its work in a different way, holding back the diagnostics it reports.  If it raises any exception, its effects on the global state are backtracked.  If that was a fatal error for which [recover] supplies a recovery, the diagnostics are discarded along with the failed attempt and the recovery is run instead.  Otherwise they are passed on as if nothing had happened. *)
-let recovering ~(recover : Reporter.Code.t Asai.Diagnostic.t -> 'a option) (f : unit -> 'a) : 'a =
-  match Reporter.collect (fun () -> Origin.speculate_exn f) with
-  | (Error d, _) as result -> (
-      match recover d with
-      | Some g -> g
-      | None -> Reporter.uncollect result)
-  | result -> Reporter.uncollect result
