@@ -23,9 +23,19 @@ module Readback = struct
   module Displaying = Algaeff.Reader.Make (Bool)
 
   (* The "Unifying" reader records whether we're reading back a value to be the solution of a unification metavariable, and if so which one.  In that case the readback must fail, by raising Unsolvable, if the value refers to a variable that isn't in the context (since the solution lives in the smaller context of the metavariable), or if it contains the metavariable itself, either directly or through the definition of some other metavariable.  To avoid the latter, we unfold all solved unification metavariables and all definition metavariables of the current origin (such as let-bound variables), failing if any of the latter don't have a value to unfold to. *)
-  module Unifying = Algaeff.Reader.Make (struct
-    type t = unifying option
-  end)
+  (* This is consulted on every readback of a neutral, so rather than a reader effect, whose cost grows with the number of handlers installed, it is a reference set for a dynamic extent, with the same interface as a reader. *)
+  module Unifying = struct
+    let current : unifying option ref = ref None
+    let read () = !current
+
+    let run ~(env : unifying option) (f : unit -> 'a) : 'a =
+      let old = !current in
+      current := env;
+      Fun.protect ~finally:(fun () -> current := old) f
+
+    let scope (g : unifying option -> unifying option) (f : unit -> 'a) : 'a =
+      run ~env:(g !current) f
+  end
 
   (* A readback failure is rigid if the value can't be the solution of the metavariable however any other metavariables are solved, because the metavariable itself or a variable outside the image of its renaming occurs in a rigid position: not inside a neutral that is stuck on a metavariable or that might unfold, and not at a singleton type, where it could be replaced by anything else.  Otherwise it is flexible. *)
   exception Unsolvable of [ `Rigid | `Flexible ]
@@ -34,8 +44,7 @@ end
 open Readback
 
 let () =
-  Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect");
-  Unifying.register_printer (function `Read -> Some "unhandled Readback.Unifying.read effect")
+  Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect")
 
 (* Degenerating a context by a dimension (for the non-projectable instances of higher codata fields, when displaying a codatatype or comatch).  The degeneration itself is implemented in the downstream module Degctx, because it does an eval-readback cycle and hence depends on this file; but the readback/display code that consumes it lives here (below), so we make the degeneration a forward reference set by Degctx.  The result packages the degeneration plus-map, the degenerated context, and the canonical k-dimensional environment from it back to the original. *)
 type (_, _, _, _) degctx =
@@ -436,7 +445,10 @@ let with_blocked_dependence (f : blocker -> unit) (readback : unit -> 'a) : 'a =
 
 (* When reading back the solution of a unification metavariable, record that we are inside a rigid neutral or constructor. *)
 let rigidly (f : unit -> 'a) : 'a =
-  Unifying.scope (Option.map (fun u -> { u with under_rigid = true })) f
+  match Unifying.read () with
+  | Some ({ under_rigid = false; _ } as u) ->
+      Unifying.run ~env:(Some { u with under_rigid = true }) f
+  | _ -> f ()
 
 (* Whether a type is a singleton, which is defined downstream in Unify. *)
 type singleton = { test : 'mode 'a 'b. ('mode, 'a, 'b) Ctx.t -> ('mode, kinetic) value -> bool }
