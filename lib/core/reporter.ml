@@ -1661,14 +1661,6 @@ let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
       release !pendings;
       Printexc.raise_with_backtrace exn bt
 
-(* Pass on the results of [collect] as if it hadn't happened, releasing the delayed diagnostics and either returning the result or re-raising the fatal error.
-   This is an internal function that should not be called outside Reporter, except by white-box tests.  *)
-let uncollect (result, ps) =
-  release ps;
-  match result with
-  | Result.Ok x -> x
-  | Error d -> fatal_diagnostic d
-
 (* Run a callback that should fail if it reports any mortal errors, even if it returns a result.  This is appropriate for a unit of work, such as a command, that shouldn't take effect if it had any errors.  All errors are passed on outwards immediately, and if any such errors occurred, a (silent) fatal error is raised at the end.  Inside the callback, [moribund] refers only to the errors it has reported. *)
 let failing_on_errors ?(why = "failing_on_errors") f =
   let errors = ref Emp in

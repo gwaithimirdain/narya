@@ -2378,11 +2378,11 @@ A unification metavariable whose environment is not a renaming can't be solved y
      ^ term synthesized type
          B a
        and is being checked against type
-         B (let only … in ?u3)
+         B (let only … in ?u1)
        but can't determine whether they are equal, since comparing head terms
          a
        and
-         let only … in ?u3
+         let only … in ?u1
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -2399,11 +2399,11 @@ A unification metavariable whose environment is not a renaming can't be solved y
      ^ term synthesized type
          B a
        and is being checked against type
-         B (let only a : A ≔ a and b : B a ≔ b and x : A ≔ a in ?u5)
+         B (let only a : A ≔ a and b : B a ≔ b and x : A ≔ a in ?u3)
        but can't determine whether they are equal, since comparing head terms
          a
        and
-         let only a : A ≔ a and b : B a ≔ b and x : A ≔ a in ?u5
+         let only a : A ≔ a and b : B a ≔ b and x : A ≔ a in ?u3
        depends on unsolved placeholders
   
    ￫ error[E2004]
