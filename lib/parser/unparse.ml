@@ -2188,6 +2188,12 @@ let () =
           pp_complete_term
             (Wrap (unparse (Names.of_ctx ctx) tm No.Interval.entire No.Interval.entire))
             `None
+      | PHead (ctx, h) ->
+          pp_complete_term
+            (Wrap
+               (unparse (Names.of_ctx ctx) (readback_head ctx h) No.Interval.entire
+                  No.Interval.entire))
+            `None
       | PVal (ctx, tm) ->
           pp_complete_term
             (Wrap

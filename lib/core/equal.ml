@@ -401,9 +401,7 @@ and equal_neu : type mode a b.
       | Some Eq, Some Eq -> (
           match equal_head ctx head1 head2 with
           | Some (Error err) -> Error (map_why (fun why -> Heads why) err)
-          | None ->
-              let h1, h2 = (readback_head ctx head1, readback_head ctx head2) in
-              fail (Heads (Terms (PTerm (ctx, h1), PTerm (ctx, h2))))
+          | None -> fail (Heads (Terms (PHead (ctx, head1), PHead (ctx, head2))))
           | Some (Ok ()) -> (
               match equal_apps ctx apps1 apps2 with
               | None -> fail (Terms (PVal (ctx, x), PVal (ctx, y)))
@@ -456,8 +454,7 @@ and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> 
           | Eq -> return ()
           | Neq -> None
         else None
-      else
-        Some (fail (Variables (PTerm (ctx, readback_head ctx x), PTerm (ctx, readback_head ctx y))))
+      else Some (fail (Variables (PHead (ctx, x), PHead (ctx, y))))
   | Const { name = c1; ins = i1 }, Const { name = c2; ins = i2 } -> (
       let* () = Some (guard (c1 = c2) (Unequal.Constants (c1, c2))) in
       match D.compare (cod_left_ins i1) (cod_left_ins i2) with
@@ -536,9 +533,7 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
           match equal_head ctx head1 head2 with
           | Some (Ok ()) -> return ()
           | Some (Error err) -> Some (Error (map_why (fun why -> Heads why) err))
-          | None ->
-              let t1, t2 = (readback_head ctx head1, readback_head ctx head2) in
-              Some (fail (Heads (Terms (PTerm (ctx, t1), PTerm (ctx, t2)))))))
+          | None -> Some (fail (Heads (Terms (PHead (ctx, head1), PHead (ctx, head2)))))))
   | Snoc (rest1, Arg (filter1, a1, i1)), Snoc (rest2, Arg (filter2, a2, i2)) -> (
       let modality1 = Modality.filter_modality filter1 in
       let modality2 = Modality.filter_modality filter2 in
