@@ -1965,8 +1965,8 @@ let renamed_ctx : type mode a b c d n x any.
           (Ctx.Ordered.invis rest ifilter vbs, (fun tm -> wrap (Lam (vars, dim, filter, tm))), ty)
     | Snoc (_, Field _) | Snoc (_, Inst _) -> raise_notrace Not_renaming in
   match (env, args) with
-  (* If the environment is literally the identity environment of a context, and there are no arguments, that context itself is what we want. *)
-  | Ctx mctx, Emp ->
+  (* If the environment is the identity environment of the metavariable's own context, and there are no arguments, that context itself is what we want.  It isn't enough for the environment to be the identity environment of *some* context, since that context might have let-bound some of the variables of the metavariable's context, e.g. a match that refines a variable to a constructor in a branch; then reading back in that context could find a solution that isn't the most general one. *)
+  | Ctx _, Emp when Option.is_some (is_identity_ordered_env mctx env (Meta.tctx meta)) ->
       Some
         (Renamed_ctx
            {

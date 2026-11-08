@@ -2378,11 +2378,11 @@ A unification metavariable whose environment is not a renaming can't be solved y
      ^ term synthesized type
          B a
        and is being checked against type
-         B (let only … in ?u1)
+         B (let only … in ?u3)
        but can't determine whether they are equal, since comparing head terms
          a
        and
-         let only … in ?u1
+         let only … in ?u3
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -2399,11 +2399,11 @@ A unification metavariable whose environment is not a renaming can't be solved y
      ^ term synthesized type
          B a
        and is being checked against type
-         B (let only a : A ≔ a and b : B a ≔ b and x : A ≔ a in ?u3)
+         B (let only a : A ≔ a and b : B a ≔ b and x : A ≔ a in ?u5)
        but can't determine whether they are equal, since comparing head terms
          a
        and
-         let only a : A ≔ a and b : B a ≔ b and x : A ≔ a in ?u3
+         let only a : A ≔ a and b : B a ≔ b and x : A ≔ a in ?u5
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -2414,6 +2414,69 @@ A unification metavariable whose environment is not a renaming can't be solved y
    ￫ error[E2004]
    ￭ stdin
    8 | def H (a : A) : Type ≔ let G : A → Type ≔ x ↦ B _ in let k : G a → G a ≔ y ↦ y in A
+     ^ can't determine a value for this placeholder
+  
+  [1]
+
+In particular, a metavariable in the type of a match against a variable must not be solved from a branch, even if the solution doesn't mention the variable, since that solution need not be the most general one.  Here ?u0 might be C c, so the second branch is not a type error, though since nothing else determines ?u0 it remains unsolved.
+
+  $ narya -v - <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > axiom C : Bool → Type
+  > axiom c1 : C true.
+  > axiom c2 : C false.
+  > axiom k (X : Type) (x : X) : Bool
+  > def t (c : Bool) : Bool ≔ k _ (match c [ true. ↦ c1 | false. ↦ c2 ])
+  > EOF
+   ￫ info[I0000]
+   ￮ constant Bool defined
+  
+   ￫ info[I0001]
+   ￮ axiom C assumed
+  
+   ￫ info[I0001]
+   ￮ axiom c1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom c2 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom k assumed
+  
+   ￫ hint[H0403]
+   ￭ stdin
+   6 | def t (c : Bool) : Bool ≔ k _ (match c [ true. ↦ c1 | false. ↦ c2 ])
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ error[E0406]
+   ￭ stdin
+   6 | def t (c : Bool) : Bool ≔ k _ (match c [ true. ↦ c1 | false. ↦ c2 ])
+     ^ term synthesized type
+         C true.
+       and is being checked against type
+         ?u0
+       but can't determine whether they are equal, since comparing head terms
+         C
+       and
+         ?u0
+       depends on unsolved placeholders
+  
+   ￫ error[E0406]
+   ￭ stdin
+   6 | def t (c : Bool) : Bool ≔ k _ (match c [ true. ↦ c1 | false. ↦ c2 ])
+     ^ term synthesized type
+         C false.
+       and is being checked against type
+         ?u0
+       but can't determine whether they are equal, since comparing head terms
+         C
+       and
+         ?u0
+       depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   6 | def t (c : Bool) : Bool ≔ k _ (match c [ true. ↦ c1 | false. ↦ c2 ])
      ^ can't determine a value for this placeholder
   
   [1]
