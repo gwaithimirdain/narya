@@ -86,8 +86,7 @@ let check_term (def : defined_const) : checked_term =
           synth
             (Potential (Constant (const, Ctx.mode ctx, D.zero), Ctx.apps ctx, Ctx.lam ctx))
             ctx tm in
-        (* The synthesized type is stored in the compiled file, so we read it back with sharing (see Readback.sharing). *)
-        (ctm, sharing (fun () -> readback_val ctx ety)) in
+        (ctm, readback_val ctx ety) in
       let ty = Telescope.pis cparams cty in
       let tm = Ctx.lam ctx ctm in
       Global.add const (Definition { mode; ty; tm = `Defined tm; parametric = `Maybe_parametric });

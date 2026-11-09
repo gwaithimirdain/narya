@@ -158,7 +158,7 @@ module Shared_table = Hashtbl.Make (struct
     | Eq -> x.value == y.value
     | Neq -> false
 
-  let hash (Key x) = Hashtbl.hash (x.displaying, shallow_hash 2 x.value)
+  let hash (Key x) = Hashtbl.hash (x.displaying, shallow_hash 1 x.value)
 end)
 
 (* An earlier readback of a value: the context it was read back in, and the result.  The same value may have been read back in several contexts, none of which is a prefix of another, so we store a list of these for each value. *)
@@ -532,8 +532,8 @@ and readback_at_type : type mode a z s.
 and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
  fun ctx x ->
   match x with
-  (* A variable is no larger as a term than a reference to an earlier readback of it would be. *)
-  | Neu { head = Live (Var _); args = Emp; _ } -> readback_val_unshared ctx x
+  (* A variable, constant, or universe is no larger as a term than a reference to an earlier readback of it would be, and is quicker to read back than to look up. *)
+  | Neu { head = Live (Var _ | Const _ | UU _); args = Emp; _ } -> readback_val_unshared ctx x
   | Neu { head = Live _; _ } when Option.is_some !sharing_table -> readback_shared ctx x
   | _ -> readback_val_unshared ctx x
 
@@ -1308,3 +1308,52 @@ let rec readback_about : type mode a b.
       | Realize v -> readback_about ctx v
       | Unrealized -> None)
   | _ -> None
+
+(* Every readback shares repeated values (see sharing) within each call from outside this module.  So we shadow the entry points above by versions that open a sharing scope.  Their recursive calls to each other above stay inside the scope opened by the outermost call, without the cost of opening one. *)
+let readback_nf : type mode a z.
+    ?eta:bool -> (mode, z, a) Ctx.t -> mode normal -> (mode, a, kinetic) term =
+ fun ?eta ctx x -> sharing @@ fun () -> readback_nf ?eta ctx x
+
+let readback_at : type mode a z s.
+    ?eta:bool ->
+    (mode, s) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (mode, s) value ->
+    (mode, kinetic) value ->
+    (mode, a, s) term =
+ fun ?eta status ctx tm ty -> sharing @@ fun () -> readback_at ?eta status ctx tm ty
+
+let readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
+ fun ctx x -> sharing @@ fun () -> readback_val ctx x
+
+let readback_neu : type hmode mode a z any.
+    ?canonical:[ `Canonical | `Other ] ->
+    (mode, z, a) Ctx.t ->
+    hmode head ->
+    (hmode, mode, any, live) apps ->
+    (mode, a, kinetic) term =
+ fun ?canonical ctx head apps -> sharing @@ fun () -> readback_neu ?canonical ctx head apps
+
+let readback_head : type mode c z.
+    ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
+    =
+ fun ?canonical ctx h -> sharing @@ fun () -> readback_head ?canonical ctx h
+
+let readback_env : type mode n a b c d.
+    (mode, a, b) Ctx.t -> (mode, n, d) Value.env -> (mode, c, d) termctx -> (mode, b, n, d) Term.env
+    =
+ fun ctx env envctx -> sharing @@ fun () -> readback_env ctx env envctx
+
+let readback_ordered_env : type mode n a b c d.
+    (mode, a, b) Ctx.t ->
+    (mode, n, d) Value.env ->
+    (mode, c, d) ordered_termctx ->
+    (mode, b, n, d) Term.env =
+ fun ctx env envctx -> sharing @@ fun () -> readback_ordered_env ctx env envctx
+
+let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx =
+ fun ctx -> sharing @@ fun () -> readback_ctx ctx
+
+let readback_about : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) Value.value -> (mode, b, potential) Term.term option =
+ fun ctx value -> sharing @@ fun () -> readback_about ctx value
