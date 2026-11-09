@@ -5,12 +5,11 @@
 (* The recursion status of a datatype (or, during checking, of a single constructor or the value of a let binding): either it definitely contains no occurrences of anything currently being defined, or it definitely contains one, or it is not yet known because of unsolved holes whose eventual solutions might contain occurrences.  In the unknown case we store the blocking metavariables, so that when they are solved, the verdicts recorded for their solutions can be chased at the point of use (just as evaluation of a term containing metavariables consults their definitions). *)
 type recursion = [ `Nonrecursive | `Recursive | `Unknown of Meta.WrapSet.t ]
 
-(* When "linking" a marshaled term unpickled from a compiled file, the metavariables in an `Unknown verdict must have their file autonumbers replaced along with all the other metavariables occurring in terms (see Link).  (Compiled files can't contain unsolved holes, but an `Unknown verdict blocked on since-solved holes is never rewritten, so it can appear in a compiled file.) *)
-let link_recursion : (Origin.File.t -> Origin.File.t) -> recursion -> recursion =
+(* When "linking" a marshaled term unpickled from a compiled file, the metavariables in an `Unknown verdict must have their file autonumbers replaced along with all the other metavariables occurring in terms (see Link).  (Compiled files can't contain unsolved holes, but an `Unknown verdict blocked on since-solved holes is never rewritten, so it can appear in a compiled file.)  This happens in place, and doesn't disturb the set, since metavariables are ordered in it by their identities only, not their origins. *)
+let link_recursion : (Origin.File.t -> Origin.File.t) -> recursion -> unit =
  fun f -> function
-  | `Nonrecursive -> `Nonrecursive
-  | `Recursive -> `Recursive
-  | `Unknown ms -> `Unknown (Meta.WrapSet.map (fun (Meta.Wrap m) -> Meta.Wrap (Meta.remake f m)) ms)
+  | `Nonrecursive | `Recursive -> ()
+  | `Unknown ms -> Meta.WrapSet.iter (fun (Meta.Wrap m) -> Meta.relink f m) ms
 
 let merge : recursion -> recursion -> recursion =
  fun x y ->

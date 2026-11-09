@@ -91,7 +91,8 @@ let pp_pattern : type left right. (left, right) Pattern.t -> document * Whitespa
 module Id = struct
   open Origin
 
-  type t = Origin.t * int
+  (* As for constants, the origin can be updated in place by linking (see Origin.make_canonical). *)
+  type t = int Origin.origined
 
   let compare : t -> t -> int = compare
 
@@ -102,15 +103,10 @@ module Id = struct
     let current = Origin.current () in
     let number = Versioned.get counters in
     Versioned.set counters (number + 1);
-    (current, number)
+    { origin = current; value = number }
 
-  (* Recreate an id with an altered file identifier, as when linking. *)
-  let remake f ((o : Origin.t), i) =
-    match o with
-    | File n -> (Origin.File (f n), i)
-    (* A notation defined interactively is never marshaled, so it is never linked either. *)
-    | Top -> (o, i)
-    | Instant _ -> raise (Failure "User.Id: can't remake interactive notation")
+  (* Link an id in place, as for constants. *)
+  let relink f (id : t) = Origin.make_canonical f id
 end
 
 (* A user "prenotation" includes all the information from a "notation" command, parsed and validated into a pattern, fixity, and so on, but not yet compiled into a notation tree. *)

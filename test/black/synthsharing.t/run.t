@@ -26,3 +26,25 @@ the current figures but catch a return of the blowup.
   >   if (ok) print "allocation and peak heap within budget"
   > }' gc.log
   allocation and peak heap within budget
+
+The sharing is preserved in the compiled file, since marshaling preserves it,
+and when the compiled file is loaded, since linking updates the origins of
+constants in place rather than rebuilding the terms (see Link).  Without
+sharing, the compiled file was about 3e7 bytes, and loading it allocated about
+8e7 words with a peak heap of 4.6e7 words (and still 5.5e7 and 1.8e7 when the
+compiled file was shared but linking rebuilt the terms).  Now the compiled
+file is a few kilobytes, and loading it allocates about 6e5 words with a peak
+heap of 4e5.
+
+  $ narya -no-reformat synthsharing.ny
+  $ wc -c < synthsharing.nyo | awk '{ if ($1 > 100000) print "REGRESSION: compiled file has", $1, "bytes"; else print "compiled file is small" }'
+  compiled file is small
+  $ echo 'import "synthsharing"' > load.ny
+  $ OCAMLRUNPARAM=v=0x400 narya -v -no-reformat load.ny 2>gc.log
+  $ grep 'file loaded' gc.log
+   ￮ file loaded: $TESTCASE_ROOT/synthsharing.ny (compiled)
+  $ awk '/allocated_words:/ { a = $2 } /top_heap_words:/ { h = $2 } END {
+  >   if (a + 0 > 5000000 || h + 0 > 5000000) printf "REGRESSION: loading allocated %d words with peak heap %d\n", a, h
+  >   else print "loading within budget"
+  > }' gc.log
+  loading within budget

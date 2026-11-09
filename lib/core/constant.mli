@@ -10,7 +10,7 @@ end
 type t = Constant.t
 
 val make : unit -> t
-val remake : (File.t -> File.t) -> Constant.t -> Constant.t
+val relink : (File.t -> File.t) -> Constant.t -> unit
 
 module Table : sig
   type 'a t
