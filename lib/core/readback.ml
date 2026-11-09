@@ -85,6 +85,7 @@ let rec canonical_head : type mode a s. (mode, a, s) term -> [ `Canonical | `Oth
   | Inst (_, tm, _) -> canonical_head tm
   | Act (_, tm, _, _) -> canonical_head tm
   | Key { tm; _ } -> canonical_head tm
+  | Weaken (_, tm, _) -> canonical_head tm
   | _ -> `Other
 
 module ValuePair = struct
