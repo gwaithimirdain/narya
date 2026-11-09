@@ -855,6 +855,8 @@ let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = functio
           let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
           let (Wrap n) = pi_arity cod in
           Wrap (Suc n))
+  (* A weakening doesn't change the structure of a term (it can appear here if the function-type was read back with sharing, see Readback.sharing). *)
+  | Weaken (_, tm, _) -> pi_arity tm
   (* A constructor that failed to typecheck has no known arity, so anything that needs it fails dependently. *)
   | tm when is_failed tm -> Reporter.fatal (Dependent "arity of failed constructor")
   | _ -> Wrap Zero
@@ -869,6 +871,7 @@ let rec pi_names : type mode a. (mode, a, kinetic) term -> string option list = 
           let (Cod (cfilter, cod)) = CodCube.find_top cods in
           let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
           option_of_binder_name (top_variable x) :: pi_names cod)
+  | Weaken (_, tm, _) -> pi_names tm
   | _ -> []
 
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function

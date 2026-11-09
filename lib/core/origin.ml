@@ -2,25 +2,34 @@
 
 (* Files are identified by an autonumber. *)
 module File = struct
-  type t = int
+  (* A file is identified by an autonumber, but it is represented by a block containing that number, of which there is only one (its "canonical" block) for each file in a given run.  Constants, metavariables, and notations record their origin with a pointer to that block.  When a compiled file is loaded, the unmarshaled origins are copies of the blocks from the run that compiled it, which carry the autonumbers of that run.  Linking replaces them by the canonical blocks of the corresponding files in the current run (see Origin.make_canonical), so a copy can be recognized as not yet linked by not being physically equal to the canonical block with its number.  Equality, comparison, and hashing of files are structural, hence by their autonumbers.  (The block contains only the number, not the name, since constants are compared and hashed often.) *)
+  type t = { id : int }
 
-  (* The autonumber is just the length of a dynarray that records all the files seen up until now. *)
-  let names : [ `File of string | `Other of string ] Dynarray.t = Dynarray.create ()
+  (* Each file seen so far has an entry recording its name and its canonical block, indexed by its autonumber, which is thus the length of this dynarray when it is created. *)
+  type entry = { name : [ `File of string | `Other of string ]; canonical : t }
+
+  let files : entry Dynarray.t = Dynarray.create ()
   let by_name : (string, t) Hashtbl.t = Hashtbl.create 20
 
   (* Create a new file.  A `File is a disk file with a fully-qualified name; an `Other is a command-line exec string, stdin, etc. *)
-  let make (filename : [ `File of string | `Other of string ]) : t =
-    let counter = Dynarray.length names in
+  let make (name : [ `File of string | `Other of string ]) : t =
+    let file = { id = Dynarray.length files } in
     (* Only disk files can be looked up again by name. *)
-    (match filename with
-    | `File filename -> Hashtbl.add by_name filename counter
+    (match name with
+    | `File filename -> Hashtbl.add by_name filename file
     | `Other _ -> ());
-    Dynarray.add_last names filename;
-    counter
+    Dynarray.add_last files { name; canonical = file };
+    file
 
   (* Look up a file's identifier by name. *)
   let get filename = Hashtbl.find by_name filename
-  let to_string file = Dynarray.get names file
+  let to_string file = (Dynarray.get files file.id).name
+
+  (* The canonical block of the file with a given autonumber. *)
+  let of_id id = (Dynarray.get files id).canonical
+
+  (* Whether a file is the canonical block for its autonumber in the current run, i.e. not an unlinked copy unmarshaled from a compiled file. *)
+  let is_canonical file = file.id < Dynarray.length files && of_id file.id == file
 end
 
 (* Interactive instants are also identified by an autonumber. *)
@@ -49,8 +58,18 @@ module Origin = struct
 
   let to_string = function
     | Top -> "T"
-    | File f -> "F" ^ string_of_int f
+    | File f -> "F" ^ string_of_int f.id
     | Instant i -> string_of_int i
+
+  (* Something with an origin, such as a constant, a metavariable, or a notation.  The origin is mutable only so that linking can update it in place (see make_canonical). *)
+  type 'a origined = { mutable origin : t; value : 'a }
+
+  (* Link something unmarshaled from a compiled file, in place, by replacing the file in its origin, which is a copy from the run that compiled it, by the canonical file of the current run that corresponds to it, as computed by [f].  If the file is already canonical then it has already been linked (it may be shared, and so encountered more than once), so we leave it alone.  Built-in origins are the same in every run, so they don't need to change.  Interactive ones are never marshaled. *)
+  let make_canonical (f : File.t -> File.t) (x : 'a origined) : unit =
+    match x.origin with
+    | File n -> if not (File.is_canonical n) then x.origin <- File (f n)
+    | Top -> ()
+    | Instant _ -> raise (Failure "can't link something with an interactive origin")
 
   (* The "current" origin is where new constants and metavariables will be created.  It could be the toplevel, a file, a present instant, or a "back in time" instant such as when filling a hole.  *)
   module Current = struct
@@ -215,7 +234,7 @@ module Versioned = struct
   (* If a files entry doesn't exist yet, we have to extend the array to make it long enough before setting the value.  This is the only way that the files array grows; we don't extend it automatically when new files are created. *)
   let grow_files : type a. a t -> File.t -> unit =
    fun x file ->
-    while Dynarray.length x.files <= file do
+    while Dynarray.length x.files <= file.File.id do
       Dynarray.add_last x.files (if x.inherit_values then !(x.top) else x.default ())
     done
 
@@ -226,7 +245,7 @@ module Versioned = struct
       | Top -> Some !(x.top)
       | File file ->
           grow_files x file;
-          Some (Dynarray.get x.files file)
+          Some (Dynarray.get x.files file.id)
       | Instant instant -> (
           match Origin.S.get () with
           | Past now when instant > now -> None
@@ -239,7 +258,7 @@ module Versioned = struct
     | Top -> !(x.top)
     | File (file, _) ->
         grow_files x file;
-        Dynarray.get x.files file
+        Dynarray.get x.files file.id
     | Present instant | Past instant -> Dynarray.get x.instants instant
 
   (* Set the current value. *)
@@ -248,7 +267,7 @@ module Versioned = struct
     | Top -> x.top := v
     | File (file, _) ->
         grow_files x file;
-        Dynarray.set x.files file v
+        Dynarray.set x.files file.id v
     | Present instant | Past instant -> Dynarray.set x.instants instant v
 
   (* Modify the current value. *)
@@ -257,14 +276,14 @@ module Versioned = struct
     | Top -> x.top := f !(x.top)
     | File (file, _) ->
         grow_files x file;
-        Dynarray.set x.files file (f (Dynarray.get x.files file))
+        Dynarray.set x.files file.id (f (Dynarray.get x.files file.id))
     | Present instant | Past instant ->
         Dynarray.set x.instants instant (f (Dynarray.get x.instants instant))
 
   (* Set the value of the object associated to a given file. *)
   let set_file (x : 'a t) (file : File.t) (v : 'a) : unit =
     grow_files x file;
-    Dynarray.set x.files file v
+    Dynarray.set x.files file.id v
 
   (* Set the value of the object associated to a given origin.  If we are in the past, only instants before the current time are accessible. *)
   let set_at (x : 'a t) (i : Origin.t) (v : 'a) : unit option =
@@ -286,7 +305,7 @@ module Versioned = struct
 
   let foldi (x : 'a t) (f : 'acc -> Origin.t -> 'a -> 'acc) (acc : 'acc) : 'acc =
     let acc = ref (f acc Top !(x.top)) in
-    Dynarray.iteri (fun file v -> acc := f !acc (File file) v) x.files;
+    Dynarray.iteri (fun file v -> acc := f !acc (File (File.of_id file)) v) x.files;
     Dynarray.iteri (fun instant v -> acc := f !acc (Instant instant) v) x.instants;
     !acc
 end
