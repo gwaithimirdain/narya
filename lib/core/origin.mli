@@ -27,6 +27,7 @@ module Origin : sig
   val do_command_then_undo : (unit -> 'a) -> 'a
   val rewind_command : Instant.t -> (unit -> 'a) -> 'a
   val rewind_command_then_undo : Instant.t -> (unit -> 'a) -> 'a
+  val on_time_travel : (unit -> unit) -> unit
 end
 
 module Versioned : sig

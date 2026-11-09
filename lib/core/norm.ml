@@ -19,6 +19,10 @@ let const_cache : cached_const list Constant.Map.t Origin.Versioned.t =
 
 let () = Global.register_invalidator (fun () -> Origin.Versioned.set const_cache Constant.Map.empty)
 
+(* A hash-consed neutral (see Value.hashcons) caches its value, which depends on the global definitions, which can change when they are modified or when time travels. *)
+let () = Global.register_invalidator hashcons_reset
+let () = Origin.Origin.on_time_travel hashcons_reset
+
 let find_cached_const : type mode m.
     Constant.t -> m D.t -> mode Mode.t -> (mode, kinetic) value option =
  fun name dim mode ->
@@ -736,10 +740,36 @@ and apply : type dom modality mode n m s.
               (* We compute the output type of the application. *)
               let newty = lazy (tyof_app cods tyargs filter arg) in
               (* We add the new argument to the existing application spine. *)
-              let args = Snoc (args, Arg (filter, newarg, ins_zero m)) in
-              (* We add the argument to the lazy value and return a glued neutral. *)
+              let rest = args in
+              let args = Snoc (rest, Arg (filter, newarg, ins_zero m)) in
+              (* We add the argument to the lazy value and return a glued neutral, which is the same as an earlier one if that was the same function (physically the same head and spine) applied to physically the same arguments (see Value.hashcons). *)
               let value = apply_lazy value m filter newarg in
-              Val (Neu { head; args; value; ty = newty }))
+              let same : (mode, kinetic) value -> bool = function
+                | Neu { head = h; args = Snoc (r, Arg (_, xs, _)); _ } -> (
+                    Obj.repr h == Obj.repr head
+                    && Obj.repr r == Obj.repr rest
+                    &&
+                    match D.compare (CubeOf.dim xs) (CubeOf.dim newarg) with
+                    | Eq -> (
+                        let exception Different in
+                        try
+                          CubeOf.miter
+                            {
+                              it =
+                                (fun fa [ x ] ->
+                                  if not (Obj.repr x.tm == Obj.repr (CubeOf.find xs fa).tm) then
+                                    raise_notrace Different);
+                            }
+                            [ newarg ];
+                          true
+                        with Different -> false)
+                    | Neq -> false)
+                | _ -> false in
+              Val
+                (hashcons
+                   (Modality.tgt (Modality.filter_modality filter))
+                   (hashcons_neu_hash head args) same
+                   (Neu { head; args; value; ty = newty })))
       | _ -> fatal (Anomaly "invalid application by non-function"))
   | _ -> fatal (Anomaly "invalid application of non-function")
 
@@ -833,10 +863,22 @@ and field : type src f mode n k nk s.
           let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
           (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
           let (Has_filter filter) = Modality.filter fm n in
-          let args = Snoc (args, Field (filter, fld, fldplus, ins_zero n)) in
-          (* We add the projection to the lazy value and return a glued neutral.  At this point we've already pushed the insertion inside by acting on the whole neutral above, so the remaining insertion to project from its value is "the identity" of appropriate dimensions. *)
+          let rest = args in
+          let args = Snoc (rest, Field (filter, fld, fldplus, ins_zero n)) in
+          (* We add the projection to the lazy value and return a glued neutral.  At this point we've already pushed the insertion inside by acting on the whole neutral above, so the remaining insertion to project from its value is "the identity" of appropriate dimensions.  It is the same as an earlier one if that was the same projection, at the same dimension, from physically the same head and spine (see Value.hashcons). *)
           let value = field_lazy fm value fld (ins_of_plus n fldplus) in
-          Val (Neu { head; args; value; ty = newty })
+          let same : (mode, kinetic) value -> bool = function
+            | Neu { head = h; args = Snoc (r, Field (_, fld', _, ins')); _ } -> (
+                Obj.repr h == Obj.repr head
+                && Obj.repr r == Obj.repr rest
+                &&
+                match (Field.equal fld fld', D.compare (cod_left_ins ins') n) with
+                | Eq, Eq -> true
+                | _ -> false)
+            | _ -> false in
+          Val
+            (hashcons (Modality.tgt fm) (hashcons_neu_hash head args) same
+               (Neu { head; args; value; ty = newty }))
       | _ ->
           fatal ~severity:Asai.Diagnostic.Bug
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))

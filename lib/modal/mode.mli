@@ -25,6 +25,16 @@ end
 
 module Map : MAP_MAKER with module Key := Mode
 
+module WeakSet : sig
+  module Make : functor (F : Fam) -> sig
+    type t
+
+    val create : max:int -> int -> t
+    val clear : t -> unit
+    val merge : t -> 'g Mode.t -> int -> ('g F.t -> bool) -> 'g F.t -> 'g F.t
+  end
+end
+
 module type Generator = sig
   val name : string ref
 
