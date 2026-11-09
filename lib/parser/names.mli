@@ -54,6 +54,9 @@ val of_uniquified_vars : uniquified_vars -> 'mode emp t
 val uniquify_vars :
   (binder_name, 'a) Bwv.t -> (string * [ `Original | `Renamed ], 'a) Bwv.t * uniquified_vars
 
+val add_alias : 'b t -> string -> ('mode, 'a, 's) term -> 'b t
+val alias_name : 'b t -> ('mode, 'x, 'a, 's) Meta.t -> string option
+
 val unsafe_add :
   'b t ->
   ('n, string) gvariables ->

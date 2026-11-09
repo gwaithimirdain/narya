@@ -69,7 +69,7 @@ Local recursive datatypes
    ￮ constant ℕadder defined
   
   2
-    : _letrec.F2.0.ℕ{…}
+    : ℕadder._ℕ
   
 
 Local mutually recursive definitions
@@ -111,6 +111,89 @@ Local mutually recursive definitions
    ￫ info[I0001]
    ￮ axiom n assumed
   
-  _letrec.F2.1.even{…} n
+  even_odd._even n
     : bool
   
+
+In a hole, a let-rec-bound variable whose value is its metavariable is displayed as that variable.
+
+  $ narya -v -e 'def bool : Type ≔ data [ false. | true. ]  def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]' -e 'def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]' -e 'def eo (m : ℕ) : bool ≔ let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ odd n ] and odd : ℕ → bool ≔ [ zero. ↦ false. | suc. n ↦ even n ] in ((p ↦ true.) : J bool (even m) (odd m) → bool) ?'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ info[I0000]
+   ￮ constant eo defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     m : ℕ
+     even ≔ eo._even : ℕ → bool
+     odd ≔ eo._odd : ℕ → bool
+     ----------------------------------------------------------------------
+     J bool (even m) (odd m)
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+In a higher field of a let-rec-bound codatatype, the context is degenerated, including the variable bound to the codatatype itself.
+
+  $ narya -v -e 'def foo : Type ≔ let rec T : Type ≔ codata [ x .f.e : ? ] in T'
+   ￫ info[I0000]
+   ￮ constant foo defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     T.0 ≔ foo._T : Type
+     T.1 ≔ foo._T : Type
+     T.2 ≔ refl foo._T : Type⁽ᵉ⁾ foo._T foo._T
+     x.0 : foo._T
+     x.1 : foo._T
+     x.2 : refl foo._T x.0 x.1
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+In a hole in the definition of a let-rec variable, the other variables of its block, which refer directly to their metavariables, are also displayed as themselves.
+
+  $ narya -v -e 'def bool : Type ≔ data [ false. | true. ]  def ℕ : Type ≔ data [ zero. | suc. (_:ℕ) ]' -e 'def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]' -e 'def eo (m : ℕ) : bool ≔ let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ ((p ↦ odd n) : J bool (even n) (odd m) → bool) ? ] and odd : ℕ → bool ≔ [ zero. ↦ false. | suc. n ↦ even n ] in even m'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ info[I0000]
+   ￮ constant eo defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     m : ℕ
+     even ≔ eo._even : ℕ → bool
+     odd ≔ eo._odd : ℕ → bool
+     n : ℕ
+     𝑥 ≔ suc. n : ℕ (not in scope)
+     ----------------------------------------------------------------------
+     J bool (even n) (odd m)
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
