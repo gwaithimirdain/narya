@@ -898,6 +898,27 @@ A comparison of two neutral spines can fail and then succeed by unfolding them, 
   
   [1]
 
+When two values at a datatype don't match as spines, they are compared again after unfolding, and the unfolding can be a metavariable that can then be solved.  Here b is a case tree that computes to the placeholder, compared with a constructor, with a variable, and at a type that isn't a datatype.
+
+  $ narya - <<EOF
+  > def Bool : Type ≔ data [ true. | false. ]
+  > def with_constr : Bool ≔ let b : Bool ≔ match (true. : Bool) [ true. ↦ _ | false. ↦ true. ] in let p : Id Bool b false. ≔ refl false. in b
+  > echo with_constr
+  > def with_var (x : Bool) : Bool ≔ let b : Bool ≔ match (true. : Bool) [ true. ↦ _ | false. ↦ x ] in let p : Id Bool b x ≔ refl x in b
+  > echo with_var true.
+  > def not_data (B : Type) (y : B) : B ≔ let b : B ≔ match (true. : Bool) [ true. ↦ _ | false. ↦ y ] in let p : Id B b y ≔ refl y in b
+  > echo not_data Bool false.
+  > EOF
+  false.
+    : Bool
+  
+  true.
+    : Bool
+  
+  false.
+    : Bool
+  
+
 Spines are forced to be equal if the head is a variable or an axiom, or a canonical type (including function-types and instantiated identity types), or a case tree stuck on something other than a metavariable.
 
   $ narya - <<EOF

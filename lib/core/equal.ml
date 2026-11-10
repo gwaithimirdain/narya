@@ -349,12 +349,12 @@ and equal_at_data : type mode m a b.
               ~not_constr:(fun _ -> Anomaly "inst arg not constr in equality at datatype") in
           (* It suffices to compare the top-dimensional faces of the cubes; the others are only there for evaluating case trees. *)
           equal_at_pi ctx xn (lazy (force_eval_term fnty)) xargs yargs tyarg_args)
-  (* Two neutrals are first compared as spines; if they unfold, the unfoldings may now be constructors. *)
-  | Neu _, Neu _ -> equal_neu_or_unfold ctx x y (equal_at_data ctx constrs ty tyargs)
+  (* Two neutrals are first compared as spines; if they unfold, the unfoldings may now be constructors.  The unfoldings are compared with equal_at rather than recursively here, so that the solver sees them: an unfolding may be an unsolved metavariable, which the solver only recognizes at the head of a value, not inside a glued neutral that unfolds to it. *)
+  | Neu _, Neu _ -> equal_neu_or_unfold ctx x y (fun vx vy -> equal_at ctx vx vy ty)
   | _ -> (
       let vx = view_term x in
       let vy = view_term y in
-      if vx != x || vy != y then equal_at_data ctx constrs ty tyargs vx vy
+      if vx != x || vy != y then equal_at ctx vx vy ty
       else
         match (x, y) with
         (* A failed term can't be compared with a constructor, any more than with a neutral (see equal_head). *)
