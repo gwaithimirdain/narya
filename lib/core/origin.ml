@@ -105,6 +105,18 @@ module Origin = struct
     if !speculating > 0 then raise (Failure "Origin: can't load a file while speculating");
     S.run ~init:(File (file, holes_allowed)) f
 
+  (* Register a callback to be invoked whenever time moves backwards: when undoing, and when going back in time to an earlier instant and returning from it.  This is for caches that are not stored in a Versioned, whose contents may depend on the state at the time they were computed. *)
+  let on_time_travel (f : unit -> unit) =
+    prevs := f :: !prevs;
+    rewinds :=
+      {
+        wrap =
+          (fun _ g () ->
+            f ();
+            Fun.protect ~finally:f g);
+      }
+      :: !rewinds
+
   (* Switch to interactive mode.  Only works in top-level (after all files and exec-strings are completed). *)
   let set_interactive () =
     if !speculating > 0 then raise (Failure "Origin: can't set interactive while speculating");

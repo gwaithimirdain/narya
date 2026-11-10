@@ -393,8 +393,8 @@ and equal_neu : type mode a b.
   (* A failed term is unequal to everything, but this is a consequence of the failure, so we fail silently. *)
   | Neu { head = Failed _; _ }, _ | _, Neu { head = Failed _; _ } ->
       fatal (Dependent "comparing a failed term")
-  | ( Neu { head = Live head1; args = apps1; value = _; ty = _ },
-      Neu { head = Live head2; args = apps2; value = _; ty = _ } ) -> (
+  | ( Neu { head = Live head1; args = apps1; value = _; ty = _; acted = _ },
+      Neu { head = Live head2; args = apps2; value = _; ty = _; acted = _ } ) -> (
       (* To check two neutral applications are equal, with their types, we check if the functions are equal, including their types and hence also their domains and codomains (and also they have the same insertion applied outside).  We don't need to check that the types agree; this procedure concludes equality of types rather than assumes it. *)
       match (nonmodal_apps apps1, nonmodal_apps apps2) with
       (* If neither spine crosses a modal field projection, the heads are at the ambient mode and we can compare them first (as we always did before modal fields), which gives more precise "unequal heads" error messages. *)

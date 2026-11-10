@@ -810,7 +810,7 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
   match x with
   (* A failed term is read back as Failed, without forcing its value (which would fail). *)
   | Neu { head = Failed _; _ } -> Failed Kinetic
-  | Neu { head = Live head; args; value; ty } -> (
+  | Neu { head = Live head; args; value; ty; acted = _ } -> (
       match unfold_solved head value with
       | Some v -> readback_at Kinetic ctx v (Lazy.force ty)
       | None -> (
@@ -1587,7 +1587,7 @@ and readback_permuted_codata : type mode a b m k mk e n.
 and uninstantiate : type mode. mode Mode.t -> (mode, kinetic) value -> mode normal =
  fun mode ty ->
   match view_term ty with
-  | Neu { head; args = Snoc (base_args, Inst (_, insargs)); value; ty = instty } -> (
+  | Neu { head; args = Snoc (base_args, Inst (_, insargs)); value; ty = instty; acted = _ } -> (
       match view_type (Lazy.force instty) "uninstantiate" with
       | Canonical (_, UU (_, umk), uins, uargs) -> (
           let Eq = eq_of_ins_zero uins in
@@ -1604,7 +1604,15 @@ and uninstantiate : type mode. mode Mode.t -> (mode, kinetic) value -> mode norm
               let boundary = TubeOf.plus_tube (TubeOf.plus insargs) outer inner in
               let uty = lazy (inst (universe mode (TubeOf.out insargs)) boundary) in
               {
-                tm = Neu { head; args = base_args; value = uninstantiate_value value; ty = uty };
+                tm =
+                  Neu
+                    {
+                      head;
+                      args = base_args;
+                      value = uninstantiate_value value;
+                      ty = uty;
+                      acted = [];
+                    };
                 ty = uty;
               })
       | _ -> fatal (Anomaly "uninstantiating a type whose type is not a universe"))
