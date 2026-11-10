@@ -31,6 +31,7 @@ module Origin : sig
   val speculate_discard : (unit -> 'b) -> 'b
   val speculation_depth : unit -> int
   val on_speculation_success : (unit -> unit) -> unit
+  val on_backtrack : (unit -> unit) -> unit
   val on_time_travel : (unit -> unit) -> unit
 end
 
