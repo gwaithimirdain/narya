@@ -26,6 +26,7 @@ Formatting output
 - ``-show-unique-keys``: Display keys that are the unique one between their endpoints (see :ref:`Keys`)
 - ``-hide-unique-keys``: Hide keys that are the unique one between their endpoints (default)
 - ``-variables X,Y,Z``: Set the default variable names (see :ref:`Default names`)
+- ``-display-size N``: Truncate displayed terms that have more than about ``N`` subterms (default 2000), or never truncate them if ``N`` is ``∞`` (see :ref:`Display`)
 
 Controlling parametricity
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -225,8 +226,12 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display unique keys ≔ toggle
     display degeneracy names ≔ N
     display variables ≔ X,Y,Z
+    display size ≔ N
+    display size ≔ ∞
 
 See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, :ref:`Keys` for more information about unique keys, and :ref:`Symmetries and degeneracies` for more information about degeneracy names.
+
+The display size limits how large a displayed term can be, whether in an error message, the output of ``echo``, or the context and type of a hole.  A term whose normal form has more than about that many subterms is truncated: it is displayed only to some depth, with the omitted subterms shown as ``…``, and followed by the notice ``(truncated: larger than display size N)``.  The point is to give an idea of what the term looks like, so the depth chosen is not necessarily the greatest that would fit; to see more of a term, increase the display size.  The default is 2000, and ``∞`` (or ``infinity``) means no limit.  Such large terms usually arise from normalizing, since a value can be small, by sharing, while its normal form is enormous.
 
 
 Chdir

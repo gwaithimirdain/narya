@@ -612,6 +612,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       match energy with
       | Kinetic -> Val tm
       | Potential -> Realize tm)
+  | Overflow -> fatal (Anomaly "evaluating a term truncated for display")
 
 and eval_with_boundary : type mode m a.
     (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =

@@ -27,6 +27,8 @@ module Config = struct
     (* Degeneracies that are iterated reflexivities are displayed with iterated names, like "refl (refl x)" or "Id (Id X)", when the number of iterations is at most this value, and with a superscript otherwise. *)
     degeneracy_names : int;
     variables : string list;
+    (* The number of subterms a displayed term may have before it is truncated, or None for no limit (see Readback.budgeted). *)
+    size : int option;
   }
 end
 
@@ -41,6 +43,7 @@ let default : Config.t =
     unique_keys = `Hide;
     degeneracy_names = 1;
     variables = [ "𝑥"; "𝑦"; "𝑧"; "𝑤"; "𝑢"; "𝑣" ];
+    size = Some 2000;
   }
 
 module State = Util.State.Make (Config)
@@ -60,6 +63,7 @@ let unique_keys () = (State.get ()).unique_keys
 let holes () = (State.get ()).holes
 let variables () = (State.get ()).variables
 let degeneracy_names () = (State.get ()).degeneracy_names
+let size () = (State.get ()).size
 
 let alt_char uni asc =
   match (State.get ()).chars with

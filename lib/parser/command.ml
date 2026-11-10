@@ -125,6 +125,7 @@ module Command = struct
           | `Unique_keys of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Degeneracy_names of Whitespace.t list * Whitespace.t list * int * Whitespace.t list
+          | `Size of Whitespace.t list * int option * Whitespace.t list
           | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
             `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
@@ -657,6 +658,7 @@ module Parse = struct
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
           | Ident [ "implicits" ] -> Some ((`Implicits, ws), state)
           | Ident [ "degeneracy" ] -> Some ((`Degeneracy, ws), state)
+          | Ident [ "size" ] -> Some ((`Size, ws), state)
           | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
@@ -680,6 +682,21 @@ module Parse = struct
         return
           (Display
              { wsdisplay; wscoloneq; what = `Degeneracy_names (wswhat, wsnames, number, wsnumber) })
+    | `Size ->
+        let* wscoloneq = token Coloneq in
+        step "" (fun state _ (tok, ws) ->
+            let size =
+              match tok with
+              | Ident [ ("∞" | "infinity") ] -> Some None
+              | Ident [ num ] -> (
+                  match int_of_string_opt num with
+                  | Some n when n > 0 -> Some (Some n)
+                  | _ -> None)
+              | _ -> None in
+            Option.map
+              (fun size ->
+                (Display { wsdisplay; wscoloneq; what = `Size (wswhat, size, ws) }, state))
+              size)
     | `Unique ->
         let* wsb = token (Ident [ "keys" ]) in
         let* wscoloneq = token Coloneq in
@@ -844,8 +861,10 @@ let show_hole = function
         Reporter.discard_errors ~fallback:(fun () -> (termctx, ty)) @@ fun () ->
         let ctx = Norm.eval_ctx termctx in
         let ety = Norm.eval_term (Ctx.env ctx) ty in
-        Readback.Displaying.run ~env:true @@ fun () -> (readback_ctx ctx, readback_val ctx ety)
-      in
+        Readback.Displaying.run ~env:true @@ fun () ->
+        (* The context and type are displayed, so they are limited to the display size. *)
+        ( fst (budgeted (Display.size ()) (fun () -> readback_ctx ctx)),
+          fst (budgeted (Display.size ()) (fun () -> readback_val ctx ety)) ) in
       emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
 
 let string_of_mode = function
@@ -1027,7 +1046,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
           let names = Names.of_ctx ctx in
           (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
-          let utm =
+          (* The displayed term and its type are each limited to the display size. *)
+          let utm, utm_truncated =
+            budgeted (Display.size ()) @@ fun () ->
             match mode with
             | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
             | `Echo ->
@@ -1057,17 +1078,21 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                     | None ->
                         unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
                           No.Interval.entire)) in
-          let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
-          let uty = unparse names bty No.Interval.entire No.Interval.entire in
+          let uty, uty_truncated =
+            budgeted (Display.size ()) @@ fun () ->
+            let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
+            unparse names bty No.Interval.entire No.Interval.entire in
           if not (moribund ()) then
             !echo_output
               PPrint.(
                 hang 2
                   (pp_complete_term (Wrap utm) `None
+                  ^^ Print.pp_truncated utm_truncated
                   ^^ hardline
                   ^^ Token.pp Colon
                   ^^ blank 1
-                  ^^ pp_complete_term (Wrap uty) `None));
+                  ^^ pp_complete_term (Wrap uty) `None
+                  ^^ Print.pp_truncated uty_truncated));
           (None, fun _ -> None)
       | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
   | Notation { fixity; loc; pattern; head; args; _ } ->
@@ -1404,6 +1429,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Degeneracy_names (_, _, number, _) ->
           Display.modify (fun s -> { s with degeneracy_names = number });
           emit (Display_set ("degeneracy names", string_of_int number))
+      | `Size (_, size, _) ->
+          Display.modify (fun s -> { s with size });
+          emit (Display_set ("size", Option.fold ~none:"∞" ~some:string_of_int size))
       | `Variables (_, xs) ->
           let variables = List.map (fun (_, x, _) -> x) xs in
           Display.modify (fun s -> { s with variables });

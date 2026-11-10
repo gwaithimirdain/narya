@@ -298,6 +298,7 @@ module F = struct
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
     | Weaken (_, tm, _) -> fprintf ppf "Weaken (%a)" term tm
     | Failed _ -> fprintf ppf "Failed"
+    | Overflow -> fprintf ppf "Overflow"
 
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->

@@ -27,6 +27,7 @@ let number_metas = ref true
 let parenthesize_arguments = ref false
 let extra_spaces = ref true
 let show_implicits = ref false
+let display_size = ref Display.default.size
 let show_unique_keys = ref false
 let variables = ref None
 
@@ -86,6 +87,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         implicits = (if !show_implicits then `Show else `Hide);
         unique_keys = (if !show_unique_keys then `Show else `Hide);
         degeneracy_names = Display.default.degeneracy_names;
+        size = !display_size;
         holes = `Without_number;
         variables =
           (match !variables with
