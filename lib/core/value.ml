@@ -129,6 +129,8 @@ module rec Value : sig
         args : ('hmode, 'mode, 'any, 'fail) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
+        (* The degeneracy actions already performed on this neutral (see Act.act_value). *)
+        mutable acted : 'mode action list;
       }
         -> ('mode, kinetic) value
     | Constr :
@@ -194,6 +196,15 @@ module rec Value : sig
         fnty : ('mode, kinetic) lazy_eval;
       }
         -> ('mode, 'm) dataconstr
+
+  and 'mode action =
+    | Acted : {
+        deg : ('m, 'n) deg;
+        cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
+        result : ('mode, kinetic) value;
+        generation : int;
+      }
+        -> 'mode action
 
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }
 
@@ -366,6 +377,8 @@ end = struct
         args : ('hmode, 'mode, 'any, 'fail) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
+        (* The degeneracy actions already performed on this neutral (see Act.act_value). *)
+        mutable acted : 'mode action list;
       }
         -> ('mode, kinetic) value
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
@@ -457,6 +470,15 @@ end = struct
         -> ('mode, 'm) dataconstr
 
   (* A "normal form" is a value paired with its type.  The type is used for eta-expansion and equality-checking. *)
+  and 'mode action =
+    | Acted : {
+        deg : ('m, 'n) deg;
+        cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
+        result : ('mode, kinetic) value;
+        generation : int;
+      }
+        -> 'mode action
+
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }
 
   (* The binding of one variable in an environment; see Ext below. *)
@@ -740,7 +762,42 @@ module Hashcons_set = Mode.WeakSet.Make (struct
 end)
 
 let hashcons_table = Hashcons_set.create ~max:8 4096
-let hashcons_reset () = Hashcons_set.clear hashcons_table
+
+(* The current generation of remembered degeneracy actions, which ends whenever the hash-consing table is cleared and for the same reason. *)
+let action_generation = ref 0
+
+let hashcons_reset () =
+  Hashcons_set.clear hashcons_table;
+  incr action_generation
+
+(* Look for the result of an earlier action on a neutral by the same degeneracy and key cell, in the current generation.  The degeneracy must be exactly the same, not merely the same up to an identity extension, since a neutral's head remembers the degeneracy it was acted on by and uses it to display itself. *)
+let rec find_action : type mode a b mu1 mu2 cod.
+    mode action list ->
+    (a, b) deg ->
+    (mode, mu1, mu2, cod) Modalcell.t ->
+    (mode, kinetic) value option =
+ fun actions s c ->
+  match actions with
+  | [] -> None
+  | Acted { deg; cell; result; generation } :: rest -> (
+      if generation <> !action_generation || Option.is_none (deg_equal deg s) then
+        find_action rest s c
+      else
+        match Modalcell.compare cell c with
+        | Eq -> Some result
+        | Neq -> find_action rest s c)
+
+(* Remember the result of an action, forgetting any actions from earlier generations. *)
+let add_action : type mode a b mu1 mu2 cod.
+    mode action list ->
+    (a, b) deg ->
+    (mode, mu1, mu2, cod) Modalcell.t ->
+    (mode, kinetic) value ->
+    mode action list =
+ fun actions deg cell result ->
+  let generation = !action_generation in
+  Acted { deg; cell; result; generation }
+  :: List.filter (fun (Acted a) -> a.generation = generation) actions
 
 (* Shallow hashes for hash-consing: the identity of a head (but not of its type), and the head of a value. *)
 let hashcons_head_hash : type mode fail. (mode, fail) neu_head -> int = function
@@ -804,6 +861,7 @@ let var : type dom modality mode.
         args = Emp;
         value = ready Unrealized;
         ty = Lazy.from_val ty;
+        acted = [];
       } in
   (* A variable is the same as an earlier one with the same level, (identity) key, and physically the same type, since the same level in different scopes is a different variable with a different type. *)
   hashcons (Modality.src modality)
@@ -951,7 +1009,14 @@ let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
                   inst_fields = Some fields;
                 })) in
       let v =
-        Neu { head = Live (UU (mode, n)); args = Emp; value; ty = lazy (universe_ty mode n) } in
+        Neu
+          {
+            head = Live (UU (mode, n));
+            args = Emp;
+            value;
+            ty = lazy (universe_ty mode n);
+            acted = [];
+          } in
       universe_cache := Cached_universe (mode, n, v) :: !universe_cache;
       v
 
@@ -994,6 +1059,7 @@ and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
           args = Snoc (Emp, Inst (n', args));
           value;
           ty = lazy (universe mode D.zero);
+          acted = [];
         }
 
 (* A failed term with a given type (see Failed above).  Each call creates a new value. *)
@@ -1005,6 +1071,7 @@ let failed : type mode. mode Mode.t -> (mode, kinetic) value Lazy.t -> (mode, ki
       args = Emp;
       value = defer (fun () -> fatal (Dependent "failed term"));
       ty;
+      acted = [];
     }
 
 (* A failed type, i.e. a failed term whose type is the universe.  This is also the type of a failed term whose type is unknown. *)

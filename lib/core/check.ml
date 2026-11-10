@@ -1244,8 +1244,14 @@ and synth_or_check_let : type mode a b s p.
             let head = Live (Value.Meta { meta; env = Ctx.env lctx; ins = zero_ins D.zero }) in
             let tm =
               (* Glued evaluation: we delay evaluating the term until it's needed. *)
-              Neu { head; args = Emp; value = lazy_eval (Ctx.env lctx) sv; ty = Lazy.from_val svty }
-            in
+              Neu
+                {
+                  head;
+                  args = Emp;
+                  value = lazy_eval (Ctx.env lctx) sv;
+                  ty = Lazy.from_val svty;
+                  acted = [];
+                } in
             (Term.Meta (meta, Kinetic), { tm; ty = Lazy.from_val svty }) in
       (* Either way, we end up with a checked term 'v' and a normal form 'nf'.  We use the latter to extend the context.  If it failed, we instead bind the variable to a failed value, so that parts of the body that need to inspect it fail silently, while the others can still be checked. *)
       let v, newctx =
@@ -1376,7 +1382,9 @@ and make_letrec_metas : type mode x a b ab.
           (* Extend the context by it, as an unrealized neutral.  TODO: It's annoying that we have to evaluate the types here to extend the value-context, when the only use we're making of it is to readback that extended value-context into a termctx at each step to save with the global metavariable.  It would make more sense, and be more efficient, to just carry along the termctx and extend it directly at each step with "Term.Meta (meta, Kinetic)" at the term-type "vty".  Unfortunately, termctxs store terms and types in a one-longer context, so that would require directly weakening vty, or perhaps parsing and checking it in a one-longer context originally. *)
           let evty = eval_term (Ctx.env ctx) vty in
           let head = Live (Value.Meta { meta; env = Ctx.env ctx; ins = zero_ins D.zero }) in
-          let neutm = Neu { head; args = Emp; value = ready Unrealized; ty = Lazy.from_val evty } in
+          let neutm =
+            Neu { head; args = Emp; value = ready Unrealized; ty = Lazy.from_val evty; acted = [] }
+          in
           let ctx =
             Ctx.ext_let ~dirt:(dirt_of_meta meta) ctx modality x
               { tm = neutm; ty = Lazy.from_val evty } in
@@ -2073,7 +2081,7 @@ and check_var_match : type dom modality mode a b bm.
       let is_fresh (x : dom normal) =
         (* With glued evaluation, an index can be a glued neutral whose stored value unfolds to a free variable, e.g. a transport along a variable that has been refined to reflexivity.  Such an index refines just as well as a bare variable, so we look through the unfolding. *)
         match view_term x.tm with
-        | Neu { head = Live (Var { level; deg; key }); args = Emp; value; ty = _ } -> (
+        | Neu { head = Live (Var { level; deg; key }); args = Emp; value; ty = _; acted = _ } -> (
             match force_eval value with
             | Unrealized ->
                 (if Option.is_none (is_id_deg deg) then
@@ -2643,8 +2651,13 @@ and check_data : type mode a b i.
             let err = Code.Invalid_constructor_type (c, Left "head must be current datatype") in
             match eval_term (Ctx.env newctx) coutput with
             | Neu
-                { head = Live (Const { name = out_head; ins }); args = out_apps; value = _; ty = _ }
-              -> (
+                {
+                  head = Live (Const { name = out_head; ins });
+                  args = out_apps;
+                  value = _;
+                  ty = _;
+                  acted = _;
+                } -> (
                 match head with
                 | Constant (cc, _, n) when cc = out_head && Option.is_some (is_id_ins ins) -> (
                     match D.compare_zero n with
@@ -2719,7 +2732,7 @@ and implicit_goal_arg : type mode a b.
           | _ -> raise No_arg)
     | Cons (Field _, _) -> raise No_arg in
   match ty with
-  | Neu { head = Live (Const _); args; value = _; ty = _ } -> (
+  | Neu { head = Live (Const _); args; value = _; ty = _; acted = _ } -> (
       match args with
       | Snoc (_, Inst _) -> None
       | Emp | Snoc (_, Arg _) | Snoc (_, Field _) -> (
@@ -2795,7 +2808,14 @@ and with_codata_so_far : type mode a b n c et.
     let selftys () =
       let value = eval_codata (Ctx.env ctx) eta opacity hints dim checked_fields fibrancy_fields in
       let prev_ety =
-        Neu { head; args; value = ready value; ty = lazy (inst (universe mode dim) tyargs) } in
+        Neu
+          {
+            head;
+            args;
+            value = ready value;
+            ty = lazy (inst (universe mode dim) tyargs);
+            acted = [];
+          } in
       TubeOf.plus_cube
         (TubeOf.mmap { map = (fun _ [ nf ] -> nf.tm) } [ tyargs ])
         (CubeOf.singleton prev_ety) in
@@ -2857,7 +2877,7 @@ and check_codata : type mode a b n et.
           in
           with_loc self_ty.loc @@ fun () ->
           match (eself_ty, status) with
-          | ( Neu { head = Live (Const { name; ins = _ }); args; value = _; ty = _ },
+          | ( Neu { head = Live (Const { name; ins = _ }); args; value = _; ty = _; acted = _ },
               Potential (Constant (pname, _, _), pargs, _) ) ->
               if name = pname then
                 match equal_apps ctx args pargs with
@@ -3175,7 +3195,8 @@ and check_fields : type mode a b c s m n mn et.
       @@ fun () ->
       (* The insertion on the *constant* being checked, by contrast, is always zero, since the constant is not nontrivially substituted at all yet. *)
       let head = Live (head_of_potential name) in
-      let prev_etm = Neu { head; args; value = ready (Val str); ty = Lazy.from_val ty } in
+      let prev_etm =
+        Neu { head; args; value = ready (Val str); ty = Lazy.from_val ty; acted = [] } in
       check_field status eta ctx ty m mn codata_args fields tyargs fld cdf prev_etm tms ctms etms
   | Entry (fld, cdf) :: fields, Kinetic _ ->
       let prev_etm = str in

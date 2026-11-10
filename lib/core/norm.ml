@@ -162,7 +162,7 @@ and view_type : type mode.
   match ty with
   (* A failed type has no value to view, so code that needs to view it fails silently (see Value.Failed). *)
   | Neu { head = Failed _; _ } -> fatal (Dependent "viewing a failed type")
-  | Neu { head = Live head; args; value; ty = _ } -> (
+  | Neu { head = Live head; args; value; ty = _; acted = _ } -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
       | Val (Canonical { mode = _; canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
@@ -228,8 +228,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                 match defn with
                 | `Defined tree ->
                     (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
-                    Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
-                | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
+                    Neu
+                      { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty; acted = [] }
+                | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty; acted = [] } in
               add_cached_const name dim mode result;
               Val result
           | Neq ->
@@ -259,12 +260,28 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       | { tm = `Defined tm; energy = Kinetic; _ }, Potential -> Realize (eval_term env tm)
       | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic ->
           (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
-          Val (Neu { head; args = Emp; value = lazy_eval env tm; ty = lazy (make_ty meta ty) })
+          Val
+            (Neu
+               {
+                 head;
+                 args = Emp;
+                 value = lazy_eval env tm;
+                 ty = lazy (make_ty meta ty);
+                 acted = [];
+               })
       (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  We don't need to return the metavariable itself; it suffices to know that that branch of the case tree is stuck, as the constant whose definition it is should handle all identity/equality checks correctly. *)
       | _, Potential -> Unrealized
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
       | { ty; _ }, Kinetic ->
-          Val (Neu { head; args = Emp; value = ready Unrealized; ty = lazy (make_ty meta ty) }))
+          Val
+            (Neu
+               {
+                 head;
+                 args = Emp;
+                 value = ready Unrealized;
+                 ty = lazy (make_ty meta ty);
+                 acted = [];
+               }))
   | MetaEnv (meta, metaenv) ->
       let (Plus m_n) = D.plus (dim_term_env metaenv) in
       eval (eval_env env m_n metaenv) (Term.Meta (meta, Kinetic))
@@ -507,7 +524,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     fields;
                     inst_fields = Some fields;
                   })) in
-        let tm = Neu { head = Live head; args = Emp; value; ty = Lazy.from_val ty } in
+        let tm = Neu { head = Live head; args = Emp; value; ty = Lazy.from_val ty; acted = [] } in
         Hashtbl.add pitbl (SFace_of fab) { tm; ty = Lazy.from_val ty } in
       CubeOf.iter_faces mn { it };
       Val (Hashtbl.find pitbl (SFace_of (id_sface mn))).tm
@@ -692,7 +709,7 @@ and apply : type dom modality mode n m s.
  fun fn filter_nm arg ->
   let modality = Modality.filter_modality filter_nm in
   match view_term fn with
-  | Neu { head = Failed mode; args = Emp; value = _; ty } ->
+  | Neu { head = Failed mode; args = Emp; value = _; ty; acted = _ } ->
       Val
         (failed_elim mode ty (fun ty ->
              match view_type ty "apply" with
@@ -720,7 +737,7 @@ and apply : type dom modality mode n m s.
             (Modality_mismatch
                (`Internal, "applying a lambda", Modality.filter_modality lam_filter, modality)))
   (* If it is a uninstantiated neutral application... *)
-  | Neu { head = Live _ as head; args; value; ty = (lazy ty) } -> (
+  | Neu { head = Live _ as head; args; value; ty = (lazy ty); acted = _ } -> (
       (* ... we check that its type is fully instantiated... *)
       match view_type ty "apply" with
       | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) -> (
@@ -769,7 +786,7 @@ and apply : type dom modality mode n m s.
                 (hashcons
                    (Modality.tgt (Modality.filter_modality filter))
                    (hashcons_neu_hash head args) same
-                   (Neu { head; args; value; ty = newty })))
+                   (Neu { head; args; value; ty = newty; acted = [] })))
       | _ -> fatal (Anomaly "invalid application by non-function"))
   | _ -> fatal (Anomaly "invalid application of non-function")
 
@@ -835,7 +852,7 @@ and field : type src f mode n k nk s.
   let src = Modality.src fm in
   match view_term tm with
   (* If the value is failed, it remains failed, with the type computed as usual. *)
-  | Neu { head = Failed _; args = Emp; value = _; ty } ->
+  | Neu { head = Failed _; args = Emp; value = _; ty; acted = _ } ->
       Val (failed_elim (Modality.tgt fm) ty (fun ty -> tyof_field fm tm ty fld fldins))
   (* If the value is a struct, we select the appropriate field. *)
   | Struct { fields; ins = structins; energy; eta = _ } -> (
@@ -859,7 +876,7 @@ and field : type src f mode n k nk s.
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
       match act_value viewed_tm p (Modalcell.id2 src) with
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
-      | Neu { head = Live _ as head; args; value; ty } ->
+      | Neu { head = Live _ as head; args; value; ty; acted = _ } ->
           let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
           (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
           let (Has_filter filter) = Modality.filter fm n in
@@ -878,7 +895,7 @@ and field : type src f mode n k nk s.
             | _ -> false in
           Val
             (hashcons (Modality.tgt fm) (hashcons_neu_hash head args) same
-               (Neu { head; args; value; ty = newty }))
+               (Neu { head; args; value; ty = newty; acted = [] }))
       | _ ->
           fatal ~severity:Asai.Diagnostic.Bug
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))
@@ -1731,7 +1748,7 @@ and inst : type mode m n mn s.
   | Pos dim2 -> (
       match view_term tm with
       (* If the value is failed, it remains failed, with the type computed as usual. *)
-      | Neu { head = Failed mode; args = Emp; value = _; ty } ->
+      | Neu { head = Failed mode; args = Emp; value = _; ty; acted = _ } ->
           failed_elim mode ty (fun ty ->
               match view_type ty "inst" with
               | Canonical (_, UU (mode, m), ins, tys1) -> (
@@ -1743,7 +1760,7 @@ and inst : type mode m n mn s.
                         (Dimension_mismatch ("instantiating a failed type", m, TubeOf.out args2)))
               | _ -> fatal (Anomaly "can't instantiate failed non-type"))
       (* If the value is a non-failed neutral, we have to combine the new instantiation with any existing instantation at the end of the application spine. *)
-      | Neu { head = Live _ as head; args = neu_args; value; ty } -> (
+      | Neu { head = Live _ as head; args = neu_args; value; ty; acted = _ } -> (
           let base_args, args1 = inst_of_apps neu_args in
           let (Any_tube args1) =
             Option.value args1 ~default:(Any_tube (TubeOf.empty (TubeOf.out args2))) in
@@ -1769,7 +1786,7 @@ and inst : type mode m n mn s.
                             (Dimension_mismatch ("instantiating a type 2", m, TubeOf.uninst args1))
                       | Eq -> tyof_inst mode tys1 args2)
                   | _ -> fatal (Anomaly "can't instantiate non-type")) in
-              Neu { head; args; value; ty })
+              Neu { head; args; value; ty; acted = [] })
       | Canonical { mode; canonical = c; tyargs = args1; ins; fields; inst_fields = _ } -> (
           match D.compare (TubeOf.out args2) (TubeOf.uninst args1) with
           | Neq ->
