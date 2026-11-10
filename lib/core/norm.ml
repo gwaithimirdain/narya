@@ -24,6 +24,9 @@ let () = Global.register_invalidator (fun () -> Origin.Versioned.set const_cache
 let () = Global.register_invalidator hashcons_reset
 let () = Origin.Origin.on_time_travel hashcons_reset
 
+(* A speculation can solve unification metavariables, which is undone if it is abandoned, while neutrals built or forced during it might have seen those solutions. *)
+let () = Origin.Origin.on_backtrack hashcons_reset
+
 let find_cached_const : type mode m.
     Constant.t -> m D.t -> mode Mode.t -> (mode, kinetic) value option =
  fun name dim mode ->

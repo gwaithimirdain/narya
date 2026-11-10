@@ -219,6 +219,9 @@ module Origin = struct
         backtrack ();
         Printexc.raise_with_backtrace e bt
 
+  (* Register a callback to be invoked when a speculation is abandoned, for caches that are not stored in a Versioned and whose contents may depend on the speculative state. *)
+  let on_backtrack f = backtracks := f :: !backtracks
+
   (* Speculate, always backtracking, so that only the result of the callback is retained, not its effects on the state. *)
   let speculate_discard : type b. (unit -> b) -> b =
    fun callback ->
