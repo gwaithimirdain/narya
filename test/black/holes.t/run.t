@@ -167,7 +167,7 @@
    ￮ hole ?12:
      
      ----------------------------------------------------------------------
-     ?11{…}
+     ?11
   
    ￫ info[I0000]
    ￮ constant foo defined, containing 1 hole
@@ -400,11 +400,11 @@
    ￭ $TESTCASE_ROOT/dtt-holes.ny
    6 | def g (X : Type) : Type⁽ᵈ⁾ X ≔ (f ?)⁽ᵈ⁾
      ^ term synthesized type
-         Type⁽ᵈ⁾ ?0{…}
+         Type⁽ᵈ⁾ ?0
        but is being checked against type
          Type⁽ᵈ⁾ X
        unequal head terms:
-         ?0{…}
+         ?0
        does not equal
          X
   
@@ -413,7 +413,7 @@
 Holes in echo:
 
   $ narya -e 'echo (? : Type)'
-  ?0{…}
+  ?0
     : Type
   
    ￫ error[E3002]
@@ -432,3 +432,161 @@ No holes in imported file
      ^ imported file '$TESTCASE_ROOT/to_import.ny' cannot contain holes
   
   [1]
+
+A case tree construct in a kinetic position is wrapped in a metavariable, which is displayed as its definition (here appearing in the types of holes).
+
+  $ narya -v -fake-interact 'def B : Type ≔ data [ true. | false. ]  def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]
+  > def t1 (b : B) : B ≔ ((p ↦ true.) : J Type (match b [ true. ↦ B | false. ↦ Type ]) B → B) ?
+  > def t2 (b : B) : B ≔ ((p ↦ true.) : J (B → B) [ true. ↦ b | false. ↦ true. ] (x ↦ x) → B) ?
+  > def t3 (X : Type) : B ≔ ((p ↦ true.) : J Type (sig (x : X, y : B)) X → B) ?
+  > def t4 (X : Type) : B ≔ ((p ↦ true.) : J Type (data [ a. | b. (_ : X) ]) X → B) ?
+  > def t5 (X : Type) : B ≔ ((p ↦ true.) : J Type (codata [ x .head : X | x .tail : ? ]) X → B) ?'
+   ￫ info[I0000]
+   ￮ constant B defined
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   2 | def t1 (b : B) : B ≔ ((p ↦ true.) : J Type (match b [ true. ↦ B | false. ↦ Type ]) B → B) ?
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t1 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     b : B
+     ----------------------------------------------------------------------
+     J Type (match #(gen) b [ false. ↦ Type | true. ↦ B ]) B
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   3 | def t2 (b : B) : B ≔ ((p ↦ true.) : J (B → B) [ true. ↦ b | false. ↦ true. ] (x ↦ x) → B) ?
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t2 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?1:
+     
+     b : B
+     ----------------------------------------------------------------------
+     J (B → B) (𝑥 ↦ match #(gen) 𝑥 [ false. ↦ true. | true. ↦ b ]) (x ↦ x)
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   4 | def t3 (X : Type) : B ≔ ((p ↦ true.) : J Type (sig (x : X, y : B)) X → B) ?
+     ^ sig encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t3 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?2:
+     
+     X : Type
+     ----------------------------------------------------------------------
+     J Type (sig #(gen) ( x : X, y : B )) X
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   5 | def t4 (X : Type) : B ≔ ((p ↦ true.) : J Type (data [ a. | b. (_ : X) ]) X → B) ?
+     ^ data encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t4 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?3:
+     
+     X : Type
+     ----------------------------------------------------------------------
+     J Type (data #(gen) [ a. | b. (𝑥 : X) ]) X
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   6 | def t5 (X : Type) : B ≔ ((p ↦ true.) : J Type (codata [ x .head : X | x .tail : ? ]) X → B) ?
+     ^ codata encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t5 defined, containing 2 holes
+  
+   ￫ info[I3003]
+   ￮ hole ?4:
+     
+     X : Type
+     x : codata #(gen) [ x′ .head : X | x′ .tail : ?4 ]
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ info[I3003]
+   ￮ hole ?5:
+     
+     X : Type
+     ----------------------------------------------------------------------
+     J Type (codata #(gen) [ x .head : X | x .tail : ?4 ]) X
+  
+
+If such a metavariable has a nontrivial environment, its definition is wrapped in a let-only binding the variables of its context.
+
+  $ narya -v -fake-interact 'def B : Type ≔ data [ true. | false. ]  def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]
+  > def t (b : B) : B ≔ ((y p ↦ true.) : (y : B) → J Type (match y [ true. ↦ B | false. ↦ Type ]) B → B) b ?
+  > axiom u : B
+  > def f (x : B) : Type ≔ J Type (match x [ true. ↦ B | false. ↦ Type ]) B
+  > echo f u
+  > echo refl f (refl u)'
+   ￫ info[I0000]
+   ￮ constant B defined
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   2 | def t (b : B) : B ≔ ((y p ↦ true.) : (y : B) → J Type (match y [ true. ↦ B | false. ↦ Type ]) B → B) b ?
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant t defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     b : B
+     ----------------------------------------------------------------------
+     J Type
+       (let only b : B ≔ b
+        and y : B ≔ b in
+        (match #(gen) y [ false. ↦ Type | true. ↦ B ] : Type)) B
+  
+   ￫ info[I0001]
+   ￮ axiom u assumed
+  
+   ￫ hint[H0403]
+   ￭ command line fake-interact
+   4 | def f (x : B) : Type ≔ J Type (match x [ true. ↦ B | false. ↦ Type ]) B
+     ^ match encountered outside case tree, wrapping in implicit let-binding
+  
+   ￫ info[I0000]
+   ￮ constant f defined
+  
+  J Type
+    (let only x : B ≔ u in
+     (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B
+    : Type
+  
+  J⁽ᵉ⁾ Type⁽ᵉ⁾
+    (let⁽ᵉ⁾ only x : B ≔ refl u in
+     (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B⁽ᵉ⁾
+    : Type⁽ᵉ⁾
+        (J Type
+           (let only x : B ≔ u in
+            (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
+        (J Type
+           (let only x : B ≔ u in
+            (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
+  

@@ -7,6 +7,7 @@ open Dim
 open Tctx
 open Term
 open Value
+open Env
 open Act
 open Printable
 open View
@@ -282,9 +283,6 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                  ty = lazy (make_ty meta ty);
                  acted = [];
                }))
-  | MetaEnv (meta, metaenv) ->
-      let (Plus m_n) = D.plus (dim_term_env metaenv) in
-      eval (eval_env env m_n metaenv) (Term.Meta (meta, Kinetic))
   | UU (mode, n) ->
       let m = dim_env env in
       let (Plus mn) = D.plus n in
@@ -549,7 +547,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            })
         body
   | Letonly { env = tmenv; tm = body; _ } ->
-      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment, as for MetaEnv. *)
+      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment. *)
       let (Plus m_n) = D.plus (dim_term_env tmenv) in
       eval (eval_env env m_n tmenv) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
@@ -623,10 +621,6 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | Shift (n, plusmap, tm) ->
       let (Plus mn) = D.plus n in
       eval (Unshift (env, mn, plusmap)) tm
-  | Weaken (plus, tm, newplus) ->
-      (* We strip off the locks, remove the weakened variable, put the locks back, and re-apply any prekey action stripped along the way. *)
-      let (Restrict_keys (env, pre)) = restrict_keys env (plus_with_locks_of_plus_lock newplus) in
-      eval (prekey_env (lock_env (remove_top env) plus) pre) tm
   (* A term that failed to typecheck has already reported its error, so it evaluates to a failed value, which fails silently if it is ever inspected.  We don't know its type, so that is failed too.  A failed case tree realizes to such a value. *)
   | Failed energy -> (
       let tm = failed_untyped (mode_env env) in
@@ -1715,6 +1709,29 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
               Looked_up
                 { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); op; entry; pre }
           | _, Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu))))
+  | Ctx ctx -> lookup_cube_ctx ctx nk mu pretr v op
+
+(* In the identity environment of a context, we skip the variables that aren't ours without unfolding them, and unfold only the one that is. *)
+and lookup_cube_ctx : type dom mu munu mode a b k mk nk c.
+    (mode, c, b) Ordered_ctx.t ->
+    (D.zero, k, nk) D.plus ->
+    (dom, mu, mode) Modality.t ->
+    (dom, munu, mode) Modality.t ->
+    (a, mu, k, b) insert ->
+    (mk, nk) opt_op ->
+    (dom, mk) looked_up_cube =
+ fun ctx nk mu pretr v op ->
+  match (ctx, v) with
+  | Snoc (ctx', ({ bindings; filter; _ } as e), _, comp), _ -> (
+      match (Ordered_ctx.ext_kind e comp, v) with
+      | Ext_dim, Later v -> lookup_cube (Ctx ctx') nk mu pretr v op
+      | Ext_dim, Now ->
+          (* TODO: Factor out the Ext/Now case from lookup_cube so we don't have to go through env_ext here? *)
+          lookup_cube (env_ext (Ctx ctx') filter bindings) nk mu pretr Now op
+      (* An alias has no checked variables. *)
+      | Ext_alias, _ -> lookup_cube (Ctx ctx') nk mu pretr v op)
+  | Weaken (ctx, _), _ -> lookup_cube (Ctx ctx) nk mu pretr v op
+  | Emp _, _ | Lock _, _ -> .
 
 and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
  fun env (Index (v, fa, _, (Plus_with_locks (_, locks) as plus))) ->
@@ -2030,18 +2047,22 @@ let eval_at : type mode m b.
 
 (* Evaluate a term context to produce a value context. *)
 
-let eval_bindings : type dom modality mode a b n bm.
+(* The bindings of a cube of variables live in the context extended by that cube, so that each can refer to the ones before it, which we arrange with a temporary invisible entry of unknown bindings that we specify as we go.  The bindings of an alias don't extend the context, so they can't refer to each other, and they must all be let-bound. *)
+let eval_bindings : type dom modality mode a b bb b2 n bm.
+    (mode, modality, n, b2, b, bb) ext_kind ->
     (mode, a, b) Ctx.Ordered.t ->
     (dom, modality, mode, n, n) Modality.filter_dim ->
-    ((b, (modality, n) dim_entry) snoc, mode, modality, dom, bm) plus_lock ->
+    (bb, mode, modality, dom, bm) plus_lock ->
     (n, (dom, bm) binding) CubeOf.t ->
     (n, dom Ctx.Binding.t) CubeOf.t =
- fun ctx filter al cbs ->
+ fun ext ctx filter al cbs ->
   let i = Ctx.Ordered.length ctx in
   let vbs = CubeOf.build (CubeOf.dim cbs) { build = (fun _ -> Ctx.Binding.unknown ()) } in
-  let ctx = Ctx.Ordered.invis ctx filter vbs in
   let modality = Modality.filter_modality filter in
-  let tempctx = Ctx.Ordered.lock_to ctx modality al in
+  let tempctx =
+    match ext with
+    | Ext_dim -> Ctx.Ordered.lock_to (Ctx.Ordered.invis ctx filter vbs) modality al
+    | Ext_alias -> Ctx.Ordered.lock_to ctx modality al in
   let argtbl = Hashtbl.create 10 in
   let j = ref 0 in
   let () =
@@ -2055,6 +2076,10 @@ let eval_bindings : type dom modality mode a b n bm.
             j := !j + 1;
             let lvl, v =
               match ctm with
+              | None
+                when match ext with
+                     | Ext_alias -> true
+                     | Ext_dim -> false -> fatal (Anomaly "alias without a value")
               | None ->
                   ( Some level,
                     ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal) )
@@ -2067,32 +2092,30 @@ let eval_bindings : type dom modality mode a b n bm.
       [ cbs; vbs ] in
   vbs
 
-let eval_entry : type dom modality mode a b f n bm.
+let eval_entry : type dom modality mode a b bb f n bm b2.
     (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, b, bm, f, n) entry ->
-    (dom, modality, mode, f, n) Ctx.entry =
- fun ctx e ->
-  match e with
-  | Vis { dim; plus_lock; filter; plusdim; vars; bindings; hasfields; fields; fplus } ->
-      let bindings = eval_bindings ctx filter plus_lock bindings in
-      let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
-      Vis { dim; filter; plusdim; vars; bindings; hasfields; fields; fplus }
-  | Invis { plus_lock; bindings; filter; _ } ->
-      Invis { filter; bindings = eval_bindings ctx filter plus_lock bindings }
+    (dom, modality, mode, bb, bm, f, n, b2) entry ->
+    (mode, b2, mode, b, unit, bb) Tctx.comp ->
+    (dom, modality, mode, f, n, b2) Ctx.entry =
+ fun ctx ({ plus_lock; filter; bindings; vis } as e) comp ->
+  let bindings = eval_bindings (ext_kind e comp) ctx filter plus_lock bindings in
+  match vis with
+  | Vis (kind, v) -> { filter; bindings; vis = Vis (kind, v) }
+  | Invis _ -> { filter; bindings; vis = Invis }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function
   | Emp mode -> Emp mode
-  | Ext (ctx, e, af) ->
+  | Ext (ctx, e, af, comp) ->
       let ectx = eval_ordered_ctx ctx in
-      Snoc (ectx, eval_entry ectx e, af)
+      Snoc (ectx, eval_entry ectx e comp, af, comp)
   | Lock (ctx, lock) -> Lock (eval_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (eval_ordered_ctx ctx, code)
 
 let eval_ctx : type mode a b. (mode, a, b) termctx -> (mode, a, b) Ctx.t = function
   | Permute (perm, ctx) ->
       let ctx = eval_ordered_ctx ctx in
-      Permute { perm; env = Ctx.Ordered.env ctx; level = Ctx.Ordered.length ctx; ctx }
+      Permute { perm; level = Ctx.Ordered.length ctx; ctx }
 
 (* Evaluate a telescope (forwards context of terms) and append the result to a context. *)
 let rec eval_append : type mode a b c ac bc.

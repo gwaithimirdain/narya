@@ -11,7 +11,6 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Var i -> Var i
   | Const c -> Const (Constant.remake f c)
   | Meta (m, s) -> Meta (Meta.remake f m, s)
-  | MetaEnv (m, e) -> MetaEnv (Meta.remake f m, env f e)
   | Field (e, Modal (modality, al, tm), fld, fldins) ->
       Field (e, Modal (modality, al, term f tm), fld, fldins)
   | UU (mode, n) -> UU (mode, n)
@@ -65,7 +64,10 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
           plus_lock;
           window;
           dim;
-          motive = Option.map (term f) motive;
+          motive =
+            (match motive with
+            | `Explicit motive -> `Explicit (term f motive)
+            | (`Implicit | `Nondep) as motive -> motive);
           branches = Constr.Map.map (branch f) branches;
         }
   | Realize tm -> Realize (term f tm)
@@ -73,7 +75,6 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
   | Unact (o, tm) -> Unact (o, term f tm)
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
-  | Weaken (plus, tm, newplus) -> Weaken (plus, term f tm, newplus)
   | Failed energy -> Failed energy
 
 and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, a, n) branch =
@@ -184,39 +185,27 @@ and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a
   | Lock k -> Lock { k with env = env f k.env }
   | Prekey k -> Prekey { k with env = env f k.env }
 
-and entry : type dom modality mode b f mn bm.
+and entry : type dom modality mode b f mn bm b2.
     (File.t -> File.t) ->
-    (dom, modality, mode, b, bm, f, mn) entry ->
-    (dom, modality, mode, b, bm, f, mn) entry =
+    (dom, modality, mode, b, bm, f, mn, b2) entry ->
+    (dom, modality, mode, b, bm, f, mn, b2) entry =
  fun f e ->
-  match e with
-  | Vis v ->
-      let bindings =
-        CubeOf.mmap
-          {
-            map =
-              (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
-                { ty = term f b.ty; tm = Option.map (term f) b.tm });
-          }
-          [ v.bindings ] in
-      Vis { v with bindings }
-  | Invis v ->
-      let bindings =
-        CubeOf.mmap
-          {
-            map =
-              (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
-                { ty = term f b.ty; tm = Option.map (term f) b.tm });
-          }
-          [ v.bindings ] in
-      Invis { v with bindings }
+  let bindings =
+    CubeOf.mmap
+      {
+        map =
+          (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
+            { ty = term f b.ty; tm = Option.map (term f) b.tm });
+      }
+      [ e.bindings ] in
+  { e with bindings }
 
 and termctx_ordered : type mode a b.
     (File.t -> File.t) -> (mode, a, b) ordered_termctx -> (mode, a, b) ordered_termctx =
  fun f ctx ->
   match ctx with
   | Emp mode -> Emp mode
-  | Ext (ctx, e, ax) -> Ext (termctx_ordered f ctx, entry f e, ax)
+  | Ext (ctx, e, ax, comp) -> Ext (termctx_ordered f ctx, entry f e, ax, comp)
   | Lock (ctx, lock) -> Lock (termctx_ordered f ctx, lock)
   | Weaken (ctx, code) -> Weaken (termctx_ordered f ctx, code)
 
@@ -233,4 +222,5 @@ let metadef : type mode x y z.
     | `Defined tm -> `Defined (term f tm)
     | x -> x in
   let recursion = Positivity.link_recursion f data.recursion in
-  { data with tm; termctx; ty; recursion }
+  let owner = Option.map (Constant.remake f) data.owner in
+  { data with tm; termctx; ty; recursion; owner }

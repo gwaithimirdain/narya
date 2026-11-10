@@ -275,7 +275,7 @@ Let can contain case trees:
   true.
     : bool
   
-  _let.F3.0.n{…}
+  let only … in not._n
     : bool
   
 
@@ -295,7 +295,7 @@ Let can contain case trees:
   true.
     : bool
   
-  _let.F3.0.n{…} u
+  (let only … in not._n) u
     : bool
   
 
@@ -322,7 +322,7 @@ Synthesizing matches don't need to be annotated
   true.
     : bool
   
-  _let.F3.0.n{…}
+  let only … in not._n
     : bool
   
 
@@ -349,7 +349,7 @@ Either branch can synthesize:
   true.
     : bool
   
-  _let.F3.0.n{…}
+  let only … in not._n
     : bool
   
 
@@ -403,7 +403,8 @@ Matches outside case trees can be implicitly wrapped in a let-binding:
   true.
     : bool
   
-  _match.F3.0{…}
+  let only b : bool ≔ u in
+  (match #(gen) b [ false. ↦ true. | true. ↦ false. ] : bool)
     : bool
   
 
@@ -441,7 +442,10 @@ Pattern-matching lambdas can be used in arbitrary places:
    ￫ info[I0001]
    ￮ axiom n assumed
   
-  _match.F2.0{…}
+  let only 𝑥 : ℕ ≔
+    let only 𝑥 : ℕ ≔ n in
+    (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ) in
+  (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ)
     : ℕ
   
 
@@ -498,3 +502,89 @@ Matches in non-toplevel definitions of datatype
    ￮ constant f defined
   
 
+
+In a hole, a let-bound variable whose value is its metavariable is displayed as that variable, including in the values of later let-bound variables.
+
+  $ narya -v letcase.ny -e 'def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]' -e 'def t (b : bool) : bool ≔ let not : bool → bool ≔ [ true. ↦ false. | false. ↦ true. ] in let y : bool ≔ not b in ((x p ↦ true.) : (x : bool) → J bool (not x) y → bool) b ?'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ info[I0001]
+   ￮ axiom u assumed
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ info[I0000]
+   ￮ constant t defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     b : bool
+     not ≔ t._not : bool → bool
+     y ≔ not b : bool
+     ----------------------------------------------------------------------
+     J bool (not b) (not b)
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+This also works for a modal let-bound variable used with a key.
+
+  $ narya -v -spatial letcase.ny -e 'def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]' -e 'def t (b : bool) : bool ≔ let not :♭| bool → bool ≔ [ true. ↦ false. | false. ↦ true. ] in ((p ↦ true.) : J bool (not b) b → bool) ?'
+   ￫ info[I0000]
+   ￮ constant bool defined
+  
+   ￫ info[I0001]
+   ￮ axiom u assumed
+  
+   ￫ info[I0000]
+   ￮ constant J defined
+  
+   ￫ info[I0000]
+   ￮ constant t defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     b : bool
+     not ≔ t._not :♭| bool → bool
+     ----------------------------------------------------------------------
+     J bool (not b) b
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]
+
+A let-bound variable can be degenerated, as in the context of a higher codatatype field.
+
+  $ narya -v -e 'def t4 (A : Type) (a : A) : Type ≔ let b : A ≔ a in codata [ x .f.e : ? ]'
+   ￫ info[I0000]
+   ￮ constant t4 defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     A.0 : Type
+     A.1 : Type
+     A.2 : Type⁽ᵉ⁾ A.0 A.1
+     a.0 : A.0
+     a.1 : A.1
+     a.2 : A.2 a.0 a.1
+     b.0 ≔ a.0 : A.0
+     b.1 ≔ a.1 : A.1
+     b.2 ≔ a.2 : A.2 a.0 a.1
+     x.0 : t4 A.0 a.0
+     x.1 : t4 A.1 a.1
+     x.2 : t4⁽ᵉ⁾ A.2 a.2 x.0 x.1
+     ----------------------------------------------------------------------
+     Type
+  
+   ￫ error[E3002]
+   ￮ command-line exec string contains open holes
+  
+  [1]

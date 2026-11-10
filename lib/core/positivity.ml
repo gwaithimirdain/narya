@@ -1,3 +1,5 @@
+open Origin
+
 (* This module implements occurrence analysis of the currently-being-defined constants and metavariables in the argument types of datatype constructors, in order to detect recursive datatypes.  In the future it should also be usable for checking strict positivity of recursive occurrences, by additionally tracking the positions in which occurrences appear (e.g. flipping polarity when the typechecker descends into the domain of a pi-type).
 
    The detection happens *during* typechecking, rather than by a separate traversal of checked terms afterwards: the typechecker records occurrences as it resolves constant references, creates holes, and refers to let-bound variables whose values contained occurrences.  A separate traversal could not be correct, since a checked constructor type contains only a variable reference when it mentions a let-bound value: the occurrences hide in the value of that variable, which lives outside the data node (or behind a metavariable, for case-tree lets). *)
@@ -6,7 +8,7 @@
 type recursion = [ `Nonrecursive | `Recursive | `Unknown of Meta.WrapSet.t ]
 
 (* When "linking" a marshaled term unpickled from a compiled file, the metavariables in an `Unknown verdict must have their file autonumbers replaced along with all the other metavariables occurring in terms (see Link).  (Compiled files can't contain unsolved holes, but an `Unknown verdict blocked on since-solved holes is never rewritten, so it can appear in a compiled file.) *)
-let link_recursion : (Origin.File.t -> Origin.File.t) -> recursion -> recursion =
+let link_recursion : (File.t -> File.t) -> recursion -> recursion =
  fun f -> function
   | `Nonrecursive -> `Nonrecursive
   | `Recursive -> `Recursive
@@ -28,8 +30,8 @@ end)
 let () =
   BeingDefined.register_printer (function `Read -> Some "unhandled Positivity.BeingDefined effect")
 
-(* The collector is a stack of verdict accumulators for nested scopes.  A scope is opened around checking anything whose occurrences we want to know about: the argument telescope of each datatype constructor, and the value of each let or letrec binding.  Since the stack is mutable state confined to a dynamic extent, we implement it as a reader effect holding a mutable record. *)
-type stack = { mutable frames : recursion list }
+(* The collector is a stack of verdict accumulators for nested scopes.  A scope is opened around checking anything whose occurrences we want to know about: the argument telescope of each datatype constructor, and the value of each let or letrec binding.  Since the stack is mutable state confined to a dynamic extent, we implement it as a reader effect holding mutable state.  And we make it speculable so that holes in speculative branches don't persist. *)
+type stack = recursion list Speculable.t
 
 module Collector = Algaeff.Reader.Make (struct
   type t = stack
@@ -40,7 +42,8 @@ let () =
 
 (* Install handlers for both effects.  This is done once at top level with an empty being-defined set; the callers that know a real being-defined set (checking a "def" block, or solving a hole) re-wrap with "run_beingdefined" below. *)
 let run : type a. (unit -> a) -> a =
- fun f -> BeingDefined.run ~env:Constant.Map.empty @@ fun () -> Collector.run ~env:{ frames = [] } f
+ fun f ->
+  BeingDefined.run ~env:Constant.Map.empty @@ fun () -> Collector.run ~env:(Speculable.make []) f
 
 let run_beingdefined : type a. unit Constant.Map.t -> (unit -> a) -> a =
  fun beingdefined f -> BeingDefined.run ~env:beingdefined f
@@ -51,18 +54,18 @@ let beingdefined () = BeingDefined.read ()
 let record : recursion -> unit =
  fun v ->
   let s = Collector.read () in
-  match s.frames with
-  | [] -> ()
-  | top :: rest -> s.frames <- merge v top :: rest
+  Speculable.modify s (function
+    | [] -> []
+    | top :: rest -> merge v top :: rest)
 
 (* Called by the typechecker when it resolves a reference to a constant. *)
 let record_const : Constant.t -> unit =
  fun c ->
   let s = Collector.read () in
-  match s.frames with
-  | [] -> ()
-  | top :: rest ->
-      if Constant.Map.mem c (BeingDefined.read ()) then s.frames <- merge `Recursive top :: rest
+  Speculable.modify s (function
+    | [] -> []
+    | top :: rest as frames ->
+        if Constant.Map.mem c (BeingDefined.read ()) then merge `Recursive top :: rest else frames)
 
 (* Called by the typechecker when it creates a hole. *)
 let record_hole : type mode a b s. (mode, a, b, s) Meta.t -> unit =
@@ -72,13 +75,14 @@ let record_hole : type mode a b s. (mode, a, b, s) Meta.t -> unit =
 let scope : type a. (unit -> a) -> a * recursion =
  fun f ->
   let s = Collector.read () in
-  s.frames <- `Nonrecursive :: s.frames;
+  Speculable.modify s (fun frames -> `Nonrecursive :: frames);
   let pop () =
-    match s.frames with
+    match Speculable.get s with
     | v :: rest ->
-        (match rest with
-        | top :: rest -> s.frames <- merge v top :: rest
-        | [] -> s.frames <- []);
+        Speculable.set s
+          (match rest with
+          | top :: rest -> merge v top :: rest
+          | [] -> []);
         v
     | [] -> `Nonrecursive in
   match f () with

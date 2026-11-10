@@ -6,6 +6,7 @@ open Tctx
 open Reporter
 open Term
 open Value
+open Env
 open View
 
 (* Operator actions on values.  Unlike substitution, operator actions take a *value* as input (and produces another value). *)
