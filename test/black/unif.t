@@ -715,6 +715,144 @@ The arguments count as part of the renaming, so the value can't use an argument 
   
   [1]
 
+A variable of the metavariable's context, or an argument, can also be sent to a tuple or an abstraction, or a combination of them, whose leaves are distinct variables applied to exactly the variables bound by the abstractions above them, in order.  Then those variables can be recovered by projecting from, and applying, the variable or argument, so the solution is still most general.  This includes nested and dependent records, records with no fields, and degeneracies.  Applications at the end are eta-contracted.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom C : A → A → Type
+  > axiom D : A → A → A → Type
+  > axiom E : (a : A) → B a → Type
+  > axiom P : (A → A) → Type
+  > axiom a0 : A
+  > def prod (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
+  > def unit : Type ≔ sig ()
+  > def dsig : Type ≔ sig (pt : A, fib : B pt)
+  > def tup (h : (y z : A) → C z y) : A → A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y z ↦ let k : G (y, z) ≔ h y z in G (y, z)
+  > def targ : Type ≔ let f : prod A A → Type ≔ _ in let k : (x y : A) → Id Type (f (x, y)) (C x y) ≔ x y ↦ refl (C x y) in A
+  > def nest (h : (x y z : A) → D z y x) : A → A → A → Type ≔ let G : prod (prod A A) A → Type ≔ p ↦ D _ _ _ in x y z ↦ let k : G ((x, y), z) ≔ h x y z in A
+  > def dep (h : (x : A) (b : B x) → E x b) : (x : A) → B x → Type ≔ let G : prod dsig unit → Type ≔ p ↦ E _ _ in x b ↦ let k : G ((x, b), ()) ≔ h x b in A
+  > def lam (h : (g : A → A) → B (g a0)) : (A → A) → Type ≔ let G : (A → A) → Type ≔ f ↦ B _ in g ↦ let k : G (w ↦ g w) ≔ h g in G g
+  > def lam2 (h : (g : A → A) → P g) : (A → A) → Type ≔ let G : (A → A) → Type ≔ f ↦ P _ in g ↦ let k : G (w ↦ g w) ≔ h g in G g
+  > def under (h : (g : A → A) → P (w ↦ g (g w))) : (A → A) → Type ≔ let G : (A → A) → Type ≔ f ↦ P _ in g ↦ let k : G (w ↦ g w) ≔ h g in G g
+  > def lamtup (h : (g k : A → A) → C (g a0) (k a0)) : (A → A) → (A → A) → Type ≔ let G : (A → prod A A) → Type ≔ f ↦ C _ _ in g k ↦ let j : G (w ↦ (g w, k w)) ≔ h g k in A
+  > def deg : A → A → Type ≔ let G : (p : prod A A) → Id A (p .fst) (p .fst) ≔ p ↦ _ in y z ↦ let k : Id (Id A y y) (G (y, z)) (refl y) ≔ refl (refl y) in A
+  > about tup
+  > about targ
+  > about nest
+  > about dep
+  > about lam
+  > about lam2
+  > about under
+  > about lamtup
+  > about deg
+  > EOF
+  h ↦ let G ≔ p ↦ C (p .snd) (p .fst) in y z ↦ let k ≔ h y z in G (y, z)
+    : (h : (y : A) (z : A) → C z y) → A → A → Type
+  
+  let f ≔ 𝑥 ↦ C (𝑥 .fst) (𝑥 .snd) in let k ≔ x y ↦ Id (C x y) in A
+    : Type
+  
+  h ↦
+  let G ≔ p ↦ D (p .snd) (p .fst .snd) (p .fst .fst) in
+  x y z ↦
+  let k ≔ h x y z in
+  A
+    : (h : (x : A) (y : A) (z : A) → D z y x) → A → A → A → Type
+  
+  h ↦ let G ≔ p ↦ E (p .fst .pt) (p .fst .fib) in x b ↦ let k ≔ h x b in A
+    : (h : (x : A) (b : B x) → E x b) (x : A) → B x → Type
+  
+  h ↦ let G ≔ f ↦ B (f a0) in g ↦ let k ≔ h g in G g
+    : (h : (g : A → A) → B (g a0)) → (A → A) → Type
+  
+  h ↦ let G ≔ f ↦ P f in g ↦ let k ≔ h g in G g
+    : (h : (g : A → A) → P g) → (A → A) → Type
+  
+  h ↦ let G ≔ f ↦ P (w ↦ f (f w)) in g ↦ let k ≔ h g in G g
+    : (h : (g : A → A) → P (w ↦ g (g w))) → (A → A) → Type
+  
+  h ↦ let G ≔ f ↦ C (f a0 .fst) (f a0 .snd) in g k ↦ let j ≔ h g k in A
+    : (h : (g : A → A) (k : A → A) → C (g a0) (k a0)) → (A → A) → (A → A)
+      → Type
+  
+  let G ≔ p ↦ refl (p .fst) in y z ↦ let k ≔ (refl y)⁽¹ᵉ⁾ in A
+    : A → A → Type
+  
+
+But if a leaf is repeated, the value can't use it, since then there would be more than one solution.  And a leaf that doesn't use the variable bound by an abstraction, or uses them in a different order, isn't invertible (for now).
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom C : A → A → Type
+  > axiom Q : (A → A → A) → Type
+  > def prod (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
+  > def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
+  > def const (h : (y : A) → B y) : A → Type ≔ let G : (A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (w ↦ y) ≔ h y in A
+  > def swap (h : (g : A → A → A) → Q g) : (A → A → A) → Type ≔ let G : (A → A → A) → Type ≔ f ↦ Q _ in g ↦ let k : G (u v ↦ g v u) ≔ h g in A
+  > EOF
+   ￫ error[E0406]
+   ￭ stdin
+   6 | def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
+     ^ term synthesized type
+         C y y
+       and is being checked against type
+         C (let only … in ?u0) (let only … in ?u1)
+       but can't determine whether they are equal, since comparing head terms
+         y
+       and
+         let only … in ?u0
+       depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   6 | def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
+     ^ can't determine a value for this placeholder
+  
+   ￫ error[E2004]
+   ￭ stdin
+   6 | def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
+     ^ can't determine a value for this placeholder
+  
+   ￫ error[E0406]
+   ￭ stdin
+   7 | def const (h : (y : A) → B y) : A → Type ≔ let G : (A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (w ↦ y) ≔ h y in A
+     ^ term synthesized type
+         B y
+       and is being checked against type
+         B (let only … in ?u3)
+       but can't determine whether they are equal, since comparing head terms
+         y
+       and
+         let only … in ?u3
+       depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   7 | def const (h : (y : A) → B y) : A → Type ≔ let G : (A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (w ↦ y) ≔ h y in A
+     ^ can't determine a value for this placeholder
+  
+   ￫ error[E0406]
+   ￭ stdin
+   8 | def swap (h : (g : A → A → A) → Q g) : (A → A → A) → Type ≔ let G : (A → A → A) → Type ≔ f ↦ Q _ in g ↦ let k : G (u v ↦ g v u) ≔ h g in A
+     ^ term synthesized type
+         Q g
+       and is being checked against type
+         Q (let only … in ?u5)
+       but can't determine whether they are equal, since comparing head terms
+         g
+       and
+         let only … in ?u5
+       depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   8 | def swap (h : (g : A → A → A) → Q g) : (A → A → A) → Type ≔ let G : (A → A → A) → Type ≔ f ↦ Q _ in g ↦ let k : G (u v ↦ g v u) ≔ h g in A
+     ^ can't determine a value for this placeholder
+  
+  [1]
+
 A metavariable that is projected from is expanded into a tuple of new metavariables, when solving an equation that requires it, which is correct by eta-conversion.  This includes dependent and nested records, and metavariables that are also applied to arguments.
 
   $ narya - <<EOF
