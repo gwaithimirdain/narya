@@ -49,6 +49,29 @@ let printer : (printable -> PPrint.document) ref =
 
 let print pr = !printer pr
 
+(* Values in error messages are printed folded, without unfolding definitions (see Readback.folded), since that is closer to what the user wrote.  The printer consults this flag. *)
+let folded_printing = ref true
+
+let print_unfolded pr =
+  let saved = !folded_printing in
+  folded_printing := false;
+  Fun.protect ~finally:(fun () -> folded_printing := saved) (fun () -> print pr)
+
+let render doc =
+  let buf = Buffer.create 16 in
+  PPrint.ToBuffer.compact buf doc;
+  Buffer.contents buf
+
+(* Print two terms that are being compared, such as a synthesized type and the type it is being checked against.  If they look the same when printed folded, because they differ only inside definitions, they are printed unfolded instead, so that the difference can be seen. *)
+let print_pair p1 p2 =
+  let d1 = print p1 in
+  let d2 = print p2 in
+  if render d1 = render d2 then
+    let u1 = print_unfolded p1 in
+    let u2 = print_unfolded p2 in
+    (u1, u2)
+  else (d1, d2)
+
 let print_to_string pr =
   let buf = Buffer.create 5 in
   PPrint.ToBuffer.pretty 1.0 70 buf (!printer pr);
@@ -792,20 +815,23 @@ module Code = struct
             (print ty)
       | Unequal_synthesized_type { got; expected; which; why } ->
           let str, p1, p2 = Unequal.printables why in
+          let got, expected = print_pair got expected in
+          let p1, p2 = print_pair p1 p2 in
           textf
             "@[<hv 0>term synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a%a@]"
-            pp_printed (print got) pp_printed (print expected) str pp_printed (print p1) pp_printed
-            (print p2)
+            pp_printed got pp_printed expected str pp_printed p1 pp_printed p2
             (pp_print_option
                ~none:(fun _ () -> ())
                (fun ppf which -> fprintf ppf "@ (hint: %s boundaries are explicit)" which))
             which
       | Unequal_synthesized_boundary { face; got; expected; why } ->
           let str, p1, p2 = Unequal.printables why in
+          let got, expected = print_pair got expected in
+          let p1, p2 = print_pair p1 p2 in
           textf
             "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
-            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
-            (print p1) pp_printed (print p2)
+            (string_of_sface face) pp_printed got pp_printed expected str pp_printed p1 pp_printed
+            p2
       | Not_enough_domains dim ->
           textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
       | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
@@ -919,16 +945,19 @@ module Code = struct
             pp_close_box ppf ()
       | Unequal_indices (t1, t2, why) ->
           let str, p1, p2 = Unequal.printables why in
+          let t1, t2 = print_pair t1 t2 in
+          let p1, p2 = print_pair p1 p2 in
           textf
             "@[<hv 0>index@;<1 2>%a@ of constructor application doesn't match the corresponding index@;<1 2>%a@ of datatype instance: unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
-            pp_printed (print t1) pp_printed (print t2) str pp_printed (print p1) pp_printed
-            (print p2)
+            pp_printed t1 pp_printed t2 str pp_printed p1 pp_printed p2
       | Unequal_boundary_argument { face; got; expected; why } ->
           let str, p1, p2 = Unequal.printables why in
+          let got, expected = print_pair got expected in
+          let p1, p2 = print_pair p1 p2 in
           textf
             "@[<hv 0>supplied %s-boundary argument@;<1 2>%a@ doesn't match the one determined by the type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
-            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
-            (print p1) pp_printed (print p2)
+            (string_of_sface face) pp_printed got pp_printed expected str pp_printed p1 pp_printed
+            p2
       | Unbound_variable (c, alt) -> (
           match alt with
           | [] -> textf "unbound variable: %s" c
@@ -1167,17 +1196,19 @@ module Code = struct
           | Left str -> textf "invalid output type for constructor %s:@ %s" (Constr.to_string c) str
           | Right why ->
               let str, p1, p2 = Unequal.printables why in
+              let p1, p2 = print_pair p1 p2 in
               textf
                 "invalid output type for constructor %s:@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a"
-                (Constr.to_string c) str pp_printed (print p1) pp_printed (print p2))
+                (Constr.to_string c) str pp_printed p1 pp_printed p2)
       | Invalid_self_variable_type (f, why) -> (
           match why with
           | Left str -> textf "invalid self variable type for field %s:@ %s" (Field.to_string f) str
           | Right why ->
               let str, p1, p2 = Unequal.printables why in
+              let p1, p2 = print_pair p1 p2 in
               textf
                 "invalid self variable type for field %s:@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a"
-                (Field.to_string f) str pp_printed (print p1) pp_printed (print p2))
+                (Field.to_string f) str pp_printed p1 pp_printed p2)
       | Missing_constructor_type c ->
           textf "missing type for constructor %s of indexed datatype" (Constr.to_string c)
       | Locked_variable -> text "variable not available inside external degeneracy"

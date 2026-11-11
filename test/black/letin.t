@@ -101,7 +101,7 @@ It matters what the variable is bound to:
      ^ term synthesized type
          Id A a0 a0
        but is being checked against type
-         Id A a0 a1
+         Id A a0 a0'
        unequal head constants:
          a0
        does not equal

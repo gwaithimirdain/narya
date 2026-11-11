@@ -277,12 +277,12 @@
          {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵉ⁾ A₀ A₁) {𝑥₀ : A₀ → A₀} {𝑥₁ : A₁ → A₁}
          (𝑥₂ : {𝑦₀ : A₀} {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁) →⁽ᵉ⁾ A₂ (𝑥₀ 𝑦₀) (𝑥₁ 𝑦₁)) {𝑦₀ : A₀}
          {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁)
-         →⁽ᵉ⁾ A₂ (𝑥₀ 𝑦₀) (𝑥₁ 𝑦₁)
+         →⁽ᵉ⁾ A₂ (one A₀ 𝑥₀ 𝑦₀) (one A₁ 𝑥₁ 𝑦₁)
        but is being checked against type
          {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵉ⁾ A₀ A₁) {𝑥₀ : A₀ → A₀} {𝑥₁ : A₁ → A₁}
          (𝑥₂ : {𝑦₀ : A₀} {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁) →⁽ᵉ⁾ A₂ (𝑥₀ 𝑦₀) (𝑥₁ 𝑦₁)) {𝑦₀ : A₀}
          {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁)
-         →⁽ᵉ⁾ A₂ (𝑥₀ 𝑦₀) 𝑦₁
+         →⁽ᵉ⁾ A₂ (one A₀ 𝑥₀ 𝑦₀) (zero A₁ 𝑥₁ 𝑦₁)
        unequal head variables:
          𝑥
        does not equal
@@ -297,12 +297,12 @@
          {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵉ⁾ A₀ A₁) {𝑥₀ : A₀ → A₀} {𝑥₁ : A₁ → A₁}
          (𝑥₂ : {𝑦₀ : A₀} {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁) →⁽ᵉ⁾ A₂ (𝑥₀ 𝑦₀) (𝑥₁ 𝑦₁)) {𝑦₀ : A₀}
          {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁)
-         →⁽ᵉ⁾ A₂ (𝑥₀ (𝑥₀ 𝑦₀)) (𝑥₁ (𝑥₁ 𝑦₁))
+         →⁽ᵉ⁾ A₂ (two A₀ 𝑥₀ 𝑦₀) (two A₁ 𝑥₁ 𝑦₁)
        but is being checked against type
          {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵉ⁾ A₀ A₁) {𝑥₀ : A₀ → A₀} {𝑥₁ : A₁ → A₁}
          (𝑥₂ : {𝑦₀ : A₀} {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁) →⁽ᵉ⁾ A₂ (𝑥₀ 𝑦₀) (𝑥₁ 𝑦₁)) {𝑦₀ : A₀}
          {𝑦₁ : A₁} (𝑦₂ : A₂ 𝑦₀ 𝑦₁)
-         →⁽ᵉ⁾ A₂ (𝑥₀ (𝑥₀ (𝑥₀ 𝑦₀))) (𝑥₁ (𝑥₁ 𝑦₁))
+         →⁽ᵉ⁾ A₂ (cplus one two A₀ 𝑥₀ 𝑦₀) (two A₁ 𝑥₁ 𝑦₁)
        unequal head variables:
          𝑦
        does not equal

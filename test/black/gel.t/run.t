@@ -166,11 +166,9 @@
    ￭ command-line exec string
    1 | def r2ty_eq_sym_r2ty : Id Type r2ty sym_r2ty := refl r2ty
      ^ term synthesized type
-         Type⁽ᵉ⁾ (Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
-           (Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
+         Type⁽ᵉ⁾ r2ty r2ty
        but is being checked against type
-         Type⁽ᵉ⁾ (Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1))
-           (sym (Gel⁽ᵉ⁾ A2 B2 R2) {a0} {b0} (ungel ≔ r0) {a1} {b1} (ungel ≔ r1) a2 b2)
+         Type⁽ᵉ⁾ r2ty sym_r2ty
        unequal terms:
          Gel⁽ᵉ⁾ A2 B2 R2 a2 b2 (ungel ≔ r0) (ungel ≔ r1)
        does not equal

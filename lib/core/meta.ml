@@ -118,6 +118,13 @@ end
 
 module WrapSet = Set.Make (Wrapped)
 
+(* Whether a metavariable is a hole that the user left, rather than one created internally to hold a definition, such as the value of a let-binding that is a case tree. *)
+let is_hole : type mode a b s. (mode, a, b, s) t -> bool =
+ fun (_, m) ->
+  match m.identity with
+  | `Hole _ -> true
+  | `Def _ -> false
+
 (* Representation of holes for interacting with ProofGeneral. *)
 let hole_number : type mode a b s. (mode, a, b, s) t -> int =
  fun (_, m) ->
