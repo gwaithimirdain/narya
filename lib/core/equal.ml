@@ -204,6 +204,13 @@ let comparison (f : unit -> 'a) : 'a =
         finish ();
         raise e)
 
+(* Abandoning a speculation undoes the solutions it made, and the count of solutions with them, so that the count could later return to the same value with different solutions.  So we also forget everything then. *)
+let () =
+  Origin.Origin.on_backtrack (fun () ->
+      match !flexible_memo with
+      | Some memo -> Hashtbl.reset memo.table
+      | None -> ())
+
 let find_flexible : type mode.
     mode Mode.t -> (mode, kinetic) value -> (mode, kinetic) value -> int -> unit Err.t option =
  fun mode x y hash ->
