@@ -245,6 +245,31 @@ let remember_flexible : type mode.
       | _ -> ())
   | _ -> ()
 
+(* Whether a type is a record type with eta and no fields, whose elements are all equal. *)
+let has_no_fields : type mode. (mode, kinetic) value -> bool =
+ fun ty ->
+  match view_type ty "has_no_fields" with
+  | Canonical (_, Codata { eta = Eta; fields = Emp; _ }, _, _) -> true
+  | _ -> false
+
+(* In a flexible comparison, which can't solve anything, a value headed by an unsolved unification metavariable can't become equal to one not headed by the same metavariable, except at a type with no information (such as a record type with no fields), in which case an eta-expanding comparison would succeed.  So except at a record type with no fields we don't try: such a comparison is stuck on the metavariable, which sends its caller to its fallback (unfolding and comparing with solving, or postponing).  Otherwise, an eta-expanding comparison would expand and unfold the other side, perhaps at great expense, only to get stuck in the end.  (Being stuck instead at another type with no information isn't wrong, since the fallback finds the equality, but it can choose a less canonical solution for the metavariable than the solver for singleton types would.  We don't test for all such types, which would cost more than this saves.) *)
+let unsolved_head : type mode. (mode, kinetic) value -> Meta.wrapped option = function
+  | Neu { head = Live (Meta { meta; kind = Unif_meta unif; _ }); _ }
+    when Global.unif_status meta unif = `Unsolved -> Some (Wrap meta)
+  | _ -> None
+
+let flexibly_stuck : type mode. (mode, kinetic) value -> (mode, kinetic) value -> bool =
+ fun x y ->
+  !flexible
+  &&
+  match (unsolved_head x, unsolved_head y) with
+  | None, None -> false
+  | Some (Wrap m1), Some (Wrap m2) -> (
+      match Meta.compare m1 m2 with
+      | Eq -> false
+      | Neq -> true)
+  | _ -> true
+
 (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
 let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
  fun n x y ->
@@ -337,6 +362,15 @@ and equal_at : type mode a b.
  fun ctx x y ty ->
   (* Physically equal values are definitionally equal, and physical sharing is common (cached constants, shared let-bindings, shared forced values), so we short-circuit on it before any structural work. *)
   if x == y then Ok ()
+  else if flexibly_stuck x y && not (has_no_fields ty) then
+    let why : Unequal.t =
+      match (x, y) with
+      | Neu { head = Live h1; args = a1; _ }, Neu { head = Live h2; args = a2; _ } -> (
+          match (nonmodal_apps a1, nonmodal_apps a2) with
+          | Some Eq, Some Eq -> Heads (Terms (PHead (ctx, h1), PHead (ctx, h2)))
+          | _ -> Terms (PVal (ctx, x), PVal (ctx, y)))
+      | _ -> Terms (PVal (ctx, x), PVal (ctx, y)) in
+    Error (stuck_on x y (Unequal why))
   else
     with_solver ctx x y (Some ty) @@ fun () ->
     (* The type must be fully instantiated. *)
