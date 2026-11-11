@@ -2045,6 +2045,7 @@ let () =
             (Wrap (unparse (Names.of_ctx ctx) rtm No.Interval.entire No.Interval.entire))
             `None
           ^^ pp_truncated truncated
+      | PNormalized pr -> Reporter.print_unfolded pr
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
       | PMeta v -> utf8string (Meta.name v)
       | PHole (origin, vars, (Permute (p, ctx) as termctx), ty) ->
