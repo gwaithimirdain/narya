@@ -718,9 +718,9 @@ When ♭ is not idempotent, there are two different keys ♭♭ ⇒ ♭, which g
    ￭ command-line exec string
    1 | def e3 (A :♭| Type) (x :♭♭| A) : Id (♭ A) (k1 A x) (♭. (x #♭.ε)) ≔ refl (k1 A x)
      ^ term synthesized type
-         ♭⁽ᵉ⁾ (Id A) (♭. (x #ε.♭)) (♭. (x #ε.♭))
+         ♭⁽ᵉ⁾ (Id A) (k1 A x) (k1 A x)
        but is being checked against type
-         ♭⁽ᵉ⁾ (Id A) (♭. (x #ε.♭)) (♭. (x #ε))
+         ♭⁽ᵉ⁾ (Id A) (k1 A x) (♭. (x #ε))
        unequal head terms:
          x #ε.♭
        does not equal

@@ -17,7 +17,7 @@ By default, the key is not displayed:
      ^ term synthesized type
          Id A y y
        but is being checked against type
-         Id A x y
+         Id A (counit22 A x) y
        unequal head variables:
          y
        does not equal
@@ -35,7 +35,7 @@ With -show-unique-keys, it is displayed explicitly:
      ^ term synthesized type
          Id A #ε #ε (y #ε #ε) (y #ε #ε)
        but is being checked against type
-         Id A #ε #ε (x #ε #ε) (y #ε #ε)
+         Id A #ε #ε (counit22 A x) (y #ε #ε)
        unequal head variables:
          y #ε #ε
        does not equal
@@ -53,7 +53,7 @@ With -show-unique-keys, it is displayed explicitly:
      ^ term synthesized type
          Id A y y
        but is being checked against type
-         Id A x y
+         Id A (counit22 A x) y
        unequal head variables:
          y
        does not equal
@@ -72,7 +72,7 @@ the command-line flag:
      ^ term synthesized type
          Id A #ε #ε (y #ε #ε) (y #ε #ε)
        but is being checked against type
-         Id A #ε #ε (x #ε #ε) (y #ε #ε)
+         Id A #ε #ε (counit22 A x) (y #ε #ε)
        unequal head variables:
          y #ε #ε
        does not equal
@@ -90,7 +90,7 @@ Toggling it twice restores the default (hidden):
      ^ term synthesized type
          Id A y y
        but is being checked against type
-         Id A x y
+         Id A (counit22 A x) y
        unequal head variables:
          y
        does not equal

@@ -2164,6 +2164,9 @@ let rec unparse_ctx : type dom modality mode a b.
             | _ -> names in
           (names, !result))
 
+(* Values in messages are read back folded, unless the message asks for them unfolded (see Reporter.print_pair). *)
+let fold_if_printing_folded f = if !Reporter.folded_printing then Core.Readback.folded f else f ()
+
 (* See the explanation of this function in Core.Reporter. *)
 let () =
   let open PPrint in
@@ -2194,19 +2197,25 @@ let () =
             `None
       (* A displayed value or head is limited to the display size. *)
       | PHead (ctx, h) ->
-          let rtm, truncated = budgeted (Display.size ()) (fun () -> readback_head ctx h) in
+          let rtm, truncated =
+            budgeted (Display.size ()) (fun () ->
+                fold_if_printing_folded (fun () -> readback_head ctx h)) in
           pp_complete_term
             (Wrap (unparse (Names.of_ctx ctx) rtm No.Interval.entire No.Interval.entire))
             `None
           ^^ pp_truncated truncated
       | PVal (ctx, tm) ->
-          let rtm, truncated = budgeted (Display.size ()) (fun () -> readback_val ctx tm) in
+          let rtm, truncated =
+            budgeted (Display.size ()) (fun () ->
+                fold_if_printing_folded (fun () -> readback_val ctx tm)) in
           pp_complete_term
             (Wrap (unparse (Names.of_ctx ctx) rtm No.Interval.entire No.Interval.entire))
             `None
           ^^ pp_truncated truncated
       | PNormal (ctx, tm) ->
-          let rtm, truncated = budgeted (Display.size ()) (fun () -> readback_nf ctx tm) in
+          let rtm, truncated =
+            budgeted (Display.size ()) (fun () ->
+                fold_if_printing_folded (fun () -> readback_nf ctx tm)) in
           pp_complete_term
             (Wrap (unparse (Names.of_ctx ctx) rtm No.Interval.entire No.Interval.entire))
             `None

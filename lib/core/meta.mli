@@ -57,6 +57,7 @@ end
 module WrapSet : module type of Set.Make (Wrapped)
 module WrapMap : module type of Map.Make (Wrapped)
 
+val is_hole : ('mode, 'a, 'b, 's) t -> bool
 val hole_number : ('mode, 'a, 'b, 's) t -> int
 
 module Table : sig

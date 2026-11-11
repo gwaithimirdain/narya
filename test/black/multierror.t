@@ -1091,7 +1091,7 @@ Such an error doesn't cause the part of the term containing it to fail, so later
      ^ term synthesized type
          P false.
        but is being checked against type
-         P true.
+         P (r1 .b true.)
        unequal constructors:
          false
        does not equal
@@ -1125,7 +1125,7 @@ The same holds for a wrong ascription on a term that checks against the outer ty
      ^ term synthesized type
          P false.
        but is being checked against type
-         P true.
+         P (r2 .b)
        unequal constructors:
          false
        does not equal
@@ -1396,7 +1396,7 @@ A failed field of a tuple fails only the things that need its value.  Here the s
    ￫ error[E1000]
    ￭ command-line exec string
    1 | def f : A ≔ let s : sig (x : Bool, y : Bool) ≔ (a, true.) in (true. : P (s .y))
-     ^ non-datatype A has no constructor named true
+     ^ non-datatype P true. has no constructor named true
   
   [1]
 

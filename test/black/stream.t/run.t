@@ -105,7 +105,7 @@
      ^ term synthesized type
          Stream⁽ᵉ⁾ (Id A) s s
        but is being checked against type
-         Stream⁽ᵉ⁾ (Id A) s (corec A (Stream A) (x ↦ x .head) (x ↦ x .tail) s)
+         Stream⁽ᵉ⁾ (Id A) s s''
        unequal head constants:
          s
        does not equal

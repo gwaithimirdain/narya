@@ -33,7 +33,7 @@ A displayed term that is too large is truncated, with the omitted subterms shown
     : Type
   
 
-The same limit applies to error messages.
+Error messages display terms folded, without unfolding definitions, so there the same type is small.
 
   $ narya - <<EOF
   > axiom A : Type
@@ -46,33 +46,14 @@ The same limit applies to error messages.
      ^ term synthesized type
          Type
        but is being checked against type
-         (((… → … → Type) → (… → … → Type) → Type) →
-          ((… → … → Type) → (… → … → Type) → Type)
-          → Type) →
-         (((… → … → Type) → (… → … → Type) → Type) →
-          ((… → … → Type) → (… → … → Type) → Type)
-          → Type)
-         → Type
-         (truncated: larger than display size 2000)
+         T
+           (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T A)))))))))))))))))))
        unequal head terms:
          Type
        does not equal
-         ((((… → … → Type) → (… → … → Type) → Type) →
-           ((… → … → Type) → (… → … → Type) → Type)
-           → Type) →
-          (((… → … → Type) → (… → … → Type) → Type) →
-           ((… → … → Type) → (… → … → Type) → Type)
-           → Type)
-          → Type) →
-         ((((… → … → Type) → (… → … → Type) → Type) →
-           ((… → … → Type) → (… → … → Type) → Type)
-           → Type) →
-          (((… → … → Type) → (… → … → Type) → Type) →
-           ((… → … → Type) → (… → … → Type) → Type)
-           → Type)
-          → Type)
+         T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T A)))))))))))))))))) →
+         T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T (T A))))))))))))))))))
          → Type
-         (truncated: larger than display size 2000)
   
   [1]
 

@@ -410,6 +410,31 @@ let remove_lock : type mode modality cod a bc.
   | None when Option.is_some (Unifying.read ()) -> raise (Unsolvable `Flexible)
   | None -> Ctx.remove_lock ctx modality
 
+(* ********** Folded display ********** *)
+
+(* When reading back for display, we normally unfold glued neutrals (such as applications of defined constants) to show their values, i.e. we normalize.  But in error messages it is better to display terms folded, as close as possible to what the user wrote, and normalizing can also be very expensive.  So display readback can be told not to unfold. *)
+let display_unfolds = ref true
+
+(* Even when displaying folded, a metavariable that holds an internal definition, such as the value of a let-binding that is a case tree, is unfolded, since the user never wrote its name. *)
+let unfolds_when_folded : type mode. mode head -> bool = function
+  | Meta { meta; _ } -> not (Meta.is_hole meta)
+  | _ -> false
+
+(* View a term for display without unfolding, except for such internal definitions. *)
+let rec view_folded : type mode s. (mode, s) value -> (mode, s) value =
+ fun tm ->
+  match tm with
+  | Neu { head = Live head; value; _ } when unfolds_when_folded head -> (
+      match force_eval value with
+      | Realize v -> view_folded v
+      | _ -> tm)
+  | _ -> tm
+
+let folded (f : unit -> 'a) : 'a =
+  let saved = !display_unfolds in
+  display_unfolds := false;
+  Fun.protect ~finally:(fun () -> display_unfolds := saved) f
+
 (* ********** Display budget ********** *)
 
 (* A term that is read back to be displayed can be too large to display usefully, or even to construct: a value can be small, through sharing, but have an enormous normal form.  So a readback for display can be given a budget, the number of subterms it may produce.  If it would produce more, it is abandoned and read back again with its depth limited, the subterms below that depth being replaced by Overflow, at a depth where it fits.  Depth is counted so that it matches the displayed nesting: the codomain of a pi-type, and the body of an abstraction, are at the same depth as the pi-type or abstraction, since iterated ones are displayed as a single flat chain. *)
@@ -615,7 +640,10 @@ and readback_at_type : type mode a z s.
     (mode, kinetic) value ->
     (mode, a, s) term =
  fun ?(eta = false) status ctx tm ty ->
-  let view = if Displaying.read () then view_term tm else tm in
+  let view =
+    if not (Displaying.read ()) then tm
+    else if !display_unfolds then view_term tm
+    else view_folded tm in
   let vty = view_type ty "readback_at" in
   match (vty, view) with
   (* Abstractions (kinetic or potential) are read back uniformly by extending the context using their pi-type. *)
@@ -938,7 +966,10 @@ and readback_val_unbudgeted : type mode a z s.
       | Some v -> readback_at Kinetic ctx v (Lazy.force ty)
       | None -> (
           match (force_eval value, Displaying.read ()) with
-          | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
+          | Realize v, true when !display_unfolds || unfolds_when_folded head ->
+              readback_at Kinetic ctx v (Lazy.force ty)
+          (* A folded neutral whose value has failed is displayed as failed, as it would be if it were unfolded, so that a message that depends on a part that already failed is recognized as a consequence of that failure. *)
+          | Realize (Neu { head = Failed _; _ }), true -> Failed Kinetic
           | Val (Canonical _), _ ->
               rigidly @@ fun () -> readback_neu ~canonical:`Canonical ctx head args
           (* A neutral that is permanently stuck is rigid, but one that is stuck on a metavariable or might unfold is not, since its arguments might go away. *)

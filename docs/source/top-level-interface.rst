@@ -237,6 +237,8 @@ See :ref:`Implicit boundaries` for more information about implicit boundaries of
 
 The display size limits how large a displayed term can be, whether in an error message, the output of ``echo``, or the context and type of a hole.  A term whose normal form has more than about that many subterms is truncated: it is displayed only to some depth, with the omitted subterms shown as ``…``, and followed by the notice ``(truncated: larger than display size N)``.  The point is to give an idea of what the term looks like, so the depth chosen is not necessarily the greatest that would fit; to see more of a term, increase the display size.  The default is 2000, and ``∞`` (or ``infinity``) means no limit.  Such large terms usually arise from normalizing, since a value can be small, by sharing, while its normal form is enormous.
 
+Error messages display terms without unfolding definitions, as close as possible to what was written, rather than normalized.  (If two terms being compared would then look the same, they are displayed normalized instead, so that the difference can be seen.)  Holes and the output of ``echo`` display normalized terms.
+
 
 Chdir
 ^^^^^

@@ -1308,9 +1308,9 @@ A metavariable with a permutation isn't equal to itself without it, even if the 
    ￭ stdin
    16 | echo use _ (rf T _)
       ^ term synthesized type
-          Same (A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)) ?u0 ?u0
+          Same T ?u0 ?u0
         and is being checked against type
-          Same (A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)) ?u0 (sym ?u0)
+          Same T ?u0 (sym ?u0)
         but can't determine whether they are equal, since comparing head terms
           ?u0
         and
@@ -1326,9 +1326,9 @@ A metavariable with a permutation isn't equal to itself without it, even if the 
    ￭ stdin
    17 | def eqn : Type ≔ let m : T ≔ ? in use m (rf T m)
       ^ term synthesized type
-          Same (A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)) m m
+          Same T m m
         but is being checked against type
-          Same (A⁽ᵉᵉ⁾ (refl a) (refl a) (refl a) (refl a)) m (sym m)
+          Same T m (sym m)
         unequal head terms:
           m
         does not equal
