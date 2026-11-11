@@ -12,7 +12,8 @@ type _ Effect.t +=
   | Tm : printable located -> unit Effect.t
   | Ctx : (('mode, 'b, 's) status * ('mode, 'a, 'b) Ctx.t * 'a Raw.check located) -> unit Effect.t
 
-let ty ctx v = Effect.perform (Ty (locate_opt (get_loc ()) (PVal (ctx, v))))
+(* The type of a term is displayed normalized, like the type of a hole, since what a user looking at it needs is what it computes to. *)
+let ty ctx v = Effect.perform (Ty (locate_opt (get_loc ()) (PNormalized (PVal (ctx, v)))))
 let tm ctx x = Effect.perform (Tm (locate_opt (get_loc ()) (PTerm (ctx, x))))
 let ctx status ctx tm = Effect.perform (Ctx (status, ctx, tm))
 

@@ -18,6 +18,10 @@ type printable +=
       -> printable
   | PVal : ('mode, 'a, 'b) Ctx.t * ('mode, kinetic) value -> printable
   | PNormal : ('mode, 'a, 'b) Ctx.t * 'mode normal -> printable
+  | (* A printable whose values are printed normalized, even though values are usually printed folded (see Reporter.folded_printing). *)
+      PNormalized :
+      printable
+      -> printable
   | (* When printing a hole we use a termctx, since that's what we store anyway, and we would also have to read back a value context anyway in order to unparse it. *)
       PHole :
       Origin.t * (string option, 'a) Bwv.t * ('mode, 'a, 'b) termctx * ('mode, 'b, kinetic) term
