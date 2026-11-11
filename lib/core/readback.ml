@@ -410,6 +410,89 @@ let remove_lock : type mode modality cod a bc.
   | None when Option.is_some (Unifying.read ()) -> raise (Unsolvable `Flexible)
   | None -> Ctx.remove_lock ctx modality
 
+(* ********** Display budget ********** *)
+
+(* A term that is read back to be displayed can be too large to display usefully, or even to construct: a value can be small, through sharing, but have an enormous normal form.  So a readback for display can be given a budget, the number of subterms it may produce.  If it would produce more, it is abandoned and read back again with its depth limited, the subterms below that depth being replaced by Overflow, at a depth where it fits.  Depth is counted so that it matches the displayed nesting: the codomain of a pi-type, and the body of an abstraction, are at the same depth as the pi-type or abstraction, since iterated ones are displayed as a single flat chain. *)
+type display_budget = {
+  (* The number of subterms that may still be produced. *)
+  mutable remaining : int;
+  (* Subterms deeper than this are replaced by Overflow. *)
+  cutoff : int;
+  mutable depth : int;
+  mutable max_depth : int;
+  (* The number of subterms produced at each depth, used to choose a depth after an overflow. *)
+  mutable counts : int array;
+  (* Whether readback_at has just counted a subterm that it is passing to readback_val, which shouldn't count it again. *)
+  mutable after_at : bool;
+}
+
+(* Raised when a budget is exhausted, with the greatest depth reached so far. *)
+exception Display_overflow of int
+
+(* The budget of the current readback, if any.  This is a reference rather than an effect, since it is consulted for every subterm. *)
+let display_budget : display_budget option ref = ref None
+
+let new_budget size cutoff =
+  { remaining = size; cutoff; depth = 0; max_depth = 0; counts = Array.make 16 0; after_at = false }
+
+(* Produce a subterm within a budget, or replace it by the result of [cut] if it is too deep.  If an exception escapes, the readback it belongs to is abandoned, so we don't need to restore the depth. *)
+let within_budget (b : display_budget) ~(at : bool) (cut : unit -> 'a) (f : unit -> 'a) : 'a =
+  if (not at) && b.after_at then (
+    b.after_at <- false;
+    f ())
+  else if b.depth >= b.cutoff then cut ()
+  else (
+    b.remaining <- b.remaining - 1;
+    if b.remaining < 0 then raise (Display_overflow b.max_depth);
+    b.depth <- b.depth + 1;
+    if b.depth > b.max_depth then b.max_depth <- b.depth;
+    if b.depth >= Array.length b.counts then (
+      let counts = Array.make (2 * b.depth) 0 in
+      Array.blit b.counts 0 counts 0 (Array.length b.counts);
+      b.counts <- counts);
+    b.counts.(b.depth) <- b.counts.(b.depth) + 1;
+    b.after_at <- at;
+    let result = f () in
+    b.depth <- b.depth - 1;
+    result)
+
+(* Read back a subterm at the same depth as its parent, rather than one deeper. *)
+let at_same_depth () =
+  match !display_budget with
+  | Some b -> b.depth <- b.depth - 1
+  | None -> ()
+
+let after_same_depth () =
+  match !display_budget with
+  | Some b -> b.depth <- b.depth + 1
+  | None -> ()
+
+(* Run a readback for display with a budget (None meaning unlimited), returning its result and whether it had to be truncated.  The first attempt is unlimited in depth, so a term that fits is read back only once.  If it overflows, we don't need the greatest depth at which it would fit, only some indication of what it looks like.  If the first attempt overflowed after reaching depth d, then all the subterms it produced lie within depth d, so it can't fit at depth d.  We guess a depth from the number of subterms the first attempt produced at each depth, as the greatest depth whose subterms so far fill at most half of the budget (since the first attempt only saw part of the term), and halve it until the term fits. *)
+let budgeted (size : int option) (f : unit -> 'a) : 'a * bool =
+  match size with
+  | None -> (f (), false)
+  | Some size -> (
+      let attempt b =
+        let saved = !display_budget in
+        display_budget := Some b;
+        Fun.protect ~finally:(fun () -> display_budget := saved) f in
+      let first = new_budget size max_int in
+      match attempt first with
+      | result -> (result, false)
+      | exception Display_overflow d ->
+          let rec guess c filled =
+            if c >= d then d - 1
+            else
+              let filled = filled + first.counts.(c) in
+              if filled > size / 2 then c - 1 else guess (c + 1) filled in
+          let rec descend c =
+            if c <= 0 then attempt (new_budget size 0)
+            else
+              match attempt (new_budget size c) with
+              | result -> result
+              | exception Display_overflow _ -> descend (c / 2) in
+          (descend (max 0 (guess 1 0)), true))
+
 (* ********** Primary readback functions ********** *)
 
 (* The result of reading back the bindings in the last entry of a context (see readback_entry): the bindings live in the whole context locked by the modality of the entry. *)
@@ -485,6 +568,32 @@ and readback_at : type mode a z s.
     (mode, kinetic) value ->
     (mode, a, s) term =
  fun ?eta status ctx tm ty ->
+  match !display_budget with
+  | None -> readback_at_unbudgeted ?eta status ctx tm ty
+  | Some b -> readback_at_budgeted b ?eta status ctx tm ty
+
+(* Kept separate from readback_at, so that the closures it allocates don't cost anything when there is no budget. *)
+and readback_at_budgeted : type mode a z s.
+    display_budget ->
+    ?eta:bool ->
+    (mode, s) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (mode, s) value ->
+    (mode, kinetic) value ->
+    (mode, a, s) term =
+ fun b ?eta status ctx tm ty ->
+  within_budget b ~at:true
+    (fun () -> Overflow)
+    (fun () -> readback_at_unbudgeted ?eta status ctx tm ty)
+
+and readback_at_unbudgeted : type mode a z s.
+    ?eta:bool ->
+    (mode, s) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (mode, s) value ->
+    (mode, kinetic) value ->
+    (mode, a, s) term =
+ fun ?eta status ctx tm ty ->
   match (tm, ty) with
   | Neu { head = Failed _; _ }, _ -> Failed Kinetic
   | Neu { head = Live _; _ }, Neu { head = Failed _; _ } -> readback_val ctx tm
@@ -534,9 +643,11 @@ and readback_at_type : type mode a z s.
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
           let newctx = Ctx.vis ctx (Modality.filter_idempotent filter) m mn xs newnfs af in
           let output = tyof_app cods tyargs filter args in
+          at_same_depth ();
           let body =
             readback_eval ~eta (apply_status status filter args) newctx (apply tm filter args)
               output in
+          after_same_depth ();
           Term.Lam (x, n, filter, body))
   (* If eta-expansion of functions is enabled, we do an eta-expanding readback of any term at a pi-type. *)
   | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm when eta ->
@@ -807,6 +918,18 @@ and readback_at_type : type mode a z s.
 (* The synthesizing readback only ever applies to neutrals (a kinetic value).  Any other value reaching it (which can only be a potential value, since other callers pass kinetic neutrals) is an anomaly. *)
 and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
  fun ctx x ->
+  match !display_budget with
+  | None -> readback_val_unbudgeted ctx x
+  | Some b -> readback_val_budgeted b ctx x
+
+and readback_val_budgeted : type mode a z s.
+    display_budget -> (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
+ fun b ctx x ->
+  within_budget b ~at:false (fun () -> Overflow) (fun () -> readback_val_unbudgeted ctx x)
+
+and readback_val_unbudgeted : type mode a z s.
+    (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
+ fun ctx x ->
   match x with
   (* A failed term is read back as Failed, without forcing its value (which would fail). *)
   | Neu { head = Failed _; _ } -> Failed Kinetic
@@ -1041,7 +1164,10 @@ and readback_pi : type c z dom modality mode k n.
         (sub_variables fb x) (CubeOf.subcube fb newnfs) in
     let sargs = CubeOf.subcube fb args in
     let (BindFam b) = BindCube.find cods fa in
-    Cod (kfilter, readback_val sctx (apply_binder_term b kfilter sargs)) in
+    at_same_depth ();
+    let cod = readback_val sctx (apply_binder_term b kfilter sargs) in
+    after_same_depth ();
+    Cod (kfilter, cod) in
   Term.Pi
     {
       x;
