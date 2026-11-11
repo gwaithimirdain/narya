@@ -612,6 +612,9 @@ let retry_postponed ?(stale = false) () =
     !decided || (Speculable.get current_command).solves > start)
 
 (* Solve everything we can at the end of a command, or before it displays something: retry the postponed constraints, and solve the unification metavariables whose types are singletons, until nothing changes. *)
+(* The number of times a unification metavariable has been solved or released in the current command, so that a cache of comparisons can tell when it might be out of date. *)
+let solve_count () = (Speculable.get current_command).solves
+
 let rec settle_unifs () =
   let retried = retry_postponed () in
   let retried_stale = retry_postponed ~stale:true () in

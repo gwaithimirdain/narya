@@ -99,6 +99,7 @@ val postpone :
 val retry_postponed : ?stale:bool -> unit -> bool
 val without_retries : (unit -> 'a) -> 'a
 val settle_unifs : unit -> unit
+val solve_count : unit -> int
 
 val unif_solution :
   ('mode, 'a, 'b, kinetic) Meta.t ->

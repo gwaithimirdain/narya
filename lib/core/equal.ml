@@ -172,6 +172,72 @@ let stuck_on : type mode s t. (mode, s) value -> (mode, t) value -> failure -> f
       | Unequal why -> Stuck (why, blockers)
       | Stuck (why, inner) -> Stuck (why, union_blockers inner blockers))
 
+(* Remembering flexible spine comparisons.
+
+   A comparison of two neutrals first compares their spines flexibly, without solving anything (see equal_neu_or_unfold).  If that fails, it is redone with solving, and the arguments of the spines are then compared again, each beginning with a flexible comparison of its own spines, which the failed flexible comparison of the outer spines has already done.  When neutrals are nested deeply, as in an unfolding of several layers of definitions, this repeats the same flexible comparisons over and over, quadratically in the depth.  So within one comparison called from outside this module, we remember the result of each flexible comparison of spines, until a unification metavariable is solved (after which the result might be different).
+
+   This is sound because the result of comparing two values depends only on the values, given that they are well-typed in the context.  The context enters only through its length, to make fresh variables for eta-expansion (which are fresh in any context in which the values are well-typed), its mode (which is part of the key), and its locks, which are only used to make the context for a comparison of modal subterms after the decision of whether to compare them has been made from the modalities and keys in the values themselves.  An error that is remembered refers to the context it was made in, in which its values are well-typed, so it can be displayed in any case.  And a flexible comparison never solves anything, so it has no effects to repeat. *)
+type flexible_result =
+  | Flexible_result :
+      'mode Mode.t * ('mode, kinetic) value * ('mode, kinetic) value * unit Err.t
+      -> flexible_result
+
+type flexible_memo = { table : (int, flexible_result list) Hashtbl.t; mutable solves : int }
+
+(* Whether we are inside a comparison called from outside this module, and the remembered flexible comparisons, created when first needed. *)
+let comparing = ref false
+let flexible_memo : flexible_memo option ref = ref None
+
+(* Run a comparison called from outside this module, forgetting the remembered comparisons at its end.  A comparison called from inside another one, such as by the unification solver, remembers within the outer one.  This bounds how long results are kept, but isn't necessary for soundness. *)
+let comparison (f : unit -> 'a) : 'a =
+  if !comparing then f ()
+  else (
+    comparing := true;
+    let finish () =
+      comparing := false;
+      flexible_memo := None in
+    match f () with
+    | result ->
+        finish ();
+        result
+    | exception e ->
+        finish ();
+        raise e)
+
+let find_flexible : type mode.
+    mode Mode.t -> (mode, kinetic) value -> (mode, kinetic) value -> int -> unit Err.t option =
+ fun mode x y hash ->
+  match !flexible_memo with
+  | None ->
+      flexible_memo := Some { table = Hashtbl.create 64; solves = Global.solve_count () };
+      None
+  | Some memo -> (
+      if memo.solves <> Global.solve_count () then (
+        Hashtbl.reset memo.table;
+        memo.solves <- Global.solve_count ());
+      match Hashtbl.find_opt memo.table hash with
+      | None -> None
+      | Some results ->
+          List.find_map
+            (fun (Flexible_result (mode', x', y', result)) ->
+              match Mode.compare mode' mode with
+              | Eq -> if x' == x && y' == y then Some result else None
+              | Neq -> None)
+            results)
+
+let remember_flexible : type mode.
+    mode Mode.t -> (mode, kinetic) value -> (mode, kinetic) value -> int -> unit Err.t -> unit =
+ fun mode x y hash result ->
+  match !flexible_memo with
+  | Some memo when memo.solves = Global.solve_count () -> (
+      (* Pairs that are structurally equal but not physically all have the same hash, so we remember only a few with any one hash, lest every lookup be slow. *)
+      let results = Option.value ~default:[] (Hashtbl.find_opt memo.table hash) in
+      match List.compare_length_with results 8 with
+      | n when n < 0 ->
+          Hashtbl.replace memo.table hash (Flexible_result (mode, x, y, result) :: results)
+      | _ -> ())
+  | _ -> ()
+
 (* Compare two normal forms that are *assumed* to have the same type, or at least that the type of the first is a subtype of the type of the second. *)
 let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
  fun n x y ->
@@ -179,13 +245,31 @@ let rec equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode norm
   equal_at n x.tm y.tm (Lazy.force y.ty)
 
 (* At a type with an eta-rule, two neutrals with equal spines are nevertheless equal, and checking this first can avoid an eta-expansion.  This matters especially with glued evaluation, where parallel derivations produce equal retained spines that are not physically shared, and where eta-expanding compares (and hence unfolds and re-evaluates) their realizations instead.  A spine mismatch is inconclusive at an eta type, so callers fall back to eta-expanding. *)
+(* Compare the spines of two neutrals flexibly, remembering the result within a comparison (see above).  Without unsolved unification metavariables, comparing flexibly is the same as comparing, and there is nothing to remember. *)
+and equal_spines_flexibly : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
+ fun ctx x y ->
+  if not (!comparing && Global.unsolved_unifs ()) then flexibly (fun () -> equal_neu ctx x y)
+  else
+    let mode = Ctx.mode ctx in
+    let shallow : (mode, kinetic) value -> int = function
+      | Neu { head; args; _ } -> hashcons_neu_hash head args
+      | v -> hashcons_value_hash v in
+    let hash = Hashtbl.hash (shallow x, shallow y) in
+    match find_flexible mode x y hash with
+    | Some result -> result
+    | None ->
+        let result = flexibly (fun () -> equal_neu ctx x y) in
+        remember_flexible mode x y hash result;
+        result
+
 and equal_at_eta_spines : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> bool =
  fun ctx x y ->
   match (x, y) with
   | Neu _, Neu _ -> (
       (* Since the fallback is to something else that is complete, this should never solve anything. *)
-      match flexibly (fun () -> equal_neu ctx x y) with
+      match equal_spines_flexibly ctx x y with
       | Ok () -> true
       | Error _ -> false)
   | _ -> false
@@ -198,7 +282,7 @@ and equal_neu_or_unfold : type mode a b.
     ((mode, kinetic) value -> (mode, kinetic) value -> unit Err.t) ->
     unit Err.t =
  fun ctx x y retry ->
-  match flexibly (fun () -> equal_neu ctx x y) with
+  match equal_spines_flexibly ctx x y with
   | Ok () -> Ok ()
   | Error err -> (
       let vx = view_term x in
@@ -220,7 +304,7 @@ and equal_neu_or_unfold : type mode a b.
             let vy = view_term y in
             if vx != x || vy != y then retry vx vy
             else
-              match flexibly (fun () -> equal_neu ctx x y) with
+              match equal_spines_flexibly ctx x y with
               | Ok () -> Ok ()
               | Error _ ->
                   (* The types that are being instantiated must also be equal, which may solve a metavariable that is itself a higher-dimensional type. *)
@@ -689,3 +773,35 @@ and equal_ordered_env : type mode a b n c d.
       let (Locked (_, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre1) in
       let (Remove_lock (ctx, _)) = Ctx.remove_lock ctx (Modality.of_gen g) in
       equal_ordered_env ctx env1 env2 envctx
+
+(* Every comparison called from outside this module may remember flexible comparisons of spines within it (see equal_spines_flexibly), so we shadow the entry points above by versions that delimit it. *)
+let equal_nf : type mode a b. (mode, a, b) Ctx.t -> mode normal -> mode normal -> unit Err.t =
+ fun ctx x y -> comparison @@ fun () -> equal_nf ctx x y
+
+let equal_at : type mode a b.
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value ->
+    unit Err.t =
+ fun ctx x y ty -> comparison @@ fun () -> equal_at ctx x y ty
+
+let equal_val : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, kinetic) value -> unit Err.t =
+ fun ctx x y -> comparison @@ fun () -> equal_val ctx x y
+
+let equal_tyargs : type mode n1 k1 nk1 n2 k2 nk2 a b.
+    ?types:bool ->
+    (mode, a, b) Ctx.t ->
+    (n1, k1, nk1, mode normal) TubeOf.t ->
+    (n2, k2, nk2, mode normal) TubeOf.t ->
+    unit ErrOpt.t =
+ fun ?types ctx a1 a2 -> comparison @@ fun () -> equal_tyargs ?types ctx a1 a2
+
+let equal_apps : type h1 h2 mode any1 any2 a b.
+    (mode, a, b) Ctx.t ->
+    ?heads:h1 head * h2 head ->
+    (h1, mode, any1, live) apps ->
+    (h2, mode, any2, live) apps ->
+    unit ErrOpt.t =
+ fun ctx ?heads apps1 apps2 -> comparison @@ fun () -> equal_apps ctx ?heads apps1 apps2
