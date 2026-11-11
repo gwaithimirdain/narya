@@ -25,7 +25,7 @@ type unifying = {
   inverted : level -> inversion option;
 }
 
-(* A variable y of the current context can occur in the environment of a metavariable as a component of a tuple, or in the body of an abstraction applied to the variables it binds, or a combination of these, as the value of a variable x of the metavariable's context.  Then y is the result of applying to x a path of projections and applications, the latter of which take the place of the variables bound by those abstractions; we also record the number of applications, and the sort of y's type, which determines how a degeneracy acting on it is displayed. *)
+(* A variable y of the current context can occur in the environment of a metavariable as a component of a tuple, or in the body of an abstraction applied to the variables it binds (in any order), or a combination of these, as the value of a variable x of the metavariable's context.  Then y applied to arguments is the result of applying to x a path of projections and applications, each of the latter taking the argument of y in the position where y was applied to the variable bound by the corresponding abstraction; we also record the number of applications, and the sort of y's type, which determines how a degeneracy acting on it is displayed. *)
 and inversion = {
   var : level;
   path : inversion_step list;
@@ -33,7 +33,7 @@ and inversion = {
   sort : [ `Type | `Function | `Other ] Lazy.t;
 }
 
-and inversion_step = Proj of D.zero Field.t | Apply
+and inversion_step = Proj of D.zero Field.t | Apply of int
 
 module Readback = struct
   module Displaying = Algaeff.Reader.Make (Bool)
@@ -1092,11 +1092,10 @@ and readback_neu : type hmode mode a z any.
             let n = spine_length apps in
             if n < napps || Option.is_none (is_id_deg deg) then raise (Unsolvable `Flexible)
             else if n = napps then
-              match
-                readback_inverted_apps ctx (Var { level = var; deg = id_deg D.zero; key }) path apps
-              with
-              | tm, [] -> Some tm
-              | _ -> raise (Unsolvable `Flexible)
+              Some
+                (readback_inverted_apps ctx
+                   (Var { level = var; deg = id_deg D.zero; key })
+                   path apps)
             else None
         | _ -> None)
     | _ -> None in
@@ -1153,34 +1152,41 @@ and readback_neu : type hmode mode a z any.
           let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
           Inst (Kinetic, readback_neu ~canonical ctx head apps, args))
 
-(* Read back the application of a variable of the current context that the renamed context recovers by applying another variable (see inversion), given the head that is that other variable and the path that recovers it, to exactly as many arguments as the path has applications.  We return what remains of the path, which should be empty. *)
+(* Read back the application of a variable of the current context that the renamed context recovers by applying another variable (see inversion), given the head that is that other variable and the path that recovers it, to exactly as many arguments as the path has applications.  We first read back the arguments, as functions applying a term to each of them, and then place them in the applications of the path. *)
 and readback_inverted_apps : type hmode mode a z any.
     (mode, z, a) Ctx.t ->
     hmode head ->
     inversion_step list ->
     (hmode, mode, any, live) apps ->
-    (mode, a, kinetic) term * inversion_step list =
+    (mode, a, kinetic) term =
  fun ctx head path apps ->
-  match apps with
-  | Emp -> project_inverted (Ctx.mode ctx) (readback_head ctx head) path
-  | Snoc (apps, Arg (filter, args, ins)) -> (
-      match (readback_inverted_apps ctx head path apps, is_id_ins ins) with
-      | (tm, Apply :: path), Some _ ->
-          let modality = Modality.filter_modality filter in
-          let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-          let tm =
-            Term.App
-              ( Kinetic,
-                tm,
-                cod_left_ins ins,
-                filter,
-                Modal
-                  ( modality,
-                    plus,
-                    CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ) in
-          project_inverted (Ctx.mode ctx) tm path
-      | _ -> raise (Unsolvable `Flexible))
-  | Snoc (_, Field _) | Snoc (_, Inst _) -> raise (Unsolvable `Flexible)
+  let rec args_of : type any.
+      (hmode, mode, any, live) apps ->
+      (hmode, mode) Eq.t * ((mode, a, kinetic) term -> (mode, a, kinetic) term) list = function
+    | Emp -> (Eq, [])
+    | Snoc (apps, Arg (filter, args, ins)) -> (
+        let eq, rest = args_of apps in
+        match is_id_ins ins with
+        | Some _ ->
+            let modality = Modality.filter_modality filter in
+            let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+            let args = CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] in
+            ( eq,
+              (fun tm ->
+                Term.App (Kinetic, tm, cod_left_ins ins, filter, Modal (modality, plus, args)))
+              :: rest )
+        | None -> raise (Unsolvable `Flexible))
+    | Snoc (_, Field _) | Snoc (_, Inst _) -> raise (Unsolvable `Flexible) in
+  let Eq, args = args_of apps in
+  let args = Array.of_list (List.rev args) in
+  let mode = Ctx.mode ctx in
+  List.fold_left
+    (fun tm step ->
+      match step with
+      | Proj fld ->
+          Term.Field (Kinetic, Modal (Modality.id mode, plus_no_lock mode, tm), fld, ins_zero D.zero)
+      | Apply i -> args.(i) tm)
+    (readback_head ctx head) path
 
 and readback_head : type mode c z.
     ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
@@ -1936,7 +1942,7 @@ let rec readback_about : type mode a b.
 
    A variable of mctx sent to an undefined variable can't be used in the solution.  But this is not enough to make the solution well-typed: the type of another variable of mctx, or of the metavariable, might depend on it.  Thus we also treat any variable whose type contains an undefined variable as undefined itself, and the caller must check that the type of the metavariable doesn't contain one either.  Since menv is a renaming, it suffices to read back the types obtained by substitution with menv, which we already have.
 
-   More generally, a zero-dimensional nonmodal variable x of mctx (or argument) can be sent to a tuple, or an abstraction, or a combination of these, whose leaves are variables y of cctx applied to exactly the variables bound by the abstractions above them (see invert_value), such as (y, z) or (w ↦ y w) or (w ↦ (y w, z w)).  Then each y can be recovered from x, as some projections and applications of it such as x .fst or (w ↦ x w .snd), and every value of x is the eta-expansion of what it is sent to with these inverses substituted.  So menv is still invertible up to eta, and substituting it still can't discard anything: it only triggers projections from those tuples and applications of those abstractions, which produce the leaves.  In this case the variable x of the renamed context gets a fresh level, and we record the paths that recover the y's in a table consulted by readback (see Unifying and inversion).  Its type in cctx, which we need for the abstractions and for checking definedness, is its type in mctx substituted by menv. *)
+   More generally, a zero-dimensional nonmodal variable x of mctx (or argument) can be sent to a tuple, or an abstraction, or a combination of these, whose leaves are variables y of cctx applied to exactly the variables bound by the abstractions above them, in any order (see invert_value), such as (y, z) or (w ↦ y w) or (w ↦ (y w, z w)) or (u v ↦ y v u).  Then each y can be recovered from x, as some projections and applications of it such as x .fst or (w ↦ x w .snd) or (v u ↦ x u v), and every value of x is the eta-expansion of what it is sent to with these inverses substituted.  So menv is still invertible up to eta, and substituting it still can't discard anything: it only triggers projections from those tuples and applications of those abstractions, which produce the leaves.  In this case the variable x of the renamed context gets a fresh level, and we record the paths that recover the y's in a table consulted by readback (see Unifying and inversion).  Its type in cctx, which we need for the abstractions and for checking definedness, is its type in mctx substituted by menv. *)
 type (_, _) renamed_ctx =
   | Renamed_ctx : {
       ctx : ('mode, 'a, 'bc) Ctx.t;
@@ -1976,22 +1982,46 @@ let renamed_var : type dom modality mode.
 (* A variable of the current context that occurs in a tuple or abstraction in the environment, how to recover it from the variable of the metavariable's context that is sent there, and whether it has the annotation of that variable. *)
 type inverted_leaf = { leaf : level; inversion : inversion; leaf_annotated : bool }
 
-(* Whether an application spine consists of exactly the given variables (listed last first) as zero-dimensional arguments of nonmodal functions. *)
-let rec applied_to_vars : type hmode mode any. level list -> (hmode, mode, any, live) apps -> bool =
- fun vars args ->
-  match (vars, args) with
-  | [], Emp -> true
-  | z :: vars, Snoc (args, Arg (filter, xs, ins)) ->
-      Option.is_some (is_id_ins ins)
-      && (match
-            (Modality.compare_id (Modality.filter_modality filter), D.compare (CubeOf.dim xs) D.zero)
-          with
-        | Eq, Eq -> is_plain_var z (CubeOf.find_top xs).tm
-        | _ -> false)
-      && applied_to_vars vars args
-  | _ -> false
+(* The variables that an application spine applies to, last first, as zero-dimensional arguments of nonmodal functions, if that is all it consists of. *)
+let rec applied_vars : type hmode mode any. (hmode, mode, any, live) apps -> level list option =
+  function
+  | Emp -> Some []
+  | Snoc (args, Arg (filter, xs, ins)) -> (
+      match
+        ( is_id_ins ins,
+          Modality.compare_id (Modality.filter_modality filter),
+          D.compare (CubeOf.dim xs) D.zero )
+      with
+      | Some _, Eq, Eq -> (
+          match (CubeOf.find_top xs).tm with
+          | Neu { head = Live (Var { level; _ }); _ } as x when is_plain_var level x ->
+              Option.map (fun vars -> level :: vars) (applied_vars args)
+          | _ -> None)
+      | _ -> None)
+  | Snoc (_, Field _) | Snoc (_, Inst _) -> None
 
-(* Invert a value in the environment or arguments of a metavariable, of a given type, that is sent to a variable of the metavariable's context with a given level in the renamed context.  The value must be built out of tuples (of records with eta and only ordinary fields) and abstractions (over a single variable, nonmodally), where every leaf is a variable of the current context applied to exactly all the variables bound by the abstractions above it, in order.  Then every leaf can be recovered from the variable of the metavariable's context, and every such value is the eta-expansion of that variable applied to the inverse.  The variables bound by the abstractions are given fresh levels, at least base. *)
+(* If an application spine applies to exactly the given distinct variables, in some order, return the position in the spine of each of them. *)
+let leaf_positions : type hmode mode any.
+    level list -> (hmode, mode, any, live) apps -> int list option =
+ fun vars args ->
+  match applied_vars args with
+  | None -> None
+  | Some applied ->
+      (* Since the variables are distinct, if there are as many of them as arguments and each is one of the arguments, then the arguments are a permutation of them. *)
+      let applied = List.rev applied in
+      if List.length applied <> List.length vars then None
+      else
+        let positions =
+          List.map
+            (fun z ->
+              let rec find i = function
+                | [] -> None
+                | y :: ys -> if y = z then Some i else find (i + 1) ys in
+              find 0 applied)
+            vars in
+        if List.for_all Option.is_some positions then Some (List.map Option.get positions) else None
+
+(* Invert a value in the environment or arguments of a metavariable, of a given type, that is sent to a variable of the metavariable's context with a given level in the renamed context.  The value must be built out of tuples (of records with eta and only ordinary fields) and abstractions (over a single variable, nonmodally), where every leaf is a variable of the current context applied to exactly all the variables bound by the abstractions above it, in some order.  Then every leaf can be recovered from the variable of the metavariable's context, and every such value is the eta-expansion of that variable applied to the inverse.  The variables bound by the abstractions are given fresh levels, at least base. *)
 let invert_value : type mode.
     mode Mode.t ->
     base:int ->
@@ -2005,23 +2035,35 @@ let invert_value : type mode.
   let rec go path napps lams (v : (mode, kinetic) value) (ty : (mode, kinetic) value) acc =
     match view_term v with
     | Neu { head = Live (Var { level; deg; key }); args; ty = vty; _ } ->
-        if
-          fst level >= base
-          || (not (Modalcell.is_id key))
-          || Option.is_none (is_id_deg deg)
-          || not (applied_to_vars lams args)
-        then raise_notrace Not_renaming;
+        if fst level >= base || (not (Modalcell.is_id key)) || Option.is_none (is_id_deg deg) then
+          raise_notrace Not_renaming;
+        (* The position among the leaf's arguments of each variable bound by the abstractions, in the order they were bound. *)
+        let positions =
+          match leaf_positions (List.rev lams) args with
+          | Some positions -> Array.of_list positions
+          | None -> raise_notrace Not_renaming in
         let leaf_annotated =
           match Modality.compare (Modalcell.vsrc key) id with
           | Eq -> true
           | Neq -> false in
         let sort = lazy (sort_of_val mode (Lazy.force vty)) in
-        (* Since the leaf is applied to the variables bound by the abstractions in order, the applications at the end of its path are eta-contracted. *)
+        (* The applications in the path, in order, take the arguments in those positions. *)
+        let count = ref 0 in
+        let path =
+          List.map
+            (function
+              | Proj fld -> Proj fld
+              | Apply _ ->
+                  let i = !count in
+                  count := i + 1;
+                  Apply positions.(i))
+            (List.rev path) in
+        (* Applications at the end of the path that take the last arguments in order are eta-contracted. *)
         let rec contract path napps =
           match path with
-          | Apply :: path -> contract path (napps - 1)
+          | Apply i :: path when i = napps - 1 -> contract path (napps - 1)
           | _ -> (path, napps) in
-        let path, napps = contract path napps in
+        let path, napps = contract (List.rev path) napps in
         { leaf = level; inversion = { var = x; path = List.rev path; napps; sort }; leaf_annotated }
         :: acc
     | Struct { fields; ins; eta = Eta; _ } -> (
@@ -2059,7 +2101,7 @@ let invert_value : type mode.
                 let z = (fresh (), 0) in
                 let args = CubeOf.singleton (var id z (CubeOf.find_top doms)) in
                 let (Val body) = apply v filter args in
-                go (Apply :: path) (napps + 1) (z :: lams) body
+                go (Apply 0 :: path) (napps + 1) (z :: lams) body
                   (tyof_app cods tyargs filter args)
                   acc
             | _ -> raise_notrace Not_renaming)

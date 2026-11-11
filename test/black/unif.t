@@ -715,7 +715,7 @@ The arguments count as part of the renaming, so the value can't use an argument 
   
   [1]
 
-A variable of the metavariable's context, or an argument, can also be sent to a tuple or an abstraction, or a combination of them, whose leaves are distinct variables applied to exactly the variables bound by the abstractions above them, in order.  Then those variables can be recovered by projecting from, and applying, the variable or argument, so the solution is still most general.  This includes nested and dependent records, records with no fields, and degeneracies.  Applications at the end are eta-contracted.
+A variable of the metavariable's context, or an argument, can also be sent to a tuple or an abstraction, or a combination of them, whose leaves are distinct variables applied to exactly the variables bound by the abstractions above them, in any order.  Then those variables can be recovered by projecting from, and applying, the variable or argument, so the solution is still most general.  This includes nested and dependent records, records with no fields, and degeneracies.  Applications at the end that take the last arguments in order are eta-contracted.
 
   $ narya - <<EOF
   > axiom A : Type
@@ -736,6 +736,14 @@ A variable of the metavariable's context, or an argument, can also be sent to a 
   > def lam2 (h : (g : A → A) → P g) : (A → A) → Type ≔ let G : (A → A) → Type ≔ f ↦ P _ in g ↦ let k : G (w ↦ g w) ≔ h g in G g
   > def under (h : (g : A → A) → P (w ↦ g (g w))) : (A → A) → Type ≔ let G : (A → A) → Type ≔ f ↦ P _ in g ↦ let k : G (w ↦ g w) ≔ h g in G g
   > def lamtup (h : (g k : A → A) → C (g a0) (k a0)) : (A → A) → (A → A) → Type ≔ let G : (A → prod A A) → Type ≔ f ↦ C _ _ in g k ↦ let j : G (w ↦ (g w, k w)) ≔ h g k in A
+  > axiom Q : (A → A → A) → Type
+  > axiom R : (A → A → A) → (A → A) → Type
+  > axiom S : (A → A → A → A) → Type
+  > axiom a1 : A
+  > def swap (h : (g : A → A → A) → Q g) : (A → A → A) → Type ≔ let G : (A → A → A) → Type ≔ f ↦ Q _ in g ↦ let k : G (u v ↦ g v u) ≔ h g in G g
+  > def swapapp (h : (g : A → A → A) → C (g a0 a1) a0) : (A → A → A) → Type ≔ let G : (A → A → A) → Type ≔ f ↦ C _ a0 in g ↦ let k : G (u v ↦ g v u) ≔ h g in A
+  > def mixed (h : (g : A → A → A) (k : A → A) → R g k) : (A → A → A) → (A → A) → Type ≔ let G : (A → prod (A → A) A) → Type ≔ f ↦ R _ _ in g k ↦ let j : G (w ↦ (u ↦ g u w, k w)) ≔ h g k in A
+  > def part (h : (g : A → A → A → A) → C (g a0 a1 a0) a0) : (A → A → A → A) → Type ≔ let G : (A → A → A → A) → Type ≔ f ↦ C _ a0 in g ↦ let k : G (u v w ↦ g v u w) ≔ h g in A
   > def deg : A → A → Type ≔ let G : (p : prod A A) → Id A (p .fst) (p .fst) ≔ p ↦ _ in y z ↦ let k : Id (Id A y y) (G (y, z)) (refl y) ≔ refl (refl y) in A
   > about tup
   > about targ
@@ -746,6 +754,10 @@ A variable of the metavariable's context, or an argument, can also be sent to a 
   > about under
   > about lamtup
   > about deg
+  > about swap
+  > about swapapp
+  > about mixed
+  > about part
   > EOF
   h ↦ let G ≔ p ↦ C (p .snd) (p .fst) in y z ↦ let k ≔ h y z in G (y, z)
     : (h : (y : A) (z : A) → C z y) → A → A → Type
@@ -779,22 +791,38 @@ A variable of the metavariable's context, or an argument, can also be sent to a 
   let G ≔ p ↦ refl (p .fst) in y z ↦ let k ≔ (refl y)⁽¹ᵉ⁾ in A
     : A → A → Type
   
+  h ↦ let G ≔ f ↦ Q (𝑥 𝑦 ↦ f 𝑦 𝑥) in g ↦ let k ≔ h g in G g
+    : (h : (g : A → A → A) → Q g) → (A → A → A) → Type
+  
+  h ↦ let G ≔ f ↦ C (f a1 a0) a0 in g ↦ let k ≔ h g in A
+    : (h : (g : A → A → A) → C (g a0 a1) a0) → (A → A → A) → Type
+  
+  h ↦
+  let G ≔ f ↦ R (𝑥 𝑦 ↦ f 𝑦 .fst 𝑥) (𝑥 ↦ f 𝑥 .snd) in
+  g k ↦
+  let j ≔ h g k in
+  A
+    : (h : (g : A → A → A) (k : A → A) → R g k) → (A → A → A) → (A → A)
+      → Type
+  
+  h ↦ let G ≔ f ↦ C (f a1 a0 a0) a0 in g ↦ let k ≔ h g in A
+    : (h : (g : A → A → A → A) → C (g a0 a1 a0) a0) → (A → A → A → A) → Type
+  
 
-But if a leaf is repeated, the value can't use it, since then there would be more than one solution.  And a leaf that doesn't use the variable bound by an abstraction, or uses them in a different order, isn't invertible (for now).
+But if a leaf is repeated, the value can't use it, since then there would be more than one solution.  And a leaf that doesn't use all the variables bound by the abstractions, or uses one twice, isn't invertible.
 
   $ narya - <<EOF
   > axiom A : Type
   > axiom B : A → Type
   > axiom C : A → A → Type
-  > axiom Q : (A → A → A) → Type
   > def prod (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
   > def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
   > def const (h : (y : A) → B y) : A → Type ≔ let G : (A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (w ↦ y) ≔ h y in A
-  > def swap (h : (g : A → A → A) → Q g) : (A → A → A) → Type ≔ let G : (A → A → A) → Type ≔ f ↦ Q _ in g ↦ let k : G (u v ↦ g v u) ≔ h g in A
+  > def dup (h : (y : A) → B y) : A → Type ≔ let G : (A → A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (u v ↦ y) ≔ h y in A
   > EOF
    ￫ error[E0406]
    ￭ stdin
-   6 | def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
+   5 | def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
      ^ term synthesized type
          C y y
        and is being checked against type
@@ -807,17 +835,17 @@ But if a leaf is repeated, the value can't use it, since then there would be mor
   
    ￫ error[E2004]
    ￭ stdin
-   6 | def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
+   5 | def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
      ^ can't determine a value for this placeholder
   
    ￫ error[E2004]
    ￭ stdin
-   6 | def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
+   5 | def rep (h : (y : A) → C y y) : A → Type ≔ let G : prod A A → Type ≔ p ↦ C _ _ in y ↦ let k : G (y, y) ≔ h y in A
      ^ can't determine a value for this placeholder
   
    ￫ error[E0406]
    ￭ stdin
-   7 | def const (h : (y : A) → B y) : A → Type ≔ let G : (A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (w ↦ y) ≔ h y in A
+   6 | def const (h : (y : A) → B y) : A → Type ≔ let G : (A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (w ↦ y) ≔ h y in A
      ^ term synthesized type
          B y
        and is being checked against type
@@ -830,25 +858,25 @@ But if a leaf is repeated, the value can't use it, since then there would be mor
   
    ￫ error[E2004]
    ￭ stdin
-   7 | def const (h : (y : A) → B y) : A → Type ≔ let G : (A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (w ↦ y) ≔ h y in A
+   6 | def const (h : (y : A) → B y) : A → Type ≔ let G : (A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (w ↦ y) ≔ h y in A
      ^ can't determine a value for this placeholder
   
    ￫ error[E0406]
    ￭ stdin
-   8 | def swap (h : (g : A → A → A) → Q g) : (A → A → A) → Type ≔ let G : (A → A → A) → Type ≔ f ↦ Q _ in g ↦ let k : G (u v ↦ g v u) ≔ h g in A
+   7 | def dup (h : (y : A) → B y) : A → Type ≔ let G : (A → A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (u v ↦ y) ≔ h y in A
      ^ term synthesized type
-         Q g
+         B y
        and is being checked against type
-         Q (let only … in ?u5)
+         B (let only … in ?u5)
        but can't determine whether they are equal, since comparing head terms
-         g
+         y
        and
          let only … in ?u5
        depends on unsolved placeholders
   
    ￫ error[E2004]
    ￭ stdin
-   8 | def swap (h : (g : A → A → A) → Q g) : (A → A → A) → Type ≔ let G : (A → A → A) → Type ≔ f ↦ Q _ in g ↦ let k : G (u v ↦ g v u) ≔ h g in A
+   7 | def dup (h : (y : A) → B y) : A → Type ≔ let G : (A → A → A) → Type ≔ f ↦ B _ in y ↦ let k : G (u v ↦ y) ≔ h y in A
      ^ can't determine a value for this placeholder
   
   [1]
