@@ -1604,8 +1604,8 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
   (* A prekey doesn't change the codomain context, so it can appear between the values of an environment and thus not be stripped off by restrict_keys.  We accumulate its cell into the returned prekey action.  Since the prekey acts at the environment's mode, but the looked-up value is at its own (deeper) mode, we prewhisker the cell by the transport modality (the composite modality of the locks stripped by restrict_keys), moving its source to the value's mode so that it composes with the accumulated action there. *)
   | Prekey (env, cell) ->
       let (Looked_up { act; op; entry; pre }) = lookup_cube env nk mu pretr v op in
-      let (Wrap cell) = Modalcell.prewhisker_wrapped cell pretr in
-      let (Prekey_action pre) = prekey_vcomp cell pre in
+      let (Wrap cell) = Modalcell.prewhisker_wrapped cell mu in
+      let (Wrap pre) = key_vcomp cell pre in
       Looked_up { act; op; entry; pre }
   (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb) ->
@@ -1669,12 +1669,8 @@ and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kineti
       let (Plus x) = D.plus (dom_sface fa) in
       match op_of_opt (comp_opt_op op (plus_opt_op n n_k x (opt_op_of_sface fa))) with
       | Some (Op (f, s)) ->
-          (* We combine, into a single cell applied in one traversal, the identity on the composite of the variable's locks (innermost), then the prekey action from inside the environment, then the prekey action from the stripped-off extension (outermost). *)
-          let (Prekey_action c) =
-            if Modalcell.is_id inner_pre then Prekey_action (Modalcell.id mu)
-            else prekey_vcomp inner_pre (Modalcell.id mu) in
-          let (Prekey_action c) =
-            if Modalcell.is_id pre then Prekey_action c else prekey_vcomp pre c in
+          (* We combine the prekey actions from the stripped-off extension (outermost) and the further ones encountered before finding the variable (innermost). *)
+          let (Wrap c) = key_vcomp pre inner_pre in
           act (CubeOf.find entry f) s c
       (* This means that in the non-unary case, some dummy endpoints in an opt_sface didn't get canceled out by a degeneracy.  I think that could only happen if a non-unary mode theory has a 2-cell from a sharp parametric modality to a sharp non-parametric modality.  In all the models I know, the primary nonparametric modalities are *comonadic*, plus in the unary case *only* a left adjoint monad to it (which is also right adjoint if the parametricity is internal), and in the external non-unary case another non-monadic non-comonadic functor.  In the internal non-unary case there is a *right* adjoint to the nonparametric comonad, but it is not "nonparametric" in this sense: its parametricity is *codiscrete* rather than discrete; I haven't thought about how to enforce that for a tangible modality, although it comes naturally for a negative presentation that is right adjoint to a tangible discrete modality. *)
       | None -> fatal (Invalid_mode_theory "uncanceled dummy endpoints"))

@@ -628,29 +628,32 @@ let remove_top : type mode a modality k n.
         Unshift (remove_ins env v', mn, na) in
   remove_ins env Now
 
-(* A prekey action is a key cell with a given mode as vertical source but existential vertical target (and horizontal target). *)
-type _ prekey_action = Prekey_action : ('mode, 'm, 'n, 'cod) Modalcell.t -> 'mode prekey_action
+(* Compose a prekey cell after an accumulated prekey action, both sharing the environment's mode as vertical source.  This is the general composition of key cells (as in act.ml's key_vcomp), using a pushout to reconcile the accumulated action's vertical target with the new prekey's vertical source. *)
+type _ key_comp = Wrap : ('a, 'm, 'n, 'b) Modalcell.t -> 'a key_comp
+
+let key_vcomp : type a b c m n p q.
+    (a, m, n, b) Modalcell.t -> (a, p, q, c) Modalcell.t -> a key_comp =
+ fun cell2 cell1 ->
+  match (Modalcell.compare_id cell2, Modalcell.compare_id cell1) with
+  | Eq, _ -> Wrap cell1
+  | _, Eq -> Wrap cell2
+  | _ -> (
+      match Modality.pushout (Modalcell.vtgt cell1) (Modalcell.vsrc cell2) with
+      | Some (Pushout (mu3, mu4, cod13, dom24)) ->
+          let (Comp cod24) = Modality.comp (Modalcell.vtgt cell2) in
+          let (Comp dom13) = Modality.comp (Modalcell.vsrc cell1) in
+          Wrap
+            (Modalcell.vcomp
+               (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) cell2)
+               (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) cell1))
+      | None -> fatal (Anomaly "incompatible keys"))
 
 (* Prewhisker a prekey action by a modality, transporting its vertical (and horizontal) source. *)
 let prekey_prewhisker : type mode a b m n r.
-    (mode, m, n, b) Modalcell.t -> (a, r, mode) Modality.t -> a prekey_action =
+    (mode, m, n, b) Modalcell.t -> (a, r, mode) Modality.t -> a key_comp =
  fun pre mu ->
   let (Wrap pre) = Modalcell.prewhisker_wrapped pre mu in
-  Prekey_action pre
-
-(* Compose a prekey cell after an accumulated prekey action, both sharing the environment's mode as vertical source.  This is the general composition of key cells (as in act.ml's key_vcomp), using a pushout to reconcile the accumulated action's vertical target with the new prekey's vertical source. *)
-let prekey_vcomp : type mode m n cod pm pn pcod.
-    (mode, m, n, cod) Modalcell.t -> (mode, pm, pn, pcod) Modalcell.t -> mode prekey_action =
- fun key pre ->
-  match Modality.pushout (Modalcell.vtgt pre) (Modalcell.vsrc key) with
-  | Some (Pushout (mu3, mu4, cod13, dom24)) ->
-      let (Comp cod24) = Modality.comp (Modalcell.vtgt key) in
-      let (Comp dom13) = Modality.comp (Modalcell.vsrc pre) in
-      Prekey_action
-        (Modalcell.vcomp
-           (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) key)
-           (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) pre))
-  | None -> fatal (Anomaly "prekey_vcomp: prekeys don't compose")
+  Wrap pre
 
 (* Given an environment whose codomain context is extended by a partial context containing some locks (and dimensions), strip off the Locks in the environment corresponding to those locks, and return the remainder of the environment along with a "prekey action" composed from all the Prekeys encountered along the way.  Since Locks carry no cells, any key action is represented by a Prekey; these act on a looked-up value at the environment's mode with a vertical target that may differ from the composite of the stripped locks, so they are accumulated separately and applied to the value at the end.  The prekeys accumulated inside a Lock act at its inner mode, so to carry them outward we prewhisker them by the lock's generator.  When no (nonidentity) prekeys are encountered, the returned cell is id2, and hence dropped by the smart constructor prekey_env.  Thus the input environment is semantically equal to the residual one, locked by the extension and then prekeyed by the returned cell. *)
 type (_, _, _, _) restrict_keys =
@@ -671,7 +674,7 @@ let rec restrict_keys : type mode mu cod k b bc.
       let Eq = Modality.Gen.src_uniq g g' in
       let Eq = Modality.Gen.tgt_uniq g g' in
       let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
-      let (Prekey_action pre) = prekey_prewhisker pre (Modality.of_gen g) in
+      let (Wrap pre) = prekey_prewhisker pre (Modality.of_gen g) in
       Restrict_keys (env, pre)
   (* If we encounter a dimension entry, we skip it. *)
   | Suc (bc, Dim _), Suc (llc, Locks_dim _, Zero), _ ->
@@ -681,7 +684,7 @@ let rec restrict_keys : type mode mu cod k b bc.
   (* If we have more locks to strip off, but we find a prekey on the environment, that doesn't correspond to any locks in the codomain context, so we accumulate it into the prekey-action cell, which shares the environment's (unchanging) mode, composing it after any inner prekeys with the general key-cell composition.  Note that the extension could be exhausted here: we continue accumulating prekeys until we run out of ones that we *could* include. *)
   | (Suc _ as bc), llc, Prekey (env, key) ->
       let (Restrict_keys (env, pre)) = restrict_keys env (Plus_with_locks (bc, llc)) in
-      let (Prekey_action pre) = prekey_vcomp key pre in
+      let (Wrap pre) = key_vcomp key pre in
       Restrict_keys (env, pre)
   (* If we encounter some other operation that could still have further locks inside it, we look through it. *)
   | Suc _, _, Permute (p, env) -> (
