@@ -25,7 +25,7 @@ type unifying = {
   inverted : level -> inversion option;
 }
 
-(* A variable y of the current context can occur in the environment of a metavariable as a component of a tuple, or in the body of an abstraction applied to the variables it binds (in any order), or a combination of these, as the value of a variable x of the metavariable's context.  Then y applied to arguments is the result of applying to x a path of projections and applications, each of the latter taking the argument of y in the position where y was applied to the variable bound by the corresponding abstraction; we also record the number of applications.  The leaf can also be a permutation of y, if it isn't applied; then y is the inverse permutation of the result of the path, which we record. *)
+(* A variable y of the current context can occur in the environment of a metavariable as a component of a tuple, or in the body of an abstraction applied to the variables it binds (in any order), or a combination of these, as the value of a variable x of the metavariable's context.  Then y applied to arguments is the result of applying to x a path of projections and applications, each of the latter taking the argument of y in the position where y was applied to the variable bound by the corresponding abstraction; we also record the number of applications.  The leaf can also be a permutation of y; then y is the inverse permutation of the result of the path, which we record. *)
 and inversion = { var : level; path : inversion_step list; napps : int; inverse : any_deg option }
 
 (* A projection is at the dimension of the variable it is projected from, which doesn't change along the path.  A projection of a modal field also records the field's adjunction; these only occur before all the applications.  An application applies to the argument in the given position. *)
@@ -1108,7 +1108,8 @@ and readback_neu : type hmode mode a z any.
         match inverted_var level with
         | Some ({ napps; _ } as inversion) when napps > 0 ->
             let n = spine_length apps in
-            if n < napps || Option.is_none (is_id_deg deg) then raise (Unsolvable `Flexible)
+            (* A degeneracy acting on the variable acts on the part of the path before the first application (see readback_inverted_head), which is only correct if it doesn't change dimensions, as the projections are at a fixed dimension. *)
+            if n < napps || Option.is_none (perm_of_deg deg) then raise (Unsolvable `Flexible)
             else if n = napps then Some (readback_inverted_apps ctx head inversion apps)
             else None
         | _ -> None)
@@ -1977,7 +1978,7 @@ let rec readback_about : type mode a b.
 
    A variable of mctx sent to an undefined variable can't be used in the solution.  But this is not enough to make the solution well-typed: the type of another variable of mctx, or of the metavariable, might depend on it.  Thus we also treat any variable whose type contains an undefined variable as undefined itself, and the caller must check that the type of the metavariable doesn't contain one either.  Since menv is a renaming, it suffices to read back the types obtained by substitution with menv, which we already have.
 
-   More generally, a variable x of mctx (or argument), including any face of a cube of them, can be sent to a tuple, or an abstraction, or a combination of these, whose leaves are variables y of cctx applied to exactly the variables bound by the abstractions above them, in any order (see invert_value), such as (y, z) or (w ↦ y w) or (w ↦ (y w, z w)) or (u v ↦ y v u), or their higher-dimensional versions, where an abstraction binds a cube of variables.  The faces of cubes are treated as separate variables, both in mctx and in cctx.  A leaf that isn't applied can also be a permutation of a variable, which is then recovered by the inverse permutation.  The variable can have a modal annotation, the abstractions can be modal, and the tuples can have modal fields, whose components live behind a lock by the right adjoint; the leaves must have the annotation of x composed with those right adjoints, with identity keys, as for a renaming.  Since a key can't be pushed into an abstraction, a modal field can't occur inside one.  Then each y can be recovered from x, as some projections and applications of it such as x .fst or (w ↦ x w .snd) or (v u ↦ x u v), and every value of x is the eta-expansion of what it is sent to with these inverses substituted.  So menv is still invertible up to eta, and substituting it still can't discard anything: it only triggers projections from those tuples and applications of those abstractions, which produce the leaves.  In this case the variable x of the renamed context gets a fresh level, and we record the paths that recover the y's in a table consulted by readback (see Unifying and inversion), which computes the projections on the value of x, acts on the result by the key and degeneracy of the occurrence of y, and puts the applications outside that.  Its type in cctx, which we need for the abstractions and for checking definedness, is its type in mctx substituted by menv. *)
+   More generally, a variable x of mctx (or argument), including any face of a cube of them, can be sent to a tuple, or an abstraction, or a combination of these, whose leaves are variables y of cctx applied to exactly the variables bound by the abstractions above them, in any order (see invert_value), such as (y, z) or (w ↦ y w) or (w ↦ (y w, z w)) or (u v ↦ y v u), or their higher-dimensional versions, where an abstraction binds a cube of variables.  The faces of cubes are treated as separate variables, both in mctx and in cctx.  A leaf can also be a permutation of a variable, which is then recovered by the inverse permutation.  The variable can have a modal annotation, the abstractions can be modal, and the tuples can have modal fields, whose components live behind a lock by the right adjoint; the leaves must have the annotation of x composed with those right adjoints, with identity keys, as for a renaming.  Since a key can't be pushed into an abstraction, a modal field can't occur inside one.  Then each y can be recovered from x, as some projections and applications of it such as x .fst or (w ↦ x w .snd) or (v u ↦ x u v), and every value of x is the eta-expansion of what it is sent to with these inverses substituted.  So menv is still invertible up to eta, and substituting it still can't discard anything: it only triggers projections from those tuples and applications of those abstractions, which produce the leaves.  In this case the variable x of the renamed context gets a fresh level, and we record the paths that recover the y's in a table consulted by readback (see Unifying and inversion), which computes the projections on the value of x, acts on the result by the key and degeneracy of the occurrence of y, and puts the applications outside that.  Its type in cctx, which we need for the abstractions and for checking definedness, is its type in mctx substituted by menv. *)
 type (_, _) renamed_ctx =
   | Renamed_ctx : {
       ctx : ('mode, 'a, 'bc) Ctx.t;
@@ -2063,7 +2064,7 @@ let leaf_positions : type hmode mode any.
             cubes in
         if List.for_all Option.is_some positions then Some (List.map Option.get positions) else None
 
-(* Invert a value in the environment or arguments of a metavariable, of a given type, that is sent to a variable of the metavariable's context with a given modal annotation and level in the renamed context.  The value must be built out of tuples (of records with eta, at any dimension) and abstractions (over a cube of variables of any dimension, possibly modal), where every leaf is a variable of the current context applied to exactly all the cubes of variables bound by the abstractions above it, in some order, or a permutation of a variable if there are no such abstractions.  Then every leaf can be recovered from the variable of the metavariable's context, and every such value is the eta-expansion of that variable applied to the inverse.  The variables bound by the abstractions are given fresh levels, at least base.
+(* Invert a value in the environment or arguments of a metavariable, of a given type, that is sent to a variable of the metavariable's context with a given modal annotation and level in the renamed context.  The value must be built out of tuples (of records with eta, at any dimension) and abstractions (over a cube of variables of any dimension, possibly modal), where every leaf is a variable of the current context applied to exactly all the cubes of variables bound by the abstractions above it, in some order, or a permutation of such a variable.  Then every leaf can be recovered from the variable of the metavariable's context, and every such value is the eta-expansion of that variable applied to the inverse.  The variables bound by the abstractions are given fresh levels, at least base.
 
    A leaf has the right annotation if it is that of the variable, composed with the right adjoints of the modal fields we have passed into, behind whose locks their components live.  We don't allow a modal field inside an abstraction, since a key on the recovered variable can't be pushed inside its abstractions (see readback_inverted_head). *)
 let invert_value : type dom modality b.
@@ -2089,12 +2090,12 @@ let invert_value : type dom modality b.
     match view_term v with
     | Neu { head = Live (Var { level; deg; key }); args; _ } ->
         if fst level >= base || not (Modalcell.is_id key) then raise_notrace Not_renaming;
-        (* A leaf can be a permutation of a variable, which is invertible, but only if it isn't applied, since undoing a permutation of a function also permutes its arguments. *)
+        (* A leaf can be a permutation of a variable, which is invertible.  If it is applied, then the variable is the inverse permutation of the abstraction of the rest of the path over the arguments, and since permutations commute with projections and applications, this is the result of acting by the inverse permutation on the part of the path before the first application, followed by the rest of the path (see readback_inverted_head). *)
         let inverse =
-          match (is_id_deg deg, perm_of_deg deg, lams) with
-          | Some _, _, _ -> None
-          | None, Some p, [] -> Some (Any_deg (deg_of_perm (perm_inv p)))
-          | _ -> raise_notrace Not_renaming in
+          match (is_id_deg deg, perm_of_deg deg) with
+          | Some _, _ -> None
+          | None, Some p -> Some (Any_deg (deg_of_perm (perm_inv p)))
+          | None, None -> raise_notrace Not_renaming in
         (* The position among the leaf's arguments of each cube of variables bound by the abstractions, in the order they were bound. *)
         let positions =
           match leaf_positions (List.rev lams) args with

@@ -863,7 +863,7 @@ The faces of a cube of variables are treated separately, so each can be sent to 
       → Type
   
 
-A leaf can also be a permutation of a variable, as long as it isn't applied, since the permutation can be inverted.
+A leaf can also be a permutation of a variable, since the permutation can be inverted.  If the leaf is applied, the inverse permutation acts on the variable of the metavariable's context before it is applied, since permutations commute with applications and projections.  The definitional checks show that the solutions are right.
 
   $ narya -parametric - <<EOF
   > axiom A : Type
@@ -890,6 +890,61 @@ A leaf can also be a permutation of a variable, as long as it isn't applied, sin
   
   let G ≔ p ↦ L (p .fst) in t b ↦ let k ≔ hl t in A
     : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁ → A → Type
+  
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > axiom g : A → A
+  > def prod (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
+  > def Sq : Type ≔ Id (Id (A → A)) (refl g) (refl g) (refl g) (refl g)
+  > def h : A → prod A A ≔ u ↦ (g u, g u)
+  > def Sq2 : Type ≔ Id (Id (A → prod A A)) (refl h) (refl h) (refl h) (refl h)
+  > axiom K : Sq → Type
+  > axiom hk : (s : Sq) → K s
+  > axiom hks : (s : Sq) → K (sym s)
+  > def symlam : Sq → Type ≔ let G : Sq → Type ≔ p ↦ K _ in s ↦ let k : G (w ⤇ (sym s) w.22) ≔ hk s in let c : Id Type (G (w ⤇ (sym s) w.22)) (K s) ≔ refl (K s) in A
+  > def symtup : Sq → Sq → Type ≔ let G : Sq2 → Type ≔ p ↦ K _ in s t ↦ let k : G (w ⤇ ((sym s) w.22, t w.22)) ≔ hk s in let c : Id Type (G (w ⤇ ((sym s) w.22, t w.22))) (K s) ≔ refl (K s) in A
+  > def symocc : Sq → Sq → Type ≔ let G : Sq2 → Type ≔ p ↦ K _ in s t ↦ let k : G (w ⤇ ((sym s) w.22, t w.22)) ≔ hks s in let c : Id Type (G (w ⤇ ((sym s) w.22, t w.22))) (K (sym s)) ≔ refl (K (sym s)) in A
+  > about symlam
+  > about symtup
+  > about symocc
+  > EOF
+  let G ≔ p ↦ K (sym p) in s ↦ let k ≔ hk s in let c ≔ Id (K s) in A
+    : ({𝑥₀₀ : A} {𝑥₀₁ : A} {𝑥₀₂ : Id A 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : A} {𝑥₁₁ : A}
+       {𝑥₁₂ : Id A 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : Id A 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : Id A 𝑥₀₁ 𝑥₁₁}
+       (𝑥₂₂ : A⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
+       →⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ (ap g 𝑥₀₂) (ap g 𝑥₁₂) (ap g 𝑥₂₀) (ap g 𝑥₂₁))
+      → Type
+  
+  let G ≔ p ↦ K (𝑥 ⤇ sym p 𝑥.22 .fst) in
+  s t ↦
+  let k ≔ hk s in
+  let c ≔ Id (K s) in
+  A
+    : ({𝑥₀₀ : A} {𝑥₀₁ : A} {𝑥₀₂ : Id A 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : A} {𝑥₁₁ : A}
+       {𝑥₁₂ : Id A 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : Id A 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : Id A 𝑥₀₁ 𝑥₁₁}
+       (𝑥₂₂ : A⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
+       →⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ (ap g 𝑥₀₂) (ap g 𝑥₁₂) (ap g 𝑥₂₀) (ap g 𝑥₂₁)) →
+      ({𝑥₀₀ : A} {𝑥₀₁ : A} {𝑥₀₂ : Id A 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : A} {𝑥₁₁ : A}
+       {𝑥₁₂ : Id A 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : Id A 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : Id A 𝑥₀₁ 𝑥₁₁}
+       (𝑥₂₂ : A⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
+       →⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ (ap g 𝑥₀₂) (ap g 𝑥₁₂) (ap g 𝑥₂₀) (ap g 𝑥₂₁))
+      → Type
+  
+  let G ≔ p ↦ K (𝑥 ⤇ p 𝑥.22 .fst) in
+  s t ↦
+  let k ≔ hks s in
+  let c ≔ Id (K (sym s)) in
+  A
+    : ({𝑥₀₀ : A} {𝑥₀₁ : A} {𝑥₀₂ : Id A 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : A} {𝑥₁₁ : A}
+       {𝑥₁₂ : Id A 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : Id A 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : Id A 𝑥₀₁ 𝑥₁₁}
+       (𝑥₂₂ : A⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
+       →⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ (ap g 𝑥₀₂) (ap g 𝑥₁₂) (ap g 𝑥₂₀) (ap g 𝑥₂₁)) →
+      ({𝑥₀₀ : A} {𝑥₀₁ : A} {𝑥₀₂ : Id A 𝑥₀₀ 𝑥₀₁} {𝑥₁₀ : A} {𝑥₁₁ : A}
+       {𝑥₁₂ : Id A 𝑥₁₀ 𝑥₁₁} {𝑥₂₀ : Id A 𝑥₀₀ 𝑥₁₀} {𝑥₂₁ : Id A 𝑥₀₁ 𝑥₁₁}
+       (𝑥₂₂ : A⁽ᵉᵉ⁾ 𝑥₀₂ 𝑥₁₂ 𝑥₂₀ 𝑥₂₁)
+       →⁽ᵉᵉ⁾ A⁽ᵉᵉ⁾ (ap g 𝑥₀₂) (ap g 𝑥₁₂) (ap g 𝑥₂₀) (ap g 𝑥₂₁))
+      → Type
   
 
 Modal variables can be inverted as well, and the value can use the leaves with keys.  An abstraction can be modal, and a tuple can have modal fields, whose components live behind a lock by the right adjoint, so that their leaves must have the annotation of the variable composed with that.  But a leaf with a nonidentity key isn't a renaming.
