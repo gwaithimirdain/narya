@@ -207,7 +207,7 @@ let rec is_identity_ordered_env : type mode a b d.
                  else
                    (* Otherwise we look up the top entry in the environment and check whether it is "the same as" the one in the context in a weaker sense. *)
                    let (Looked_up { act; op; entry = xs; pre }) =
-                     lookup_cube env (D.zero_plus k) modality modality Now (id_opt_op k) in
+                     lookup_cube env (D.zero_plus k) modality Now (id_opt_op k) in
                    (* For free variables, we check that they have the same level and identity degeneracies and keys; for let-bound variables we check that their defined values are physically equal (skipping a costly semantic-equality check).  Neither of these can succeed if the looked up value has a nonidentity operation or key on it, since the act functions only return physically equal values if they short-circuit; so we wait to force the value with "act" until checking those.  (We do still need to call "act" even though the actions are identities, because lookup_cube returns an abstract type that we have to force into a value.) *)
                    match (is_id_opt_op op, Modalcell.is_id pre) with
                    | Some Eq, true ->
@@ -1437,7 +1437,7 @@ and readback_ordered_env : type mode n a b c d.
           (* We get the top entry (Now) from the environment we're reading back.  We can't just match it against Ext or LazyExt because it could have other lazy operations applied to it like Shift, Unshift, Permute, etc. *)
           (* Since no keys are stripped here, the prekey transport modality is just the entry's annotating modality. *)
           let (Looked_up { act; op; entry = xs; pre }) =
-            lookup_cube aenv m_k modality modality Now (id_opt_op mk) in
+            lookup_cube aenv m_k modality Now (id_opt_op mk) in
           (* As usual, the missing endpoints in sface_of_filter should be canceled by degeneracies in the non-unary case. *)
           let (Op (fc, fd)) =
             op_of_opt op <|> Anomaly "unexpected missing endpoint in readback_ordered_env" in
@@ -2290,7 +2290,7 @@ let renamed_values : type dom modality mode b k.
     (k, (dom, kinetic) value) CubeOf.t =
  fun env modality k ->
   let (Looked_up { act; op; entry = xs; pre }) =
-    lookup_cube env (D.zero_plus k) modality modality Now (id_opt_op k) in
+    lookup_cube env (D.zero_plus k) modality Now (id_opt_op k) in
   match (is_id_opt_op op, Modalcell.is_id pre) with
   | Some Eq, true ->
       let s = id_deg k in
