@@ -790,7 +790,7 @@ A variable of the metavariable's context, or an argument, can also be sent to a 
     : (h : (g : A → A) (k : A → A) → C (g a0) (k a0)) → (A → A) → (A → A)
       → Type
   
-  let G ≔ p ↦ refl (p .fst) in y z ↦ let k ≔ (refl y)⁽¹ᵉ⁾ in A
+  let G ≔ p ↦ refl p .fst in y z ↦ let k ≔ (refl y)⁽¹ᵉ⁾ in A
     : A → A → Type
   
   h ↦ let G ≔ f ↦ Q (𝑥 𝑦 ↦ f 𝑦 𝑥) in g ↦ let k ≔ h g in G g
@@ -862,6 +862,72 @@ The faces of a cube of variables are treated separately, so each can be sent to 
       (k2 : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id A (k0 𝑥₀) (k1 𝑥₁))
       → Type
   
+
+Modal variables can be inverted as well, and the value can use the leaves with keys.  An abstraction can be modal, and a tuple can have modal fields, whose components live behind a lock by the right adjoint, so that their leaves must have the annotation of the variable composed with that.  But a leaf with a nonidentity key isn't a renaming.
+
+  $ narya -spatial - <<EOF
+  > axiom A : Type
+  > axiom a0 : A
+  > def prod (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
+  > def R : Type ≔ sig ( (x :♭| _) .fst : A, x .snd : A )
+  > axiom C : (_ :♭| A) (_ :♭| A) → Type
+  > axiom E : A → A → Type
+  > axiom F : (_ :♯| A) → Type
+  > axiom P : ((_ :♭| A) → A) → Type
+  > axiom Q : A → Type
+  > axiom S : (_ :♯| A) → A → Type
+  > axiom hc : (y z :♭| A) → C z y
+  > axiom he : (y z :♭| A) → E z y
+  > axiom hp : (g : (_ :♭| A) → A) → P g
+  > axiom hq : (g : (_ :♭| A) → A) → Q (g a0)
+  > axiom hs : (y :♯| A) (z : A) → S y z
+  > axiom hf : (y :♯| A) → F y
+  > def modent : (y z :♭| A) → Type ≔ let G : (_ :♭| prod A A) → Type ≔ p ↦ C _ _ in y z ↦ let k : G (y, z) ≔ hc y z in A
+  > def keyed : (y z :♭| A) → Type ≔ let G : (_ :♭| prod A A) → Type ≔ p ↦ E _ _ in y z ↦ let k : G (y, z) ≔ he y z in A
+  > def modlam : ((_ :♭| A) → A) → Type ≔ let G : ((_ :♭| A) → A) → Type ≔ f ↦ P _ in g ↦ let k : G (w ↦ g w) ≔ hp g in A
+  > def modlamapp : ((_ :♭| A) → A) → Type ≔ let G : ((_ :♭| A) → A) → Type ≔ f ↦ Q _ in g ↦ let k : G (w ↦ g w) ≔ hq g in A
+  > def modfld : (y :♯| A) (z : A) → Type ≔ let G : R → Type ≔ r ↦ S _ _ in y z ↦ let k : G (y, z) ≔ hs y z in A
+  > about modent
+  > about keyed
+  > about modlam
+  > about modlamapp
+  > about modfld
+  > def plainleaf : A → A → Type ≔ let G : R → Type ≔ r ↦ F _ in y z ↦ let k : G (y, z) ≔ hf y in A
+  > EOF
+  let G ≔ p ↦ C (p .snd) (p .fst) in y z ↦ let k ≔ hc y z in A
+    : (y :♭| A) (z :♭| A) → Type
+  
+  let G ≔ p ↦ E (p .snd) (p .fst) in y z ↦ let k ≔ he y z in A
+    : (y :♭| A) (z :♭| A) → Type
+  
+  let G ≔ f ↦ P f in g ↦ let k ≔ hp g in A
+    : ((𝑥 :♭| A) → A) → Type
+  
+  let G ≔ f ↦ Q (f a0) in g ↦ let k ≔ hq g in A
+    : ((𝑥 :♭| A) → A) → Type
+  
+  let G ≔ r ↦ S ((r :♭| _) .fst) (r .snd) in y z ↦ let k ≔ hs y z in A
+    : (y :♯| A) (z : A) → Type
+  
+   ￫ error[E0406]
+   ￭ stdin
+   27 | def plainleaf : A → A → Type ≔ let G : R → Type ≔ r ↦ F _ in y z ↦ let k : G (y, z) ≔ hf y in A
+      ^ term synthesized type
+          F y
+        and is being checked against type
+          F (let only … in ?u8)
+        but can't determine whether they are equal, since comparing head terms
+          y
+        and
+          let only … in ?u8
+        depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   27 | def plainleaf : A → A → Type ≔ let G : R → Type ≔ r ↦ F _ in y z ↦ let k : G (y, z) ≔ hf y in A
+      ^ can't determine a value for this placeholder
+  
+  [1]
 
 But if a leaf is repeated, the value can't use it, since then there would be more than one solution.  And a leaf that doesn't use all the variables bound by the abstractions, or uses one twice, isn't invertible.
 
