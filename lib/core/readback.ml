@@ -1002,13 +1002,25 @@ and readback_val_unbudgeted : type mode a z s.
   match x with
   (* A failed term is read back as Failed, without forcing its value (which would fail). *)
   | Neu { head = Failed _; _ } -> Failed Kinetic
-  (* A variable that the renamed context recovers by applying another variable (see inversion) can only be read back when applied to enough arguments, so we eta-expand it if it isn't. *)
+  (* A variable that the renamed context recovers by applying another variable (see inversion) can only be read back when applied to enough arguments, so we eta-expand it if it isn't.  We expand only once here, without eta-expanding the body, since the body is again such a variable with one more argument, so that we expand only as many times as necessary. *)
   | Neu { head = Live (Var { level; _ }); args; ty; _ }
     when match inverted_var level with
          | Some { napps; _ } -> spine_length args < napps
          | None -> false -> (
       match view_type (Lazy.force ty) "readback_val" with
-      | Canonical (_, Pi _, _, _) -> readback_at ~eta:true Kinetic ctx x (Lazy.force ty)
+      | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs) ->
+          let modality = Modality.filter_modality filter in
+          let Eq = eq_of_ins_zero ins in
+          let name = View.fill_hints doms name in
+          let newargs, newnfs = dom_vars ctx modality doms in
+          let (Any_ctx newctx) =
+            Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
+          let output = tyof_app cods tyargs filter newargs in
+          Term.Lam
+            ( name,
+              BindCube.dim cods,
+              filter,
+              readback_eval Kinetic newctx (apply x filter newargs) output )
       | _ -> raise (Unsolvable `Flexible))
   | Neu { head = Live head; args; value; ty; acted = _ } -> (
       match unfold_solved head value with

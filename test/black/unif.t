@@ -744,6 +744,7 @@ A variable of the metavariable's context, or an argument, can also be sent to a 
   > def swapapp (h : (g : A → A → A) → C (g a0 a1) a0) : (A → A → A) → Type ≔ let G : (A → A → A) → Type ≔ f ↦ C _ a0 in g ↦ let k : G (u v ↦ g v u) ≔ h g in A
   > def mixed (h : (g : A → A → A) (k : A → A) → R g k) : (A → A → A) → (A → A) → Type ≔ let G : (A → prod (A → A) A) → Type ≔ f ↦ R _ _ in g k ↦ let j : G (w ↦ (u ↦ g u w, k w)) ≔ h g k in A
   > def part (h : (g : A → A → A → A) → C (g a0 a1 a0) a0) : (A → A → A → A) → Type ≔ let G : (A → A → A → A) → Type ≔ f ↦ C _ a0 in g ↦ let k : G (u v w ↦ g v u w) ≔ h g in A
+  > def part2 (h : (g : A → A → A → A) → S g) : (A → A → A → A) → Type ≔ let G : (A → A → A → A) → Type ≔ f ↦ S _ in g ↦ let k : G (u v w ↦ g v u w) ≔ h g in A
   > def deg : A → A → Type ≔ let G : (p : prod A A) → Id A (p .fst) (p .fst) ≔ p ↦ _ in y z ↦ let k : Id (Id A y y) (G (y, z)) (refl y) ≔ refl (refl y) in A
   > about tup
   > about targ
@@ -758,6 +759,7 @@ A variable of the metavariable's context, or an argument, can also be sent to a 
   > about swapapp
   > about mixed
   > about part
+  > about part2
   > EOF
   h ↦ let G ≔ p ↦ C (p .snd) (p .fst) in y z ↦ let k ≔ h y z in G (y, z)
     : (h : (y : A) (z : A) → C z y) → A → A → Type
@@ -807,6 +809,9 @@ A variable of the metavariable's context, or an argument, can also be sent to a 
   
   h ↦ let G ≔ f ↦ C (f a1 a0 a0) a0 in g ↦ let k ≔ h g in A
     : (h : (g : A → A → A → A) → C (g a0 a1 a0) a0) → (A → A → A → A) → Type
+  
+  h ↦ let G ≔ f ↦ S (𝑥 𝑦 ↦ f 𝑦 𝑥) in g ↦ let k ≔ h g in A
+    : (h : (g : A → A → A → A) → S g) → (A → A → A → A) → Type
   
 
 But if a leaf is repeated, the value can't use it, since then there would be more than one solution.  And a leaf that doesn't use all the variables bound by the abstractions, or uses one twice, isn't invertible.
