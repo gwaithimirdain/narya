@@ -33,8 +33,14 @@ and prekey_data =
       ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'p, 'q, 'd) Modalcell.t * ('e, 'l, 'f) Modality.t
       -> prekey_data
 
-(* A variable y of the current context can occur in the environment of a metavariable as a component of a tuple, or in the body of an abstraction applied to the variables it binds (in any order), or a combination of these, as the value of a variable x of the metavariable's context.  Then y applied to arguments is the result of applying to x a path of projections and applications, each of the latter taking the argument of y in the position where y was applied to the variable bound by the corresponding abstraction; we also record the number of applications.  The leaf can also be a permutation of y; then y is the inverse permutation of the result of the path, which we record. *)
-and inversion = { var : level; path : inversion_step list; napps : int; inverse : any_deg option }
+(* A variable y of the current context can occur in the environment of a metavariable as a component of a tuple, or in the body of an abstraction applied to the variables it binds (in any order), or a combination of these, as the value of a variable x of the metavariable's context.  Then y applied to arguments is the result of applying to x a path of projections and applications, each of the latter taking the argument of y in the position where y was applied to the variable bound by the corresponding abstraction; we also record the number of applications.  The leaf can also be a permutation of y; then y is the inverse permutation of the result of the path, which we record.  And the value of x in the environment can be acted on by prekeys, which we also record (see readback_inverted_head). *)
+and inversion = {
+  var : level;
+  path : inversion_step list;
+  napps : int;
+  inverse : any_deg option;
+  prekeys : prekey_data option;
+}
 
 (* A projection is at the dimension of the variable it is projected from, which doesn't change along the path (though a degeneracy acting on the recovered variable changes it everywhere).  A projection of a modal field also records the field's adjunction; these only occur before all the applications.  An application applies to the argument in the given position. *)
 and inversion_step =
@@ -580,6 +586,10 @@ let rec spine_length : type hmode mode any. (hmode, mode, any, live) apps -> int
   | Snoc (args, _) -> spine_length args + 1
 
 (* The value obtained by applying to a variable, as seen from behind its own modal annotation, the projections at the start of the path of an inverted variable (see inversion), until we reach an application or the end of the path, together with the modal annotation of the result, which a variable recovered there would have, and the rest of the path.  A modal field is projected from the variable keyed by the unit of its adjunction, as in readback at a record type, and its value lives behind a lock by the right adjoint. *)
+type any_cell = Any_cell : ('a, 'm, 'n, 'b) Modalcell.t -> any_cell
+type any_adj = Any_adj : ('a, 'f, 'g, 'b) Modalcell.adjunction -> any_adj
+type any_value = Any_value : 'm Mode.t * ('m, kinetic) value -> any_value
+
 type _ inverted_prefix =
   | Prefix :
       ('m, 'a, 'b) Modality.t * ('m, kinetic) value * inversion_step list
@@ -1175,6 +1185,24 @@ and readback_neu : type hmode mode a z any.
           let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
           Inst (Kinetic, readback_neu ~canonical ctx head apps, args))
 
+(* Given the outer prekeys acting on a variable of a metavariable's context (see prekey_data), the locks to its right there, and the locks to its right in the current context, which extend those by the locks added during readback, prewhisker the prekeys by the added locks, the innermost one first, as restrict_keys would. *)
+and prewhisker_added : type a l b m n c e lm f e2.
+    (m, n, c, e) Modalcell.t -> (lm, f, e2) Modality.t -> (a, l, b) Modality.t -> a key_comp =
+ fun outer mlocks locks ->
+  if Modality.length locks <= Modality.length mlocks then
+    match
+      (Mode.compare (Modalcell.hsrc outer) (Modality.src locks), Modality.compare locks mlocks)
+    with
+    | Eq, Eq -> Wrap outer
+    | _ -> raise (Unsolvable `Flexible)
+  else
+    match locks with
+    | Path (Suc (rest, g), tgt) ->
+        let (Wrap outer) = prewhisker_added outer mlocks (Path (rest, tgt)) in
+        let (Wrap outer) = Modalcell.prewhisker_wrapped outer (Modality.of_gen g) in
+        Wrap outer
+    | Path (Zero, _) -> raise (Unsolvable `Flexible)
+
 (* Read back a variable y of the current context, with a degeneracy and key κ, that the renaming sends a variable x of the renamed context to underneath nontrivial prekeys.  Evaluating an occurrence x⟨κ'⟩ in the environment produces y with the key P ∘ κ' ∘ Q, where P is the prekeys that restrict_keys collects when stripping off the locks to the right of x, and Q is those that lookup_cube collects in what remains on the way down to x (prewhiskered by the annotation of x).  The locks to the right of x now include those of the metavariable's context, which we recorded with P and Q, followed by any that have been added during readback, which are passed by restrict_keys before the prekeys and so prewhisker them.  For now we only look for κ' as the unique cell from the annotation of x to the locks to its right, if there is one, and then check that P ∘ κ' ∘ Q is κ.  This is sound, and complete for locally posetal mode theories; and since keyed variables are equal only if their keys are, the solution is then most general. *)
 and readback_prekeyed : type mode c z m n alpha nu cod.
     ?canonical:[ `Canonical | `Other ] ->
@@ -1192,24 +1220,7 @@ and readback_prekeyed : type mode c z m n alpha nu cod.
       match Modalcell.find_unique modality locks with
       | None -> raise (Unsolvable `Flexible)
       | Some (Unique key') -> (
-          (* Prewhisker the outer prekeys by the locks added during readback, the innermost one first, as restrict_keys would. *)
-          let rec added : type a l b. (a, l, b) Modality.t -> a key_comp =
-           fun locks ->
-            if Modality.length locks <= Modality.length mlocks then
-              match
-                ( Mode.compare (Modalcell.hsrc outer) (Modality.src locks),
-                  Modality.compare locks mlocks )
-              with
-              | Eq, Eq -> Wrap outer
-              | _ -> raise (Unsolvable `Flexible)
-            else
-              match locks with
-              | Path (Suc (rest, g), tgt) ->
-                  let (Wrap outer) = added (Path (rest, tgt)) in
-                  let (Wrap outer) = Modalcell.prewhisker_wrapped outer (Modality.of_gen g) in
-                  Wrap outer
-              | Path (Zero, _) -> raise (Unsolvable `Flexible) in
-          let (Wrap outer) = added locks in
+          let (Wrap outer) = prewhisker_added outer mlocks locks in
           match Mode.compare (Modalcell.hsrc inner) (Modalcell.hsrc key') with
           | Neq -> raise (Unsolvable `Flexible)
           | Eq -> (
@@ -1268,22 +1279,118 @@ and readback_inverted_head : type mode z c m n alpha nu cod.
     (m, n) deg ->
     (mode, alpha, nu, cod) Modalcell.t ->
     (mode, c, kinetic) term * any_dim * inversion_step list =
- fun ctx { var = level; path; inverse; _ } deg key ->
+ fun ctx { var = level; path; inverse; prekeys; _ } deg key ->
+  (* If the leaf was a permutation of the variable, then the degeneracy acting on the variable acts on the inverse permutation of the result, as in renamed_deg. *)
+  let (Any_deg deg) =
+    match inverse with
+    | None -> Any_deg deg
+    | Some (Any_deg inverse) ->
+        let (DegExt (_, _, deg)) = comp_deg_extending inverse deg in
+        Any_deg deg in
+  match prekeys with
+  | Some data -> readback_inverted_prekeyed ctx level path deg key data
+  | None -> (
+      match Ctx.find_level ctx level with
+      | None -> raise (Unsolvable `Flexible)
+      | Some (Lookup { value; modality; _ }) -> (
+          let x = var modality level (Lazy.force value.ty) in
+          let (Prefix (ann, v, path)) = inverted_prefix modality x path in
+          match Modality.compare (Modalcell.vsrc key) ann with
+          | Neq -> raise (Unsolvable `Flexible)
+          | Eq -> (readback_val ctx (act_value v deg key), Any (dom_deg deg), path)))
+
+(* The same, when the value of the inverted variable x in the environment is acted on by nontrivial prekeys (see prekey_data).  Then we look for the key k of x as the unique cell from its annotation to the locks to its right inside all the modal projections in the path before the first application, and read back the projections from x with that key.  Evaluating this in the environment produces the variable y with the key P ∘ c ∘ (Q ⋆ g), where P is the outer prekeys prewhiskered by the locks added during readback, Q is the inner prekeys prewhiskered by the right adjoints g of those modal fields, and c is obtained from k by applying c ↦ ε ∘ (c ⋆ g) for each of them, with ε the counit (by the triangle identities); and we check that this is the key of the occurrence of y.  Without modal fields, c is k itself. *)
+and readback_inverted_prekeyed : type mode z c m n alpha nu cod.
+    (mode, z, c) Ctx.t ->
+    level ->
+    inversion_step list ->
+    (m, n) deg ->
+    (mode, alpha, nu, cod) Modalcell.t ->
+    prekey_data ->
+    (mode, c, kinetic) term * any_dim * inversion_step list =
+ fun ctx level path deg key (Prekey_data (outer, inner, mlocks)) ->
+  let flex () = raise (Unsolvable `Flexible) in
+  let rec split acc = function
+    | ((Proj _ | Mproj _) as step) :: path -> split (step :: acc) path
+    | path -> (List.rev acc, path) in
+  let prefix, rest = split [] path in
+  let adjs =
+    List.filter_map
+      (function
+        | Mproj (_, _, adj) -> Some (Any_adj adj)
+        | _ -> None)
+      prefix in
+  (* The key of x inside the modal projections: we lock the context by their left adjoints, the outermost projection's first. *)
+  let rec find_key : type mode a b. (mode, a, b) Ctx.t -> any_adj list -> any_cell =
+   fun ctx adjs ->
+    match adjs with
+    | [] -> (
+        match Ctx.find_level ctx level with
+        | Some (Lookup { modality; plus = Plus_with_locks (_, locks); _ }) -> (
+            match Modalcell.find_unique modality (Locks.cod locks) with
+            | Some (Unique k) -> Any_cell k
+            | None -> flex ())
+        | None -> flex ())
+    | Any_adj (Adjunction { left; _ }) :: adjs -> (
+        match Mode.compare (Modality.tgt left) (Ctx.mode ctx) with
+        | Neq -> flex ()
+        | Eq ->
+            let (Locked (_, lctx)) = Ctx.lock ctx left in
+            find_key lctx adjs) in
+  let (Any_cell k) = find_key ctx (List.rev adjs) in
   match Ctx.find_level ctx level with
-  | None -> raise (Unsolvable `Flexible)
-  | Some (Lookup { value; modality; _ }) -> (
-      let x = var modality level (Lazy.force value.ty) in
-      let (Prefix (ann, v, path)) = inverted_prefix modality x path in
-      (* If the leaf was a permutation of the variable, then the degeneracy acting on the variable acts on the inverse permutation of the result, as in renamed_deg. *)
-      let (Any_deg deg) =
-        match inverse with
-        | None -> Any_deg deg
-        | Some (Any_deg inverse) ->
-            let (DegExt (_, _, deg)) = comp_deg_extending inverse deg in
-            Any_deg deg in
-      match Modality.compare (Modalcell.vsrc key) ann with
-      | Neq -> raise (Unsolvable `Flexible)
-      | Eq -> (readback_val ctx (act_value v deg key), Any (dom_deg deg), path))
+  | None -> flex ()
+  | Some (Lookup { value; modality; plus = Plus_with_locks (_, locks); _ }) -> (
+      (* The projections from x with key k. *)
+      let rec project : type m. m Mode.t -> (m, kinetic) value -> inversion_step list -> any_value =
+       fun mode v path ->
+        match path with
+        | [] -> Any_value (mode, v)
+        | Proj (fld, n) :: path ->
+            project mode (field_term (Modality.id mode) v fld (ins_zero n)) path
+        | Mproj (fld, n, Adjunction { left; _ }) :: path -> (
+            match Mode.compare (Modality.src left) mode with
+            | Neq -> flex ()
+            | Eq ->
+                let (Val v) = field left v fld (ins_zero n) in
+                project (Modality.tgt left) v path)
+        | Apply _ :: _ -> flex () in
+      (* The cell c, and the inner prekeys, transported through the modal projections. *)
+      let rec transport : type a m n b. (a, m, n, b) Modalcell.t -> any_adj list -> bool -> any_cell
+          =
+       fun c adjs counit ->
+        match adjs with
+        | [] -> Any_cell c
+        | Any_adj (Adjunction { right; counit = eps; _ }) :: adjs -> (
+            match Mode.compare (Modalcell.hsrc c) (Modality.tgt right) with
+            | Neq -> flex ()
+            | Eq ->
+                let (Wrap c) = Modalcell.prewhisker_wrapped c right in
+                if counit then
+                  let (Wrap c) = key_vcomp eps c in
+                  transport c adjs counit
+                else transport c adjs counit) in
+      match Mode.compare (Modalcell.hsrc k) (Modality.src modality) with
+      | Neq -> flex ()
+      | Eq -> (
+          let x = act_value (var modality level (Lazy.force value.ty)) (id_deg D.zero) k in
+          let (Any_value (vmode, v)) = project (Modality.src modality) x prefix in
+          let (Any_cell c) = transport k adjs true in
+          let (Any_cell inner) = transport inner adjs false in
+          let (Wrap outer) = prewhisker_added outer mlocks (Locks.cod locks) in
+          match
+            ( Mode.compare (Modalcell.hsrc c) (Modalcell.hsrc outer),
+              Mode.compare (Modalcell.hsrc inner) (Modalcell.hsrc outer),
+              Mode.compare vmode (Ctx.mode ctx) )
+          with
+          | Eq, Eq, Eq -> (
+              let (Wrap image) = key_vcomp outer c in
+              let (Wrap image) = key_vcomp image inner in
+              match Modalcell.compare image key with
+              | Eq ->
+                  (readback_val ctx (act_value v deg (Modalcell.id2 vmode)), Any (dom_deg deg), rest)
+              | Neq -> flex ())
+          | _ -> flex ()))
 
 and readback_head : type mode c z.
     ?canonical:[ `Canonical | `Other ] ->
@@ -2045,7 +2152,7 @@ let rec readback_about : type mode a b.
 
    We prefer eta-short solutions, so if the value being compared with the metavariable ends with some of the same arguments, we first try to omit them from both, since a solution of ?f =? g is also one of ?f y =? g y.  We only do this if nothing is undefined, since otherwise we could change the problem: ?f x x =? g x has no most general solution, but ?f x =? g does.
 
-   The environment can also contain prekeys, such as the counit of an adjunction after projecting a modal field, or a key acting on the captured environment of a closure, which act on the values of all the entries below them.  Then a variable of mctx sent to a variable y is really sent to y with some key, and an occurrence of y in the value has to be read back with a key for that variable that the prekeys send to its key there.  We record the prekeys that act on each variable, and readback computes their action on a candidate key and checks that it gives the key of y (see readback_prekeyed).  We don't invert tuples or abstractions underneath a prekey.
+   The environment can also contain prekeys, such as the counit of an adjunction after projecting a modal field, or a key acting on the captured environment of a closure, which act on the values of all the entries below them.  Then a variable of mctx sent to a variable y is really sent to y with some key, and an occurrence of y in the value has to be read back with a key for that variable that the prekeys send to its key there.  We record the prekeys that act on each variable, and readback computes their action on a candidate key and checks that it gives the key of y (see readback_prekeyed).  For a tuple or abstraction underneath prekeys, readback does the same for the variable it recovers its leaves from (see readback_inverted_prekeyed).
 
    A variable of mctx sent to an undefined variable can't be used in the solution.  But this is not enough to make the solution well-typed: the type of another variable of mctx, or of the metavariable, might depend on it.  Thus we also treat any variable whose type contains an undefined variable as undefined itself, and the caller must check that the type of the metavariable doesn't contain one either.  Since menv is a renaming, it suffices to read back the types obtained by substitution with menv, which we already have.
 
@@ -2197,7 +2304,7 @@ let invert_value : type dom modality b.
         let path, napps = contract (List.rev path) napps in
         {
           leaf = level;
-          inversion = { var = x; path = List.rev path; napps; inverse };
+          inversion = { var = x; path = List.rev path; napps; inverse; prekeys = None };
           leaf_annotated;
         }
         :: acc
@@ -2417,13 +2524,14 @@ let renamed_ctx : type mode a b c d n x any.
         Option.iter (Hashtbl.replace prekeyed_vars var) (prekeys ());
         None
     | exception Not_renaming ->
-        (* We don't invert underneath nontrivial prekeys (see readback_prekeyed), so then the leaves are undefined. *)
-        let prekeyed = Option.is_some (prekeys ()) in
+        (* Underneath nontrivial prekeys, the leaves record them (see readback_inverted_prekeyed). *)
+        let prekeys = prekeys () in
         let var = (fresh (), 0) in
-        let leaves = invert_value modality ~base:level ~fresh var v (ty ()) in
-        List.iter
-          (fun { leaf; leaf_annotated; _ } -> count_level leaf (leaf_annotated && not prekeyed))
-          leaves;
+        let leaves =
+          List.map
+            (fun leaf -> { leaf with inversion = { leaf.inversion with prekeys } })
+            (invert_value modality ~base:level ~fresh var v (ty ())) in
+        List.iter (fun { leaf; leaf_annotated; _ } -> count_level leaf leaf_annotated) leaves;
         Some (var, leaves) in
   (* The type in the current context of a variable of mctx, given the part of mctx up to and including the cube containing it (whose earlier faces its type can refer to) and the corresponding part of the environment, is its own type substituted by the environment.  Like the variable, it lives behind a lock by its annotation. *)
   let entry_type : type dom modality mode a d.

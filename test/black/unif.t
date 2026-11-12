@@ -1276,6 +1276,56 @@ The same applies to a prekey on the environment of a closure, which arises from 
   
   [1]
 
+A variable underneath a prekey can also be sent to a tuple or abstraction, including a tuple of a record with a modal field.  Then the variable it is recovered from gets the unique key inside the modal projections, if there is one, as long as the prekeys send it to the key in the value.
+
+  $ narya -adjunction - <<EOF
+  > axiom C : Type
+  > axiom c1 : C
+  > axiom c2 : C
+  > def prod (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
+  > def □′ (A :□| Type) : Disc ≔ sig ( (x :△| _) .□ : A )
+  > def tupl : (y z :△□| C) → C ≔ let G : (p :△□| prod C C) → C ≔ p ↦ let r :△| □′ C ≔ _ in (r :△| _) .□ in y z ↦ let k : Id C (G (y, z)) z ≔ refl z in G (y, z)
+  > def mft : (y :△□| C) → C ≔ let G : (p :△| □′ C) → C ≔ p ↦ let r :△| □′ C ≔ _ in (r :△| _) .□ in y ↦ let k : Id C (G (□ ≔ y)) y ≔ refl y in G (□ ≔ y)
+  > def lam : (f :△□| C → C) → C ≔ let G : (p :△□| C → C) → C ≔ p ↦ let r :△| □′ C ≔ _ in (r :△| _) .□ in f ↦ let k : Id C (G (w ↦ f w)) (f c1) ≔ refl (f c1) in G (w ↦ f w)
+  > def lamtup : (f g :△□| C → C) → C ≔ let G : (p :△□| C → prod C C) → C ≔ p ↦ let r :△| □′ C ≔ _ in (r :△| _) .□ in f g ↦ let k : Id C (G (w ↦ (f w, g w))) (g c1) ≔ refl (g c1) in G (w ↦ (f w, g w))
+  > about tupl
+  > echo tupl c1 c2
+  > about mft
+  > echo mft c1
+  > about lam
+  > about lamtup
+  > EOF
+  let G ≔ p ↦ let r :△| _ ≔ (□ ≔ p .snd) in (r :△| _) .□ in
+  y z ↦
+  let k ≔ refl z in
+  G (y, z)
+    : (y :△□| C) (z :△□| C) → C
+  
+  c2
+    : C
+  
+  let G ≔ p ↦ let r :△| _ ≔ (□ ≔ (p :△| _) .□) in (r :△| _) .□ in
+  y ↦
+  let k ≔ refl y in
+  G (□ ≔ y)
+    : (y :△□| C) → C
+  
+  c1
+    : C
+  
+  let G ≔ p ↦ let r :△| _ ≔ (□ ≔ p c1) in (r :△| _) .□ in
+  f ↦
+  let k ≔ refl (f c1) in
+  G (w ↦ f w)
+    : (f :△□| C → C) → C
+  
+  let G ≔ p ↦ let r :△| _ ≔ (□ ≔ p c1 .snd) in (r :△| _) .□ in
+  f g ↦
+  let k ≔ refl (g c1) in
+  G (w ↦ (f w, g w))
+    : (f :△□| C → C) (g :△□| C → C) → C
+  
+
   $ narya -spatial - <<EOF
   > def N : Type ≔ data [ zero. | suc. (_ : N) ]
   > def R : Type ≔ sig ( (x :♭| _) .fst : N )
