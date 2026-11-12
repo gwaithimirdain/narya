@@ -1207,7 +1207,7 @@ The other fields stay unknown, and can leave unsolved metavariables.  A codataty
   
   [1]
 
-The component of a modal field lives behind a lock, and possibly at a different mode, and so does the metavariable created for it.  Its environment involves the counit of the adjunction, so for now it can only be solved by a value that doesn't use the variables behind that lock.
+The component of a modal field lives behind a lock, and possibly at a different mode, and so does the metavariable created for it.  Its environment involves the counit of the adjunction as a prekey, which acts on the keys of the variables behind that lock.  The value can still use such a variable, as long as there is only one possible key for it in the metavariable's context, and the prekey sends that key to the one it has in the value.
 
   $ narya -adjunction - <<EOF
   > axiom C : Type
@@ -1222,6 +1222,8 @@ The component of a modal field lives behind a lock, and possibly at a different 
   > def twofields : C ≔ let r :△| sig ( (x :△| _) .a : C, (x :△| _) .b : C ) ≔ _ in let k : Id C ((r :△| _) .a) c ≔ refl c in let j : Id C ((r :△| _) .b) c2 ≔ refl c2 in (r :△| _) .b
   > echo twofields
   > def varrhs (z :△□| C) : C ≔ let r :△| □′ C ≔ _ in let k : Id C ((r :△| _) .□) z ≔ refl z in (r :△| _) .□
+  > about varrhs
+  > echo varrhs c2
   > EOF
   c
     : C
@@ -1235,23 +1237,42 @@ The component of a modal field lives behind a lock, and possibly at a different 
   c2
     : C
   
+  z ↦ let r :△| _ ≔ (□ ≔ z) in let k ≔ refl z in (r :△| _) .□
+    : (z :△□| C) → C
+  
+  c2
+    : C
+  
+
+The same applies to a prekey on the environment of a closure, which arises from using a modal function through a key: the variables bound by the closure itself are not affected by it.  But a variable is still treated as repeated if it is the value of a variable that the prekey makes unusable, as in the second example below, where the value a could only be the argument w.
+
+  $ narya -spatial - <<EOF
+  > axiom A : Type
+  > axiom a0 : A
+  > def clos (a : A) (b :♭| A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) b ≔ refl b in g a
+  > about clos
+  > def repeated (a : A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) a ≔ refl a in g a
+  > EOF
+  a b ↦ let g :♭| _ ≔ w ↦ b in let k ≔ refl b in g a
+    : (a : A) (b :♭| A) → A
+  
    ￫ error[E0406]
    ￭ stdin
-   12 | def varrhs (z :△□| C) : C ≔ let r :△| □′ C ≔ _ in let k : Id C ((r :△| _) .□) z ≔ refl z in (r :△| _) .□
-      ^ term synthesized type
-          Id C z z
-        and is being checked against type
-          Id C ?u8 z
-        but can't determine whether they are equal, since comparing head terms
-          z
-        and
-          ?u8
-        depends on unsolved placeholders
+   5 | def repeated (a : A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) a ≔ refl a in g a
+     ^ term synthesized type
+         Id A a a
+       and is being checked against type
+         Id A (let only … in ?u1) a
+       but can't determine whether they are equal, since comparing head terms
+         a
+       and
+         let only … in ?u1
+       depends on unsolved placeholders
   
    ￫ error[E2004]
    ￭ stdin
-   12 | def varrhs (z :△□| C) : C ≔ let r :△| □′ C ≔ _ in let k : Id C ((r :△| _) .□) z ≔ refl z in (r :△| _) .□
-      ^ can't determine a value for this placeholder
+   5 | def repeated (a : A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) a ≔ refl a in g a
+     ^ can't determine a value for this placeholder
   
   [1]
 
