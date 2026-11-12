@@ -814,6 +814,55 @@ A variable of the metavariable's context, or an argument, can also be sent to a 
     : (h : (g : A → A → A → A) → S g) → (A → A → A → A) → Type
   
 
+The faces of a cube of variables are treated separately, so each can be sent to a variable, or to a tuple or abstraction of any dimension, the latter binding a cube of variables.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > def prod (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
+  > axiom f : A → Type
+  > axiom Q : (y0 y1 : A) (y2 : Id A y0 y1) → Id Type (f y0) (f y1)
+  > axiom P : (A → A) → Type
+  > axiom PP : (g0 g1 : A → A) (g2 : Id (A → A) g0 g1) → Id Type (P g0) (P g1)
+  > def cubtup : (y0 y1 : A) (y2 : Id A y0 y1) (z0 z1 : A) (z2 : Id A z0 z1) → Type ≔ let G : Id (prod A A → Type) (p ↦ f (p .fst)) (p ↦ f (p .fst)) ≔ x ⤇ Q _ _ _ in y0 y1 y2 z0 z1 z2 ↦ let k : Id (Id Type (f y0) (f y1)) (G ((y2, z2) : Id (prod A A) (y0, z0) (y1, z1))) (Q y0 y1 y2) ≔ refl (Q y0 y1 y2) in A
+  > def mix : (y0 : A) (z0 : A) (w1 : prod A A) (y2 : Id A y0 (w1 .fst)) (z2 : Id A z0 (w1 .snd)) → Type ≔ let G : Id (prod A A → Type) (p ↦ f (p .fst)) (p ↦ f (p .fst)) ≔ x ⤇ Q _ _ _ in y0 z0 w1 y2 z2 ↦ let k : Id (Id Type (f y0) (f (w1 .fst))) (G ((y2, z2) : Id (prod A A) (y0, z0) w1)) (Q y0 (w1 .fst) y2) ≔ refl (Q y0 (w1 .fst) y2) in A
+  > def hlam : (h0 h1 : A → A) (h2 : Id (A → A) h0 h1) → Type ≔ let G : Id ((A → A) → Type) (g ↦ P g) (g ↦ P g) ≔ x ⤇ PP _ _ _ in h0 h1 h2 ↦ let k : Id (Id Type (P h0) (P h1)) (G ((w ⤇ h2 w.2) : Id (A → A) (u ↦ h0 u) (u ↦ h1 u))) (PP h0 h1 h2) ≔ refl (PP h0 h1 h2) in A
+  > def hlamtup : (h0 h1 : A → A) (h2 : Id (A → A) h0 h1) (k0 k1 : A → A) (k2 : Id (A → A) k0 k1) → Type ≔ let G : Id ((A → prod A A) → Type) (g ↦ P (u ↦ g u .snd)) (g ↦ P (u ↦ g u .snd)) ≔ x ⤇ PP _ _ _ in h0 h1 h2 k0 k1 k2 ↦ let k : Id (Id Type (P k0) (P k1)) (G ((w ⤇ (h2 w.2, k2 w.2)) : Id (A → prod A A) (u ↦ (h0 u, k0 u)) (u ↦ (h1 u, k1 u)))) (PP k0 k1 k2) ≔ refl (PP k0 k1 k2) in A
+  > about cubtup
+  > about mix
+  > about hlam
+  > about hlamtup
+  > EOF
+  let G ≔ x ⤇ Q (x.0 .fst) (x.1 .fst) (x.2 .fst) in
+  y0 y1 y2 z0 z1 z2 ↦
+  let k ≔ (Q y0 y1 y2)⁽¹ᵉ⁾ in
+  A
+    : (y0 : A) (y1 : A) (y2 : Id A y0 y1) (z0 : A) (z1 : A) (z2 : Id A z0 z1)
+      → Type
+  
+  let G ≔ x ⤇ Q (x.0 .fst) (x.1 .fst) (x.2 .fst) in
+  y0 z0 w1 y2 z2 ↦
+  let k ≔ (Q y0 (w1 .fst) y2)⁽¹ᵉ⁾ in
+  A
+    : (y0 : A) (z0 : A) (w1 : prod A A) (y2 : Id A y0 (w1 .fst))
+      (z2 : Id A z0 (w1 .snd))
+      → Type
+  
+  let G ≔ x ⤇ PP x.0 x.1 x.2 in h0 h1 h2 ↦ let k ≔ (PP h0 h1 h2)⁽¹ᵉ⁾ in A
+    : (h0 : A → A) (h1 : A → A)
+      (h2 : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id A (h0 𝑥₀) (h1 𝑥₁))
+      → Type
+  
+  let G ≔ x ⤇ PP (u ↦ x.0 u .snd) (u ↦ x.1 u .snd) (𝑥 ⤇ x.2 𝑥.2 .snd) in
+  h0 h1 h2 k0 k1 k2 ↦
+  let k ≔ (PP k0 k1 k2)⁽¹ᵉ⁾ in
+  A
+    : (h0 : A → A) (h1 : A → A)
+      (h2 : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id A (h0 𝑥₀) (h1 𝑥₁))
+      (k0 : A → A) (k1 : A → A)
+      (k2 : {𝑥₀ : A} {𝑥₁ : A} (𝑥₂ : Id A 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id A (k0 𝑥₀) (k1 𝑥₁))
+      → Type
+  
+
 But if a leaf is repeated, the value can't use it, since then there would be more than one solution.  And a leaf that doesn't use all the variables bound by the abstractions, or uses one twice, isn't invertible.
 
   $ narya - <<EOF

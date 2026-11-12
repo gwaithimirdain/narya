@@ -33,7 +33,10 @@ and inversion = {
   sort : [ `Type | `Function | `Other ] Lazy.t;
 }
 
-and inversion_step = Proj of D.zero Field.t | Apply of int
+(* A projection is at the dimension of the variable it is projected from, which doesn't change along the path.  An application applies to the argument in the given position. *)
+and inversion_step =
+  | Proj : D.zero Field.t * 'n D.t -> inversion_step
+  | Apply : int -> inversion_step
 
 module Readback = struct
   module Displaying = Algaeff.Reader.Make (Bool)
@@ -580,9 +583,9 @@ let rec project_inverted : type mode a.
     (mode, a, kinetic) term * inversion_step list =
  fun mode tm path ->
   match path with
-  | Proj fld :: path ->
+  | Proj (fld, n) :: path ->
       project_inverted mode
-        (Term.Field (Kinetic, Modal (Modality.id mode, plus_no_lock mode, tm), fld, ins_zero D.zero))
+        (Term.Field (Kinetic, Modal (Modality.id mode, plus_no_lock mode, tm), fld, ins_zero n))
         path
   | _ -> (tm, path)
 
@@ -1195,8 +1198,8 @@ and readback_inverted_apps : type hmode mode a z any.
   List.fold_left
     (fun tm step ->
       match step with
-      | Proj fld ->
-          Term.Field (Kinetic, Modal (Modality.id mode, plus_no_lock mode, tm), fld, ins_zero D.zero)
+      | Proj (fld, n) ->
+          Term.Field (Kinetic, Modal (Modality.id mode, plus_no_lock mode, tm), fld, ins_zero n)
       | Apply i -> args.(i) tm)
     (readback_head ctx head) path
 
@@ -1954,7 +1957,7 @@ let rec readback_about : type mode a b.
 
    A variable of mctx sent to an undefined variable can't be used in the solution.  But this is not enough to make the solution well-typed: the type of another variable of mctx, or of the metavariable, might depend on it.  Thus we also treat any variable whose type contains an undefined variable as undefined itself, and the caller must check that the type of the metavariable doesn't contain one either.  Since menv is a renaming, it suffices to read back the types obtained by substitution with menv, which we already have.
 
-   More generally, a zero-dimensional nonmodal variable x of mctx (or argument) can be sent to a tuple, or an abstraction, or a combination of these, whose leaves are variables y of cctx applied to exactly the variables bound by the abstractions above them, in any order (see invert_value), such as (y, z) or (w ↦ y w) or (w ↦ (y w, z w)) or (u v ↦ y v u).  Then each y can be recovered from x, as some projections and applications of it such as x .fst or (w ↦ x w .snd) or (v u ↦ x u v), and every value of x is the eta-expansion of what it is sent to with these inverses substituted.  So menv is still invertible up to eta, and substituting it still can't discard anything: it only triggers projections from those tuples and applications of those abstractions, which produce the leaves.  In this case the variable x of the renamed context gets a fresh level, and we record the paths that recover the y's in a table consulted by readback (see Unifying and inversion).  Its type in cctx, which we need for the abstractions and for checking definedness, is its type in mctx substituted by menv. *)
+   More generally, a nonmodal variable x of mctx (or argument), including any face of a cube of them, can be sent to a tuple, or an abstraction, or a combination of these, whose leaves are variables y of cctx applied to exactly the variables bound by the abstractions above them, in any order (see invert_value), such as (y, z) or (w ↦ y w) or (w ↦ (y w, z w)) or (u v ↦ y v u), or their higher-dimensional versions, where an abstraction binds a cube of variables.  The faces of cubes are treated as separate variables, both in mctx and in cctx.  Then each y can be recovered from x, as some projections and applications of it such as x .fst or (w ↦ x w .snd) or (v u ↦ x u v), and every value of x is the eta-expansion of what it is sent to with these inverses substituted.  So menv is still invertible up to eta, and substituting it still can't discard anything: it only triggers projections from those tuples and applications of those abstractions, which produce the leaves.  In this case the variable x of the renamed context gets a fresh level, and we record the paths that recover the y's in a table consulted by readback (see Unifying and inversion).  Its type in cctx, which we need for the abstractions and for checking definedness, is its type in mctx substituted by menv. *)
 type (_, _) renamed_ctx =
   | Renamed_ctx : {
       ctx : ('mode, 'a, 'bc) Ctx.t;
@@ -1994,46 +1997,53 @@ let renamed_var : type dom modality mode.
 (* A variable of the current context that occurs in a tuple or abstraction in the environment, how to recover it from the variable of the metavariable's context that is sent there, and whether it has the annotation of that variable. *)
 type inverted_leaf = { leaf : level; inversion : inversion; leaf_annotated : bool }
 
-(* The variables that an application spine applies to, last first, as zero-dimensional arguments of nonmodal functions, if that is all it consists of. *)
-let rec applied_vars : type hmode mode any. (hmode, mode, any, live) apps -> level list option =
-  function
+(* The cubes of variables that an application spine applies to, last first, as arguments of nonmodal functions, if that is all it consists of.  Each cube is listed in the order of its faces. *)
+let rec applied_vars : type hmode mode any. (hmode, mode, any, live) apps -> level list list option
+    = function
   | Emp -> Some []
   | Snoc (args, Arg (filter, xs, ins)) -> (
-      match
-        ( is_id_ins ins,
-          Modality.compare_id (Modality.filter_modality filter),
-          D.compare (CubeOf.dim xs) D.zero )
-      with
-      | Some _, Eq, Eq -> (
-          match (CubeOf.find_top xs).tm with
-          | Neu { head = Live (Var { level; _ }); _ } as x when is_plain_var level x ->
-              Option.map (fun vars -> level :: vars) (applied_vars args)
-          | _ -> None)
+      match (is_id_ins ins, Modality.compare_id (Modality.filter_modality filter)) with
+      | Some _, Eq -> (
+          let faces = ref [] in
+          match
+            CubeOf.miter
+              {
+                it =
+                  (fun _ [ (x : _ normal) ] ->
+                    match x.tm with
+                    | Neu { head = Live (Var { level; _ }); _ } when is_plain_var level x.tm ->
+                        faces := level :: !faces
+                    | _ -> raise_notrace Not_renaming);
+              }
+              [ xs ]
+          with
+          | () -> Option.map (fun cubes -> List.rev !faces :: cubes) (applied_vars args)
+          | exception Not_renaming -> None)
       | _ -> None)
   | Snoc (_, Field _) | Snoc (_, Inst _) -> None
 
-(* If an application spine applies to exactly the given distinct variables, in some order, return the position in the spine of each of them. *)
+(* If an application spine applies to exactly the given cubes of distinct variables, in some order, return the position in the spine of each of them. *)
 let leaf_positions : type hmode mode any.
-    level list -> (hmode, mode, any, live) apps -> int list option =
- fun vars args ->
+    level list list -> (hmode, mode, any, live) apps -> int list option =
+ fun cubes args ->
   match applied_vars args with
   | None -> None
   | Some applied ->
-      (* Since the variables are distinct, if there are as many of them as arguments and each is one of the arguments, then the arguments are a permutation of them. *)
+      (* Since the variables are distinct, if there are as many cubes as arguments and each is one of the arguments, then the arguments are a permutation of them. *)
       let applied = List.rev applied in
-      if List.length applied <> List.length vars then None
+      if List.length applied <> List.length cubes then None
       else
         let positions =
           List.map
-            (fun z ->
+            (fun zs ->
               let rec find i = function
                 | [] -> None
-                | y :: ys -> if y = z then Some i else find (i + 1) ys in
+                | ys :: yss -> if ys = zs then Some i else find (i + 1) yss in
               find 0 applied)
-            vars in
+            cubes in
         if List.for_all Option.is_some positions then Some (List.map Option.get positions) else None
 
-(* Invert a value in the environment or arguments of a metavariable, of a given type, that is sent to a variable of the metavariable's context with a given level in the renamed context.  The value must be built out of tuples (of records with eta and only ordinary fields) and abstractions (over a single variable, nonmodally), where every leaf is a variable of the current context applied to exactly all the variables bound by the abstractions above it, in some order.  Then every leaf can be recovered from the variable of the metavariable's context, and every such value is the eta-expansion of that variable applied to the inverse.  The variables bound by the abstractions are given fresh levels, at least base. *)
+(* Invert a value in the environment or arguments of a metavariable, of a given type, that is sent to a variable of the metavariable's context with a given level in the renamed context.  The value must be built out of tuples (of records with eta and only ordinary fields, at any dimension) and abstractions (nonmodal, over a cube of variables of any dimension), where every leaf is a variable of the current context applied to exactly all the cubes of variables bound by the abstractions above it, in some order.  Then every leaf can be recovered from the variable of the metavariable's context, and every such value is the eta-expansion of that variable applied to the inverse.  The variables bound by the abstractions are given fresh levels, at least base. *)
 let invert_value : type mode.
     mode Mode.t ->
     base:int ->
@@ -2049,7 +2059,7 @@ let invert_value : type mode.
     | Neu { head = Live (Var { level; deg; key }); args; ty = vty; _ } ->
         if fst level >= base || (not (Modalcell.is_id key)) || Option.is_none (is_id_deg deg) then
           raise_notrace Not_renaming;
-        (* The position among the leaf's arguments of each variable bound by the abstractions, in the order they were bound. *)
+        (* The position among the leaf's arguments of each cube of variables bound by the abstractions, in the order they were bound. *)
         let positions =
           match leaf_positions (List.rev lams) args with
           | Some positions -> Array.of_list positions
@@ -2064,7 +2074,7 @@ let invert_value : type mode.
         let path =
           List.map
             (function
-              | Proj fld -> Proj fld
+              | Proj (fld, n) -> Proj (fld, n)
               | Apply _ ->
                   let i = !count in
                   count := i + 1;
@@ -2079,13 +2089,10 @@ let invert_value : type mode.
         { leaf = level; inversion = { var = x; path = List.rev path; napps; sort }; leaf_annotated }
         :: acc
     | Struct { fields; ins; eta = Eta; _ } -> (
-        match (is_id_ins ins, D.compare (cod_left_ins ins) D.zero, view_type ty "invert_value") with
-        | Some _, Eq, Canonical (_, Codata { eta = Eta; env; _ }, tyins, _)
-          when Option.is_some (is_id_ins tyins)
-               &&
-               match D.compare (dim_env env) D.zero with
-               | Eq -> true
-               | Neq -> false ->
+        match (is_id_ins ins, view_type ty "invert_value") with
+        | Some _, Canonical (_, Codata { eta = Eta; env; _ }, tyins, _)
+          when Option.is_some (is_id_ins tyins) ->
+            let n = cod_left_ins ins in
             Bwd.fold_left
               (fun acc
                    (Value.StructfieldAbwd.Entry (fld, sf) :
@@ -2096,8 +2103,10 @@ let invert_value : type mode.
                     | Neq -> raise_notrace Not_renaming
                     | Eq ->
                         let (Val c) = force_eval lev in
-                        go (Proj fld :: path) napps lams c
-                          (tyof_field id v ty fld (ins_zero D.zero))
+                        go
+                          (Proj (fld, n) :: path)
+                          napps lams c
+                          (tyof_field id v ty fld (ins_zero (dim_env env)))
                           acc))
               acc fields
         | _ -> raise_notrace Not_renaming)
@@ -2105,18 +2114,26 @@ let invert_value : type mode.
         match view_type ty "invert_value" with
         | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) -> (
             let Eq = eq_of_ins_zero ins in
-            match
-              ( Modality.compare_id (Modality.filter_modality filter),
-                D.compare (CubeOf.dim doms) D.zero )
-            with
-            | Eq, Eq ->
-                let z = (fresh (), 0) in
-                let args = CubeOf.singleton (var id z (CubeOf.find_top doms)) in
+            match Modality.compare_id (Modality.filter_modality filter) with
+            | Eq ->
+                (* The fresh variables, one for each face, are created by dom_vars in a context that exists only to supply their level. *)
+                let args, _ =
+                  dom_vars (Ctx.of_ordered ~level:(fresh ()) (Ctx.Ordered.empty mode)) id doms in
+                let zs = ref [] in
+                CubeOf.miter
+                  {
+                    it =
+                      (fun _ [ z ] ->
+                        match z with
+                        | Neu { head = Live (Var { level; _ }); _ } -> zs := level :: !zs
+                        | _ -> fatal (Anomaly "fresh variable isn't a variable"));
+                  }
+                  [ args ];
                 let (Val body) = apply v filter args in
-                go (Apply 0 :: path) (napps + 1) (z :: lams) body
+                go (Apply 0 :: path) (napps + 1) (List.rev !zs :: lams) body
                   (tyof_app cods tyargs filter args)
                   acc
-            | _ -> raise_notrace Not_renaming)
+            | Neq -> raise_notrace Not_renaming)
         | _ -> raise_notrace Not_renaming)
     | _ -> raise_notrace Not_renaming in
   go [] 0 [] v ty []
@@ -2259,36 +2276,42 @@ let renamed_ctx : type mode a b c d n x any.
    fun modality v ->
     let { var; annotated; _ } = renamed_var modality v in
     count_level var annotated in
-  (* The inverses of the leaves that are defined, filled in as we build the context, and the fresh level and leaves of each inverted variable, computed when we first scan it: for the environment by the level of the variable in mctx, and for the arguments in order. *)
+  (* The inverses of the leaves that are defined, filled in as we build the context, and the fresh level and leaves of each inverted variable, computed when we first scan it: for the environment by the level of the variable in mctx, and for the arguments in order and then by face. *)
   let inversions : (level, inversion) Hashtbl.t = Hashtbl.create 4 in
   let inverted_entries : (level, level * inverted_leaf list) Hashtbl.t = Hashtbl.create 4 in
-  let inverted_args : (level * inverted_leaf list) option Queue.t = Queue.create () in
-  (* Count a value that is a variable, or else invert it if it is zero-dimensional and nonmodal, at a type that we compute only then. *)
-  let count_or_invert : type dom modality mode k.
+  let inverted_args : (any_sface, level * inverted_leaf list) Hashtbl.t Queue.t = Queue.create () in
+  (* Count a value that is a variable, or else invert it if it is nonmodal, at a type that we compute only then.  The faces of a cube are treated separately. *)
+  let count_or_invert : type dom modality mode.
       (dom, modality, mode) Modality.t ->
-      (k, (dom, kinetic) value) CubeOf.t ->
+      (dom, kinetic) value ->
       ((modality * mode, dom Modality.id * dom) Eq.t -> (dom, kinetic) value) ->
       (level * inverted_leaf list) option =
-   fun modality values ty ->
-    match CubeOf.miter { it = (fun _ [ v ] -> count_var modality v) } [ values ] with
+   fun modality v ty ->
+    match count_var modality v with
     | () -> None
     | exception Not_renaming -> (
-        match (Modality.compare_id modality, D.compare (CubeOf.dim values) D.zero) with
-        | Eq, Eq ->
+        match Modality.compare_id modality with
+        | Eq ->
             let var = (fresh (), 0) in
-            let leaves =
-              invert_value (Modality.src modality) ~base:level ~fresh var (CubeOf.find_top values)
-                (ty Eq) in
+            let leaves = invert_value (Modality.src modality) ~base:level ~fresh var v (ty Eq) in
             List.iter (fun { leaf; leaf_annotated; _ } -> count_level leaf leaf_annotated) leaves;
             Some (var, leaves)
-        | _ -> raise_notrace Not_renaming) in
-  (* The type in the current context of a variable of mctx, given the part of mctx before it and the corresponding part of the environment, is its own type substituted by the environment.  This variable must be zero-dimensional and nonmodal. *)
+        | Neq -> raise_notrace Not_renaming) in
+  (* The type in the current context of a variable of mctx, given the part of mctx up to and including the cube containing it (whose earlier faces its type can refer to) and the corresponding part of the environment, is its own type substituted by the environment.  This variable must be nonmodal. *)
   let entry_type : type mode a d.
       (mode, a, d) Ctx.Ordered.t -> (mode, D.zero, d) env -> mode Binding.t -> (mode, kinetic) value
       =
    fun mctx env b ->
     Unifying.run ~env:None @@ fun () ->
     eval_term env (readback_val (Ctx.of_ordered mctx) (Lazy.force (Binding.value b).ty)) in
+  (* The same, given that the variable is nonmodal. *)
+  let face_type : type dom modality mode a d.
+      (mode, a, d) Ctx.Ordered.t ->
+      (mode, D.zero, d) env ->
+      dom Binding.t ->
+      (modality * mode, dom Modality.id * dom) Eq.t ->
+      (dom, kinetic) value =
+   fun mctx env b Eq -> entry_type mctx env b in
   (* First we make a pass through the environment and arguments to check that they are a renaming and find out which variables are repeated, since the variables in the context we build have to be determined starting from the left. *)
   let rec scan : type mode a d. (mode, a, d) Ctx.Ordered.t -> (mode, D.zero, d) env -> unit =
    fun mctx env ->
@@ -2308,20 +2331,20 @@ let renamed_ctx : type mode a b c d n x any.
             let modality = Ctx.modality_entry entry in
             let bindings = Ctx.bindings_entry entry in
             let values = renamed_values env modality (CubeOf.dim bindings) in
-            (* A let-bound variable isn't part of the renaming: its value in the environment is determined by the rest of the environment. *)
-            if Ctx.all_free bindings then
-              let b = CubeOf.find_top bindings in
-              match
-                count_or_invert modality values (fun Eq -> entry_type mctx (remove_top env) b)
-              with
-              | None -> ()
-              | Some inv -> Hashtbl.add inverted_entries (Option.get (Binding.level b)) inv
-            else
-              CubeOf.miter2
-                {
-                  it2 = (fun _ v b -> if Option.is_some (Binding.level b) then count_var modality v);
-                }
-                values bindings;
+            let cubectx = Ctx.Ordered.invis mctx (Ctx.filter_entry entry) bindings in
+            CubeOf.miter2
+              {
+                it2 =
+                  (fun _ v b ->
+                    (* A let-bound variable isn't part of the renaming: its value in the environment is determined by the rest of the environment. *)
+                    match Binding.level b with
+                    | None -> ()
+                    | Some l -> (
+                        match count_or_invert modality v (face_type cubectx env b) with
+                        | None -> ()
+                        | Some inv -> Hashtbl.add inverted_entries l inv));
+              }
+              values bindings;
             scan mctx (remove_top env)) in
   let rec scan_args : type any. (mode, mode, any, live) apps -> unit = function
     | Emp -> ()
@@ -2330,10 +2353,17 @@ let renamed_ctx : type mode a b c d n x any.
         if Option.is_none (is_id_ins ins) then raise_notrace Not_renaming;
         scan_args args;
         let modality = Modality.filter_modality filter in
-        Queue.add
-          (count_or_invert modality (val_of_norm_cube xs) (fun _ ->
-               Lazy.force (CubeOf.find_top xs).ty))
-          inverted_args
+        let inverted = Hashtbl.create 1 in
+        CubeOf.miter
+          {
+            it =
+              (fun fa [ (x : _ normal) ] ->
+                match count_or_invert modality x.tm (fun _ -> Lazy.force x.ty) with
+                | None -> ()
+                | Some inv -> Hashtbl.add inverted (Any_sface fa) inv);
+          }
+          [ xs ];
+        Queue.add inverted inverted_args
     | Snoc (_, Field _) | Snoc (_, Inst _) -> raise_notrace Not_renaming in
   (* Then we build the context from the left.  The bindings of a cube of variables are determined by the values in the environment, except that a let-bound variable has no level for readback to find.  The types of the variables in a cube can depend on the earlier ones, so we fill them in as we go.  We read back those types in the context locked by the modality of the variables. *)
   let renamed_bindings : type dom modality mode a b k.
@@ -2341,7 +2371,7 @@ let renamed_ctx : type mode a b c d n x any.
       (dom, modality, mode, k, k) Modality.filter_dim ->
       (k, (dom, kinetic) value) CubeOf.t ->
       (k, bool) CubeOf.t ->
-      (level * inverted_leaf list * (dom, kinetic) value Lazy.t) option ->
+      (k, (level * inverted_leaf list * (dom, kinetic) value Lazy.t) option) CubeOf.t ->
       (k, dom Binding.t) CubeOf.t =
    fun rest filter values free inverted ->
     let modality = Modality.filter_modality filter in
@@ -2356,7 +2386,7 @@ let renamed_ctx : type mode a b c d n x any.
       {
         it2 =
           (fun fa v vb ->
-            match inverted with
+            match CubeOf.find inverted fa with
             (* An inverted variable is defined if its type is, and then so are its leaves that aren't repeated and have the right annotation. *)
             | Some (var, leaves, ty) ->
                 if
@@ -2400,7 +2430,7 @@ let renamed_ctx : type mode a b c d n x any.
       }
       values vbs;
     vbs in
-  (* Whether a variable of mctx, given the part of mctx before it and the corresponding part of the environment, was inverted when we scanned it, and if so its fresh level, its leaves, and its type.  Only nonmodal variables are inverted (see count_or_invert). *)
+  (* Whether a variable of mctx, given the part of mctx up to and including its cube and the corresponding part of the environment, was inverted when we scanned it, and if so its fresh level, its leaves, and its type.  Only nonmodal variables are inverted (see count_or_invert). *)
   let inverted_entry : type dom modality mode a d.
       (dom, modality, mode) Modality.t ->
       (mode, a, d) Ctx.Ordered.t ->
@@ -2439,8 +2469,12 @@ let renamed_ctx : type mode a b c d n x any.
               CubeOf.build k
                 { build = (fun fa -> Option.is_some (Binding.level (CubeOf.find bindings fa))) }
             in
+            let cubectx = Ctx.Ordered.invis mctx (Ctx.filter_entry entry) bindings in
             let inverted =
-              inverted_entry modality mctx (remove_top env) (CubeOf.find_top bindings) in
+              CubeOf.build k
+                {
+                  build = (fun fa -> inverted_entry modality cubectx env (CubeOf.find bindings fa));
+                } in
             let vbs = renamed_bindings rest (Ctx.filter_entry entry) values free inverted in
             let (Plus a_x) = N.plus (N.plus_right af) in
             Renamed_ordered (Snoc (rest, { entry with bindings = vbs }, a_x, comp))) in
@@ -2484,9 +2518,15 @@ let renamed_ctx : type mode a b c d n x any.
         let ifilter = Modality.filter_idempotent filter in
         let free = CubeOf.build k { build = (fun _ -> true) } in
         let inverted =
-          Option.map
-            (fun (var, leaves) -> (var, leaves, (CubeOf.find_top xs).ty))
-            (Queue.take inverted_args) in
+          let tbl = Queue.take inverted_args in
+          CubeOf.build k
+            {
+              build =
+                (fun fa ->
+                  Option.map
+                    (fun (var, leaves) -> (var, leaves, (CubeOf.find xs fa).ty))
+                    (Hashtbl.find_opt tbl (Any_sface fa)));
+            } in
         let vbs = renamed_bindings rest ifilter (val_of_norm_cube xs) free inverted in
         let dim = cod_left_ins ins in
         let vars, ty = renamed_binder ty filter dim xs in
