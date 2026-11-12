@@ -863,6 +863,35 @@ The faces of a cube of variables are treated separately, so each can be sent to 
       → Type
   
 
+A leaf can also be a permutation of a variable, as long as it isn't applied, since the permutation can be inverted.
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > axiom a₀₀ : A
+  > axiom a₀₁ : A
+  > axiom a₀₂ : Id A a₀₀ a₀₁
+  > axiom a₁₀ : A
+  > axiom a₁₁ : A
+  > axiom a₁₂ : Id A a₁₀ a₁₁
+  > axiom a₂₀ : Id A a₀₀ a₁₀
+  > axiom a₂₁ : Id A a₀₁ a₁₁
+  > def prod (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
+  > axiom K : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁ → Type
+  > axiom L : Id (Id A) a₂₀ a₂₁ a₀₂ a₁₂ → Type
+  > axiom hk : (t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁) → K t
+  > axiom hl : (t : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁) → L (sym t)
+  > def symleaf : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁ → A → Type ≔ let G : prod (Id (Id A) a₂₀ a₂₁ a₀₂ a₁₂) A → Type ≔ p ↦ K _ in t b ↦ let k : G (sym t, b) ≔ hk t in A
+  > def symboth : Id (Id A) a₀₂ a₁₂ a₂₀ a₂₁ → A → Type ≔ let G : prod (Id (Id A) a₂₀ a₂₁ a₀₂ a₁₂) A → Type ≔ p ↦ L _ in t b ↦ let k : G (sym t, b) ≔ hl t in A
+  > about symleaf
+  > about symboth
+  > EOF
+  let G ≔ p ↦ K (sym (p .fst)) in t b ↦ let k ≔ hk t in A
+    : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁ → A → Type
+  
+  let G ≔ p ↦ L (p .fst) in t b ↦ let k ≔ hl t in A
+    : A⁽ᵉᵉ⁾ a₀₂ a₁₂ a₂₀ a₂₁ → A → Type
+  
+
 Modal variables can be inverted as well, and the value can use the leaves with keys.  An abstraction can be modal, and a tuple can have modal fields, whose components live behind a lock by the right adjoint, so that their leaves must have the annotation of the variable composed with that.  But a leaf with a nonidentity key isn't a renaming.
 
   $ narya -spatial - <<EOF
