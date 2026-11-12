@@ -196,12 +196,19 @@ let id : type dom modality cod. (dom, modality, cod) Modality.t -> (dom, modalit
 let id2 : type mode. mode Mode.t -> (mode, mode Modality.id, mode Modality.id, mode) t =
  fun x -> id (Modality.id x)
 
-let compare_id : type dom mu nu cod.
+(* Whether a cell is the identity on an identity modality.  This is stronger than is_id, which allows the identity on any modality. *)
+let compare_id2 : type dom mu nu cod.
     (dom, mu, nu, cod) t -> (dom * mu * nu, cod * dom Modality.id * dom Modality.id) Eq.compare =
  fun x ->
-  match compare x (id2 (hsrc x)) with
-  | Eq -> Eq
-  | Neq -> Neq
+  match x with
+  | Id m -> (
+      match Modality.compare_id m with
+      | Eq -> Eq
+      | Neq -> Neq)
+  | _ -> (
+      match compare x (id2 (hsrc x)) with
+      | Eq -> Eq
+      | Neq -> Neq)
 
 (* Whether a cell is an identity on some (not necessarily identity) modality. *)
 let is_id : type dom mu nu cod. (dom, mu, nu, cod) t -> bool = function

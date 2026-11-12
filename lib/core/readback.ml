@@ -591,6 +591,21 @@ let rec spine_length : type hmode mode any. (hmode, mode, any, live) apps -> int
 (* The value obtained by applying to a variable, as seen from behind its own modal annotation, the projections at the start of the path of an inverted variable (see inversion), until we reach an application or the end of the path, together with the modal annotation of the result, which a variable recovered there would have, and the rest of the path.  A modal field is projected from the variable keyed by the unit of its adjunction, as in readback at a record type, and its value lives behind a lock by the right adjoint. *)
 type any_cell = Any_cell : ('a, 'm, 'n, 'b) Modalcell.t -> any_cell
 
+(* Whether acting by a cell on a variable whose key is the identity on a modality gives that variable a given key, whose source is that modality.  This is how act_head acts on a variable: it postwhiskers the cell so that its source is the target of the variable's key, the given modality, and composes.  Since acting by a cell is the same as acting by any postwhiskering of it, and key_vcomp may omit identities that would postwhisker the other cell, this is the right way to compare a composite of keys with the key of a variable, rather than requiring their sources and targets to be equal. *)
+let acts_as : type a m n b c p q d. (a, m, n, b) Modalcell.t -> (c, p, q, d) Modalcell.t -> bool =
+ fun cell key ->
+  let ann = Modalcell.vsrc key in
+  match Mode.compare (Modalcell.hsrc cell) (Modality.src ann) with
+  | Neq -> false
+  | Eq -> (
+      match Modality.factor ann (Modalcell.vsrc cell) with
+      | Some (Factor (k, comp)) -> (
+          let (Wrap acted) = Modalcell.vcomp_extending k comp cell (Modalcell.id ann) in
+          match Modalcell.compare acted key with
+          | Eq -> true
+          | Neq -> false)
+      | None -> false)
+
 (* No prekeys, but a key on the value of the variable. *)
 let entry_key_only : type a m n b. (a, m, n, b) Modalcell.t -> prekey_data =
  fun key ->
@@ -1277,13 +1292,13 @@ and readback_prekeyed : type mode c z m n alpha nu cod.
               Mode.compare (Modalcell.hsrc entry) (Modalcell.hsrc key') )
           with
           | Neq, _ | _, Neq -> raise (Unsolvable `Flexible)
-          | Eq, Eq -> (
+          | Eq, Eq ->
               let (Wrap image) = key_vcomp outer key' in
               let (Wrap image) = key_vcomp image inner in
               let (Wrap image) = key_vcomp image entry in
-              match Modalcell.compare image key with
-              | Eq -> readback_head ?canonical ~rekey:false ctx (Var { level; deg; key = key' })
-              | Neq -> raise (Unsolvable `Flexible))))
+              if acts_as image key then
+                readback_head ?canonical ~rekey:false ctx (Var { level; deg; key = key' })
+              else raise (Unsolvable `Flexible)))
 
 (* Read back the application of a variable of the current context that the renamed context recovers by applying another variable (see inversion), given that variable as the head, how it is recovered, and exactly as many arguments as the path has applications.  We compute the rest of the path on the value of the part before the first application (see readback_inverted_head), applying it to the arguments, which are given at the modality of the variable's own arguments, with the modality of the abstraction instead, and read back the result.  Projections, both ordinary and modal, and applications commute with degeneracies, so they are at the dimension of the result of the degeneracy. *)
 and readback_inverted_apps : type hmode mode a z any.
@@ -1458,13 +1473,13 @@ and readback_inverted_prekeyed : type mode kmode z c m n alpha nu cod.
               Mode.compare (Modalcell.hsrc inner) (Modalcell.hsrc outer),
               Mode.compare (Modalcell.hsrc entry) (Modalcell.hsrc outer) )
           with
-          | Eq, Eq, Eq -> (
+          | Eq, Eq, Eq ->
               let (Wrap image) = key_vcomp outer c in
               let (Wrap image) = key_vcomp image inner in
               let (Wrap image) = key_vcomp image entry in
-              match Modalcell.compare image key with
-              | Eq -> Inverted_value (vmode, act_value v deg (Modalcell.id2 vmode), rest)
-              | Neq -> flex ())
+              if acts_as image key then
+                Inverted_value (vmode, act_value v deg (Modalcell.id2 vmode), rest)
+              else flex ()
           | _ -> flex ()))
 
 and readback_head : type mode c z.

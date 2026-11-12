@@ -46,19 +46,19 @@ type _ key_comp = Wrap : ('a, 'm, 'n, 'b) Modalcell.t -> 'a key_comp
 let key_vcomp : type a b c m n p q.
     (a, m, n, b) Modalcell.t -> (a, p, q, c) Modalcell.t -> a key_comp =
  fun cell2 cell1 ->
-  match (Modalcell.compare_id cell2, Modalcell.compare_id cell1) with
-  | Eq, _ -> Wrap cell1
-  | _, Eq -> Wrap cell2
-  | _ -> (
-      match Modality.pushout (Modalcell.vtgt cell1) (Modalcell.vsrc cell2) with
-      | Some (Pushout (mu3, mu4, cod13, dom24)) ->
-          let (Comp cod24) = Modality.comp (Modalcell.vtgt cell2) in
-          let (Comp dom13) = Modality.comp (Modalcell.vsrc cell1) in
-          Wrap
-            (Modalcell.vcomp
-               (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) cell2)
-               (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) cell1))
-      | None -> fatal (Anomaly "incompatible keys"))
+  (* An identity on any modality can be omitted, although the general composite would postwhisker the other cell by part of that modality, since acting by a cell is the same as acting by any postwhiskering of it (see act_head). *)
+  if Modalcell.is_id cell2 then Wrap cell1
+  else if Modalcell.is_id cell1 then Wrap cell2
+  else
+    match Modality.pushout (Modalcell.vtgt cell1) (Modalcell.vsrc cell2) with
+    | Some (Pushout (mu3, mu4, cod13, dom24)) ->
+        let (Comp cod24) = Modality.comp (Modalcell.vtgt cell2) in
+        let (Comp dom13) = Modality.comp (Modalcell.vsrc cell1) in
+        Wrap
+          (Modalcell.vcomp
+             (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) cell2)
+             (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) cell1))
+    | None -> fatal (Anomaly "incompatible keys")
 
 (* Prewhisker a prekey action by a modality, transporting its vertical (and horizontal) source. *)
 let prekey_prewhisker : type mode a b m n r.
