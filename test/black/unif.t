@@ -322,70 +322,56 @@ A renaming can send variables with a modal annotation to variables with the same
     : Type
   
 
-An environment entry with a nonidentity key isn't a renaming.  A value can't use a variable with a different annotation than the one it renames.  And when the current context has locks that the metavariable's context doesn't, the value can't use variables behind them.
+An environment entry can be a variable with a nonidentity key, as long as the variable it renames has a key in the metavariable's context whose composite with it is the key of the occurrence in the value.  A value can't use a variable with a different annotation than the one it renames.  And when the current context has locks that the metavariable's context doesn't, the value can't use variables behind them.
 
   $ narya -spatial - <<EOF
   > axiom A : Type
   > axiom C : A → Type
   > axiom D : (_ :♭| Type) → Type
   > def keyenv (h : (y :♭| A) → C y) : (y :♭| A) → Type ≔ let G : A → Type ≔ x ↦ C _ in y ↦ let k : G y ≔ h y in A
+  > about keyenv
   > axiom e : (y :♭| A) → D (C y)
   > def mismatch2 : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in C (_ : A)) ≔ e y in A
   > axiom d2 : (y :♭| A) → D ((z : A) → C y)
   > def lockscope : (y :♭| A) → Type ≔ y ↦ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d2 y in A
   > EOF
-   ￫ error[E0406]
-   ￭ stdin
-   4 | def keyenv (h : (y :♭| A) → C y) : (y :♭| A) → Type ≔ let G : A → Type ≔ x ↦ C _ in y ↦ let k : G y ≔ h y in A
-     ^ term synthesized type
-         C y
-       and is being checked against type
-         C (let only … in ?u0)
-       but can't determine whether they are equal, since comparing head terms
-         y
-       and
-         let only … in ?u0
-       depends on unsolved placeholders
-  
-   ￫ error[E2004]
-   ￭ stdin
-   4 | def keyenv (h : (y :♭| A) → C y) : (y :♭| A) → Type ≔ let G : A → Type ≔ x ↦ C _ in y ↦ let k : G y ≔ h y in A
-     ^ can't determine a value for this placeholder
+  h ↦ let G ≔ x ↦ C x in y ↦ let k ≔ h y in A
+    : (h : (y :♭| A) → C y) (y :♭| A) → Type
   
    ￫ error[E0406]
    ￭ stdin
-   6 | def mismatch2 : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in C (_ : A)) ≔ e y in A
+   7 | def mismatch2 : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in C (_ : A)) ≔ e y in A
      ^ term synthesized type
          D (C y)
        and is being checked against type
-         D (C (let only … in ?u2))
+         D (C (let only … in ?u1))
        but can't determine whether they are equal, since comparing head terms
          y
        and
-         let only … in ?u2
+         let only … in ?u1
        depends on unsolved placeholders
   
    ￫ error[E2004]
    ￭ stdin
-   6 | def mismatch2 : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in C (_ : A)) ≔ e y in A
+   7 | def mismatch2 : (y :♭| A) → Type ≔ y ↦ let k : D (let only x : A ≔ y in C (_ : A)) ≔ e y in A
      ^ can't determine a value for this placeholder
   
    ￫ error[E0406]
    ￭ stdin
-   8 | def lockscope : (y :♭| A) → Type ≔ y ↦ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d2 y in A
+   9 | def lockscope : (y :♭| A) → Type ≔ y ↦ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d2 y in A
      ^ term synthesized type
          D ((z : A) → C y)
        and is being checked against type
-         D ((z : A) → let only … in ?u4)
+         D ((z : A) → let only … in ?u3)
        but can't determine whether they are equal, since comparing head head terms
          C
        and
-         let only … in ?u4
+         let only … in ?u3
        depends on unsolved placeholders
   
    ￫ error[E2004]
    ￭ stdin
-   8 | def lockscope : (y :♭| A) → Type ≔ y ↦ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d2 y in A
+   9 | def lockscope : (y :♭| A) → Type ≔ y ↦ let k : D ((z : A) → let only x : A ≔ z in (_ : Type)) ≔ d2 y in A
      ^ can't determine a value for this placeholder
   
   [1]
@@ -968,7 +954,7 @@ Any degeneracy on an occurrence of an inverted variable, such as a reflexivity, 
     : (A → A) → (A → A) → Type
   
 
-Modal variables can be inverted as well, and the value can use the leaves with keys.  An abstraction can be modal, and a tuple can have modal fields, whose components live behind a lock by the right adjoint, so that their leaves must have the annotation of the variable composed with that.  But a leaf with a nonidentity key isn't a renaming.
+Modal variables can be inverted as well, and the value can use the leaves with keys.  An abstraction can be modal, and a tuple can have modal fields, whose components live behind a lock by the right adjoint, so that their leaves must have the annotation of the variable composed with that.  A leaf can also have a nonidentity key, such as a variable without an annotation in the component of a ♭-field, which can only be used there through the unit of the adjunction.
 
   $ narya -spatial - <<EOF
   > axiom A : Type
@@ -997,7 +983,8 @@ Modal variables can be inverted as well, and the value can use the leaves with k
   > about modlam
   > about modlamapp
   > about modfld
-  > def plainleaf : A → A → Type ≔ let G : R → Type ≔ r ↦ F _ in y z ↦ let k : G (y, z) ≔ hf y in A
+  > def plainleaf : A → A → Type ≔ let G : R → Type ≔ r ↦ F _ in y z ↦ let k : G (y, z) ≔ hf y in let c : Id Type (G (y, z)) (F y) ≔ refl (F y) in A
+  > about plainleaf
   > EOF
   let G ≔ p ↦ C (p .snd) (p .fst) in y z ↦ let k ≔ hc y z in A
     : (y :♭| A) (z :♭| A) → Type
@@ -1014,25 +1001,13 @@ Modal variables can be inverted as well, and the value can use the leaves with k
   let G ≔ r ↦ S ((r :♭| _) .fst) (r .snd) in y z ↦ let k ≔ hs y z in A
     : (y :♯| A) (z : A) → Type
   
-   ￫ error[E0406]
-   ￭ stdin
-   27 | def plainleaf : A → A → Type ≔ let G : R → Type ≔ r ↦ F _ in y z ↦ let k : G (y, z) ≔ hf y in A
-      ^ term synthesized type
-          F y
-        and is being checked against type
-          F (let only … in ?u8)
-        but can't determine whether they are equal, since comparing head terms
-          y
-        and
-          let only … in ?u8
-        depends on unsolved placeholders
+  let G ≔ r ↦ F ((r :♭| _) .fst) in
+  y z ↦
+  let k ≔ hf y in
+  let c ≔ Id (F y) in
+  A
+    : A → A → Type
   
-   ￫ error[E2004]
-   ￭ stdin
-   27 | def plainleaf : A → A → Type ≔ let G : R → Type ≔ r ↦ F _ in y z ↦ let k : G (y, z) ≔ hf y in A
-      ^ can't determine a value for this placeholder
-  
-  [1]
 
 But if a leaf is repeated, the value can't use it, since then there would be more than one solution.  And a leaf that doesn't use all the variables bound by the abstractions, or uses one twice, isn't invertible.
 

@@ -27,10 +27,13 @@ type unifying = {
   prekeyed : level -> prekey_data option;
 }
 
-(* The prekeys that act on the value of a variable x of a metavariable's context when evaluating an occurrence of it in the environment, with the composite modality of the locks to its right in that context: those that restrict_keys collects when stripping off those locks, and those that lookup_cube collects on the way down to x in what remains (prewhiskered by the annotation of x).  See readback_prekeyed. *)
+(* The prekeys that act on the value of a variable x of a metavariable's context when evaluating an occurrence of it in the environment, with the composite modality of the locks to its right in that context: those that restrict_keys collects when stripping off those locks, and those that lookup_cube collects on the way down to x in what remains (prewhiskered by the annotation of x).  Then the value of x itself, a variable y, may have a key, which acts first.  See readback_prekeyed. *)
 and prekey_data =
   | Prekey_data :
-      ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'p, 'q, 'd) Modalcell.t * ('e, 'l, 'f) Modality.t
+      ('a, 'm, 'n, 'b) Modalcell.t
+      * ('c, 'p, 'q, 'd) Modalcell.t
+      * ('e, 'l, 'f) Modality.t
+      * ('g, 'r, 's, 'h) Modalcell.t
       -> prekey_data
 
 (* A variable y of the current context can occur in the environment of a metavariable as a component of a tuple, or in the body of an abstraction applied to the variables it binds (in any order), or a combination of these, as the value of a variable x of the metavariable's context.  Then y applied to arguments is the result of applying to x a path of projections and applications, each of the latter taking the argument of y in the position where y was applied to the variable bound by the corresponding abstraction; we also record the number of applications.  The leaf can also be a permutation of y; then y is the inverse permutation of the result of the path, which we record.  And the value of x in the environment can be acted on by prekeys, which we also record (see readback_inverted_head). *)
@@ -587,6 +590,22 @@ let rec spine_length : type hmode mode any. (hmode, mode, any, live) apps -> int
 
 (* The value obtained by applying to a variable, as seen from behind its own modal annotation, the projections at the start of the path of an inverted variable (see inversion), until we reach an application or the end of the path, together with the modal annotation of the result, which a variable recovered there would have, and the rest of the path.  A modal field is projected from the variable keyed by the unit of its adjunction, as in readback at a record type, and its value lives behind a lock by the right adjoint. *)
 type any_cell = Any_cell : ('a, 'm, 'n, 'b) Modalcell.t -> any_cell
+
+(* No prekeys, but a key on the value of the variable. *)
+let entry_key_only : type a m n b. (a, m, n, b) Modalcell.t -> prekey_data =
+ fun key ->
+  let mode = Modalcell.hsrc key in
+  Prekey_data (Modalcell.id2 mode, Modalcell.id2 mode, Modality.id mode, key)
+
+(* Prekeys, together with a key on the value of the variable that they act on, if it has one. *)
+let with_entry_key (prekeys : prekey_data option) (key : any_cell option) : prekey_data option =
+  match (prekeys, key) with
+  | None, None -> None
+  | None, Some (Any_cell key) -> Some (entry_key_only key)
+  | Some (Prekey_data (outer, inner, mlocks, _)), Some (Any_cell key) ->
+      Some (Prekey_data (outer, inner, mlocks, key))
+  | Some _, None -> prekeys
+
 type any_adj = Any_adj : ('a, 'f, 'g, 'b) Modalcell.adjunction -> any_adj
 type any_value = Any_value : 'm Mode.t * ('m, kinetic) value -> any_value
 
@@ -1189,7 +1208,8 @@ and readback_neu : type hmode mode a z any.
 and prewhisker_added : type a l b m n c e lm f e2.
     (m, n, c, e) Modalcell.t -> (lm, f, e2) Modality.t -> (a, l, b) Modality.t -> a key_comp =
  fun outer mlocks locks ->
-  if Modality.length locks <= Modality.length mlocks then
+  if Modalcell.is_id outer then Wrap (Modalcell.id2 (Modality.src locks))
+  else if Modality.length locks <= Modality.length mlocks then
     match
       (Mode.compare (Modalcell.hsrc outer) (Modality.src locks), Modality.compare locks mlocks)
     with
@@ -1212,7 +1232,7 @@ and readback_prekeyed : type mode c z m n alpha nu cod.
     (mode, alpha, nu, cod) Modalcell.t ->
     prekey_data ->
     (mode, c, kinetic) term =
- fun ?canonical ctx level deg key (Prekey_data (outer, inner, mlocks)) ->
+ fun ?canonical ctx level deg key (Prekey_data (outer, inner, mlocks, entry)) ->
   match Ctx.find_level ctx level with
   | None -> raise (Unsolvable `Flexible)
   | Some (Lookup { modality; plus = Plus_with_locks (_, locks); _ }) -> (
@@ -1221,11 +1241,15 @@ and readback_prekeyed : type mode c z m n alpha nu cod.
       | None -> raise (Unsolvable `Flexible)
       | Some (Unique key') -> (
           let (Wrap outer) = prewhisker_added outer mlocks locks in
-          match Mode.compare (Modalcell.hsrc inner) (Modalcell.hsrc key') with
-          | Neq -> raise (Unsolvable `Flexible)
-          | Eq -> (
+          match
+            ( Mode.compare (Modalcell.hsrc inner) (Modalcell.hsrc key'),
+              Mode.compare (Modalcell.hsrc entry) (Modalcell.hsrc key') )
+          with
+          | Neq, _ | _, Neq -> raise (Unsolvable `Flexible)
+          | Eq, Eq -> (
               let (Wrap image) = key_vcomp outer key' in
               let (Wrap image) = key_vcomp image inner in
+              let (Wrap image) = key_vcomp image entry in
               match Modalcell.compare image key with
               | Eq -> readback_head ?canonical ~rekey:false ctx (Var { level; deg; key = key' })
               | Neq -> raise (Unsolvable `Flexible))))
@@ -1308,7 +1332,7 @@ and readback_inverted_prekeyed : type mode z c m n alpha nu cod.
     (mode, alpha, nu, cod) Modalcell.t ->
     prekey_data ->
     (mode, c, kinetic) term * any_dim * inversion_step list =
- fun ctx level path deg key (Prekey_data (outer, inner, mlocks)) ->
+ fun ctx level path deg key (Prekey_data (outer, inner, mlocks, entry)) ->
   let flex () = raise (Unsolvable `Flexible) in
   let rec split acc = function
     | ((Proj _ | Mproj _) as step) :: path -> split (step :: acc) path
@@ -1381,11 +1405,13 @@ and readback_inverted_prekeyed : type mode z c m n alpha nu cod.
           match
             ( Mode.compare (Modalcell.hsrc c) (Modalcell.hsrc outer),
               Mode.compare (Modalcell.hsrc inner) (Modalcell.hsrc outer),
+              Mode.compare (Modalcell.hsrc entry) (Modalcell.hsrc outer),
               Mode.compare vmode (Ctx.mode ctx) )
           with
-          | Eq, Eq, Eq -> (
+          | Eq, Eq, Eq, Eq -> (
               let (Wrap image) = key_vcomp outer c in
               let (Wrap image) = key_vcomp image inner in
+              let (Wrap image) = key_vcomp image entry in
               match Modalcell.compare image key with
               | Eq ->
                   (readback_val ctx (act_value v deg (Modalcell.id2 vmode)), Any (dom_deg deg), rest)
@@ -2146,7 +2172,7 @@ let rec readback_about : type mode a b.
 
    The renaming need not be injective, nor preserve modal annotations.  A variable of cctx that is the image of more than one variable of mctx, or of a variable with a different annotation, is "undefined": it has no inverse, so if the value contains it we fail.  But if the value doesn't contain it, then the resulting solution is most general.  This is because substituting variables for variables can't trigger any computation, so if some solution of the metavariable used a variable of mctx sent to such a variable, then the value would contain that variable too.  (This argument doesn't apply if the image is not a plain variable, so in that case we don't have a renaming at all.)
 
-   The image of a variable can also be a permutation of a plain variable.  Since permutations are invertible, and a permutation of a variable is still neutral, this is no different: the corresponding variable of mctx has that permuted variable as its value, and readback inverts the permutation when it finds that variable (see renamed_deg).
+   The image of a variable can also be a variable with a nonidentity key, which then composes with the key that the variable of mctx is read back with (see readback_prekeyed).  The image of a variable can also be a permutation of a plain variable.  Since permutations are invertible, and a permutation of a variable is still neutral, this is no different: the corresponding variable of mctx has that permuted variable as its value, and readback inverts the permutation when it finds that variable (see renamed_deg).
 
    The metavariable can also be applied to arguments, as long as they are also plain variables or permutations of them.  We treat these like further entries of its environment, so that the renamed context extends it by one entry for each argument (whose types we don't need to know, since they are only for readback), and the solution is then an abstraction over them.
 
@@ -2176,7 +2202,14 @@ type (_, _) renamed_ordered =
   | Renamed_ordered : ('mode, 'a, 'b) Ctx.Ordered.t -> ('mode, 'b) renamed_ordered
 
 (* A value in an environment that is a permutation of a plain variable, and whether it has the annotation of the corresponding variable in the metavariable's context. *)
-type 'mode renamed_var = { var : level; deg : any_deg; normal : 'mode normal; annotated : bool }
+type 'mode renamed_var = {
+  var : level;
+  deg : any_deg;
+  normal : 'mode normal;
+  annotated : bool;
+  (* A nonidentity key on the variable, which readback has to take into account (see readback_prekeyed). *)
+  key : any_cell option;
+}
 
 exception Not_renaming
 
@@ -2185,14 +2218,24 @@ let renamed_var : type dom modality mode.
  fun modality v ->
   match view_term v with
   | Neu { head = Live (Var { level; deg; key }); args = Emp; ty; _ } as tm -> (
-      match (perm_of_deg deg, Modalcell.is_id key) with
-      | Some _, true ->
-          let annotated =
-            match Modality.compare (Modalcell.vsrc key) modality with
-            | Eq -> true
-            | Neq -> false in
-          { var = level; deg = Any_deg deg; normal = { tm; ty }; annotated }
-      | _ -> raise_notrace Not_renaming)
+      match perm_of_deg deg with
+      | Some _ ->
+          (* A variable with an identity key must have the annotation of the variable it is the value of; with a nonidentity key, the key mediates between them. *)
+          if Modalcell.is_id key then
+            let annotated =
+              match Modality.compare (Modalcell.vsrc key) modality with
+              | Eq -> true
+              | Neq -> false in
+            { var = level; deg = Any_deg deg; normal = { tm; ty }; annotated; key = None }
+          else
+            {
+              var = level;
+              deg = Any_deg deg;
+              normal = { tm; ty };
+              annotated = true;
+              key = Some (Any_cell key);
+            }
+      | None -> raise_notrace Not_renaming)
   | _ -> raise_notrace Not_renaming
 
 (* A variable of the current context that occurs in a tuple or abstraction in the environment, how to recover it from the variable of the metavariable's context that is sent there, and whether it has the annotation of that variable. *)
@@ -2269,7 +2312,7 @@ let invert_value : type dom modality b.
     let mode = Modality.src ann in
     match view_term v with
     | Neu { head = Live (Var { level; deg; key }); args; _ } ->
-        if fst level >= base || not (Modalcell.is_id key) then raise_notrace Not_renaming;
+        if fst level >= base then raise_notrace Not_renaming;
         (* A leaf can be a permutation of a variable, which is invertible.  If it is applied, then the variable is the inverse permutation of the abstraction of the rest of the path over the arguments, and since permutations commute with projections and applications, this is the result of acting by the inverse permutation on the part of the path before the first application, followed by the rest of the path (see readback_inverted_head). *)
         let inverse =
           match (is_id_deg deg, perm_of_deg deg) with
@@ -2281,10 +2324,14 @@ let invert_value : type dom modality b.
           match leaf_positions (List.rev lams) args with
           | Some positions -> Array.of_list positions
           | None -> raise_notrace Not_renaming in
+        (* A leaf with a nonidentity key is recovered with whatever key the readback finds that composes with it to give the key of the occurrence (see readback_inverted_prekeyed). *)
         let leaf_annotated =
+          (not (Modalcell.is_id key))
+          ||
           match Modality.compare (Modalcell.vsrc key) ann with
           | Eq -> true
           | Neq -> false in
+        let prekeys = if Modalcell.is_id key then None else Some (entry_key_only key) in
         (* The applications in the path, in order, take the arguments in those positions. *)
         let count = ref 0 in
         let path =
@@ -2304,7 +2351,7 @@ let invert_value : type dom modality b.
         let path, napps = contract (List.rev path) napps in
         {
           leaf = level;
-          inversion = { var = x; path = List.rev path; napps; inverse; prekeys = None };
+          inversion = { var = x; path = List.rev path; napps; inverse; prekeys };
           leaf_annotated;
         }
         :: acc
@@ -2427,8 +2474,9 @@ let same_arg : type dom1 modality1 n1 m1 dom2 modality2 n2 m2 mode x1 y1 x2 y2.
             (fun _ (x1 : _ normal) (x2 : _ normal) ->
               (* An argument that is inverted (see invert_value) rather than a variable isn't the same as anything. *)
               match renamed_var modality1 x1.tm with
-              | { var; deg = Any_deg deg; _ } ->
+              | { var; deg = Any_deg deg; key = None; _ } ->
                   if not (is_var_with_deg var deg (view_term x2.tm)) then same := false
+              | { key = Some _; _ } -> same := false
               | exception Not_renaming -> same := false);
         }
         xs1 xs2;
@@ -2519,9 +2567,9 @@ let renamed_ctx : type mode a b c d n x any.
       (level * inverted_leaf list) option =
    fun ?(prekeys = fun () -> None) modality v ty ->
     match renamed_var modality v with
-    | { var; annotated; _ } ->
+    | { var; annotated; key; _ } ->
         count_level var annotated;
-        Option.iter (Hashtbl.replace prekeyed_vars var) (prekeys ());
+        Option.iter (Hashtbl.replace prekeyed_vars var) (with_entry_key (prekeys ()) key);
         None
     | exception Not_renaming ->
         (* Underneath nontrivial prekeys, the leaves record them (see readback_inverted_prekeyed). *)
@@ -2529,7 +2577,11 @@ let renamed_ctx : type mode a b c d n x any.
         let var = (fresh (), 0) in
         let leaves =
           List.map
-            (fun leaf -> { leaf with inversion = { leaf.inversion with prekeys } })
+            (fun leaf ->
+              let key =
+                Option.map (fun (Prekey_data (_, _, _, key)) -> Any_cell key) leaf.inversion.prekeys
+              in
+              { leaf with inversion = { leaf.inversion with prekeys = with_entry_key prekeys key } })
             (invert_value modality ~base:level ~fresh var v (ty ())) in
         List.iter (fun { leaf; leaf_annotated; _ } -> count_level leaf leaf_annotated) leaves;
         Some (var, leaves) in
@@ -2821,7 +2873,10 @@ let renamed_ctx : type mode a b c d n x any.
                      lookup_cube env1 n_k modality insert
                        (id_opt_op (D.plus_out (dim_env env1) n_k)) in
                    if Modalcell.is_id outer && Modalcell.is_id inner then None
-                   else Some (Prekey_data (outer, inner, Locks.cod locks))
+                   else
+                     Some
+                       (Prekey_data
+                          (outer, inner, Locks.cod locks, Modalcell.id2 (Modalcell.hsrc outer)))
                | Some (Lookup { result = `Field _; _ }) -> .);
           try
             scan mctx env;
