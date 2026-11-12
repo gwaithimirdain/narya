@@ -1577,15 +1577,14 @@ and app_eval_entry : type mode1 mode2 s any inst.
       | Unrealized -> Unrealized)
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the Locks on the end of the environment have already been stripped off by restrict_keys (which the type of the index ensures, since an insertion only passes dimension entries).  Any Prekeys inside are accumulated into a prekey action. *)
-and lookup_cube : type dom mu munu mode n a b k mk nk.
+and lookup_cube : type dom mu mode n a b k mk nk.
     (mode, n, b) env ->
     (n, k, nk) D.plus ->
     (dom, mu, mode) Modality.t ->
-    (dom, munu, mode) Modality.t ->
     (a, mu, k, b) insert ->
     (mk, nk) opt_op ->
     (dom, mk) looked_up_cube =
- fun env nk mu pretr v op ->
+ fun env nk mu v op ->
   let n = dim_env env in
   match env with
   (* Since there's an index, the environment can't be empty. *)
@@ -1596,14 +1595,14 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
   | Act (env, op') ->
       let (Plus lk) = D.plus (D.plus_right nk) in
       let op'k = opt_op_plus op' lk nk in
-      lookup_cube env lk mu pretr v (comp_opt_op op'k op)
+      lookup_cube env lk mu v (comp_opt_op op'k op)
   (* Since there's an index, which can only pass dimension entries, the environment can't end with a lock: restrict_keys has already stripped them all off. *)
   | Lock _ -> (
       match v with
       | _ -> .)
   (* A prekey doesn't change the codomain context, so it can appear between the values of an environment and thus not be stripped off by restrict_keys.  We accumulate its cell into the returned prekey action.  Since the prekey acts at the environment's mode, but the looked-up value is at its own (deeper) mode, we prewhisker the cell by the transport modality (the composite modality of the locks stripped by restrict_keys), moving its source to the value's mode so that it composes with the accumulated action there. *)
   | Prekey (env, cell) ->
-      let (Looked_up { act; op; entry; pre }) = lookup_cube env nk mu pretr v op in
+      let (Looked_up { act; op; entry; pre }) = lookup_cube env nk mu v op in
       let (Wrap cell) = Modalcell.prewhisker_wrapped cell mu in
       let (Wrap pre) = key_vcomp cell pre in
       Looked_up { act; op; entry; pre }
@@ -1619,7 +1618,7 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
           (plus_opt_op n n_x n_y (opt_op_of_opt_sface (Modality.sface_of_filter x filter_y_x)))
       in
       let ny_k = D.plus_assocl n_y y_k n_xk in
-      lookup_cube yenv ny_k mu pretr v op
+      lookup_cube yenv ny_k mu v op
   | Unshift (env, n_x, xb) ->
       (* In this branch, n is renamed to n+x. *)
       let nx = n in
@@ -1633,16 +1632,16 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
       let n_yk = D.plus_assocr n_y y_k ny_k in
       let op' = plus_opt_op n n_y n_x (opt_op_of_deg (Modality.deg_of_filter x filter_y_x)) in
       let op'' = opt_op_plus op' ny_k nx_k in
-      lookup_cube env n_yk mu pretr v (comp_opt_op op'' op)
+      lookup_cube env n_yk mu v (comp_opt_op op'' op)
   (* If the environment is permuted, we apply the permutation to the index. *)
   | Permute (p, env) ->
       let (Permute_insert (v, _)) = permute_insert v p in
-      lookup_cube env nk mu pretr v op
+      lookup_cube env nk mu v op
   | Ext { env; plus = mk; values; filter = filter_m_n; filtered = filter_k_k } -> (
       let modality = Modality.filter_modality filter_m_n in
       match v with
       (* If we encounter a variable that isn't ours, we skip it and proceed. *)
-      | Later v -> lookup_cube env nk mu pretr v op
+      | Later v -> lookup_cube env nk mu v op
       (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
       | Now -> (
           let filter = Modality.filter_plus mk nk filter_m_n filter_k_k in
@@ -1664,7 +1663,7 @@ and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kineti
   (* We strip off the locks to the right of the variable, composing the prekeys encountered on the way out into a prekey action to be applied to the looked-up value.  The prekeys encountered inside the environment by lookup_cube are transported to the value's mode by prewhiskering with the composite modality of the locks. *)
   let (Restrict_keys (env, pre)) = restrict_keys env plus in
   let mu = Locks.cod locks in
-  match lookup_cube env n_k mu mu v (id_opt_op (D.plus_out n n_k)) with
+  match lookup_cube env n_k mu v (id_opt_op (D.plus_out n n_k)) with
   | Looked_up { act; op; entry; pre = inner_pre } -> (
       let (Plus x) = D.plus (dom_sface fa) in
       match op_of_opt (comp_opt_op op (plus_opt_op n n_k x (opt_op_of_sface fa))) with

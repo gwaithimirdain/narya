@@ -502,14 +502,14 @@ and equal_ordered_env : type mode a b n c d.
           (* 1 *)
           let aenv1 = act_env env1 (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
           let (Looked_up { act = act1; op = op1; entry = xs1; pre = pre1 }) =
-            lookup_cube aenv1 m_k modality modality Now (id_opt_op mk) in
+            lookup_cube aenv1 m_k modality Now (id_opt_op mk) in
           let (Op (fc1, fd1)) =
             op_of_opt op1 <|> Anomaly "unexpected missing endpoint 1 in equal_ordered_env" in
           let xs1 = act_cube { act = act1 } (CubeOf.subcube fc1 xs1) fd1 pre1 in
           (* 2 *)
           let aenv2 = act_env env2 (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
           let (Looked_up { act = act2; op = op2; entry = xs2; pre = pre2 }) =
-            lookup_cube aenv2 m_k modality modality Now (id_opt_op mk) in
+            lookup_cube aenv2 m_k modality Now (id_opt_op mk) in
           let (Op (fc2, fd2)) =
             op_of_opt op2 <|> Anomaly "unexpected missing endpoint 1 in equal_ordered_env" in
           let xs2 = act_cube { act = act2 } (CubeOf.subcube fc2 xs2) fd2 pre2 in

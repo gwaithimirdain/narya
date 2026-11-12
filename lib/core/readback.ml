@@ -695,7 +695,7 @@ and readback_ordered_env : type mode n a b c d.
           (* We get the top entry (Now) from the environment we're reading back.  We can't just match it against Ext or LazyExt because it could have other lazy operations applied to it like Shift, Unshift, Permute, etc. *)
           (* Since no keys are stripped here, the prekey transport modality is just the entry's annotating modality. *)
           let (Looked_up { act; op; entry = xs; pre }) =
-            lookup_cube aenv m_k modality modality Now (id_opt_op mk) in
+            lookup_cube aenv m_k modality Now (id_opt_op mk) in
           (* As usual, the missing endpoints in sface_of_filter should be canceled by degeneracies in the non-unary case. *)
           let (Op (fc, fd)) =
             op_of_opt op <|> Anomaly "unexpected missing endpoint in readback_ordered_env" in
