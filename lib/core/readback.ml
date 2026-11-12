@@ -28,7 +28,7 @@ type unifying = {
 (* A variable y of the current context can occur in the environment of a metavariable as a component of a tuple, or in the body of an abstraction applied to the variables it binds (in any order), or a combination of these, as the value of a variable x of the metavariable's context.  Then y applied to arguments is the result of applying to x a path of projections and applications, each of the latter taking the argument of y in the position where y was applied to the variable bound by the corresponding abstraction; we also record the number of applications.  The leaf can also be a permutation of y; then y is the inverse permutation of the result of the path, which we record. *)
 and inversion = { var : level; path : inversion_step list; napps : int; inverse : any_deg option }
 
-(* A projection is at the dimension of the variable it is projected from, which doesn't change along the path.  A projection of a modal field also records the field's adjunction; these only occur before all the applications.  An application applies to the argument in the given position. *)
+(* A projection is at the dimension of the variable it is projected from, which doesn't change along the path (though a degeneracy acting on the recovered variable changes it everywhere).  A projection of a modal field also records the field's adjunction; these only occur before all the applications.  An application applies to the argument in the given position. *)
 and inversion_step =
   | Proj : D.zero Field.t * 'n D.t -> inversion_step
   | Mproj : D.zero Field.t * 'n D.t * ('a, 'f, 'g, 'b) Modalcell.adjunction -> inversion_step
@@ -1104,12 +1104,12 @@ and readback_neu : type hmode mode a z any.
   (* A variable that the renamed context recovers by applying another variable (see inversion) is read back with its first arguments in place of those applications, so we do that when we have peeled off the rest of the spine. *)
   let inverted : (mode, a, kinetic) term option =
     match head with
-    | Var { level; deg; _ } -> (
+    | Var { level; _ } -> (
         match inverted_var level with
         | Some ({ napps; _ } as inversion) when napps > 0 ->
             let n = spine_length apps in
-            (* A degeneracy acting on the variable acts on the part of the path before the first application (see readback_inverted_head), which is only correct if it doesn't change dimensions, as the projections are at a fixed dimension. *)
-            if n < napps || Option.is_none (perm_of_deg deg) then raise (Unsolvable `Flexible)
+            (* A degeneracy acting on the variable acts on the part of the path before the first application (see readback_inverted_head). *)
+            if n < napps then raise (Unsolvable `Flexible)
             else if n = napps then Some (readback_inverted_apps ctx head inversion apps)
             else None
         | _ -> None)
@@ -1197,24 +1197,25 @@ and readback_inverted_apps : type hmode mode a z any.
   let mode = Ctx.mode ctx in
   match head with
   | Var { deg; key; _ } ->
-      let tm, path = readback_inverted_head ctx inversion deg key in
+      (* The projections in the rest of the path are at the dimension of the result of the degeneracy, since degeneracies commute with projections and applications. *)
+      let tm, Any n, path = readback_inverted_head ctx inversion deg key in
       List.fold_left
         (fun tm step ->
           match step with
-          | Proj (fld, n) ->
+          | Proj (fld, _) ->
               Term.Field (Kinetic, Modal (Modality.id mode, plus_no_lock mode, tm), fld, ins_zero n)
           | Apply i -> args.(i) tm
           | Mproj _ -> raise (Unsolvable `Flexible))
         tm path
   | _ -> fatal (Anomaly "inverted head isn't a variable")
 
-(* Read back a variable of the current context, with a degeneracy and key, that the renamed context recovers from another variable (see inversion), as far as the first application in the path that recovers it, returning the rest of the path.  We do this by computing that part of the path on the value of the other variable seen from behind its own annotation, acting on the result by the degeneracy and key, and reading that back.  The key's source is the annotation of the recovered variable, which is that of the result. *)
+(* Read back a variable of the current context, with a degeneracy and key, that the renamed context recovers from another variable (see inversion), as far as the first application in the path that recovers it, returning the dimension of the result and the rest of the path.  We do this by computing that part of the path on the value of the other variable seen from behind its own annotation, acting on the result by the degeneracy and key, and reading that back.  The key's source is the annotation of the recovered variable, which is that of the result. *)
 and readback_inverted_head : type mode z c m n alpha nu cod.
     (mode, z, c) Ctx.t ->
     inversion ->
     (m, n) deg ->
     (mode, alpha, nu, cod) Modalcell.t ->
-    (mode, c, kinetic) term * inversion_step list =
+    (mode, c, kinetic) term * any_dim * inversion_step list =
  fun ctx { var = level; path; inverse; _ } deg key ->
   match Ctx.find_level ctx level with
   | None -> raise (Unsolvable `Flexible)
@@ -1230,7 +1231,7 @@ and readback_inverted_head : type mode z c m n alpha nu cod.
             Any_deg deg in
       match Modality.compare (Modalcell.vsrc key) ann with
       | Neq -> raise (Unsolvable `Flexible)
-      | Eq -> (readback_val ctx (act_value v deg key), path))
+      | Eq -> (readback_val ctx (act_value v deg key), Any (dom_deg deg), path))
 
 and readback_head : type mode c z.
     ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
@@ -1240,7 +1241,7 @@ and readback_head : type mode c z.
   (* A variable that the renamed context recovers by projecting from another variable (see inversion) is read back as those projections.  If it has to be applied as well, it can't be read back on its own. *)
   | Var { level; deg; key } when Option.is_some (inverted_var level) -> (
       match readback_inverted_head ctx (Option.get (inverted_var level)) deg key with
-      | tm, [] -> tm
+      | tm, _, [] -> tm
       | _ -> raise (Unsolvable `Flexible))
   | Var { level; deg; key } -> (
       (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context. *)

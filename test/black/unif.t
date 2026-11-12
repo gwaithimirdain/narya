@@ -947,6 +947,27 @@ A leaf can also be a permutation of a variable, since the permutation can be inv
       → Type
   
 
+Any degeneracy on an occurrence of an inverted variable, such as a reflexivity, also acts before the applications and projections that recover it, which are then at the higher dimension.
+
+  $ narya -parametric - <<EOF
+  > axiom A : Type
+  > axiom a₀ : A
+  > axiom a₁ : A
+  > axiom a₂ : Id A a₀ a₁
+  > def prod (X Y : Type) : Type ≔ sig (fst : X, snd : Y)
+  > axiom M : (f : A → prod A A) → Id A (f a₀ .fst) (f a₁ .fst) → Type
+  > axiom hm : (g k : A → A) → M (w ↦ (g w, k w)) (ap g a₂)
+  > def reflapp : (A → A) → (A → A) → Type ≔ let G : (A → prod A A) → Type ≔ f ↦ M f _ in g k ↦ let j : G (w ↦ (g w, k w)) ≔ hm g k in let c : Id Type (G (w ↦ (g w, k w))) (M (w ↦ (g w, k w)) (ap g a₂)) ≔ refl (M (w ↦ (g w, k w)) (ap g a₂)) in A
+  > about reflapp
+  > EOF
+  let G ≔ f ↦ M f (ap f a₂ .fst) in
+  g k ↦
+  let j ≔ hm g k in
+  let c ≔ Id (M (w ↦ (g w, k w)) (ap g a₂)) in
+  A
+    : (A → A) → (A → A) → Type
+  
+
 Modal variables can be inverted as well, and the value can use the leaves with keys.  An abstraction can be modal, and a tuple can have modal fields, whose components live behind a lock by the right adjoint, so that their leaves must have the annotation of the variable composed with that.  But a leaf with a nonidentity key isn't a renaming.
 
   $ narya -spatial - <<EOF
