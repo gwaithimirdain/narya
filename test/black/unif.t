@@ -1009,6 +1009,183 @@ Modal variables can be inverted as well, and the value can use the leaves with k
     : A → A → Type
   
 
+A modal field can also occur inside an abstraction.  Then the variables bound by the abstraction are seen in its component through the lock of the right adjoint, so to be invertible, the leaf must take them as modal arguments by the left adjoint, through the unit of the adjunction.  The leaf is then recovered by projecting the field from an application, and by the triangle identities the counit undoes the unit, as the definitional checks show.  An ordinary argument isn't invertible.
+
+  $ narya -spatial - <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > def R : Type ≔ sig ( (x :♭| _) .fst : A )
+  > axiom P : (B → R) → Type
+  > axiom P2 : (B → B → R) → Type
+  > axiom P' : (f : B → R) → Id (B → R) f f → Type
+  > axiom hp : (y :♯| (_ :♭| B) → A) → P (w ↦ (fst ≔ y w))
+  > axiom h2 : (y :♯| (_ :♭| B) (_ :♭| B) → A) → P2 (u v ↦ (fst ≔ y v u))
+  > axiom hd : (y :♯| (_ :♭| B) → A) → P' (w ↦ (fst ≔ y w)) (refl (w ↦ (fst ≔ y w)))
+  > axiom hn : (y :♯| B → A) → P (w ↦ (fst ≔ y w))
+  > def mfa : (y :♯| (_ :♭| B) → A) → Type ≔ let G : (B → R) → Type ≔ f ↦ P _ in y ↦ let k : G (w ↦ (fst ≔ y w)) ≔ hp y in let c : Id Type (G (w ↦ (fst ≔ y w))) (P (w ↦ (fst ≔ y w))) ≔ refl _ in A
+  > about mfa
+  > def mfa2 : (y :♯| (_ :♭| B) (_ :♭| B) → A) → Type ≔ let G : (B → B → R) → Type ≔ f ↦ P2 _ in y ↦ let k : G (u v ↦ (fst ≔ y v u)) ≔ h2 y in let c : Id Type (G (u v ↦ (fst ≔ y v u))) (P2 (u v ↦ (fst ≔ y v u))) ≔ refl _ in A
+  > about mfa2
+  > def mfad : (y :♯| (_ :♭| B) → A) → Type ≔ let G : (B → R) → Type ≔ f ↦ P' f _ in y ↦ let k : G (w ↦ (fst ≔ y w)) ≔ hd y in let c : Id Type (G (w ↦ (fst ≔ y w))) (P' (w ↦ (fst ≔ y w)) (refl (w ↦ (fst ≔ y w)))) ≔ refl _ in A
+  > about mfad
+  > def mfn : (y :♯| B → A) → Type ≔ let G : (B → R) → Type ≔ f ↦ P _ in y ↦ let k : G (w ↦ (fst ≔ y w)) ≔ hn y in A
+  > EOF
+  let G ≔ f ↦ P (w ↦ (fst ≔ (f w :♭| _) .fst)) in
+  y ↦
+  let k ≔ hp y in
+  let c ≔ Id (P (w ↦ (fst ≔ y w))) in
+  A
+    : (y :♯| (𝑥 :♭| B) → A) → Type
+  
+  let G ≔ f ↦ P2 (u v ↦ (fst ≔ (f u v :♭| _) .fst)) in
+  y ↦
+  let k ≔ h2 y in
+  let c ≔ Id (P2 (u v ↦ (fst ≔ y v u))) in
+  A
+    : (y :♯| (𝑥 :♭| B) (𝑦 :♭| B) → A) → Type
+  
+  let G ≔ f ↦ P' f (w ⤇ (fst ≔ (ap f w.2 :♭| _) .fst)) in
+  y ↦
+  let k ≔ hd y in
+  let c ≔ Id (P' (w ↦ (fst ≔ y w)) (w ⤇ (fst ≔ ap y w.2))) in
+  A
+    : (y :♯| (𝑥 :♭| B) → A) → Type
+  
+   ￫ error[E0406]
+   ￭ stdin
+   17 | def mfn : (y :♯| B → A) → Type ≔ let G : (B → R) → Type ≔ f ↦ P _ in y ↦ let k : G (w ↦ (fst ≔ y w)) ≔ hn y in A
+      ^ term synthesized type
+          P (w ↦ (fst ≔ y w))
+        and is being checked against type
+          P (𝑥 ↦ (fst ≔ let only … in ?u4))
+        but can't determine whether they are equal, since comparing head terms
+          y
+        and
+          let only … in ?u4
+        depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   17 | def mfn : (y :♯| B → A) → Type ≔ let G : (B → R) → Type ≔ f ↦ P _ in y ↦ let k : G (w ↦ (fst ≔ y w)) ≔ hn y in A
+      ^ can't determine a value for this placeholder
+  
+  [1]
+
+The same works in a mode theory with nontrivial cells, where an occurrence of the leaf can have a nonidentity key such as the counit, and underneath a prekey.
+
+  $ narya -adjunction - <<EOF
+  > axiom C : Type
+  > axiom D : Disc
+  > axiom d0 : D
+  > def □′ (A :□| Type) : Disc ≔ sig ( (x :△| _) .□ : A )
+  > axiom P : (_ :△| D → □′ C) → Type
+  > axiom Q : ((_ :△| D) → C) → Type
+  > axiom hp : (y :△□| (_ :△| D) → C) → P (w ↦ (□ ≔ y w))
+  > axiom hq : (y :△□| (_ :△| D) → C) → Q y
+  > def adj : (y :△□| (_ :△| D) → C) → Type ≔ let G : (_ :△| D → □′ C) → Type ≔ f ↦ P _ in y ↦ let k : G (w ↦ (□ ≔ y w)) ≔ hp y in let c : Id Type (G (w ↦ (□ ≔ y w))) (P (w ↦ (□ ≔ y w))) ≔ refl _ in C
+  > about adj
+  > def counit : (y :△□| (_ :△| D) → C) → Type ≔ let G : (_ :△| D → □′ C) → Type ≔ f ↦ Q _ in y ↦ let k : G (w ↦ (□ ≔ y w)) ≔ hq y in let c : Id Type (G (w ↦ (□ ≔ y w))) (Q y) ≔ refl _ in C
+  > about counit
+  > def pk : (y :△□| (_ :△| D) → C) → C ≔ let G : (p :△| D → □′ C) → C ≔ p ↦ let r :△| □′ C ≔ _ in (r :△| _) .□ in y ↦ let k : Id C (G (w ↦ (□ ≔ y w))) (y d0) ≔ refl (y d0) in let c : Id C (G (w ↦ (□ ≔ y w))) (y d0) ≔ refl (y d0) in G (w ↦ (□ ≔ y w))
+  > about pk
+  > axiom K : (_ :△□| C) → C
+  > def addlock : (y :△□| (_ :△| D) → C) → C ≔ let G : (p :△| D → □′ C) → C ≔ p ↦ let r :△| □′ C ≔ _ in (r :△| _) .□ in y ↦ let k : Id C (G (w ↦ (□ ≔ y w))) (K (y d0)) ≔ refl (K (y d0)) in let c : Id C (G (w ↦ (□ ≔ y w))) (K (y d0)) ≔ refl (K (y d0)) in G (w ↦ (□ ≔ y w))
+  > about addlock
+  > EOF
+  let G ≔ f ↦ P (w ↦ (□ ≔ (f w :△| _) .□)) in
+  y ↦
+  let k ≔ hp y in
+  let c ≔ Id (P (w ↦ (□ ≔ y w))) in
+  C
+    : (y :△□| (𝑥 :△| D) → C) → Type
+  
+  let G ≔ f ↦ Q (𝑥 ↦ (f 𝑥 :△| _) .□) in
+  y ↦
+  let k ≔ hq y in
+  let c ≔ Id (Q y) in
+  C
+    : (y :△□| (𝑥 :△| D) → C) → Type
+  
+  let G ≔ p ↦ let r :△| _ ≔ (□ ≔ (p d0 :△| _) .□) in (r :△| _) .□ in
+  y ↦
+  let k ≔ refl (y d0) in
+  let c ≔ refl (y d0) in
+  G (w ↦ (□ ≔ y w))
+    : (y :△□| (𝑥 :△| D) → C) → C
+  
+  let G ≔ p ↦ let r :△| _ ≔ (□ ≔ K ((p d0 :△| _) .□)) in (r :△| _) .□ in
+  y ↦
+  let k ≔ refl (K (y d0)) in
+  let c ≔ refl (K (y d0)) in
+  G (w ↦ (□ ≔ y w))
+    : (y :△□| (𝑥 :△| D) → C) → C
+  
+
+Modal projections can occur both before and after an application, and the leaf can have its own nonidentity key (here y :♯| behind the locks ♯♯ of both fields in both, and a plain y behind the lock ♯ in keyleaf), also underneath a prekey, and the occurrence can be behind further locks added during readback (the argument of K in bothlock).
+
+  $ narya -spatial - <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > axiom b0 : B
+  > def R : Type ≔ sig ( (x :♭| _) .fst : A )
+  > def R2 : Type ≔ sig ( (x :♭| _) .snd : B → R )
+  > axiom P : R2 → Type
+  > axiom F : (_ :♯| (_ :♭| B) → A) → Type
+  > axiom K : (_ :♯| A) → A
+  > axiom hp : (y :♯| (_ :♭| B) → A) → P (snd ≔ w ↦ (fst ≔ y w))
+  > axiom hp2 : (y :♯♯| (_ :♭| B) → A) → P (snd ≔ w ↦ (fst ≔ y w))
+  > axiom hf : (y : (_ :♭| B) → A) → F y
+  > def both : (y :♯| (_ :♭| B) → A) → Type ≔ let G : R2 → Type ≔ p ↦ P _ in y ↦ let k : G (snd ≔ w ↦ (fst ≔ y w)) ≔ hp y in let c : Id Type (G (snd ≔ w ↦ (fst ≔ y w))) (P (snd ≔ w ↦ (fst ≔ y w))) ≔ refl _ in A
+  > about both
+  > def both2 : (y :♯♯| (_ :♭| B) → A) → Type ≔ let G : R2 → Type ≔ p ↦ P _ in y ↦ let k : G (snd ≔ w ↦ (fst ≔ y w)) ≔ hp2 y in let c : Id Type (G (snd ≔ w ↦ (fst ≔ y w))) (P (snd ≔ w ↦ (fst ≔ y w))) ≔ refl _ in A
+  > about both2
+  > def keyleaf : ((_ :♭| B) → A) → Type ≔ let G : (B → R) → Type ≔ f ↦ F _ in y ↦ let k : G (w ↦ (fst ≔ y w)) ≔ hf y in let c : Id Type (G (w ↦ (fst ≔ y w))) (F y) ≔ refl (F y) in A
+  > about keyleaf
+  > def bothpk : (y :♭| (_ :♭| B) → A) → A ≔ let G : (p :♭| R2) → A ≔ p ↦ let r :♭| R ≔ _ in (r :♭| _) .fst in y ↦ let k : Id A (G (snd ≔ w ↦ (fst ≔ y w))) (y b0) ≔ refl (y b0) in let c : Id A (G (snd ≔ w ↦ (fst ≔ y w))) (y b0) ≔ refl (y b0) in G (snd ≔ w ↦ (fst ≔ y w))
+  > about bothpk
+  > def bothlock : (y :♭| (_ :♭| B) → A) → A ≔ let G : (p :♭| R2) → A ≔ p ↦ let r :♭| R ≔ _ in (r :♭| _) .fst in y ↦ let k : Id A (G (snd ≔ w ↦ (fst ≔ y w))) (K (y b0)) ≔ refl (K (y b0)) in let c : Id A (G (snd ≔ w ↦ (fst ≔ y w))) (K (y b0)) ≔ refl (K (y b0)) in G (snd ≔ w ↦ (fst ≔ y w))
+  > about bothlock
+  > EOF
+  let G ≔ p ↦ P (snd ≔ w ↦ (fst ≔ ((p :♭| _) .snd w :♭| _) .fst)) in
+  y ↦
+  let k ≔ hp y in
+  let c ≔ Id (P (snd ≔ w ↦ (fst ≔ y w))) in
+  A
+    : (y :♯| (𝑥 :♭| B) → A) → Type
+  
+  let G ≔ p ↦ P (snd ≔ w ↦ (fst ≔ ((p :♭| _) .snd w :♭| _) .fst)) in
+  y ↦
+  let k ≔ hp2 y in
+  let c ≔ Id (P (snd ≔ w ↦ (fst ≔ y w))) in
+  A
+    : (y :♯♯| (𝑥 :♭| B) → A) → Type
+  
+  let G ≔ f ↦ F (𝑥 ↦ (f 𝑥 :♭| _) .fst) in
+  y ↦
+  let k ≔ hf y in
+  let c ≔ Id (F y) in
+  A
+    : ((𝑥 :♭| B) → A) → Type
+  
+  let G ≔ p ↦
+    let r :♭| _ ≔ (fst ≔ ((p :♭| _) .snd b0 :♭| _) .fst) in
+    (r :♭| _) .fst in
+  y ↦
+  let k ≔ refl (y b0) in
+  let c ≔ refl (y b0) in
+  G (snd ≔ w ↦ (fst ≔ y w))
+    : (y :♭| (𝑥 :♭| B) → A) → A
+  
+  let G ≔ p ↦
+    let r :♭| _ ≔ (fst ≔ K (((p :♭| _) .snd b0 :♭| _) .fst)) in
+    (r :♭| _) .fst in
+  y ↦
+  let k ≔ refl (K (y b0)) in
+  let c ≔ refl (K (y b0)) in
+  G (snd ≔ w ↦ (fst ≔ y w))
+    : (y :♭| (𝑥 :♭| B) → A) → A
+  
+
 But if a leaf is repeated, the value can't use it, since then there would be more than one solution.  And a leaf that doesn't use all the variables bound by the abstractions, or uses one twice, isn't invertible.
 
   $ narya - <<EOF
