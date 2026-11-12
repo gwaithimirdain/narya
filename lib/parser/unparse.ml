@@ -338,7 +338,7 @@ let rec get_spine : type mode a s.
       | None -> `App (tm, Emp))
   | Key { tm = body; cell; plus_src; plus_tgt } -> (
       (* MODALTODO: this only looks through identity keys of identity modalities.  Can/should we look through others?  Doing so alters the modes. *)
-      match (Modalcell.compare_id cell, plus_tgt, plus_src) with
+      match (Modalcell.compare_id2 cell, plus_tgt, plus_src) with
       | Eq, Plus_with_locks (Zero, Zero _), Plus_lock (Zero _, Zero) -> get_spine body
       | _ -> `App (tm, Emp))
   | tm -> `App (tm, Emp)
@@ -1307,7 +1307,7 @@ and unparse_field_var : type mode n lt ls rt rs s.
       | Some _ -> unparse_field_var vars tm fld
       | None -> None)
   | Key { tm; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } -> (
-      match Modalcell.compare_id cell with
+      match Modalcell.compare_id2 cell with
       | Eq -> unparse_field_var (Names.add_lock (Names.split vars comp) plus_src) tm fld
       | Neq -> None)
   | _ -> None
@@ -1325,7 +1325,7 @@ and unparse_key : type mode n am mu nu cod b c lt ls rt rs.
  fun vars body cell comp plus_src li ri ->
   let vars = Names.add_lock (Names.split vars comp) plus_src in
   match
-    (Modalcell.compare_id cell, Modalcell.find_unique (Modalcell.vsrc cell) (Modalcell.vtgt cell))
+    (Modalcell.compare_id2 cell, Modalcell.find_unique (Modalcell.vsrc cell) (Modalcell.vtgt cell))
   with
   | Eq, _ -> unparse vars body li ri
   | Neq, Some (Unique _) when Display.unique_keys () = `Hide -> unparse vars body li ri

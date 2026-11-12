@@ -381,7 +381,7 @@ module Act = struct
       mode normal -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> mode normal =
    fun ({ tm; ty } as nf) s c ->
     (* The public act_* entry points below are wrapped in short_circuit, but the recursive calls within this module are not, and act_apps factors the degeneracy per face, so a residual identity arrives here very often (96% of calls on a 3-dimensional Pi-type lift).  Re-testing here avoids rebuilding an identical normal, and in particular avoids allocating the deferred type-action thunk. *)
-    match (is_id_deg s, Modalcell.compare_id c) with
+    match (is_id_deg s, Modalcell.compare_id2 c) with
     | Some _, Eq -> nf
     | _ -> { tm = act_value tm s c; ty = lazy (act_ty tm (Lazy.force ty) s c) }
 
@@ -516,7 +516,7 @@ module Act = struct
     (* To act on a variable, we accumulate the delayed actions, extending if necessary to match. *)
     | Var { level; deg; key } -> (
         let (DegExt (_, _, deg)) = comp_deg_extending deg s in
-        match Modalcell.compare_id c with
+        match Modalcell.compare_id2 c with
         | Eq -> Var { level; deg; key }
         | Neq -> (
             match Modality.factor (Modalcell.vtgt key) (Modalcell.vsrc c) with
@@ -671,7 +671,7 @@ let short_circuit : type mode mu1 mu2 cod m n a.
     ((m, n) deg -> (mode, mu1, mu2, cod) Modalcell.t -> a) ->
     a =
  fun s c x act ->
-  match (is_id_deg s, Modalcell.compare_id c) with
+  match (is_id_deg s, Modalcell.compare_id2 c) with
   | Some _, Eq -> x
   | _ -> act s c
 
