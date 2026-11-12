@@ -2297,19 +2297,21 @@ type inverted_leaf = { leaf : level; inversion : inversion; leaf_annotated : boo
 type lam_binder =
   | Binder : {
       vars : level list;
+      dims : any_dim * any_dim;
       arg : ('d, 'nu, 'n) Modality.t;
       locks : ('n, 'r, 'm) Modality.t;
       key : ('d, 'mu, 'k, 'm) Modalcell.t;
     }
       -> lam_binder
 
-let lam_binder : type d mu m. level list -> (d, mu, m) Modality.t -> lam_binder =
- fun vars mu ->
-  Binder { vars; arg = mu; locks = Modality.id (Modality.tgt mu); key = Modalcell.id mu }
+let lam_binder : type d mu m. level list -> any_dim * any_dim -> (d, mu, m) Modality.t -> lam_binder
+    =
+ fun vars dims mu ->
+  Binder { vars; dims; arg = mu; locks = Modality.id (Modality.tgt mu); key = Modalcell.id mu }
 
 (* Move a binder inside a modal field, given the field's adjunction, failing if the modes don't match. *)
 let binder_into : type a f g b. (a, f, g, b) Modalcell.adjunction -> lam_binder -> lam_binder =
- fun (Adjunction { left; right; unit; _ }) (Binder { vars; arg; locks; key }) ->
+ fun (Adjunction { left; right; unit; _ }) (Binder { vars; dims; arg; locks; key }) ->
   match
     ( Mode.compare (Modality.tgt arg) (Modality.src left),
       Mode.compare (Modality.src locks) (Modality.src left) )
@@ -2324,6 +2326,7 @@ let binder_into : type a f g b. (a, f, g, b) Modalcell.adjunction -> lam_binder 
           Binder
             {
               vars;
+              dims;
               arg = Modality.comp_out left nu_left;
               locks = Modality.comp_out locks right_locks;
               key = Modalcell.vcomp step key;
@@ -2331,9 +2334,11 @@ let binder_into : type a f g b. (a, f, g, b) Modalcell.adjunction -> lam_binder 
       | Neq -> raise_notrace Not_renaming)
   | _ -> raise_notrace Not_renaming
 
-(* A cube of variables that an application spine applies to, listed in the order of its faces, with the modality of the application and the keys of the variables. *)
+(* A cube of variables that an application spine applies to, listed in the order of its faces, with the dimensions of the application and of the cube, the modality of the application, and the keys of the variables. *)
 type applied_cube =
-  | Applied_cube : level list * ('a, 'm, 'b) Modality.t * any_cell list -> applied_cube
+  | Applied_cube :
+      level list * (any_dim * any_dim) * ('a, 'm, 'b) Modality.t * any_cell list
+      -> applied_cube
 
 (* A variable with no degeneracy or arguments, and its key. *)
 let keyed_var : type mode s. (mode, s) value -> (level * any_cell) option = function
@@ -2365,14 +2370,23 @@ let rec applied_vars : type hmode mode any.
               Option.map
                 (fun cubes ->
                   Applied_cube
-                    (List.map fst faces, Modality.filter_modality filter, List.map snd faces)
+                    ( List.map fst faces,
+                      (Any (cod_left_ins ins), Any (CubeOf.dim xs)),
+                      Modality.filter_modality filter,
+                      List.map snd faces )
                   :: cubes)
                 (applied_vars args)
           | exception Not_renaming -> None)
       | _ -> None)
   | Snoc (_, Field _) | Snoc (_, Inst _) -> None
 
-(* If an application spine applies to exactly the given cubes of distinct variables, in some order, each with the modality and key required by its binder, return the position in the spine of each of them. *)
+(* Whether two pairs of dimensions are equal. *)
+let same_dims ((Any a, Any b) : any_dim * any_dim) ((Any c, Any d) : any_dim * any_dim) : bool =
+  match (D.compare a c, D.compare b d) with
+  | Eq, Eq -> true
+  | _ -> false
+
+(* If an application spine applies to exactly the given cubes of distinct variables, in some order, each at the dimension of its abstraction and with the modality and key required by its binder, return the position in the spine of each of them.  We compare the dimensions as well as the variables, since a cube doesn't determine its dimension at arity 0, where it has only one face: for instance, an abstraction over a cube x of dimension e can apply an ordinary function f to x, as in (x ↦ f x) : (x : Id A .) →⁽ᵉ⁾ Id B ., and recovering f by applying the abstraction to its argument would apply it at the wrong dimension, while contracting that application would give it the wrong type. *)
 let leaf_positions : type hmode mode any.
     lam_binder list -> (hmode, mode, any, live) apps -> int list option =
  fun binders args ->
@@ -2385,26 +2399,27 @@ let leaf_positions : type hmode mode any.
       else
         let positions =
           List.map
-            (fun (Binder { vars; arg; key; _ }) ->
+            (fun (Binder { vars; dims; arg; key; _ }) ->
               let rec find i = function
                 | [] -> None
-                | Applied_cube (ys, modality, keys) :: yss ->
+                | Applied_cube (ys, ydims, modality, keys) :: yss ->
                     if ys = vars then
                       match Modality.compare modality arg with
                       | Eq
-                        when List.for_all
-                               (fun (Any_cell k) ->
-                                 match Modalcell.compare k key with
-                                 | Eq -> true
-                                 | Neq -> false)
-                               keys -> Some i
+                        when same_dims ydims dims
+                             && List.for_all
+                                  (fun (Any_cell k) ->
+                                    match Modalcell.compare k key with
+                                    | Eq -> true
+                                    | Neq -> false)
+                                  keys -> Some i
                       | _ -> None
                     else find (i + 1) yss in
               find 0 applied)
             binders in
         if List.for_all Option.is_some positions then Some (List.map Option.get positions) else None
 
-(* Invert a value in the environment or arguments of a metavariable, of a given type, that is sent to a variable of the metavariable's context with a given modal annotation and level in the renamed context.  The value must be built out of tuples (of records with eta, at any dimension) and abstractions (over a cube of variables of any dimension, possibly modal), where every leaf is a variable of the current context applied to exactly all the cubes of variables bound by the abstractions above it, in some order, or a permutation of such a variable.  Then every leaf can be recovered from the variable of the metavariable's context, and every such value is the eta-expansion of that variable applied to the inverse.  The variables bound by the abstractions are given fresh levels, at least base.
+(* Invert a value in the environment or arguments of a metavariable, of a given type, that is sent to a variable of the metavariable's context with a given modal annotation and level in the renamed context.  The value must be built out of tuples (of records with eta, at any dimension) and abstractions (over a cube of variables of any dimension, possibly modal), where every leaf is a variable of the current context applied to exactly all the cubes of variables bound by the abstractions above it, in some order, each at the dimension of its abstraction, or a permutation of such a variable.  Then every leaf can be recovered from the variable of the metavariable's context, and every such value is the eta-expansion of that variable applied to the inverse.  The variables bound by the abstractions are given fresh levels, at least base.
 
    A leaf has the right annotation if it is that of the variable, composed with the right adjoints of the modal fields we have passed into, behind whose locks their components live.  Inside a modal field, the variables bound by enclosing abstractions are seen through its lock, so a leaf must apply them with the modality and key that make them recoverable (see lam_binder). *)
 let invert_value : type dom modality b.
@@ -2528,7 +2543,7 @@ let invert_value : type dom modality b.
             go ann
               (Apply (0, mu) :: path)
               (napps + 1)
-              (lam_binder (List.rev !zs) mu :: lams)
+              (lam_binder (List.rev !zs) (Any (BindCube.dim cods), Any (CubeOf.dim args)) mu :: lams)
               body
               (tyof_app cods tyargs filter args)
               acc

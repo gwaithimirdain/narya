@@ -849,6 +849,59 @@ The faces of a cube of variables are treated separately, so each can be sent to 
       → Type
   
 
+At arity 0, a cube has only one face whatever its dimension, so an abstraction over a cube can apply an ordinary function to it, as in (x ↦ f x) : (x : Id A .) →⁽ᵉ⁾ Id B ..  Such a leaf isn't applied at the dimension of the abstraction, so it isn't inverted (recovering f as h would be ill-typed), while one that is can be.  Similarly, an argument is omitted from the solution only if it is applied at the same dimension.
+
+  $ narya -arity 0 -parametric - <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > axiom P : (Id A . → Id B .) → Type
+  > axiom hp : (g : Id A . → Id B .) → P g
+  > axiom P' : Id (A → B) . → Type
+  > axiom hp' : (g : Id (A → B) .) → P' g
+  > axiom P2 : Id B . → Type
+  > axiom hp2 : (z : Id B .) → P2 z
+  > def invok : Id (A → B) . → Type ≔ let G : Id (A → B) . → Type ≔ h ↦ P' _ in g ↦ let k : G (x ↦ g x) ≔ hp' g in A
+  > about invok
+  > def argc : (Id A . → Id B .) → (Id A .) → Type ≔ f ↦ let m : Id (A → B) . ≔ _ in y ↦ let k : P2 (m y) ≔ hp2 (f y) in A
+  > about argc
+  > def argc2 : (Id A . → Id B .) → (Id A .) → Type ≔ f ↦ let m : Id A . → Id B . ≔ _ in y ↦ let k : P2 (m y) ≔ hp2 (f y) in A
+  > about argc2
+  > def argc3 : Id (A → B) . → (Id A .) → Type ≔ f ↦ let m : Id A . → Id B . ≔ _ in y ↦ let k : P2 (m y) ≔ hp2 (f y) in A
+  > about argc3
+  > def inv : (Id A . → Id B .) → Type ≔ let G : Id (A → B) . → Type ≔ h ↦ P _ in f ↦ let k : G (x ↦ f x) ≔ hp f in A
+  > EOF
+  let G ≔ h ↦ P' h in g ↦ let k ≔ hp' g in A
+    : ((𝑥₀ : Id A .) →⁽ᵉ⁾ Id B .) → Type
+  
+  f ↦ let m ≔ 𝑥 ⤇ f 𝑥.0 in y ↦ let k ≔ hp2 (f y) in A
+    : (Id A . → Id B .) → Id A . → Type
+  
+  f ↦ let m ≔ f in y ↦ let k ≔ hp2 (f y) in A
+    : (Id A . → Id B .) → Id A . → Type
+  
+  f ↦ let m ≔ 𝑥 ↦ f 𝑥 in y ↦ let k ≔ hp2 (f y) in A
+    : ((𝑥₀ : Id A .) →⁽ᵉ⁾ Id B .) → Id A . → Type
+  
+   ￫ error[E0406]
+   ￭ stdin
+   17 | def inv : (Id A . → Id B .) → Type ≔ let G : Id (A → B) . → Type ≔ h ↦ P _ in f ↦ let k : G (x ↦ f x) ≔ hp f in A
+      ^ term synthesized type
+          P f
+        and is being checked against type
+          P (let only … in ?u4)
+        but can't determine whether they are equal, since comparing head terms
+          f
+        and
+          let only … in ?u4
+        depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   17 | def inv : (Id A . → Id B .) → Type ≔ let G : Id (A → B) . → Type ≔ h ↦ P _ in f ↦ let k : G (x ↦ f x) ≔ hp f in A
+      ^ can't determine a value for this placeholder
+  
+  [1]
+
 A leaf can also be a permutation of a variable, since the permutation can be inverted.  If the leaf is applied, the inverse permutation acts on the variable of the metavariable's context before it is applied, since permutations commute with applications and projections.  The definitional checks show that the solutions are right.
 
   $ narya -parametric - <<EOF
