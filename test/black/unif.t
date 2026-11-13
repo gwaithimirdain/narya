@@ -1541,6 +1541,47 @@ In the ambiflector mode theory, the identity modality has two endomorphisms, the
   
   [1]
 
+In the gwpt mode theory, there can be several keys for a variable underneath a prekey, of which only one is sent by the prekey to the key of the occurrence.  Here the prekey is the isomorphism ◇∇□△ ≅ □△, and there are two cells □△ ⇒ □△ (the identity, and the composite of □△ ⇒ 1 and 1 ⇒ □△), hence two cells □△ ⇒ ◇∇□△, and the solution uses whichever one is sent to the key of y.  And a variable that is the image of two variables is usable if only one of them can produce it with its key, as when the other has no key at all (there is no cell 1 ⇒ △□).
+
+  $ narya -gwpt - <<EOF
+  > axiom A : Disc
+  > axiom P : (_ :□△| A) → Disc
+  > axiom hp : (y :□△| A) → P y
+  > axiom hq : (y :□△| A) → P (y #□⇨◇.△ #◇△⇨1 #1⇨□△)
+  > def onekey (y :□△| A) : Disc ≔ let u :◇∇□△| A ≔ _ in let k : P (u #◇∇⇨1.□△) ≔ hp y in let c : Id Disc (P (u #◇∇⇨1.□△)) (P y) ≔ refl _ in A
+  > about onekey
+  > def otherkey (y :□△| A) : Disc ≔ let u :◇∇□△| A ≔ _ in let k : P (u #◇∇⇨1.□△) ≔ hq y in let c : Id Disc (P (u #◇∇⇨1.□△)) (P (y #□⇨◇.△ #◇△⇨1 #1⇨□△)) ≔ refl _ in A
+  > axiom C : Type
+  > def repeated (a : C) : C ≔ let g :△□| C → C ≔ w ↦ _ in let k : Id C (g a) a ≔ refl a in g a
+  > about repeated
+  > def ambiguous (a :△□| C) : C ≔ let g :△□| C → C ≔ w ↦ _ in let k : Id C (g a) a ≔ refl a in g a
+  > EOF
+  y ↦ let u :◇∇□△| _ ≔ y #1⇨◇∇.□△ in let k ≔ hp y in let c ≔ Id (P y) in A
+    : (y :□△| A) → Disc
+  
+  a ↦ let g :△□| _ ≔ w ↦ w in let k ≔ refl a in g a
+    : (a : C) → C
+  
+   ￫ error[E0406]
+   ￭ stdin
+   11 | def ambiguous (a :△□| C) : C ≔ let g :△□| C → C ≔ w ↦ _ in let k : Id C (g a) a ≔ refl a in g a
+      ^ term synthesized type
+          Id C a a
+        and is being checked against type
+          Id C (let only … in ?u3) a
+        but can't determine whether they are equal, since comparing head terms
+          a
+        and
+          let only … in ?u3
+        depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   11 | def ambiguous (a :△□| C) : C ≔ let g :△□| C → C ≔ w ↦ _ in let k : Id C (g a) a ≔ refl a in g a
+      ^ can't determine a value for this placeholder
+  
+  [1]
+
 A variable underneath a prekey can also be sent to a tuple or abstraction, including a tuple of a record with a modal field.  Then the variable it is recovered from gets the unique key inside the modal projections, if there is one, as long as the prekeys send it to the key in the value.
 
   $ narya -adjunction - <<EOF
