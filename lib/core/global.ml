@@ -250,7 +250,7 @@ let notify_holes () =
   let n = unsolved_holes () in
   if n > 0 then Reporter.emit (Open_holes n)
 
-(* Since holes are not allowed inside all commands, we need to keep track of whether we're in a command that allows holes and check for it.  We use a global mutable state for this.  We also record all the holes *created* by the current command in a separate list so they can be reported to the user, and what is known so far about whether the currently executing command must be parametric.. *)
+(* Since holes are not allowed inside all commands, we need to keep track of whether we're in a command that allows holes and check for it.  We also record all the holes *created* by the current command in a separate list so they can be reported to the user, and what is known so far about whether the currently executing command must be parametric.  We use a Speculable mutable state for this, since speculative typechecking could create holes that we want to discard if it fails. *)
 
 type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
 
