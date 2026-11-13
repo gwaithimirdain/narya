@@ -425,22 +425,6 @@ struct
         | _ -> None)
     | _ -> None
 
-  (* The ways of writing a modality as a prefix (first applied) followed by a rest, with the evidence that they compose to it. *)
-  type (_, _, _) split =
-    | Split :
-        ('a, 'p, 'x) Modality.t * ('x, 'r, 'b) Modality.t * ('a, 'p, 'x, 'r, 'b, 'm) Modality.comp
-        -> ('a, 'm, 'b) split
-
-  let rec splits : type a m b. (a, m, b) Modality.t -> (a, m, b) split list =
-   fun m ->
-    match m with
-    | Path (Zero, _) -> [ Split (m, m, Zero) ]
-    | Path (Suc (inner, g), b) ->
-        Split (Modality.id (Modality.Gen.src g), m, Zero)
-        :: List.map
-             (fun (Split (p, r, ev)) -> Split (Modality.suc p g, r, Suc (ev, g)))
-             (splits (Modality.Path (inner, b)))
-
   (* A modality consisting of a single generator. *)
   type (_, _, _) single =
     | Single : ('x, 'g, 'y) Modality.Gen.t -> ('x, ('y Modality.id, 'g) Modality.suc, 'y) single
@@ -463,8 +447,8 @@ struct
     match w with
     | Path (Zero, _) -> [ Modalcell.id w ]
     | Path (Suc _, _) ->
-        let per_split : (a, m, a) split -> (a, m, a Modality.id, a) Modalcell.t list =
-         fun (Split (p, r, ev)) ->
+        let per_split : (a, m, a) Modality.split -> (a, m, a Modality.id, a) Modalcell.t list =
+         fun (Modality.Split (p, r, ev)) ->
           if Modality.length p = 0 then []
           else
             match Mode.compare (Modality.src p) (Modality.tgt p) with
@@ -476,26 +460,27 @@ struct
                       (fun cr -> Modalcell.vcomp cr (Modalcell.hcomp ev Zero (Modalcell.id r) cp))
                       (kill_all r))
                   (arc_cells p) in
-        List.concat_map per_split (splits w)
+        List.concat_map per_split (Modality.splits w)
 
   and arc_cells : type a m. (a, m, a) Modality.t -> (a, m, a Modality.id, a) Modalcell.t list =
-   fun p -> List.concat_map arc_with_last (splits p)
+   fun p -> List.concat_map arc_with_last (Modality.splits p)
 
   (* Writing p as h ∘ i ∘ g with h and g single generators: first h, ... *)
-  and arc_with_last : type a m. (a, m, a) split -> (a, m, a Modality.id, a) Modalcell.t list =
-   fun (Split (pre, h, eva)) ->
+  and arc_with_last : type a m.
+      (a, m, a) Modality.split -> (a, m, a Modality.id, a) Modalcell.t list =
+   fun (Modality.Split (pre, h, eva)) ->
     match single h with
     | None -> []
-    | Some (Single hg) -> List.concat_map (arc_with_first h hg eva) (splits pre)
+    | Some (Single hg) -> List.concat_map (arc_with_first h hg eva) (Modality.splits pre)
 
   (* ... and then g. *)
   and arc_with_first : type a pm x hg m.
       (x, (a Modality.id, hg) Modality.suc, a) Modality.t ->
       (x, hg, a) Modality.Gen.t ->
       (a, pm, x, (a Modality.id, hg) Modality.suc, a, m) Modality.comp ->
-      (a, pm, x) split ->
+      (a, pm, x) Modality.split ->
       (a, m, a Modality.id, a) Modalcell.t list =
-   fun h hg eva (Split (g, i, evg)) ->
+   fun h hg eva (Modality.Split (g, i, evg)) ->
     match single g with
     | None -> []
     | Some (Single gg) -> (
@@ -525,7 +510,7 @@ struct
      fun m n ->
       (* First alternative: the source-most generator of m is killed by an arc, whose other end is the last generator of some prefix p of m, with everything inside it killed (see arc_cells); and the cell factors as such a cell p ⇒ 1 at the source end of m followed by a cell from the rest of m to n. *)
       let kills : (a, m, n, b) C.t =
-        let per_split : (a, m, n, b) C.t -> (a, m, b) split -> (a, m, n, b) C.t =
+        let per_split : (a, m, n, b) C.t -> (a, m, b) Modality.split -> (a, m, n, b) C.t =
          fun acc (Split (p, r, ev)) ->
           if Modality.length p = 0 then acc
           else
@@ -539,7 +524,7 @@ struct
                          (fun c -> Modalcell.vcomp c (Modalcell.hcomp ev Zero (Modalcell.id r) cp))
                          (cells r n)))
                   acc (arc_cells p) in
-        List.fold_left per_split C.zero (splits m) in
+        List.fold_left per_split C.zero (Modality.splits m) in
       let rec strip : type nk.
           (a, nk, b) Modality.t ->
           ((a, m, nk, b) Modalcell.t -> (a, m, n, b) Modalcell.t) ->

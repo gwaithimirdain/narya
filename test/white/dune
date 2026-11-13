@@ -31,7 +31,9 @@
    (run %{exe:modal_closure.exe} ambiflector 8)
    (run %{exe:modal_closure.exe} ambiflection 8)
    (run %{exe:modal_closure.exe} adjunction 7)
-   (run %{exe:modal_closure.exe} gwpt 4))))
+   (run %{exe:modal_closure.exe} gwpt 4)
+   (run %{exe:modal_closure.exe} comonad 4)
+   (run %{exe:modal_closure.exe} monad 4))))
 
 (rule
  (alias runtest)

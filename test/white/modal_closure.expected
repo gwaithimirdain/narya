@@ -34,3 +34,7 @@ adjunction: 208 cells enumerated
 adjunction: 16 words up to length 7, 58 cells, 0 violations
 gwpt: 1065 cells enumerated
 gwpt: 62 words up to length 4, 827 cells, 0 violations
+comonad: 126 cells enumerated
+comonad: 5 words up to length 4, 21 cells, 0 violations
+monad: 126 cells enumerated
+monad: 5 words up to length 4, 21 cells, 0 violations

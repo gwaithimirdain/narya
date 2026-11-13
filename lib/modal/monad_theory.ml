@@ -19,7 +19,7 @@ open Dim
    the unit), and the groups tile the inputs in order.  Two parallel cells are equal exactly when
    they induce the same sequence (l₁,...,l_b).
 
-   Consequently there is a unique 2-cell sharpᵃ ⇒ sharpᵇ exactly when a=0 (the unique all-unit
+   So find_all can list all the cells, one for each such sequence.  And there is a unique 2-cell sharpᵃ ⇒ sharpᵇ exactly when a=0 (the unique all-unit
    cell, any b, each output created fresh) or b=1 (the unique canonical a-fold multiplication,
    any a); when a≥1 and b=0 there is no such cell (a monad's unit creates but never deletes); and
    when a≥1 and b≥2 there are several, so find_unique correctly returns None in both cases
@@ -144,6 +144,39 @@ struct
             | Eq -> Some (chain_mult x))
         | Path (Suc (Suc (_, _), _), _) -> None)
 
+  (* All the cells x ⇒ y: one for each composition (l₁,...,l_b) of the length of x into b nonnegative parts, which merges the next lⱼ inputs of x (in application order) into the j-th output of y. *)
+  let rec cells : type a m n b.
+      (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t list =
+   fun x y ->
+    match y with
+    | Path (Zero, _) -> (
+        match x with
+        | Path (Zero, _) -> [ Modalcell.id x ]
+        | Path (Suc _, _) -> [])
+    | Path (Suc (inner, h), yb) -> (
+        match Modality.Gen.compare h Sharp.modality with
+        | Neq -> []
+        | Eq ->
+            let y' = Modality.Path (inner, yb) in
+            let first : (a, m, b) Modality.split -> (a, m, n, b) Modalcell.t list =
+             fun (Split (p, r, ev)) ->
+              match Mode.compare (Modality.tgt p) typ with
+              | Neq -> []
+              | Eq -> (
+                  (* The j-th output is created by the unit if it receives no inputs, and otherwise by multiplying them. *)
+                  match Modality.compare_id p with
+                  | Eq ->
+                      List.map (fun cr -> Modalcell.hcomp ev (Suc (Zero, h)) cr unit) (cells r y')
+                  | Neq ->
+                      let ch = chain_mult p in
+                      List.map (fun cr -> Modalcell.hcomp ev (Suc (Zero, h)) cr ch) (cells r y'))
+            in
+            List.concat_map first (Modality.splits x))
+
+  let find_all : type a m n b.
+      (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t list option =
+   fun x y -> Some (cells x y)
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "monad"
 
@@ -172,4 +205,4 @@ let install modes modalities modalcells =
       Modalcell.rename Cells.unit eta;
       Modalcell.rename Cells.mult mu
   | _ -> failwith "wrong number of modal cell names for monad mode theory");
-  Modalcell.choose_theory (module Cells : Modalcell.Theory)
+  Modalcell.choose_enumerating_theory (module Cells : Modalcell.Enumerating_theory)
