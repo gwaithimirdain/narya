@@ -9,9 +9,6 @@
    ￮ constant eta defined
   
    ￫ info[I0000]
-   ￮ constant counit2 defined
-  
-   ￫ info[I0000]
    ￮ constant epsilon defined
   
    ￫ info[I0000]
@@ -106,20 +103,11 @@ The unit of ◇ ⊣ ∇ is not invertible: there is no 2-cell ∇◇ ⇒ 1.
   
   [1]
 
-Nor are there 2-cells □△ ⇒ 1 or 1 ⇒ △□ (the adjunction △ ⊣ □ is free).
+There is no 2-cell 1 ⇒ △□.  But there is a 2-cell □△ ⇒ 1, although the
+adjunction △ ⊣ □ is not otherwise constrained: the induced strand □ ⇒ ◇ followed
+by the isomorphism ◇△ ≅ 1.
 
-  $ narya -gwpt gwpt.ny -e "def bad2 (A : □△ | Disc) (x : □△ | A) : A ≔ x"
-   ￫ error[E1705]
-   ￭ command-line exec string
-   1 | def bad2 (A : □△ | Disc) (x : □△ | A) : A ≔ x
-     ^ use of □△ variable behind id lock requires a key
-  
-   ￫ error[E1705]
-   ￭ command-line exec string
-   1 | def bad2 (A : □△ | Disc) (x : □△ | A) : A ≔ x
-     ^ use of □△ variable behind id lock requires a key
-  
-  [1]
+  $ narya -gwpt gwpt.ny -e "def notbad2 (A : □△ | Disc) (x : □△ | A) : A ≔ x"
 
   $ narya -gwpt gwpt.ny -e "def bad3 (A : Type) : Type ≔ data [ bad3. (_ : △□ | A) ]"
    ￫ error[E1705]
@@ -166,6 +154,27 @@ Likewise there are two distinct 2-cells △□ ⇒ ∇□△◇.
    ￭ command-line exec string
    1 | def amb2 (A :△□| Type) (x :△□| A) : ∇□△◇ A ≔ ∇□△◇. x
      ^ use of △□ variable behind ∇□△◇ lock requires a key
+  
+  [1]
+
+There are also two distinct 2-cells △□△□ ⇒ 1: the counit ε applied twice, or
+the cell □△ ⇒ 1 applied in the middle followed by ε.  These can differ, for
+instance in nullary semi-cubical sets (families of sets Xₙ with actions of the
+symmetric groups Sₙ), where (△A)ₙ = A, □X = Πₙ Fix(Xₙ), and ◇X = X₀: then the
+first projects the nth component twice from Πₖ Fix(Πₙ Fix(Xₙ)), while the
+second projects the 0th component of the outer product and the nth of the
+inner one.
+
+  $ narya -gwpt gwpt.ny -e "def counit2 (A :△□△□| Type) (x :△□△□| A) : A ≔ x"
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def counit2 (A :△□△□| Type) (x :△□△□| A) : A ≔ x
+     ^ use of △□△□ variable behind id lock requires a key
+  
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def counit2 (A :△□△□| Type) (x :△□△□| A) : A ≔ x
+     ^ use of △□△□ variable behind id lock requires a key
   
   [1]
 
