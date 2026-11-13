@@ -1,16 +1,34 @@
+trivial: 1 cells enumerated
 trivial: 1 words up to length 8, 1 cells, 0 violations
+functor: 3 cells enumerated
 functor: 3 words up to length 8, 3 cells, 0 violations
+composable-functors: 6 cells enumerated
 composable-functors: 6 words up to length 8, 6 cells, 0 violations
+transformation: 5 cells enumerated
 transformation: 4 words up to length 8, 5 cells, 0 violations
+composable-transformations: 8 cells enumerated
 composable-transformations: 5 words up to length 8, 8 cells, 0 violations
+interchange: 18 cells enumerated
 interchange: 11 words up to length 8, 18 cells, 0 violations
+reflector: 73 cells enumerated
 reflector: 9 words up to length 8, 73 cells, 0 violations
+coreflector: 73 cells enumerated
 coreflector: 9 words up to length 8, 73 cells, 0 violations
+coreflection: 78 cells enumerated
 coreflection: 18 words up to length 8, 78 cells, 0 violations
+spatial: 48642 cells enumerated
 spatial: 255 words up to length 7, 48642 cells, 0 violations
+cospatial: 48642 cells enumerated
 cospatial: 255 words up to length 7, 48642 cells, 0 violations
+local: 583 cells enumerated
 local: 51 words up to length 6, 583 cells, 0 violations
+tconn: 583 cells enumerated
 tconn: 51 words up to length 6, 583 cells, 0 violations
+guarded: 1451 cells enumerated
 guarded: 86 words up to length 6, 1451 cells, 0 violations
+ambiflector: 82 cells enumerated
 ambiflector: 9 words up to length 8, 81 cells, 0 violations
+ambiflection: 83 cells enumerated
 ambiflection: 18 words up to length 8, 82 cells, 0 violations
+adjunction: 208 cells enumerated
+adjunction: 16 words up to length 7, 58 cells, 0 violations
