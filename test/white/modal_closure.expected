@@ -1,0 +1,14 @@
+trivial: 1 words up to length 8, 1 cells, 0 violations
+functor: 3 words up to length 8, 3 cells, 0 violations
+composable-functors: 6 words up to length 8, 6 cells, 0 violations
+transformation: 4 words up to length 8, 5 cells, 0 violations
+composable-transformations: 5 words up to length 8, 8 cells, 0 violations
+interchange: 11 words up to length 8, 18 cells, 0 violations
+reflector: 9 words up to length 8, 73 cells, 0 violations
+coreflector: 9 words up to length 8, 73 cells, 0 violations
+coreflection: 18 words up to length 8, 78 cells, 0 violations
+spatial: 255 words up to length 7, 48642 cells, 0 violations
+cospatial: 255 words up to length 7, 48642 cells, 0 violations
+local: 51 words up to length 6, 583 cells, 0 violations
+tconn: 51 words up to length 6, 583 cells, 0 violations
+guarded: 86 words up to length 6, 1451 cells, 0 violations
