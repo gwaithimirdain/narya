@@ -85,6 +85,9 @@ module Functorcell
     | Eq -> Some (Modalcell.id x)
     | Neq -> None
 
+  (* Since the theory is locally posetal and find_unique decides whether there is a cell, it finds all of them. *)
+  let find_all m n = Some (Option.to_list (find_unique m n))
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "functor"
 

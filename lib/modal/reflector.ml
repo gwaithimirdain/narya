@@ -64,9 +64,19 @@ struct
             Modality.Gen.compare k Reflector.modality,
             Modality.Gen.compare h Reflector.modality )
         with
-        | Eq, Eq, Eq ->
-            let* c = find_unique (Path (m, mmode)) (Path (n, nmode)) in
-            Some (Modalcell.hcomp (Suc (Suc (Zero, k), g)) (Suc (Zero, h)) c mult)
+        | Eq, Eq, Eq -> (
+            match find_unique (Path (m, mmode)) (Path (n, nmode)) with
+            | Some c -> Some (Modalcell.hcomp (Suc (Suc (Zero, k), g)) (Suc (Zero, h)) c mult)
+            | None ->
+                (* Otherwise the cell might have to multiply more than two ♯s together, so we multiply the first two and continue.  Since every nonempty word is isomorphic to ♯, this always succeeds eventually if y is nonempty. *)
+                let step =
+                  Modalcell.hcomp
+                    (Suc (Suc (Zero, k), g))
+                    (Suc (Zero, g))
+                    (Modalcell.id (Path (m, mmode)))
+                    mult in
+                let* c = find_unique (Path (Suc (m, g), mmode)) y in
+                Some (Modalcell.vcomp c step))
         | _ -> None)
     | Path (Suc (m, g), mmode), Path (Suc (n, h), nmode) -> (
         match Modality.Gen.compare g h with
@@ -74,6 +84,9 @@ struct
             let* c = find_unique (Path (m, mmode)) (Path (n, nmode)) in
             Some (Modalcell.prewhisker (Suc (Zero, g)) (Suc (Zero, h)) c (Modality.of_gen g))
         | Neq -> None)
+
+  (* Since the theory is locally posetal and find_unique decides whether there is a cell, it finds all of them. *)
+  let find_all m n = Some (Option.to_list (find_unique m n))
 
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "reflector"

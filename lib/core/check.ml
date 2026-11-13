@@ -3672,13 +3672,18 @@ and synth : type mode a b s.
         match Modal.Mode.compare mode (Ctx.mode ctx) with
         | Eq ->
             let (Wrap locks) = Ctx.total_locks ctx in
-            (match (parametric, Modalcell.find_unique (Modality.id mode) locks) with
+            (* We regard the context as unlocked if its locks could be inserted as a key from the identity: if they are the identity themselves, or there is a unique cell from the identity to them.  (It isn't clear what the right condition is.) *)
+            let unlocked =
+              match Modality.compare (Modality.id mode) locks with
+              | Eq -> true
+              | Neq -> Option.is_some (Modalcell.find_unique (Modality.id mode) locks) in
+            (match (parametric, unlocked) with
             (* If the context is locked, then nonparametric constants are not allowed.  *)
-            | `Nonparametric, None -> fatal (Locked_constant (PConstant name))
+            | `Nonparametric, false -> fatal (Locked_constant (PConstant name))
             (* Thus, if one of the currently-being-defined constants is encountered in a locked context, they *must* be parametric. *)
-            | `Maybe_parametric, None -> Global.set_parametric name
+            | `Maybe_parametric, false -> Global.set_parametric name
             (* On the other hand, if the context is not locked and we encounter a nonparametric constant, then the current constants must be nonparametric.  (The Global.set functions handle checking for conflicts between requirements of parametricness of the current definitions.) *)
-            | `Nonparametric, Some _ -> Global.set_nonparametric (Some name)
+            | `Nonparametric, true -> Global.set_nonparametric (Some name)
             | _ -> ());
             (realize status (Const name), eval_term (Emp (mode, D.zero)) ty)
         | Neq -> fatal (Mode_mismatch (`User, "synthesizing constant", mode, None, Ctx.mode ctx)))

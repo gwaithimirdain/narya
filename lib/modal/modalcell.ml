@@ -126,7 +126,14 @@ type _ parametric_locker =
 module type Theory = sig
   val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
+
+  (* The cell between two modalities, if there is exactly one.  None means that there are none, or more than one, or that the theory can't tell. *)
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
+
+  (* All the cells between two modalities: Some of a list asserts that it contains all of them (so in particular there are finitely many), while None makes no assertion (there might be infinitely many, or the theory might not know how to find them).  This is separate from find_unique, since a theory may be able to tell quickly that there isn't a unique cell when enumerating them all would take longer, and most callers only need to know whether there is a unique one. *)
+  val find_all :
+    ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t list option
+
   val parametric_locker : 'a Mode.t -> ('a parametric_locker, string) Result.t
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
@@ -137,6 +144,7 @@ let theory : (module Theory) ref =
       let sinister _ = failwith "Modalcell.theory not set"
       let compare _ _ = failwith "Modalcell.theory not set"
       let find_unique _ _ = failwith "Modalcell.theory not set"
+      let find_all _ _ = failwith "Modalcell.theory not set"
       let parametric_locker _ = Error "undefined mode theory"
       let to_string _ = failwith "Modalcell.theory not set"
     end : Theory)
@@ -295,6 +303,21 @@ let find_unique : type a m n b c d.
       | Some a -> Some (Unique a)
       | None -> None)
   | _ -> None
+
+(* All the cells between two modalities, if the mode theory can enumerate them (see Theory).  If the modalities don't have the same source and target modes, there are none. *)
+type (_, _, _, _, _, _) find_all =
+  | All : ('a, 'm, 'n, 'b) t list -> ('a, 'm, 'b, 'a, 'n, 'b) find_all
+  | Incompatible : ('a, 'm, 'b, 'c, 'n, 'd) find_all
+
+let find_all : type a m n b c d.
+    (a, m, b) Modality.t -> (c, n, d) Modality.t -> (a, m, b, c, n, d) find_all option =
+ fun m n ->
+  let module T = (val !theory) in
+  match
+    (Mode.compare (Modality.src m) (Modality.src n), Mode.compare (Modality.tgt m) (Modality.tgt n))
+  with
+  | Eq, Eq -> Option.map (fun cells -> All cells) (T.find_all m n)
+  | _ -> Some Incompatible
 
 let parametric_locker m =
   let module T = (val !theory) in

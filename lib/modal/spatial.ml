@@ -5,7 +5,7 @@ open Dim
 
    The generating 2-cells are: the comonad counit/comultiplication of ♭ (flat_counit : ♭ ⇒ id, flat_comult : ♭ ⇒ ♭∘♭), the monad unit/multiplication of ♯ (sharp_unit : id ⇒ ♯, sharp_mult : ♯∘♯ ⇒ ♯), and the unit/counit of the adjunction ♭ ⊣ ♯ (adj_unit : id ⇒ ♯∘♭, adj_counit : ♭∘♯ ⇒ id).
 
-   find_unique below decides existence of a 2-cell x ⇒ y between two words in {♭,♯} by: (1) checking definitional equality; (2) peeling a shared innermost generator via prewhisker and recursing; (3) otherwise trying to bridge through the identity, using "to_id" (repeatedly peeling an innermost ♭ via flat_counit, or an innermost ♭∘♯ pair via adj_counit) and "from_id" (dually, peeling an innermost ♯ via sharp_unit, or an innermost ♯∘♭ pair via adj_unit) and composing vertically.  This correctly handles words built by iterating ♭ alone, ♯ alone, or a single adjoint pair ♭∘♯ / ♯∘♭, which covers ordinary uses of the modalities, but it is not a complete decision procedure for the free theory of an adjoint pair of idempotent (co)monads: e.g. it will not find the (valid) cell ♭∘♯ ⇒ ♭∘♯∘♭, which requires inserting an adjunction cell at a non-innermost position. *)
+   Every word in {♭,♯} is isomorphic to its outermost generator, or to the identity if it is empty, since ♭∘♭ ≅ ♭ and ♭∘♯ ≅ ♭, and dually ♯∘♯ ≅ ♯ and ♯∘♭ ≅ ♯ (see normalize, which constructs these isomorphisms from the generating cells).  So up to isomorphism the modalities are id, ♭, and ♯, among which there is a 2-cell exactly when the first is at most the second in the order ♭ ≤ id ≤ ♯.  Thus find_unique below decides existence of a 2-cell x ⇒ y completely, by normalizing x and y and composing the isomorphisms with the 2-cell between their normal forms, if there is one; e.g. it finds ♭∘♯ ⇒ ♭∘♯∘♭, since both normalize to ♭.  And since the theory is locally posetal, such a cell is the only one, so find_all can list all the cells: none or that one. *)
 
 module type Variant = sig
   type nonparametric
@@ -273,6 +273,9 @@ struct
         | Some bridge -> Some (Modalcell.vcomp (Modalcell.vcomp nfrom bridge) mto)
         | None -> None)
     | _ -> failwith "spatial: unknown mode"
+
+  (* Since the theory is locally posetal and find_unique decides whether there is a cell, it finds all of them. *)
+  let find_all m n = Some (Option.to_list (find_unique m n))
 
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "spatial"
