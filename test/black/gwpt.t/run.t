@@ -179,3 +179,25 @@ still present.
      ^ use of □△ variable behind □△□△ lock requires a key
   
   [1]
+
+A nest of keys applied to a variable is displayed unless its composite is the
+key that would be inserted on the variable, even if each key is the unique cell
+between its endpoints: here the composite differs from the identity.
+
+  $ narya -gwpt -e "axiom A : Disc" -e "axiom P : (_ :□△| A) → Disc" -e "def t1 (y :□△| A) : Disc ≔ P (y #□⇨◇.△ #◇△⇨1 #1⇨□△)" -e "about t1" -e "def t2 (y :□△| A) : Id Disc (t1 y) (P y) ≔ refl _"
+  y ↦ P (y #□⇨◇.△ #◇△⇨1 #1⇨□△)
+    : (y :□△| A) → Disc
+  
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def t2 (y :□△| A) : Id Disc (t1 y) (P y) ≔ refl _
+     ^ term synthesized type
+         Disc⁽ᵉ⁾ (P y) (P y)
+       but is being checked against type
+         Disc⁽ᵉ⁾ (P (y #◇△⇨1 #□⇨◇.△ #1⇨□△.□△)) (P y)
+       unequal head terms:
+         y
+       does not equal
+         y #◇△⇨1 #□⇨◇.△ #1⇨□△.□△
+  
+  [1]
