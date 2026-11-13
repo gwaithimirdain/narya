@@ -1312,7 +1312,7 @@ and unparse_field_var : type mode n lt ls rt rs s.
       | Neq -> None)
   | _ -> None
 
-(* Unparse a key operation applied postfix to a synthesizing term.  The body is unparsed in the context locked by the key's source, obtained from the ambient names by splitting off the target locks ('comp') and re-adding the source lock ('plus_src').  We always omit printing keys that are identities, since those can always be reconstructed on parse.  Keys that are the unique one between their endpoints are also omittable, and are omitted unless the user has enabled 'display unique keys'.  Otherwise, we ask the mode theory for a normal form of the cell, as a vertical composite (outer list) of horizontal composites / whiskerings (inner list), and emit one syntactic key application "#a.b.c" for each entry of the vertical composite. *)
+(* Unparse a key operation applied postfix to a synthesizing term.  The body is unparsed in the context locked by the key's source, obtained from the ambient names by splitting off the target locks ('comp') and re-adding the source lock ('plus_src').  We always omit printing keys that are identities, since those can always be reconstructed on parse.  Keys between two different modalities that are the unique cell between them are also omittable, and are omitted unless the user has enabled 'display unique keys'.  Otherwise, we ask the mode theory for a normal form of the cell, as a vertical composite (outer list) of horizontal composites / whiskerings (inner list), and emit one syntactic key application "#a.b.c" for each entry of the vertical composite. *)
 and unparse_key : type mode n am mu nu cod b c lt ls rt rs.
     n Names.t ->
     (mode, am, kinetic) term ->
@@ -1324,13 +1324,21 @@ and unparse_key : type mode n am mu nu cod b c lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun vars body cell comp plus_src li ri ->
   let vars = Names.add_lock (Names.split vars comp) plus_src in
-  match
-    (Modalcell.compare_id cell, Modalcell.find_unique (Modalcell.vsrc cell) (Modalcell.vtgt cell))
-  with
-  | Eq, _ -> unparse vars body li ri
-  | Neq, Some (Unique _) when Display.unique_keys () = `Hide -> unparse vars body li ri
-  | Neq, (Some (Unique _) | None) ->
-      unparse_keys vars body (Bwd.of_list (Modalcell.name cell)) li ri
+  (* A key can be omitted when elaboration would insert that same key: the identity when its source and target are equal, and otherwise the unique cell between them, if there is one.  In particular, a nonidentity cell from a modality to itself is printed, even if it and the identity are the only ones. *)
+  let reconstructed =
+    match Modality.compare (Modalcell.vsrc cell) (Modalcell.vtgt cell) with
+    | Eq -> if Modalcell.is_id cell then `Identity else `No
+    | Neq -> (
+        match Modalcell.find_unique (Modalcell.vsrc cell) (Modalcell.vtgt cell) with
+        | Some (Unique c) -> (
+            match Modalcell.compare c cell with
+            | Eq -> `Unique
+            | Neq -> `No)
+        | None -> `No) in
+  match reconstructed with
+  | `Identity -> unparse vars body li ri
+  | `Unique when Display.unique_keys () = `Hide -> unparse vars body li ri
+  | `Unique | `No -> unparse_keys vars body (Bwd.of_list (Modalcell.name cell)) li ri
 
 (* Apply a sequence of syntactic key applications (the vertical composite, innermost first) to an unparsed body, as a postfix application spine at tightness +ω, mirroring the argument-application logic of unparse_spine. *)
 and unparse_keys : type mode n lt ls rt rs.
