@@ -1472,7 +1472,7 @@ and unparse_field_var : type mode n lt ls rt rs s.
       | Neq -> None)
   | _ -> None
 
-(* Unparse a key operation applied postfix to a synthesizing term.  The body is unparsed in the context locked by the key's source, obtained from the ambient names by splitting off the target locks ('comp') and re-adding the source lock ('plus_src').  We always omit printing keys that are identities, since those can always be reconstructed on parse.  Keys between two different modalities that are the unique cell between them are also omittable, and are omitted unless the user has enabled 'display unique keys'.  Otherwise, we ask the mode theory for a normal form of the cell, as a vertical composite (outer list) of horizontal composites / whiskerings (inner list), and emit one syntactic key application "#a.b.c" for each entry of the vertical composite. *)
+(* Unparse a key operation applied postfix to a synthesizing term.  The body is unparsed in the context locked by the key's source, obtained from the ambient names by splitting off the target locks ('comp') and re-adding the source lock ('plus_src').  We always omit printing keys that are identities, since those can always be reconstructed on parse.  Keys between two different modalities that are the unique cell between them are also omittable, unless they are applied to another key, and are omitted unless the user has enabled 'display unique keys'.  Otherwise, we ask the mode theory for a normal form of the cell, as a vertical composite (outer list) of horizontal composites / whiskerings (inner list), and emit one syntactic key application "#a.b.c" for each entry of the vertical composite. *)
 and unparse_key : type mode n am mu nu cod b c lt ls rt rs s.
     n Names.t ->
     (mode, am, s) term ->
@@ -1484,10 +1484,15 @@ and unparse_key : type mode n am mu nu cod b c lt ls rt rs s.
     (lt, ls, rt, rs) parse located =
  fun vars body cell comp plus_src li ri ->
   let vars = Names.add_lock (Names.split vars comp) plus_src in
-  (* A key can be omitted when elaboration would insert that same key: the identity when its source and target are equal, and otherwise the unique cell between them, if there is one.  In particular, a nonidentity cell from a modality to itself is printed, even if it and the identity are the only ones. *)
+  (* A key can be omitted when elaboration would insert that same key: the identity when its source and target are equal, and otherwise the unique cell between them, if there is one.  In particular, a nonidentity cell from a modality to itself is printed, even if it and the identity are the only ones.  But elaboration only inserts a key directly on a variable, after stripping off any keys applied to it explicitly, so a nonidentity key applied to another nonidentity key must be printed, even if it is the unique cell between its endpoints.  (A key supplied explicitly is applied to an identity key, which elaboration inserts on the variable itself.) *)
+  let rec is_key : type a e. (mode, a, e) term -> bool = function
+    | Key { tm; cell; _ } -> (not (Modalcell.is_id cell)) || is_key tm
+    | Act (_, tm, deg, _) -> Option.is_some (is_id_deg deg) && is_key tm
+    | _ -> false in
   let reconstructed =
     match Modality.compare (Modalcell.vsrc cell) (Modalcell.vtgt cell) with
     | Eq -> if Modalcell.is_id cell then `Identity else `No
+    | Neq when is_key body -> `No
     | Neq -> (
         match Modalcell.find_unique (Modalcell.vsrc cell) (Modalcell.vtgt cell) with
         | Some (Unique c) -> (
