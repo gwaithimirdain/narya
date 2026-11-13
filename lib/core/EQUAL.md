@@ -5,8 +5,9 @@ This file records the design rationale for the equality/conversion checker in
 `5b7cd519`, on top of the glued-evaluation repairs `a017a3cd`, `5d55666e`,
 `e4c38209`, `a355dd0d`, `e31b5e4d`), its relationship to smalltt's
 "approximate conversion checking" (https://github.com/AndrasKovacs/smalltt),
-which the previous design was modeled on, and considerations for adding
-unification later.  (Glued evaluation has since been made permanent: the
+which the previous design was modeled on, and the considerations for
+adding unification that were anticipated beforehand (unification itself is
+documented in `UNIFY.md`).  (Glued evaluation has since been made permanent: the
 `GluedEval` toggle in `value.ml` and the eager-evaluation code paths it
 guarded have been removed.)
 
@@ -146,7 +147,10 @@ The current scheme is deliberately not identical to smalltt either:
   and inconclusiveness can always be resolved definitively by unfolding.
   (The old design's two-state reduction of smalltt dropped Flex correctly —
   but kept the global two-pass shape, whose justification in smalltt depends
-  on the per-path scoping that was dropped along with it.)
+  on the per-path scoping that was dropped along with it.)  This was
+  written before unification; with unification metavariables a Flex state
+  does now exist (`Equal.flexible`), scoped to individual same-head spine
+  comparisons as in smalltt; see the last section and `UNIFY.md`.
 
 ## Why the cost-benefit differs from smalltt
 
@@ -167,38 +171,54 @@ Consequently:
    shared: hence the importance of forcing caches in shared refs, the
    constant-evaluation cache, and the pointer shortcut).
 
-## Considerations for future unification
+## Unification: what was anticipated, and what happened
 
-When metavariable solving is added to the checker:
+This section was written before unification existed, as a list of things
+to keep in mind.  Unification has since been implemented on the
+`unif-metas` branch; see `UNIFY.md` for the full design.  Each
+consideration and how it turned out:
 
-- **Results become ternary**: equal / unequal / *blocked* (on an unsolved
-  meta).  The local-unfolding structure accommodates this naturally:
-  `equal_neu` is already exactly the "speculative spine comparison" and would
-  grow a speculation flag (no meta solutions; return Blocked on meta heads);
-  the local retry points in `equal_val` and `equal_at`'s datatype case are
-  exactly where the Rigid→Full transition lives.
-- **Speculation must not commit meta solutions** (or must trail and retract
-  them).  Solutions are committed only outside speculative attempts.
-- **Fallback strictness becomes a real choice.**  Currently, after unfolding
-  at a node we re-enter the same speculative strategy on the unfoldings; with
-  metas, failed speculations can be retried after each meta solution, so the
-  cost model shifts back toward smalltt's stricter "no further speculation
-  below a failed one" bound.  Keep this as an explicit knob rather than an
-  accident of structure.
-- **Glued spines improve solution quality.**  Eta-short, unfold-free meta
-  solutions (which smalltt prizes) are read back from exactly the spines the
-  local scheme preserves; a global-Full fallback would destroy them at every
-  retry.
-- **Cache invalidation landmine**: solving a meta changes the meaning of
-  values whose `lazy_eval`s were forced while it was unsolved.
-  `Global.register_invalidator` (used by the constant-evaluation cache in
-  `norm.ml`) fires on meta mutation, but cached forcings inside *existing
-  value refs* are not invalidated by it.  Unification will need a story here:
-  generation stamps on solutions, restricting which caches survive a solution
-  event, or confining solving to fresh values.
-- The pointer-equality shortcut remains sound with metas (physical identity
-  still implies definitional equality at any solution state), but beware of
-  comparing-then-solving races if equality outcomes are ever cached by pair.
+- **Results become ternary.**  Yes: `failure = Unequal | Stuck of _ *
+  blockers`.  `equal_neu` did become the speculative spine comparison (run
+  "flexibly", i.e. without solving), and the local retry points in
+  `equal_neu_or_unfold` are where solving re-enters: after a failed
+  flexible attempt, unfold if possible, otherwise re-compare *with* solving
+  only if both spines are forced (permanently stuck or generative heads),
+  otherwise report `Stuck`.
+- **Speculation must not commit meta solutions.**  At the level of
+  `Equal`, flexible mode never solves.  At the level of the typechecker's
+  speculations (`Origin.speculate`), trailing turned out to be insufficient,
+  because OCaml `Lazy.t` fields can memoize consequences of a backtracked
+  solution.  So a speculation may only solve metas created inside it (the
+  depth rule), and most speculation was removed from the checker.
+- **Fallback strictness.**  We kept the definitive local scheme.  Stricter
+  smalltt-style variants (spine attempts that never unfold, an
+  attempt-depth limit, one-step lazy delta, no unfolding in flexible mode)
+  were all tried on the placeholder benchmark and made things worse
+  somewhere.  The quadratic re-comparison that metas introduce is handled
+  instead by a memo of flexible spine comparisons within one external
+  comparison, plus the "flexibly stuck" rule (in flexible mode, a value
+  headed by an unsolved meta is stuck at once rather than eta-expanded).
+- **Glued spines improve solution quality.**  True, but preserving *more*
+  glue (keeping glued neutrals through `apply` / `field`, "glued_view") made
+  the spine-attempt-then-unfold cost model exponential on real code, even
+  with hash-consing and a comparison memo, so it was reverted.  Solutions
+  are read back from whatever glue evaluation already preserves.
+- **Cache invalidation landmine.**  Resolved for `lazy_eval` refs by
+  `Blocked_on (blocker, recipe)` states: a result that was blocked on a
+  meta is recomputed and cached once the meta is solved.  (At first a
+  solution was only permanent once written at the end of the command, so
+  there was also an uncached "speculative" state.  The depth rule above
+  made solutions permanent at once, and now they are written at solve
+  time.)  `Lazy.t`
+  fields are handled by the depth rule above.  Physically keyed caches
+  (hash-consing, the action memo, the flexible-comparison memo) are reset on
+  backtracking, and the latter also whenever a meta is solved.
+- **Pointer equality** remains sound and remains the first check.  The
+  "comparing-then-solving race" for pair-keyed caches was real: the
+  flexible-comparison memo is stamped by a solve counter (and reset on
+  backtrack, since the counter is itself speculable and can return to an
+  old value with different solutions).
 
 ## Benchmarks used in this work
 
