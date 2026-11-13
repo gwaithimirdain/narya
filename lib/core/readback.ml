@@ -1172,7 +1172,7 @@ and unfold_solved : type hmode mode.
   match Unifying.read () with
   | None -> (
       match head with
-      | Meta { meta; kind = Unif_meta unif; _ } when Global.unif_status meta unif <> `Unsolved -> (
+      | Meta { kind = Unif_meta unif; _ } when Global.unif_solved unif -> (
           match force_eval value with
           | Realize v -> Some v
           | _ -> None)
@@ -1190,10 +1190,7 @@ and unfold_solved : type hmode mode.
               raise
                 (Unsolvable
                    (if (Option.get (Unifying.read ())).under_rigid then `Rigid else `Flexible))
-          | Neq -> (
-              match Global.unif_status meta unif with
-              | `Unsolved -> None
-              | `Speculative | `Written -> unfold ()))
+          | Neq -> if Global.unif_solved unif then unfold () else None)
       | Meta { meta; kind = Global_meta; _ }
         when Option.is_some (Meta.sort_of meta) && Meta.origin meta = Origin.Origin.current () ->
           unfold ()
@@ -2738,8 +2735,8 @@ type _ contractible =
 let contractible : type mode. (mode, kinetic) value -> mode contractible option = function
   | Neu { head = Live (Var _ as head); args; _ } -> Some (Contractible (head, args))
   | Neu { head = Live (Const _ as head); args; _ } -> Some (Contractible (head, args))
-  | Neu { head = Live (Meta { meta; kind = Unif_meta unif; _ } as head); args; _ }
-    when Global.unif_status meta unif = `Unsolved -> Some (Contractible (head, args))
+  | Neu { head = Live (Meta { kind = Unif_meta unif; _ } as head); args; _ }
+    when not (Global.unif_solved unif) -> Some (Contractible (head, args))
   | _ -> None
 
 (* Whether a value is literally the variable with a given level and degeneracy, with no key or arguments. *)

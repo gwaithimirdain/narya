@@ -255,7 +255,7 @@ let has_no_fields : type mode. (mode, kinetic) value -> bool =
 (* In a flexible comparison, which can't solve anything, a value headed by an unsolved unification metavariable can't become equal to one not headed by the same metavariable, except at a type with no information (such as a record type with no fields), in which case an eta-expanding comparison would succeed.  So except at a record type with no fields we don't try: such a comparison is stuck on the metavariable, which sends its caller to its fallback (unfolding and comparing with solving, or postponing).  Otherwise, an eta-expanding comparison would expand and unfold the other side, perhaps at great expense, only to get stuck in the end.  (Being stuck instead at another type with no information isn't wrong, since the fallback finds the equality, but it can choose a less canonical solution for the metavariable than the solver for singleton types would.  We don't test for all such types, which would cost more than this saves.) *)
 let unsolved_head : type mode. (mode, kinetic) value -> Meta.wrapped option = function
   | Neu { head = Live (Meta { meta; kind = Unif_meta unif; _ }); _ }
-    when Global.unif_status meta unif = `Unsolved -> Some (Wrap meta)
+    when not (Global.unif_solved unif) -> Some (Wrap meta)
   | _ -> None
 
 let flexibly_stuck : type mode. (mode, kinetic) value -> (mode, kinetic) value -> bool =

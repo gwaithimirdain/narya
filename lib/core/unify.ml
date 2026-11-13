@@ -30,8 +30,7 @@ let try_solve_direct : type mode a b.
              | Eq -> true
              | Neq -> false -> `Not_solved
       | Some _, Some Eq, _ -> (
-          if not (Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta) then
-            `Not_solved
+          if not ((not (Global.unif_solved unif)) && Global.unif_assignable meta) then `Not_solved
           else
             let mty = Global.meta_ty meta kind in
             match renamed_ctx meta ctx env args mty (Global.unif_ctx meta) v with
@@ -252,7 +251,7 @@ let try_expand : type mode a b.
              | Eq -> true
              | Neq -> false -> None
       | None, _ ->
-          if Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta then (
+          if (not (Global.unif_solved unif)) && Global.unif_assignable meta then (
             let mctx = Global.unif_ctx meta in
             Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
             match
@@ -281,7 +280,7 @@ let refine_to_constr : type mode a b.
       match arg_spine args with
       | None -> ()
       | Some Eq -> (
-          if Global.unif_status meta unif = `Unsolved && Global.unif_assignable meta then
+          if (not (Global.unif_solved unif)) && Global.unif_assignable meta then
             let mctx = Global.unif_ctx meta in
             let mty = Global.meta_ty meta kind in
             Reporter.discard_errors ~fallback:(fun () -> ()) @@ fun () ->

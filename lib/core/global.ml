@@ -254,9 +254,9 @@ let notify_holes () =
 
 type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
 
-(* The unification metavariables created by a command are stored only in the state of that command, since they are either solved by the time it succeeds or else cause it to fail.  For each one we store its type and context, which are needed only while it is unsolved, and its solution if it has been solved during the command.  Since the state of the command is a Speculable, all of these are discarded if a speculative computation that creates or solves them backtracks.  When the command succeeds, the solutions are written into the cells shared by their occurrences (see Term.meta_kind), so that the table is no longer needed.
+(* The unification metavariables created by a command are stored only in the state of that command, since they are either solved by the time it ends or else cause it to fail.  For each one we store its type and context, which are needed only while it is unsolved, along with its cell (see Term.meta_kind), shared by all its occurrences, into which its solution is written as soon as it is solved.  Since the state of the command is a Speculable, the table entries of metavariables created inside a speculative computation are discarded if it backtracks.
 
-   We also record the depth of speculation (see Origin.speculate) at which each one was created.  A speculation can only solve the unification metavariables created inside it, not those from outside it, since if it backtracks, values created outside it that saw the solution (e.g. by forcing lazy computations that depended on it) would remain incorrect.  When a speculation succeeds, the unification metavariables created inside it now belong to the enclosing computation, so we decrease their recorded depth to match.
+   We also record the depth of speculation (see Origin.speculate) at which each one was created.  A speculation can only solve the unification metavariables created inside it, not those from outside it, since if it backtracks, values created outside it that saw the solution (e.g. by forcing lazy computations that depended on it) would remain incorrect.  When a speculation succeeds, the unification metavariables created inside it now belong to the enclosing computation, so we decrease their recorded depth to match.  Thus a solution can only be backtracked together with its metavariable, which is discarded entirely, along with everything that refers to it, so a solution can be written into the cell at once, and is then permanent.  (The cell of a discarded metavariable may be left written, but nothing can reach it.)
 
    The context is computed lazily, since it is needed only if the metavariable is compared to itself, read back with a nontrivial environment, or displayed.  It must not be read back for display, so its thunk sets the display flag explicitly (see Check.make_unif).  The table is never marshaled, so it can contain such functional values. *)
 module Unifdata = struct
@@ -266,7 +266,6 @@ module Unifdata = struct
     ctx : ('mode, 'a, 'b) Ctx.t;
     ty : ('mode, 'b, kinetic) term;
     termctx : ('mode, 'a, 'b) termctx Lazy.t;
-    solution : ('mode, 'b, kinetic) term option;
     depth : int;
     (* Where the metavariable came from, and the error to report there if it isn't solved. *)
     loc : Asai.Range.t option;
@@ -355,18 +354,7 @@ let add_unif : type mode a b.
         d with
         unifs =
           Uniftable.add meta
-            {
-              meta;
-              unif;
-              ctx;
-              ty;
-              termctx;
-              solution = None;
-              depth = Origin.speculation_depth ();
-              loc;
-              err;
-              delayed;
-            }
+            { meta; unif; ctx; ty; termctx; depth = Origin.speculation_depth (); loc; err; delayed }
             d.unifs;
       })
 
@@ -418,18 +406,14 @@ let set_unif_solution : type mode a b.
     string -> (mode, a, b, kinetic) Meta.t -> (mode, b, kinetic) term -> unit =
  fun what meta tm ->
   let d = find_unif meta in
-  match d.solution with
+  match !(d.unif) with
   | Some _ -> fatal (Anomaly (what ^ " already-solved unification metavariable " ^ Meta.name meta))
   | None ->
       invalidate ();
-      Speculable.modify current_command (fun c ->
-          {
-            c with
-            unifs = Uniftable.add meta { d with solution = Some tm } c.unifs;
-            solves = c.solves + 1;
-          })
+      d.unif := Some tm;
+      Speculable.modify current_command (fun c -> { c with solves = c.solves + 1 })
 
-(* Record the solution of an unsolved unification metavariable in the table of the current command.  If this happens during a speculative computation that later backtracks, the solution is discarded with the rest of the table.  It is written into the cell of the metavariable only when the command succeeds (see finish_unifs). *)
+(* Record the solution of an unsolved unification metavariable, by writing it into its cell.  This is permanent, since a metavariable can only be solved at the depth of speculation where it was created (see Unifdata). *)
 let solve_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, b, kinetic) term -> unit =
  fun meta tm ->
   if not (unif_assignable meta) then
@@ -444,27 +428,10 @@ let release_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, b, kine
     fatal (Anomaly ("releasing non-delayed or outer metavariable " ^ Meta.name meta))
   else set_unif_solution "releasing" meta tm
 
-(* The solution of a unification metavariable, if it has one: either written into its cell when its command succeeded, or else in the table of the current command. *)
-let unif_solution : type mode a b.
-    (mode, a, b, kinetic) Meta.t ->
-    (mode, b, kinetic) term option ref ->
-    (mode, b, kinetic) term option =
- fun meta unif ->
-  match !unif with
-  | Some _ as solution -> solution
-  | None -> (find_unif meta).solution
-
-(* The solution of a unification metavariable for display: like unif_solution, but if its table is gone (because its command has ended without solving it), we just say it has no solution. *)
-let unif_solution_opt : type mode a b.
-    (mode, a, b, kinetic) Meta.t ->
-    (mode, b, kinetic) term option ref ->
-    (mode, b, kinetic) term option =
- fun meta unif ->
-  match !unif with
-  | Some _ as solution -> solution
-  | None ->
-      Option.bind (Uniftable.find_opt meta (Speculable.get current_command).unifs) (fun d ->
-          d.solution)
+(* The solution of a unification metavariable, if it has one, from its cell. *)
+let unif_solution : type mode b.
+    (mode, b, kinetic) term option ref -> (mode, b, kinetic) term option =
+ fun unif -> !unif
 
 (* If a unification metavariable is delayed and not yet released, the location of the term it stands for. *)
 let delayed_unif_loc : type mode a b.
@@ -475,21 +442,12 @@ let delayed_unif_loc : type mode a b.
   | Some _ -> None
   | None -> (
       match Uniftable.find_opt meta (Speculable.get current_command).unifs with
-      | Some { delayed = true; solution = None; loc; _ } -> Some loc
+      | Some { delayed = true; loc; _ } -> Some loc
       | _ -> None)
 
-(* Whether a unification metavariable has been solved, and if so whether its solution has been written into its cell (and hence is permanent) or is only in the table of the current command (and hence could still be backtracked). *)
-let unif_status : type mode a b.
-    (mode, a, b, kinetic) Meta.t ->
-    (mode, b, kinetic) term option ref ->
-    [ `Unsolved | `Speculative | `Written ] =
- fun meta unif ->
-  match !unif with
-  | Some _ -> `Written
-  | None -> (
-      match (find_unif meta).solution with
-      | Some _ -> `Speculative
-      | None -> `Unsolved)
+(* Whether a unification metavariable has been solved. *)
+let unif_solved : type mode b. (mode, b, kinetic) term option ref -> bool =
+ fun unif -> Option.is_some !unif
 
 (* The stored context and type of a metavariable of either kind. *)
 let meta_termctx : type mode a b s e.
@@ -504,7 +462,6 @@ let meta_ty : type mode a b s e.
   | Global_meta -> (find_meta meta).ty
   | Unif_meta _ -> (find_unif meta).ty
 
-(* At the end of a command, all its unification metavariables must be solved, or else it fails, and we write their solutions into them.  If the command has already failed for some other reason, we don't report its unsolved unification metavariables, since they are likely to be consequences of that failure. *)
 (* Iterate over the currently unsolved unification metavariables. *)
 type unsolved_unif_iter = {
   it :
@@ -514,10 +471,7 @@ type unsolved_unif_iter = {
 
 let iter_unsolved_unifs f =
   Uniftable.fold
-    {
-      fold =
-        (fun { meta; ctx; ty; solution; _ } () -> if Option.is_none solution then f.it meta ctx ty);
-    }
+    { fold = (fun { meta; unif; ctx; ty; _ } () -> if Option.is_none !unif then f.it meta ctx ty) }
     (Speculable.get current_command).unifs ()
 
 (* Some unification metavariables can be solved at the end of a command even if nothing has constrained them, because their type has only one element up to eta-conversion.  That's defined in Unify, downstream of here. *)
@@ -527,7 +481,7 @@ let solve_singleton_unifs () = !singleton_unif_solver ()
 
 let count_unsolved_unifs () =
   Uniftable.fold
-    { fold = (fun { solution; _ } n -> if Option.is_none solution then n + 1 else n) }
+    { fold = (fun { unif; _ } n -> if Option.is_none !unif then n + 1 else n) }
     (Speculable.get current_command).unifs 0
 
 (* Report the error of each unsolved unification metavariable.  Metavariables can be created together for the same term, such as the boundary of a primary argument, the fields of an expansion, or the type of a placeholder, and these have the same location.  Since at most one error is useful for each term, we report only the first. *)
@@ -536,9 +490,9 @@ let report_unsolved_unifs () =
   Uniftable.fold
     {
       fold =
-        (fun { solution; loc; err; delayed; _ } () ->
+        (fun { unif; loc; err; delayed; _ } () ->
           (* A delayed metavariable is unsolved only if its constraint is, and that is reported instead. *)
-          if Option.is_none solution && (not delayed) && not (List.mem loc !seen) then (
+          if Option.is_none !unif && (not delayed) && not (List.mem loc !seen) then (
             seen := loc :: !seen;
             mortal ?loc err));
     }
@@ -569,8 +523,7 @@ let postpone ~blockers ~attempt ~report =
 (* Whether a postponed constraint should be retried, because one of its blockers has been solved, or if [stale], because anything has been solved since it was last attempted. *)
 let woken ~stale (p : Postponed.t) =
   if stale then p.seen < (Speculable.get current_command).solves
-  else
-    List.exists (fun (Value.Blocker (meta, unif)) -> unif_status meta unif <> `Unsolved) p.blockers
+  else List.exists (fun (Value.Blocker (_, unif)) -> unif_solved unif) p.blockers
 
 (* Retry the postponed constraints that have been woken, at the current depth of speculation, until none remain.  Return whether anything happened, i.e. a constraint was decided or a metavariable was solved.  Attempting a constraint may lead back here, e.g. by typechecking a term, but we don't retry re-entrantly.  Nor do we retry while disabled by [without_retries]. *)
 let retrying = ref false
@@ -631,6 +584,7 @@ let report_postponed () =
       then p.report ())
     (Speculable.get current_command).postponed
 
+(* At the end of a command, all its unification metavariables must be solved, or else it fails.  If the command has already failed for some other reason, we don't report its unsolved unification metavariables, since they are likely to be consequences of that failure. *)
 let finish_unifs () =
   if not (moribund ()) then settle_unifs ();
   (* An undecided constraint and the unsolved metavariables it is stuck on are both worth reporting, since the constraint may be undecided only because of them. *)
@@ -640,9 +594,7 @@ let finish_unifs () =
   (* Even if the command failed, the constants it was defining may still be used by later commands, with their failed parts failing silently if they are inspected.  Thus, an unsolved unification metavariable, whose table is about to go away, must become such a failed part. *)
   Uniftable.fold
     {
-      fold =
-        (fun { unif; solution; _ } () ->
-          unif := Some (Option.value solution ~default:(Term.Failed Kinetic)));
+      fold = (fun { unif; _ } () -> if Option.is_none !unif then unif := Some (Term.Failed Kinetic));
     }
     (Speculable.get current_command).unifs ()
 

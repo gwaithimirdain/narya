@@ -316,9 +316,9 @@ let displayed_metadef : type mode x b s e.
 (* The solution of a unification metavariable, if it has one, which is displayed in its place. *)
 let solved_unif : type mode x b l s.
     (mode, x, b, l) Meta.t -> (mode, b, l, s) meta_kind -> (mode, b, s) term option =
- fun v -> function
+ fun _ -> function
   | Global_meta -> None
-  | Unif_meta unif -> Global.unif_solution_opt v unif
+  | Unif_meta unif -> Global.unif_solution unif
 
 (* The full name of a metavariable, using the name currently in scope for the constant that owns it. *)
 let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =

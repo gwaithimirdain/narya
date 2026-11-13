@@ -301,7 +301,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                    }))
       (* A unification metavariable and its occurrences are always kinetic.  If it has been solved, we evaluate its solution; otherwise it is a neutral. *)
       | Unif_meta unif -> (
-          match Global.unif_solution meta unif with
+          match Global.unif_solution unif with
           | Some tm -> eval env tm
           (* If it is unsolved, its value is blocked on it, and once it is solved the value is computed by evaluating it again. *)
           | None ->
@@ -1593,13 +1593,9 @@ and force_eval : type mode s. (mode, s) lazy_eval -> (mode, s) evaluation =
     etm in
   match !lev with
   | Ready etm -> etm
-  | Blocked_on ((Blocker (meta, unif) as b), state) -> (
-      match Global.unif_status meta unif with
-      | `Unsolved -> Blocked b
-      (* Once the blocking metavariable is permanently solved, we redo the computation and cache its result. *)
-      | `Written -> cache state (run_lazy_state state)
-      (* If it is solved only in the table of the current command, the solution could still be backtracked, so we redo the computation but don't cache its result. *)
-      | `Speculative -> run_lazy_state state)
+  | Blocked_on ((Blocker (_, unif) as b), state) ->
+      (* Once the blocking metavariable is solved, which is permanent (see Global.Unifdata), we redo the computation and cache its result. *)
+      if Global.unif_solved unif then cache state (run_lazy_state state) else Blocked b
   | state -> cache state (run_lazy_state state)
 
 (* Compute the result of a lazy state, without caching it. *)

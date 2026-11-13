@@ -100,12 +100,7 @@ val retry_postponed : ?stale:bool -> unit -> bool
 val without_retries : (unit -> 'a) -> 'a
 val settle_unifs : unit -> unit
 val solve_count : unit -> int
-
-val unif_solution :
-  ('mode, 'a, 'b, kinetic) Meta.t ->
-  ('mode, 'b, kinetic) term option ref ->
-  ('mode, 'b, kinetic) term option
-
+val unif_solution : ('mode, 'b, kinetic) term option ref -> ('mode, 'b, kinetic) term option
 val unsolved_unifs : unit -> bool
 
 type unsolved_unif_iter = {
@@ -118,20 +113,12 @@ val iter_unsolved_unifs : unsolved_unif_iter -> unit
 val set_singleton_unif_solver : (unit -> unit) -> unit
 val solve_singleton_unifs : unit -> unit
 
-val unif_solution_opt :
-  ('mode, 'a, 'b, kinetic) Meta.t ->
-  ('mode, 'b, kinetic) term option ref ->
-  ('mode, 'b, kinetic) term option
-
 val delayed_unif_loc :
   ('mode, 'a, 'b, kinetic) Meta.t ->
   ('mode, 'b, kinetic) term option ref ->
   Asai.Range.t option option
 
-val unif_status :
-  ('mode, 'a, 'b, kinetic) Meta.t ->
-  ('mode, 'b, kinetic) term option ref ->
-  [ `Unsolved | `Speculative | `Written ]
+val unif_solved : ('mode, 'b, kinetic) term option ref -> bool
 
 val meta_termctx :
   ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'b, 's, 'e) meta_kind -> ('mode, 'a, 'b) termctx

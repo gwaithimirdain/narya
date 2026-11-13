@@ -11,7 +11,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Var i -> Var i
   | Const c -> Const (Constant.remake f c)
   | Meta (m, Global_meta, s) -> Meta (Meta.remake f m, Global_meta, s)
-  (* A unification metavariable in a compiled file must have been solved when the command that created it succeeded, so we inline its solution. *)
+  (* A unification metavariable in a compiled file must have been solved during the command that created it, so we inline its solution. *)
   | Meta (_, Unif_meta { contents = Some tm }, _) -> term f tm
   | Meta (m, Unif_meta { contents = None }, _) ->
       Reporter.fatal
