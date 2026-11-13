@@ -45,4 +45,4 @@ let install modes modalities modalcells =
   | [] -> ()
   | _ -> failwith "wrong number of modality names for trivial mode theory");
   let module Testmode = Mode.Generate (TestmodeGen) in
-  Modalcell.choose_theory (module Idcell (Testmode) : Modalcell.Theory)
+  Modalcell.choose_complete_theory (module Idcell (Testmode) : Modalcell.Theory)

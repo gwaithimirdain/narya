@@ -76,6 +76,9 @@ end
 
 val choose_theory : (module Theory) -> unit
 val choose_enumerating_theory : (module Enumerating_theory) -> unit
+
+(* For a locally posetal theory whose find_unique decides whether there is a cell. *)
+val choose_complete_theory : (module Theory) -> unit
 val sinister : ('a, 'f, 'b) Modality.t -> ('a, 'f, 'b) sinister option
 
 type (_, _, _, _, _, _) find_unique =

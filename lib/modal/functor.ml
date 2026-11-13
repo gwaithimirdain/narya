@@ -118,5 +118,6 @@ let install (module V : Variant) modes modalities modalcells =
   | _ -> failwith "wrong number of modality names for functor mode theory");
   Modality.set_one_char true modalities;
   let module Functor = Modality.Generate (CircGen) in
-  Modalcell.choose_theory (module Functorcell (V) (DomMode) (CodMode) (Functor) : Modalcell.Theory);
+  Modalcell.choose_complete_theory
+    (module Functorcell (V) (DomMode) (CodMode) (Functor) : Modalcell.Theory);
   Modality.choose_theory (module FunctorModalities (V) : Modality.Theory)

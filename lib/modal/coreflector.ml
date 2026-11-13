@@ -88,9 +88,19 @@ struct
             Modality.Gen.compare k Coreflector.modality,
             Modality.Gen.compare h Coreflector.modality )
         with
-        | Eq, Eq, Eq ->
-            let* x = find_unique (Path (m, mmode)) (Path (n, nmode)) in
-            Some (Modalcell.hcomp (Suc (Zero, g)) (Suc (Suc (Zero, k), h)) x comult)
+        | Eq, Eq, Eq -> (
+            match find_unique (Path (m, mmode)) (Path (n, nmode)) with
+            | Some c -> Some (Modalcell.hcomp (Suc (Zero, g)) (Suc (Suc (Zero, k), h)) c comult)
+            | None ->
+                (* Otherwise the cell might have to comultiply into more than two ♭s, so we comultiply the first one and continue.  Since every nonempty word is isomorphic to ♭, this always succeeds eventually if x is nonempty. *)
+                let step =
+                  Modalcell.hcomp
+                    (Suc (Zero, h))
+                    (Suc (Suc (Zero, k), h))
+                    (Modalcell.id (Path (n, nmode)))
+                    comult in
+                let* c = find_unique x (Path (Suc (n, h), nmode)) in
+                Some (Modalcell.vcomp step c))
         | _ -> None)
     | Path (Suc (m, g), mmode), Path (Suc (n, h), nmode) -> (
         match Modality.Gen.compare g h with
@@ -131,4 +141,5 @@ let install (module V : Variant) modes modalities modalcells =
   | _ -> failwith ("wrong number of modality names for " ^ V.name ^ " mode theory"));
   Modality.set_one_char true modalities;
   let module Coreflector = Modality.Generate (Flat) in
-  Modalcell.choose_theory (module CoreflectorCells (V) (Testmode) (Coreflector) : Modalcell.Theory)
+  Modalcell.choose_complete_theory
+    (module CoreflectorCells (V) (Testmode) (Coreflector) : Modalcell.Theory)

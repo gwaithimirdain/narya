@@ -64,9 +64,19 @@ struct
             Modality.Gen.compare k Reflector.modality,
             Modality.Gen.compare h Reflector.modality )
         with
-        | Eq, Eq, Eq ->
-            let* c = find_unique (Path (m, mmode)) (Path (n, nmode)) in
-            Some (Modalcell.hcomp (Suc (Suc (Zero, k), g)) (Suc (Zero, h)) c mult)
+        | Eq, Eq, Eq -> (
+            match find_unique (Path (m, mmode)) (Path (n, nmode)) with
+            | Some c -> Some (Modalcell.hcomp (Suc (Suc (Zero, k), g)) (Suc (Zero, h)) c mult)
+            | None ->
+                (* Otherwise the cell might have to multiply more than two ♯s together, so we multiply the first two and continue.  Since every nonempty word is isomorphic to ♯, this always succeeds eventually if y is nonempty. *)
+                let step =
+                  Modalcell.hcomp
+                    (Suc (Suc (Zero, k), g))
+                    (Suc (Zero, g))
+                    (Modalcell.id (Path (m, mmode)))
+                    mult in
+                let* c = find_unique (Path (Suc (m, g), mmode)) y in
+                Some (Modalcell.vcomp c step))
         | _ -> None)
     | Path (Suc (m, g), mmode), Path (Suc (n, h), nmode) -> (
         match Modality.Gen.compare g h with
@@ -102,4 +112,4 @@ let install modes modalities modalcells =
   | _ -> failwith "wrong number of modality names for reflector mode theory");
   Modality.set_one_char true modalities;
   let module Reflector = Modality.Generate (Sharp) in
-  Modalcell.choose_theory (module ReflectorCells (Testmode) (Reflector) : Modalcell.Theory)
+  Modalcell.choose_complete_theory (module ReflectorCells (Testmode) (Reflector) : Modalcell.Theory)

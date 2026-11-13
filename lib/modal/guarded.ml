@@ -443,5 +443,5 @@ let install modes modalities modalcells =
   let module Box = Modality.Generate (Box) in
   let module Later = Modality.Generate (Later) in
   let module Cells = GuardedCells (Type) (Timed) (Triangle) (Box) (Later) in
-  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modalcell.choose_complete_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

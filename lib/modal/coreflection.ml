@@ -277,5 +277,5 @@ let install (module V : Variant) modes modalities modalcells =
   let module Triangle = Modality.Generate (Triangle) in
   let module Box = Modality.Generate (Box) in
   let module Cells = CoreflectionCells (V) (Disc) (Type) (Triangle) (Box) in
-  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modalcell.choose_complete_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

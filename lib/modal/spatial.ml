@@ -326,14 +326,5 @@ let install (module V : Variant) modes modalities modalcells =
   let module Flat = Modality.Generate (Flat) in
   let module Sharp = Modality.Generate (Sharp) in
   let module Cells = SpatialCells (V) (Testmode) (Flat) (Sharp) in
-  Modalcell.choose_enumerating_theory
-    (module struct
-      include Cells
-
-      (* Since find_unique is complete and the theory is locally posetal, it finds all the cells. *)
-      let find_all m n =
-        match Cells.find_unique m n with
-        | Some c -> Some [ c ]
-        | None -> Some []
-    end : Modalcell.Enumerating_theory);
+  Modalcell.choose_complete_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

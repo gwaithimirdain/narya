@@ -161,6 +161,18 @@ let choose_theory (module T : Theory) =
 
 let choose_enumerating_theory (t : (module Enumerating_theory)) = theory := t
 
+(* A locally posetal theory whose find_unique decides whether there is a cell can enumerate them all: none, or the one it finds. *)
+let choose_complete_theory (module T : Theory) =
+  theory :=
+    (module struct
+      include T
+
+      let find_all m n =
+        match T.find_unique m n with
+        | Some c -> Some [ c ]
+        | None -> Some []
+    end : Enumerating_theory)
+
 (* Ask the current theory whether a modality is sinister (a declared left adjoint), obtaining the adjunction data if so. *)
 let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) sinister option =
  fun f ->

@@ -104,4 +104,4 @@ let install modes modalities modalcells =
   Modality.set_one_char true modalities;
   let module _ = Modality.Generate (F) in
   let module _ = Modality.Generate (G) in
-  Modalcell.choose_theory (module Composedcell : Modalcell.Theory)
+  Modalcell.choose_complete_theory (module Composedcell : Modalcell.Theory)
