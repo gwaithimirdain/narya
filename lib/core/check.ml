@@ -3994,11 +3994,15 @@ and synth : type mode a b s.
         match Modal.Mode.compare mode (Ctx.mode ctx) with
         | Eq ->
             let (Wrap locks) = Ctx.total_locks ctx in
-            (* We regard the context as unlocked if its locks could be inserted as a key from the identity: if they are the identity themselves, or there is a unique cell from the identity to them.  (It isn't clear what the right condition is.) *)
+            (* We regard the context as unlocked if there is a cell from the identity to its locks: if they are the identity themselves, or the mode theory finds some cell, or, if it can't enumerate them, a unique one.  (It isn't clear what the right condition is.) *)
             let unlocked =
               match Modality.compare (Modality.id mode) locks with
               | Eq -> true
-              | Neq -> Option.is_some (Modalcell.find_unique (Modality.id mode) locks) in
+              | Neq -> (
+                  match Modalcell.find_all (Modality.id mode) locks with
+                  | Some (All (_ :: _)) -> true
+                  | Some (All []) | Some Incompatible -> false
+                  | None -> Option.is_some (Modalcell.find_unique (Modality.id mode) locks)) in
             (match (parametric, unlocked) with
             (* If the context is locked, then nonparametric constants are not allowed.  *)
             | `Nonparametric, false -> fatal (Locked_constant (PConstant name))
