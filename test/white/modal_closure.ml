@@ -25,6 +25,8 @@ let install = function
   | "ambiflection" ->
       Ambiflection.install (module Ambiflection.Ordinary : Ambiflection.Variant) [] [] []
   | "gwpt" -> Gwpt.install (module Gwpt.Ordinary : Gwpt.Variant) [] [] []
+  | "comonad" -> Comonad.install (module Comonad.Ordinary : Comonad.Variant) [] [] []
+  | "monad" -> Monad_theory.install [] [] []
   | "adjunction" -> Adjunction.install (module Adjunction.Ordinary : Adjunction.Variant) [] [] []
   | "ambiflector" ->
       Ambiflector.install (module Ambiflector.Ordinary : Ambiflector.Variant) [] [] []

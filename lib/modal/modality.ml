@@ -215,6 +215,20 @@ module Modality = Path.Make (Gen)
 include Modality
 module Map = Path.Map (Gen) (Mode.Map) (Gen.Map)
 
+(* The ways of writing a modality as a prefix (applied first) followed by a rest, with the evidence that they compose to it, from the empty prefix to the whole modality. *)
+type (_, _, _) split =
+  | Split : ('a, 'p, 'x) t * ('x, 'r, 'b) t * ('a, 'p, 'x, 'r, 'b, 'm) comp -> ('a, 'm, 'b) split
+
+let rec splits : type a m b. (a, m, b) t -> (a, m, b) split list =
+ fun m ->
+  match m with
+  | Path (Zero, _) -> [ Split (m, m, Zero) ]
+  | Path (Suc (inner, g), b) ->
+      Split (id (Gen.src g), m, Zero)
+      :: List.map
+           (fun (Split (p, r, ev)) -> Split (suc p g, r, Suc (ev, g)))
+           (splits (Path (inner, b)))
+
 let compare_id : type x m y. (x, m, y) t -> (m * y, x id * x) Eq.compare =
  fun m ->
   match compare m (id (src m)) with

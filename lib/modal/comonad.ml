@@ -17,7 +17,7 @@ open Dim
    witnessed directly (not via the Pairing module, which is specific to the "cup/cap" combinatorics
    of a free adjunction's unit/counit, not the "branching" combinatorics of a comonad's counit/comult).
 
-   Consequently there is a unique 2-cell flatᵃ ⇒ flatᵇ exactly when a=0=b (identity), or b=0 (the
+   So find_all can list all the cells, one for each such sequence.  And there is a unique 2-cell flatᵃ ⇒ flatᵇ exactly when a=0=b (identity), or b=0 (the
    unique all-counit cell, any a), or a=1 (the unique canonical b-fold comultiplication); in every
    other case (a≥2 and b≥1, or a=0 and b≥1) there are respectively many or zero cells, so
    find_unique correctly returns None (forcing the user to disambiguate explicitly) or None (no
@@ -163,6 +163,33 @@ struct
             | Eq -> Some (chain_comult y))
         | Path (Suc (Suc (_, _), _), _) -> None)
 
+  (* All the cells x ⇒ y: one for each composition (k₁,...,kₐ) of the length of y into a nonnegative parts, which splits the i-th input of x (in application order) into the next kᵢ outputs of y. *)
+  let rec cells : type a m n b.
+      (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t list =
+   fun x y ->
+    match x with
+    | Path (Zero, _) -> (
+        match y with
+        | Path (Zero, _) -> [ Modalcell.id x ]
+        | Path (Suc _, _) -> [])
+    | Path (Suc (inner, g), xb) -> (
+        match Modality.Gen.compare g Flat.modality with
+        | Neq -> []
+        | Eq ->
+            let x' = Modality.Path (inner, xb) in
+            let first : (a, n, b) Modality.split -> (a, m, n, b) Modalcell.t list =
+             fun (Split (p, r, ev)) ->
+              match Mode.compare (Modality.tgt p) typ with
+              | Neq -> []
+              | Eq ->
+                  let cg = chain_comult p in
+                  List.map (fun cr -> Modalcell.hcomp (Suc (Zero, g)) ev cr cg) (cells x' r) in
+            List.concat_map first (Modality.splits y))
+
+  let find_all : type a m n b.
+      (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t list option =
+   fun x y -> Some (cells x y)
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun m ->
     if V.locker then
@@ -196,4 +223,4 @@ let install (module V : Variant) modes modalities modalcells =
       Modalcell.rename Cells.counit eps;
       Modalcell.rename Cells.comult delta
   | _ -> failwith ("wrong number of modal cell names for " ^ V.name ^ " mode theory"));
-  Modalcell.choose_theory (module Cells : Modalcell.Theory)
+  Modalcell.choose_enumerating_theory (module Cells : Modalcell.Enumerating_theory)

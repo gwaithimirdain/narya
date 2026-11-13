@@ -60,6 +60,11 @@ module Cube : (F : Signatures.Fam3) -> sig
         -> ('n, 'mode, 'a, 'b) t
 end
 
+(* The ways of writing a modality as a prefix (applied first) followed by a rest, with the evidence that they compose to it, from the empty prefix to the whole modality. *)
+type (_, _, _) split =
+  | Split : ('a, 'p, 'x) t * ('x, 'r, 'b) t * ('a, 'p, 'x, 'r, 'b, 'm) comp -> ('a, 'm, 'b) split
+
+val splits : ('a, 'm, 'b) t -> ('a, 'm, 'b) split list
 val compare_id : ('x, 'm, 'y) t -> ('m * 'y, 'x id * 'x) Eq.compare
 val set_one_char : bool -> string list -> unit
 val one_char : unit -> bool
