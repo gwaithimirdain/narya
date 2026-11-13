@@ -30,7 +30,8 @@
    (run %{exe:modal_closure.exe} guarded 6)
    (run %{exe:modal_closure.exe} ambiflector 8)
    (run %{exe:modal_closure.exe} ambiflection 8)
-   (run %{exe:modal_closure.exe} adjunction 7))))
+   (run %{exe:modal_closure.exe} adjunction 7)
+   (run %{exe:modal_closure.exe} gwpt 4))))
 
 (rule
  (alias runtest)

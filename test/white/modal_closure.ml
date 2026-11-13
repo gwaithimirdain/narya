@@ -24,6 +24,7 @@ let install = function
   | "cospatial" -> Cospatial.install (module Cospatial.Ordinary : Cospatial.Variant) [] [] []
   | "ambiflection" ->
       Ambiflection.install (module Ambiflection.Ordinary : Ambiflection.Variant) [] [] []
+  | "gwpt" -> Gwpt.install (module Gwpt.Ordinary : Gwpt.Variant) [] [] []
   | "adjunction" -> Adjunction.install (module Adjunction.Ordinary : Adjunction.Variant) [] [] []
   | "ambiflector" ->
       Ambiflector.install (module Ambiflector.Ordinary : Ambiflector.Variant) [] [] []

@@ -32,3 +32,5 @@ ambiflection: 83 cells enumerated
 ambiflection: 18 words up to length 8, 82 cells, 0 violations
 adjunction: 208 cells enumerated
 adjunction: 16 words up to length 7, 58 cells, 0 violations
+gwpt: 1065 cells enumerated
+gwpt: 62 words up to length 4, 827 cells, 0 violations
