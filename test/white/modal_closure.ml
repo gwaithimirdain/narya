@@ -1,4 +1,4 @@
-(* Check that a mode theory's find_unique, which decides whether there is a cell between two modalities, is closed under the operations that generate 2-cells, on all modalities up to a given length: it must contain the generating 2-cells and identities, and be closed under vertical composition and whiskering by generators.  If it is, it contains every 2-cell derivable without passing through a longer modality.  Run with the name of a mode theory and a maximum length. *)
+(* Check that a mode theory's decision of whether there is a cell between two modalities (by find_all, or find_unique if it can't enumerate them) is closed under the operations that generate 2-cells, on all modalities up to a given length: it must contain the generating 2-cells and identities, and be closed under vertical composition and whiskering by generators.  If it is, it contains every 2-cell derivable without passing through a longer modality.  Run with the name of a mode theory and a maximum length. *)
 
 open Modal
 
@@ -71,10 +71,12 @@ let () =
     with
     | Eq, Eq -> true
     | _ -> false in
+  (* Whether there is a cell: some cell, if the theory can enumerate them, and otherwise a unique one. *)
   let decide (W x) (W y) =
-    match Modalcell.find_unique x y with
-    | Some _ -> true
-    | None -> false
+    match Modalcell.find_all x y with
+    | Some (All (_ :: _)) -> true
+    | Some (All []) | Some Incompatible -> false
+    | None -> Option.is_some (Modalcell.find_unique x y)
     | exception e ->
         Printf.printf "exception on %s => %s: %s\n" (key (W x)) (key (W y)) (Printexc.to_string e);
         false in

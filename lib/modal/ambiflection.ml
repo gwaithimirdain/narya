@@ -300,14 +300,18 @@ struct
                 | Neq -> None)
             | Neq -> None))
 
+  (* The endomorphisms of the identity modality at Type are the identity and zero, so there is no unique one; elaboration uses the identity key whenever the source and target modalities coincide, without consulting find_unique.  Every other hom-set is thin. *)
   let find_unique : type a m n b.
       (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t option =
    fun x y ->
-    let (Normalize (_, xto, _)) = normalize x in
-    let (Normalize (_, _, yfrom)) = normalize y in
-    match bridge (Modalcell.vtgt xto) (Modalcell.vsrc yfrom) with
-    | Some b -> Some (Modalcell.vcomp (Modalcell.vcomp yfrom b) xto)
-    | None -> None
+    match (Modality.compare_id x, Modality.compare_id y, Mode.compare (Modality.src x) typ) with
+    | Eq, Eq, Eq -> None
+    | _ -> (
+        let (Normalize (_, xto, _)) = normalize x in
+        let (Normalize (_, _, yfrom)) = normalize y in
+        match bridge (Modalcell.vtgt xto) (Modalcell.vsrc yfrom) with
+        | Some b -> Some (Modalcell.vcomp (Modalcell.vcomp yfrom b) xto)
+        | None -> None)
 
   (* As in Ambiflector, △□ does not become usable to strip external parametricity: there is no
      parametric locker, and -external is not allowed with this theory. *)

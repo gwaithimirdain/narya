@@ -4,7 +4,7 @@ open Dim
 
    Composing the unit and counit the two possible ways gives different results.  Applying the counit and then the unit, ♮ ⇒ id ⇒ ♮, is declared to be the identity on ♮: so ♮ is a retract of the identity modality, split by counit (inclusion) and unit (retraction).  But applying the unit and then the counit, id ⇒ ♮ ⇒ id, is *not* the identity on id: it is a new, distinguished endomorphism of the identity modality, "zero".  (Since ♮ is a retract of id, zero = counit∘unit is automatically idempotent, zero∘zero = zero, though it is not itself a generator -- it is just the named composite of unit and counit.)
 
-   The theory is "almost" locally posetal: every hom-set of 2-cells is thin (has at most one element) except the endomorphisms of the identity modality, which has exactly the two elements {id, zero}.  Modalities still have just two normal forms, id and ♮, since every nonempty word in ♮ collapses to ♮ via the multiplication/comultiplication iso; and find_unique never actually needs to choose between id and zero, since it only ever inserts the trivial identity key when the source and target modalities already coincide, or the unit/counit when they don't.  But `compare` must still be able to distinguish id from zero on identity-typed cells, which it does by checking whether the cell's expression contains any occurrence of a generator: the identity never does, while zero, being built from unit and counit, always does.
+   The theory is "almost" locally posetal: every hom-set of 2-cells is thin (has at most one element) except the endomorphisms of the identity modality, which has exactly the two elements {id, zero}.  Modalities still have just two normal forms, id and ♮, since every nonempty word in ♮ collapses to ♮ via the multiplication/comultiplication iso; and find_unique doesn't need to choose between id and zero: there is no unique cell from the identity to itself, and elaboration inserts the trivial identity key whenever the source and target modalities coincide, or the unit/counit when they don't.  But `compare` must still be able to distinguish id from zero on identity-typed cells, which it does by checking whether the cell's expression contains any occurrence of a generator: the identity never does, while zero, being built from unit and counit, always does.
 
    ♮ is also adjoint to itself, ♮ ⊣ ♮: composing the reflector unit id ⇒ ♮ with the comultiplication ♮ ⇒ ♮∘♮ gives a unit id ⇒ ♮∘♮, and composing the multiplication ♮∘♮ ⇒ ♮ with the coreflector counit ♮ ⇒ id gives a counit ♮∘♮ ⇒ id; the triangle identities hold automatically because the endomorphisms of ♮ are also thin (so any two parallel self-maps of ♮ are equal).  Thus ♮ is sinister and, like the identity, transparent.
 
@@ -164,14 +164,18 @@ struct
                 | Neq -> None)
             | Neq -> None))
 
+  (* The endomorphisms of the identity modality are the identity and zero, so there is no unique one; elaboration uses the identity key whenever the source and target modalities coincide, without consulting find_unique.  Every other hom-set is thin. *)
   let find_unique : type a m n b.
       (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t option =
    fun x y ->
-    let (Normalize (_, xto, _)) = normalize x in
-    let (Normalize (_, _, yfrom)) = normalize y in
-    match bridge (Modalcell.vtgt xto) (Modalcell.vsrc yfrom) with
-    | Some b -> Some (Modalcell.vcomp (Modalcell.vcomp yfrom b) xto)
-    | None -> None
+    match (Modality.compare_id x, Modality.compare_id y) with
+    | Eq, Eq -> None
+    | _ -> (
+        let (Normalize (_, xto, _)) = normalize x in
+        let (Normalize (_, _, yfrom)) = normalize y in
+        match bridge (Modalcell.vtgt xto) (Modalcell.vsrc yfrom) with
+        | Some b -> Some (Modalcell.vcomp (Modalcell.vcomp yfrom b) xto)
+        | None -> None)
 
   (* Every hom-set is isomorphic, through the normalizations, to one between the normal forms id and ♮, and only the empty word normalizes to id.  So the only modalities with more than one cell between them are the identity and itself, which has the two cells id and zero; find_unique finds the cell in every other case if there is one (only choosing id for the identity), so it finds all of them. *)
   let find_all : type a m n b.

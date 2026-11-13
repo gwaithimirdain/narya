@@ -62,6 +62,8 @@ type _ parametric_locker =
 module type Theory = sig
   val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
+
+  (* The cell between two modalities, if there is exactly one.  None means that there are none, or more than one, or that the theory can't tell. *)
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
   val parametric_locker : 'a Mode.t -> ('a parametric_locker, string) Result.t
   val to_string : ('a, 'm, 'n, 'b) t -> string
