@@ -1449,7 +1449,7 @@ The component of a modal field lives behind a lock, and possibly at a different 
     : C
   
 
-The same applies to a prekey on the environment of a closure, which arises from using a modal function through a key: the variables bound by the closure itself are not affected by it.  But a variable is still treated as repeated if it is the value of a variable that the prekey makes unusable, as in the second example below, where the value a could only be the argument w.
+The same applies to a prekey on the environment of a closure, which arises from using a modal function through a key: the variables bound by the closure itself are not affected by it.  A variable that is the value of more than one variable of the metavariable's context can still be used if only one of them can produce it with the key it has, as in the second example below: the value a is that of both the argument w and the outer a, but the latter is behind the lock of the ♭-annotation of g, where it can only be used with a key from the identity to ♭, of which there are none.  But if the outer a is also ♭-annotated, as in the third example, then it can produce the value too, so there is no most general solution.
 
   $ narya -spatial - <<EOF
   > axiom A : Type
@@ -1457,26 +1457,31 @@ The same applies to a prekey on the environment of a closure, which arises from 
   > def clos (a : A) (b :♭| A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) b ≔ refl b in g a
   > about clos
   > def repeated (a : A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) a ≔ refl a in g a
+  > about repeated
+  > def ambiguous (a :♭| A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) a ≔ refl a in g a
   > EOF
   a b ↦ let g :♭| _ ≔ w ↦ b in let k ≔ refl b in g a
     : (a : A) (b :♭| A) → A
   
+  a ↦ let g :♭| _ ≔ w ↦ w in let k ≔ refl a in g a
+    : (a : A) → A
+  
    ￫ error[E0406]
    ￭ stdin
-   5 | def repeated (a : A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) a ≔ refl a in g a
+   7 | def ambiguous (a :♭| A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) a ≔ refl a in g a
      ^ term synthesized type
          Id A a a
        and is being checked against type
-         Id A (let only … in ?u1) a
+         Id A (let only … in ?u2) a
        but can't determine whether they are equal, since comparing head terms
          a
        and
-         let only … in ?u1
+         let only … in ?u2
        depends on unsolved placeholders
   
    ￫ error[E2004]
    ￭ stdin
-   5 | def repeated (a : A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) a ≔ refl a in g a
+   7 | def ambiguous (a :♭| A) : A ≔ let g :♭| A → A ≔ w ↦ _ in let k : Id A (g a) a ≔ refl a in g a
      ^ can't determine a value for this placeholder
   
   [1]
