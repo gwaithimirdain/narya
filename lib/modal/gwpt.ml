@@ -19,17 +19,17 @@ open Pairing
 
    Every modality is isomorphic to exactly one normal form: an alternating word in △ and □, optionally with a single ◇ at the source end (the first generator applied, displayed at the right in applicative notation) and/or a single ∇ at the target end (displayed at the left).  The reductions performed by normalization are exactly the three isomorphisms, each of which cancels an adjacent pair of generators in application order: (∇, ◇) by ε', (△, ◇) by ◇△ ≅ 1, and (∇, □) by □∇ ≅ 1.  Cancelling the source-most pair of a word whose tail is normal leaves a normal word, so normalization proceeds one generator at a time with no cascading.
 
-   Like the walking adjunction (see adjunction.ml), this theory is not locally posetal, and a 2-cell is uniquely determined by the pairing it induces on the generators of its domain and codomain words.  In addition to the arcs and strands of the walking adjunction, a unit η' pairs the (◇, ∇) in its codomain, the isomorphisms and their formal inverses pair the two generators of their domain or codomain, and the induced cells ι and κ produce through-strands connecting a □ in the domain to a ◇ in the codomain, or a △ to a ∇.  Unlike the walking adjunction, closed loops CAN arise when composing pairings vertically -- exactly when an isomorphism cancels its formal inverse -- and are dropped.
+   Like the walking adjunction (see adjunction.ml), this theory is not locally posetal, and a 2-cell between normal forms is uniquely determined by the pairing it induces on the generators of its domain and codomain words.  In addition to the arcs and strands of the walking adjunction, a unit η' pairs the (◇, ∇) in its codomain, the isomorphisms and their formal inverses pair the two generators of their domain or codomain, and the induced cells ι and κ produce through-strands connecting a □ in the domain to a ◇ in the codomain, or a △ to a ∇.  Unlike the walking adjunction, closed loops CAN arise when composing pairings vertically -- exactly when an isomorphism cancels its formal inverse -- and are dropped.
 
    Between two *normal forms* m and n, the possible pairings are as follows.
 
-   - Domain arcs connect an adjacent (in application order) pair (□, △) of m, killed by a counit ε.  As in the walking adjunction, arcs connecting non-adjacent generators are impossible: an arc encloses no through-strands, by planarity, so an innermost arc connects adjacent generators, and no domain arc can sit immediately inside another (removing an adjacent (□, △) creates only new adjacencies (△, □) and (△, ∇), neither of which is killable, since neither □∘△ ⇒ 1 nor ∇∘△ ⇒ 1 exists).  The other killable pairs (∇, ◇), (△, ◇), and (∇, □) never occur in a normal form.
+   - Domain arcs connect a pair (□, △) of m (in application order), killed by a counit ε, or a pair (△, □), killed by converting the □ to a ◇ with ι and then using ◇△ ≅ 1 (or equivalently, converting the △ to a ∇ with κ and using □∇ ≅ 1).  An arc encloses no through-strands, by planarity, so the generators inside it are killed by arcs nested inside it, after which the ends of the arc become adjacent; since both kinds of pair can be killed, arcs can be nested arbitrarily.  The other killable pairs (∇, ◇), (△, ◇), and (∇, □) never occur in a normal form, even after killing what is between them, since ◇ and ∇ can only occur at its ends.
 
    - Codomain arcs connect an adjacent pair (△, □) of n, created by a unit η; or the initial ◇ and final ∇ of n, created by a unit η', provided everything in between -- necessarily of the form (△□)^k -- is created by η's nested directly inside (removing adjacent (△, □) pairs creates only the new adjacency (◇, ∇), so the only possible nesting is a single (◇, ∇) arc over a tiling by (△, □) arcs).  The creatable pairs (∇, ◇), (△, ◇), and (∇, □) (inverses of the isomorphisms) never occur in a normal form.
 
    - Through-strands connect the remaining generators of m and n in order; each strand connects two equal generators, or a □ to a ◇ (the cell ι), or a △ to a ∇ (the cell κ).  Note that a (◇, ∇) codomain arc spans the whole of n, so it can occur only when m is entirely killed by domain arcs.
 
-   The enumeration in [count] below recurses on the source ends of the two words by case analysis on the fate of the source-most generator of m (killed by ε, or passed through after stripping unit-created arcs from the source end of n), together with the (◇, ∇) cap when m is exhausted; each pairing corresponds to exactly one recursion trace, so none is counted twice. *)
+   The enumeration in [count] below recurses on the source ends of the two words by case analysis on the fate of the source-most generator of m (killed by an arc, with everything inside the arc killed, or passed through after stripping unit-created arcs from the source end of n), together with the (◇, ∇) cap when m is exhausted; each pairing corresponds to exactly one recursion trace, so none is counted twice. *)
 
 module type Variant = sig
   type nonparametric
@@ -225,10 +225,6 @@ struct
 
   let pairing c = Pairing.of_pairs (Pairing.of_cell ~allow_loops:true { gen_pairs } c)
 
-  (* Two parallel 2-cells are equal exactly when they induce the same pairing. *)
-  let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
-   fun c1 c2 -> Pairing.equal (pairing c1) (pairing c2)
-
   (* The composite adjunction △◇ ⊣ ∇□, whose unit and counit are built out of those of the generating adjunctions:
        tridia_unit : 1_Type ⇒ ∇□△◇ is η' with an η inserted in the middle (next to the ◇);
        tridia_counit : △◇∇□ ⇒ 1_Type is ε' applied in the middle (next to the □) followed by ε. *)
@@ -376,6 +372,14 @@ struct
           Modalcell.prewhisker (Suc (Zero, g)) (Suc (Zero, g)) from_nf (Modality.of_gen g) in
         prepend g nf g_to g_from
 
+  (* Two parallel 2-cells between normal forms are equal exactly when they induce the same pairing.  Between other modalities this isn't true, since for instance an isomorphism followed by its inverse pairs the generators of its domain and of its codomain among themselves rather than with each other; so we first conjugate the cells by the normalizations of their source and target, which is a bijection onto the cells between the normal forms. *)
+  let compare : type a m n b. (a, m, n, b) Modalcell.t -> (a, m, n, b) Modalcell.t -> bool =
+   fun c1 c2 ->
+    let (Normalize (_, _, xfrom)) = normalize (Modalcell.vsrc c1) in
+    let (Normalize (_, yto, _)) = normalize (Modalcell.vtgt c1) in
+    let conj c = Modalcell.vcomp yto (Modalcell.vcomp c xfrom) in
+    Pairing.equal (pairing (conj c1)) (pairing (conj c2))
+
   (* Count the 2-cells between two normal forms, cutting off at two, and construct the cell if there is exactly one. *)
   type (_, _, _, _) count =
     | Zero_cells : ('a, 'm, 'n, 'b) count
@@ -420,29 +424,123 @@ struct
         | _ -> None)
     | _ -> None
 
+  (* The ways of writing a modality as a prefix (first applied) followed by a rest, with the evidence that they compose to it. *)
+  type (_, _, _) split =
+    | Split :
+        ('a, 'p, 'x) Modality.t * ('x, 'r, 'b) Modality.t * ('a, 'p, 'x, 'r, 'b, 'm) Modality.comp
+        -> ('a, 'm, 'b) split
+
+  let rec splits : type a m b. (a, m, b) Modality.t -> (a, m, b) split list =
+   fun m ->
+    match m with
+    | Path (Zero, _) -> [ Split (m, m, Zero) ]
+    | Path (Suc (inner, g), b) ->
+        Split (Modality.id (Modality.Gen.src g), m, Zero)
+        :: List.map
+             (fun (Split (p, r, ev)) -> Split (Modality.suc p g, r, Suc (ev, g)))
+             (splits (Modality.Path (inner, b)))
+
+  (* A modality consisting of a single generator. *)
+  type (_, _, _) single =
+    | Single : ('x, 'g, 'y) Modality.Gen.t -> ('x, ('y Modality.id, 'g) Modality.suc, 'y) single
+
+  let single : type x r y. (x, r, y) Modality.t -> (x, r, y) single option = function
+    | Path (Suc (Zero, g), _) -> Some (Single g)
+    | _ -> None
+
+  (* The counit of △ ⊣ □ kills an adjacent (□, △), in application order; and an adjacent (△, □) can also be killed, by converting the □ to a ◇ with ι and then using ◇△ ≅ 1. *)
+  let tb_kill =
+    Modalcell.vcomp dt_iso
+      (Modalcell.hcomp
+         (Suc (Zero, Triangle.modality))
+         (Suc (Zero, Triangle.modality))
+         box_dia (Modalcell.id tri))
+
+  (* All the cells w ⇒ id that kill all of a word w by (necessarily nested) arcs, and those in which, moreover, the first and last generators of w are paired with each other. *)
+  let rec kill_all : type a m. (a, m, a) Modality.t -> (a, m, a Modality.id, a) Modalcell.t list =
+   fun w ->
+    match w with
+    | Path (Zero, _) -> [ Modalcell.id w ]
+    | Path (Suc _, _) ->
+        let per_split : (a, m, a) split -> (a, m, a Modality.id, a) Modalcell.t list =
+         fun (Split (p, r, ev)) ->
+          if Modality.length p = 0 then []
+          else
+            match Mode.compare (Modality.src p) (Modality.tgt p) with
+            | Neq -> []
+            | Eq ->
+                List.concat_map
+                  (fun cp ->
+                    List.map
+                      (fun cr -> Modalcell.vcomp cr (Modalcell.hcomp ev Zero (Modalcell.id r) cp))
+                      (kill_all r))
+                  (arc_cells p) in
+        List.concat_map per_split (splits w)
+
+  and arc_cells : type a m. (a, m, a) Modality.t -> (a, m, a Modality.id, a) Modalcell.t list =
+   fun p -> List.concat_map arc_with_last (splits p)
+
+  (* Writing p as h ∘ i ∘ g with h and g single generators: first h, ... *)
+  and arc_with_last : type a m. (a, m, a) split -> (a, m, a Modality.id, a) Modalcell.t list =
+   fun (Split (pre, h, eva)) ->
+    match single h with
+    | None -> []
+    | Some (Single hg) -> List.concat_map (arc_with_first h hg eva) (splits pre)
+
+  (* ... and then g. *)
+  and arc_with_first : type a pm x hg m.
+      (x, (a Modality.id, hg) Modality.suc, a) Modality.t ->
+      (x, hg, a) Modality.Gen.t ->
+      (a, pm, x, (a Modality.id, hg) Modality.suc, a, m) Modality.comp ->
+      (a, pm, x) split ->
+      (a, m, a Modality.id, a) Modalcell.t list =
+   fun h hg eva (Split (g, i, evg)) ->
+    match single g with
+    | None -> []
+    | Some (Single gg) -> (
+        match Mode.compare (Modality.src i) (Modality.tgt i) with
+        | Neq -> []
+        | Eq -> (
+            (* Kill the inside, leaving the first and last generators adjacent, and then kill them. *)
+            let inside ci =
+              Modalcell.hcomp eva
+                (Suc (Zero, gg))
+                (Modalcell.id h)
+                (Modalcell.hcomp evg (Suc (Zero, gg)) ci (Modalcell.id g)) in
+            match
+              ( Modality.Gen.compare gg Box.modality,
+                Modality.Gen.compare hg Triangle.modality,
+                Modality.Gen.compare gg Triangle.modality,
+                Modality.Gen.compare hg Box.modality )
+            with
+            | Eq, Eq, _, _ ->
+                List.map (fun ci -> Modalcell.vcomp tb_counit (inside ci)) (kill_all i)
+            | _, _, Eq, Eq -> List.map (fun ci -> Modalcell.vcomp tb_kill (inside ci)) (kill_all i)
+            | _ -> []))
+
   (* The enumeration recurses on the source (first-applied) ends of the two normal-form words, following the combinatorial description of pairings given at the top of the file.  Each pairing is counted exactly once, by case analysis on the fate of the source-most generator of m. *)
   let rec count : type a m n b. (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) count =
    fun m n ->
-    (* First alternative: the source-most generator of m is killed by a counit ε.  It can only be paired with the generator adjacent to it, so m must begin (in application order) with (□, △), i.e. m = m'' ∘ △□; and the cell factors as a counit at the source end of m followed by a cell m'' ⇒ n. *)
+    (* First alternative: the source-most generator of m is killed by an arc, whose other end is the last generator of some prefix p of m, with everything inside it killed (see arc_cells); and the cell factors as such a cell p ⇒ 1 at the source end of m followed by a cell from the rest of m to n. *)
     let kills : (a, m, n, b) count =
-      match m with
-      | Path (Suc (Suc (ev, g2), g1), mb) -> (
-          match
-            (Modality.Gen.compare g1 Box.modality, Modality.Gen.compare g2 Triangle.modality)
-          with
-          | Eq, Eq -> (
-              let m'' = Modality.Path (ev, mb) in
-              match count m'' n with
-              | Zero_cells -> Zero_cells
-              | Many_cells -> Many_cells
-              | One_cell c ->
-                  let kill =
-                    Modalcell.hcomp
-                      (Suc (Suc (Zero, Triangle.modality), Box.modality))
-                      Zero (Modalcell.id m'') tb_counit in
-                  One_cell (Modalcell.vcomp c kill))
-          | _ -> Zero_cells)
-      | _ -> Zero_cells in
+      let per_split : (a, m, n, b) count -> (a, m, b) split -> (a, m, n, b) count =
+       fun acc (Split (p, r, ev)) ->
+        if Modality.length p = 0 then acc
+        else
+          match Mode.compare (Modality.src p) (Modality.tgt p) with
+          | Neq -> acc
+          | Eq ->
+              let rest = count r n in
+              List.fold_left
+                (fun acc cp ->
+                  add_count acc
+                    (match rest with
+                    | Zero_cells -> Zero_cells
+                    | Many_cells -> Many_cells
+                    | One_cell c ->
+                        One_cell (Modalcell.vcomp c (Modalcell.hcomp ev Zero (Modalcell.id r) cp))))
+                acc (arc_cells p) in
+      List.fold_left per_split Zero_cells (splits m) in
     (* Second alternative: the source-most generator of m (if any) passes straight through to n, possibly converted by ι : □ ⇒ ◇ or κ : △ ⇒ ∇.  Then all the generators of n on the source side of its partner must be paired among themselves, forming unit-created adjacent (△, □) pairs tiling the source end of n.  So we strip zero or more such pairs from n, and then either pair up the source-most generators of m and the stripped n and recurse, or finish.  Finishing requires the stripped n to be empty, or -- if m is also empty -- to consist of a single (◇, ∇) arc created by η' over a tiling by η's, built by [cap].  The wrap argument turns a cell targeting the stripped n back into one targeting n, by vertically composing with the unit cells that create the stripped pairs. *)
     let rec strip : type nk.
         (a, nk, b) Modality.t ->
