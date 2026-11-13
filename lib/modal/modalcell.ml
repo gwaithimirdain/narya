@@ -129,19 +129,16 @@ module type Theory = sig
 
   (* The cell between two modalities, if there is exactly one.  None means that there are none, or more than one, or that the theory can't tell. *)
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
+
+  (* All the cells between two modalities: Some of a list asserts that it contains all of them (so in particular there are finitely many), while None makes no assertion (there might be infinitely many, or the theory might not know how to find them).  This is separate from find_unique, since a theory may be able to tell quickly that there isn't a unique cell when enumerating them all would take longer, and most callers only need to know whether there is a unique one. *)
+  val find_all :
+    ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t list option
+
   val parametric_locker : 'a Mode.t -> ('a parametric_locker, string) Result.t
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
 
-(* A mode theory that can also enumerate the cells between two modalities: Some of a list asserts that it contains all of them (so in particular there are finitely many), while None makes no assertion (there might be infinitely many, or the theory might not know how to find them).  find_unique is kept separately, since a theory may be able to tell quickly that there isn't a unique cell when enumerating them all would take longer, and most callers only need to know whether there is a unique one. *)
-module type Enumerating_theory = sig
-  include Theory
-
-  val find_all :
-    ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t list option
-end
-
-let theory : (module Enumerating_theory) ref =
+let theory : (module Theory) ref =
   ref
     (module struct
       let sinister _ = failwith "Modalcell.theory not set"
@@ -150,30 +147,9 @@ let theory : (module Enumerating_theory) ref =
       let find_all _ _ = failwith "Modalcell.theory not set"
       let parametric_locker _ = Error "undefined mode theory"
       let to_string _ = failwith "Modalcell.theory not set"
-    end : Enumerating_theory)
+    end : Theory)
 
-(* A theory that can't enumerate cells can only assert that a unique cell is all of them. *)
-let choose_theory (module T : Theory) =
-  theory :=
-    (module struct
-      include T
-
-      let find_all m n = Option.map (fun c -> [ c ]) (T.find_unique m n)
-    end : Enumerating_theory)
-
-let choose_enumerating_theory (t : (module Enumerating_theory)) = theory := t
-
-(* A locally posetal theory whose find_unique decides whether there is a cell can enumerate them all: none, or the one it finds. *)
-let choose_complete_theory (module T : Theory) =
-  theory :=
-    (module struct
-      include T
-
-      let find_all m n =
-        match T.find_unique m n with
-        | Some c -> Some [ c ]
-        | None -> Some []
-    end : Enumerating_theory)
+let choose_theory (t : (module Theory)) = theory := t
 
 (* Ask the current theory whether a modality is sinister (a declared left adjoint), obtaining the adjunction data if so. *)
 let sinister : type a f b. (a, f, b) Modality.t -> (a, f, b) sinister option =
@@ -328,7 +304,7 @@ let find_unique : type a m n b c d.
       | None -> None)
   | _ -> None
 
-(* All the cells between two modalities, if the mode theory can enumerate them (see Enumerating_theory).  If the modalities don't have the same source and target modes, there are none. *)
+(* All the cells between two modalities, if the mode theory can enumerate them (see Theory).  If the modalities don't have the same source and target modes, there are none. *)
 type (_, _, _, _, _, _) find_all =
   | All : ('a, 'm, 'n, 'b) t list -> ('a, 'm, 'b, 'a, 'n, 'b) find_all
   | Incompatible : ('a, 'm, 'b, 'c, 'n, 'd) find_all

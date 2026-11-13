@@ -109,6 +109,9 @@ module ComposableTransformationsCell
                 | Eq, Eq -> Some gamma
                 | _ -> None)))
 
+  (* Since the theory is locally posetal and find_unique decides whether there is a cell, it finds all of them. *)
+  let find_all m n = Some (Option.to_list (find_unique m n))
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "composable transformations"
 
@@ -141,6 +144,6 @@ let install modes modalities modalcells =
   let module Circle = Modality.Generate (Circ) in
   let module Box' = Modality.Generate (Box) in
   let module Tri' = Modality.Generate (Tri) in
-  Modalcell.choose_complete_theory
+  Modalcell.choose_theory
     (module ComposableTransformationsCell (DomMode) (CodMode) (Circle) (Box') (Tri')
     : Modalcell.Theory)

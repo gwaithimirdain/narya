@@ -85,6 +85,9 @@ module Functorcell
     | Eq -> Some (Modalcell.id x)
     | Neq -> None
 
+  (* Since the theory is locally posetal and find_unique decides whether there is a cell, it finds all of them. *)
+  let find_all m n = Some (Option.to_list (find_unique m n))
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "functor"
 
@@ -118,6 +121,5 @@ let install (module V : Variant) modes modalities modalcells =
   | _ -> failwith "wrong number of modality names for functor mode theory");
   Modality.set_one_char true modalities;
   let module Functor = Modality.Generate (CircGen) in
-  Modalcell.choose_complete_theory
-    (module Functorcell (V) (DomMode) (CodMode) (Functor) : Modalcell.Theory);
+  Modalcell.choose_theory (module Functorcell (V) (DomMode) (CodMode) (Functor) : Modalcell.Theory);
   Modality.choose_theory (module FunctorModalities (V) : Modality.Theory)

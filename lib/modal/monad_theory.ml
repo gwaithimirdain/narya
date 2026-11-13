@@ -205,4 +205,4 @@ let install modes modalities modalcells =
       Modalcell.rename Cells.unit eta;
       Modalcell.rename Cells.mult mu
   | _ -> failwith "wrong number of modal cell names for monad mode theory");
-  Modalcell.choose_enumerating_theory (module Cells : Modalcell.Enumerating_theory)
+  Modalcell.choose_theory (module Cells : Modalcell.Theory)

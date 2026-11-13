@@ -274,6 +274,9 @@ struct
         | None -> None)
     | _ -> failwith "spatial: unknown mode"
 
+  (* Since the theory is locally posetal and find_unique decides whether there is a cell, it finds all of them. *)
+  let find_all m n = Some (Option.to_list (find_unique m n))
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "spatial"
 
@@ -326,5 +329,5 @@ let install (module V : Variant) modes modalities modalcells =
   let module Flat = Modality.Generate (Flat) in
   let module Sharp = Modality.Generate (Sharp) in
   let module Cells = SpatialCells (V) (Testmode) (Flat) (Sharp) in
-  Modalcell.choose_complete_theory (module Cells : Modalcell.Theory);
+  Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)
