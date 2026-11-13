@@ -8,7 +8,7 @@
  (modules modal_closure)
  (libraries modal asai))
 
-; Check that the decision procedures of the locally posetal mode theories are closed under the operations generating 2-cells (see modal_closure.ml).
+; Check that the decision procedures of the locally posetal mode theories, and of ambiflector, are closed under the operations generating 2-cells (see modal_closure.ml).
 
 (rule
  (with-stdout-to
@@ -27,7 +27,8 @@
    (run %{exe:modal_closure.exe} cospatial 7)
    (run %{exe:modal_closure.exe} local 6)
    (run %{exe:modal_closure.exe} tconn 6)
-   (run %{exe:modal_closure.exe} guarded 6))))
+   (run %{exe:modal_closure.exe} guarded 6)
+   (run %{exe:modal_closure.exe} ambiflector 8))))
 
 (rule
  (alias runtest)

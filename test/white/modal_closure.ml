@@ -1,5 +1,4 @@
-(* Check that a locally posetal mode theory's find_unique is closed under the operations that generate 2-cells, on all modalities up to a given length: it must contain the generating 2-cells and identities, and be closed under vertical composition and whiskering by generators.  If it is, it contains every 2-cell derivable without passing through a longer modality.  Run with the name of a mode theory and a maximum length. *)
-
+(* Check that a mode theory's find_unique, which decides whether there is a cell between two modalities, is closed under the operations that generate 2-cells, on all modalities up to a given length: it must contain the generating 2-cells and identities, and be closed under vertical composition and whiskering by generators.  If it is, it contains every 2-cell derivable without passing through a longer modality.  Run with the name of a mode theory and a maximum length. *)
 
 open Modal
 
@@ -13,7 +12,8 @@ let install = function
   | "composable-transformations" -> Composable_transformations.install [] [] []
   | "interchange" -> Interchange.install [] [] []
   | "reflector" -> Reflector.install [] [] []
-  | "coreflector" -> Coreflector.install (module Coreflector.Ordinary : Coreflector.Variant) [] [] []
+  | "coreflector" ->
+      Coreflector.install (module Coreflector.Ordinary : Coreflector.Variant) [] [] []
   | "coreflection" ->
       Coreflection.install (module Coreflection.Ordinary : Coreflection.Variant) [] [] []
   | "guarded" -> Guarded.install [] [] []
@@ -21,6 +21,8 @@ let install = function
   | "tconn" -> Tconn.install (module Tconn.Ordinary : Tconn.Variant) [] [] []
   | "spatial" -> Spatial.install (module Spatial.Ordinary : Spatial.Variant) [] [] []
   | "cospatial" -> Cospatial.install (module Cospatial.Ordinary : Cospatial.Variant) [] [] []
+  | "ambiflector" ->
+      Ambiflector.install (module Ambiflector.Ordinary : Ambiflector.Variant) [] [] []
   | t -> failwith ("unknown theory " ^ t)
 
 let loc x = Asai.Range.locate_opt None x
@@ -61,14 +63,19 @@ let () =
   Array.iteri (fun i w -> Hashtbl.replace index (key w) i) words;
   let n = Array.length words in
   let same_hom (W x) (W y) =
-    match (Mode.compare (Modality.src x) (Modality.src y), Mode.compare (Modality.tgt x) (Modality.tgt y)) with
+    match
+      ( Mode.compare (Modality.src x) (Modality.src y),
+        Mode.compare (Modality.tgt x) (Modality.tgt y) )
+    with
     | Eq, Eq -> true
     | _ -> false in
   let decide (W x) (W y) =
     match Modalcell.find_unique x y with
     | Some _ -> true
     | None -> false
-    | exception e -> Printf.printf "exception on %s => %s: %s\n" (key (W x)) (key (W y)) (Printexc.to_string e); false in
+    | exception e ->
+        Printf.printf "exception on %s => %s: %s\n" (key (W x)) (key (W y)) (Printexc.to_string e);
+        false in
   let d = Array.make_matrix n n false in
   for i = 0 to n - 1 do
     for j = 0 to n - 1 do
@@ -128,6 +135,8 @@ let () =
           gens
     done
   done;
-  let cells = Array.fold_left (fun acc row -> Array.fold_left (fun a b -> if b then a + 1 else a) acc row) 0 d in
+  let cells =
+    Array.fold_left (fun acc row -> Array.fold_left (fun a b -> if b then a + 1 else a) acc row) 0 d
+  in
   Printf.printf "%s: %d words up to length %d, %d cells, %d violations\n" theory n maxlen cells
     !violations

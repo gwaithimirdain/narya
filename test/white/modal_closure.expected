@@ -12,3 +12,4 @@ cospatial: 255 words up to length 7, 48642 cells, 0 violations
 local: 51 words up to length 6, 583 cells, 0 violations
 tconn: 51 words up to length 6, 583 cells, 0 violations
 guarded: 86 words up to length 6, 1451 cells, 0 violations
+ambiflector: 9 words up to length 8, 81 cells, 0 violations

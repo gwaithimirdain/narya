@@ -1486,6 +1486,37 @@ The same applies to a prekey on the environment of a closure, which arises from 
   
   [1]
 
+In the ambiflector mode theory, the identity modality has two endomorphisms, the identity and zero (ø), so a variable acted on by zero is the image of the same variable with either key, and there is no most general solution.  (Keys are not yet displayed.)
+
+  $ narya -ambiflector - <<EOF
+  > axiom A : Type
+  > def onesol (b : A) : A ≔ let u : A ≔ _ in let k : Id A u b ≔ refl b in u
+  > about onesol
+  > def twosol (b : A) : A ≔ let u : A ≔ _ in let k : Id A (u #ø) (b #ø) ≔ refl (b #ø) in u
+  > EOF
+  b ↦ let u ≔ b in let k ≔ refl b in u
+    : (b : A) → A
+  
+   ￫ error[E0406]
+   ￭ stdin
+   4 | def twosol (b : A) : A ≔ let u : A ≔ _ in let k : Id A (u #ø) (b #ø) ≔ refl (b #ø) in u
+     ^ term synthesized type
+         Id A b b
+       and is being checked against type
+         Id A (let only … in ?u1) b
+       but can't determine whether they are equal, since comparing head terms
+         b
+       and
+         let only … in ?u1
+       depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   4 | def twosol (b : A) : A ≔ let u : A ≔ _ in let k : Id A (u #ø) (b #ø) ≔ refl (b #ø) in u
+     ^ can't determine a value for this placeholder
+  
+  [1]
+
 A variable underneath a prekey can also be sent to a tuple or abstraction, including a tuple of a record with a modal field.  Then the variable it is recovered from gets the unique key inside the modal projections, if there is one, as long as the prekeys send it to the key in the value.
 
   $ narya -adjunction - <<EOF
