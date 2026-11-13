@@ -189,12 +189,12 @@ still present.
   
   [1]
 
-Keys applied to other keys are displayed, even if each is the unique cell
-between its endpoints, since the composite need not be the key that would be
-inserted on the variable: here it differs from the identity.
+A nest of keys applied to a variable is displayed unless its composite is the
+key that would be inserted on the variable, even if each key is the unique cell
+between its endpoints: here the composite differs from the identity.
 
   $ narya -gwpt -e "axiom A : Disc" -e "axiom P : (_ :□△| A) → Disc" -e "def t1 (y :□△| A) : Disc ≔ P (y #□⇨◇.△ #◇△⇨1 #1⇨□△)" -e "about t1" -e "def t2 (y :□△| A) : Id Disc (t1 y) (P y) ≔ refl _"
-  y ↦ P (y #◇△⇨1 #1⇨□△)
+  y ↦ P (y #□⇨◇.△ #◇△⇨1 #1⇨□△)
     : (y :□△| A) → Disc
   
    ￫ error[E0401]
