@@ -474,7 +474,6 @@ let unparse_modality_name : type dom modality mode. (dom, modality, mode) Modali
           (unlocated (Ident ([ m ], [])))
           ms)
 
-(* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 (* The composite of a nest of keys applied to a term, from the source of the innermost to the target of the outermost, if their sources and targets match up as they should. *)
 type any_cell = Any_cell : ('a, 'm, 'n, 'b) Modalcell.t -> any_cell
 
@@ -507,6 +506,7 @@ let decide_keys : type mode a mu nu cod.
               | Neq -> `Print)
           | None -> `Print))
 
+(* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type mode n lt ls rt rs s.
     n Names.t ->
     (mode, n, s) term ->
