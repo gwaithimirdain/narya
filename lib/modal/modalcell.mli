@@ -69,7 +69,18 @@ module type Theory = sig
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
 
+module type Enumerating_theory = sig
+  include Theory
+
+  val find_all :
+    ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t list option
+end
+
 val choose_theory : (module Theory) -> unit
+val choose_enumerating_theory : (module Enumerating_theory) -> unit
+
+(* For a locally posetal theory whose find_unique decides whether there is a cell. *)
+val choose_complete_theory : (module Theory) -> unit
 val sinister : ('a, 'f, 'b) Modality.t -> ('a, 'f, 'b) sinister option
 
 type (_, _, _, _, _, _) find_unique =
@@ -77,6 +88,13 @@ type (_, _, _, _, _, _) find_unique =
 
 val find_unique :
   ('a, 'm, 'b) Modality.t -> ('c, 'n, 'd) Modality.t -> ('a, 'm, 'b, 'c, 'n, 'd) find_unique option
+
+type (_, _, _, _, _, _) find_all =
+  | All : ('a, 'm, 'n, 'b) t list -> ('a, 'm, 'b, 'a, 'n, 'b) find_all
+  | Incompatible : ('a, 'm, 'b, 'c, 'n, 'd) find_all
+
+val find_all :
+  ('a, 'm, 'b) Modality.t -> ('c, 'n, 'd) Modality.t -> ('a, 'm, 'b, 'c, 'n, 'd) find_all option
 
 val id : ('dom, 'modality, 'cod) Modality.t -> ('dom, 'modality, 'modality, 'cod) t
 val id2 : 'mode Mode.t -> ('mode, 'mode Modality.id, 'mode Modality.id, 'mode) t

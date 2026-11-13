@@ -141,6 +141,6 @@ let install modes modalities modalcells =
   let module Circle = Modality.Generate (Circ) in
   let module Box' = Modality.Generate (Box) in
   let module Tri' = Modality.Generate (Tri) in
-  Modalcell.choose_theory
+  Modalcell.choose_complete_theory
     (module ComposableTransformationsCell (DomMode) (CodMode) (Circle) (Box') (Tri')
     : Modalcell.Theory)

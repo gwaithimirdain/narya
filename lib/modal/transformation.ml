@@ -108,5 +108,5 @@ let install modes modalities modalcells =
   Modality.set_one_char true modalities;
   let module Circle = Modality.Generate (Circ) in
   let module Box' = Modality.Generate (Box) in
-  Modalcell.choose_theory
+  Modalcell.choose_complete_theory
     (module Transformationcell (DomMode) (CodMode) (Circle) (Box') : Modalcell.Theory)

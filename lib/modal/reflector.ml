@@ -112,4 +112,4 @@ let install modes modalities modalcells =
   | _ -> failwith "wrong number of modality names for reflector mode theory");
   Modality.set_one_char true modalities;
   let module Reflector = Modality.Generate (Sharp) in
-  Modalcell.choose_theory (module ReflectorCells (Testmode) (Reflector) : Modalcell.Theory)
+  Modalcell.choose_complete_theory (module ReflectorCells (Testmode) (Reflector) : Modalcell.Theory)

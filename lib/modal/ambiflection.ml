@@ -315,6 +315,17 @@ struct
 
   (* As in Ambiflector, △□ does not become usable to strip external parametricity: there is no
      parametric locker, and -external is not allowed with this theory. *)
+  (* Every hom-set is isomorphic, through the normalizations, to one between normal forms, and only the empty word at Type normalizes to id_Type.  So the only modalities with more than one cell between them are the identity at Type and itself, with the two cells id and zero; find_unique finds the cell in every other case (and the identity there), so it finds all of them. *)
+  let find_all : type a m n b.
+      (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t list option =
+   fun x y ->
+    match (Modality.compare_id x, Modality.compare_id y, Mode.compare (Modality.src x) typ) with
+    | Eq, Eq, Eq -> Some [ Modalcell.id x; zero ]
+    | _ -> (
+        match find_unique x y with
+        | Some c -> Some [ c ]
+        | None -> Some [])
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "ambiflection"
 
@@ -377,5 +388,5 @@ let install (module V : Variant) modes modalities modalcells =
       Modalcell.rename Cells.counit eps;
       Modalcell.rename Cells.zero zero
   | _ -> failwith ("wrong number of modal cell names for " ^ V.name ^ " mode theory"));
-  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modalcell.choose_enumerating_theory (module Cells : Modalcell.Enumerating_theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

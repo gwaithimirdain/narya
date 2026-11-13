@@ -290,5 +290,5 @@ let install (module V : Variant) modes modalities modalcells =
   let module Shape = Modality.Generate (Sh) in
   let module Flat = Modality.Generate (Fl) in
   let module Cells = CospatialCells (V) (Type) (Shape) (Flat) in
-  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modalcell.choose_complete_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

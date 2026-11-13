@@ -29,7 +29,7 @@ open Pairing
 
    - Through-strands connect the remaining generators of m and n in order; each strand connects two equal generators, or a □ to a ◇ (the cell ι), or a △ to a ∇ (the cell κ).  Note that a (◇, ∇) codomain arc spans the whole of n, so it can occur only when m is entirely killed by domain arcs.
 
-   The enumeration in [count] below recurses on the source ends of the two words by case analysis on the fate of the source-most generator of m (killed by an arc, with everything inside the arc killed, or passed through after stripping unit-created arcs from the source end of n), together with the (◇, ∇) cap when m is exhausted; each pairing corresponds to exactly one recursion trace, so none is counted twice. *)
+   The enumeration in [Enumerate] below recurses on the source ends of the two words by case analysis on the fate of the source-most generator of m (killed by an arc, with everything inside the arc killed, or passed through after stripping unit-created arcs from the source end of n), together with the (◇, ∇) cap when m is exhausted; each pairing corresponds to exactly one recursion trace, so none is found twice.  (This is checked, up to a given length, by the test in test/white/modal_closure.ml.) *)
 
 module type Variant = sig
   type nonparametric
@@ -380,18 +380,19 @@ struct
     let conj c = Modalcell.vcomp yto (Modalcell.vcomp c xfrom) in
     Pairing.equal (pairing (conj c1)) (pairing (conj c2))
 
-  (* Count the 2-cells between two normal forms, cutting off at two, and construct the cell if there is exactly one. *)
-  type (_, _, _, _) count =
-    | Zero_cells : ('a, 'm, 'n, 'b) count
-    | One_cell : ('a, 'm, 'n, 'b) Modalcell.t -> ('a, 'm, 'n, 'b) count
-    | Many_cells : ('a, 'm, 'n, 'b) count
+  (* A way of collecting the 2-cells between two normal forms found by the enumeration below: counting them, or listing them. *)
+  module type Collection = sig
+    type ('a, 'm, 'n, 'b) t
 
-  let add_count : type a m n b. (a, m, n, b) count -> (a, m, n, b) count -> (a, m, n, b) count =
-   fun x y ->
-    match (x, y) with
-    | Zero_cells, y -> y
-    | x, Zero_cells -> x
-    | _ -> Many_cells
+    val zero : ('a, 'm, 'n, 'b) t
+    val one : ('a, 'm, 'n, 'b) Modalcell.t -> ('a, 'm, 'n, 'b) t
+    val add : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t
+
+    val map :
+      (('a, 'm, 'k, 'b) Modalcell.t -> ('c, 'p, 'q, 'd) Modalcell.t) ->
+      ('a, 'm, 'k, 'b) t ->
+      ('c, 'p, 'q, 'd) t
+  end
 
   (* Build the cell 1_Type ⇒ rest∘◇, where rest is required to have the normal form ∇∘(□△)^k (otherwise return None): the unit η' : 1 ⇒ ∇◇, with k units η inserted next to the ◇. *)
   let rec cap : type r.
@@ -518,112 +519,141 @@ struct
             | _, _, Eq, Eq -> List.map (fun ci -> Modalcell.vcomp tb_kill (inside ci)) (kill_all i)
             | _ -> []))
 
-  (* The enumeration recurses on the source (first-applied) ends of the two normal-form words, following the combinatorial description of pairings given at the top of the file.  Each pairing is counted exactly once, by case analysis on the fate of the source-most generator of m. *)
-  let rec count : type a m n b. (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) count =
-   fun m n ->
-    (* First alternative: the source-most generator of m is killed by an arc, whose other end is the last generator of some prefix p of m, with everything inside it killed (see arc_cells); and the cell factors as such a cell p ⇒ 1 at the source end of m followed by a cell from the rest of m to n. *)
-    let kills : (a, m, n, b) count =
-      let per_split : (a, m, n, b) count -> (a, m, b) split -> (a, m, n, b) count =
-       fun acc (Split (p, r, ev)) ->
-        if Modality.length p = 0 then acc
-        else
-          match Mode.compare (Modality.src p) (Modality.tgt p) with
-          | Neq -> acc
-          | Eq ->
-              let rest = count r n in
-              List.fold_left
-                (fun acc cp ->
-                  add_count acc
-                    (match rest with
-                    | Zero_cells -> Zero_cells
-                    | Many_cells -> Many_cells
-                    | One_cell c ->
-                        One_cell (Modalcell.vcomp c (Modalcell.hcomp ev Zero (Modalcell.id r) cp))))
-                acc (arc_cells p) in
-      List.fold_left per_split Zero_cells (splits m) in
-    (* Second alternative: the source-most generator of m (if any) passes straight through to n, possibly converted by ι : □ ⇒ ◇ or κ : △ ⇒ ∇.  Then all the generators of n on the source side of its partner must be paired among themselves, forming unit-created adjacent (△, □) pairs tiling the source end of n.  So we strip zero or more such pairs from n, and then either pair up the source-most generators of m and the stripped n and recurse, or finish.  Finishing requires the stripped n to be empty, or -- if m is also empty -- to consist of a single (◇, ∇) arc created by η' over a tiling by η's, built by [cap].  The wrap argument turns a cell targeting the stripped n back into one targeting n, by vertically composing with the unit cells that create the stripped pairs. *)
-    let rec strip : type nk.
-        (a, nk, b) Modality.t ->
-        ((a, m, nk, b) Modalcell.t -> (a, m, n, b) Modalcell.t) ->
-        (a, m, n, b) count =
-     fun nk wrap ->
-      let here : (a, m, n, b) count =
-        match (m, nk) with
-        | Path (Zero, _), Path (Zero, _) -> One_cell (wrap (Modalcell.id m))
-        | Path (Zero, _), Path (Suc (nev, h), nb) -> (
-            (* The (◇, ∇) cap spans the whole of the remaining codomain, so it can only occur when m is exhausted. *)
-            match Modality.Gen.compare h Diamond.modality with
-            | Eq -> (
-                match cap (Modality.Path (nev, nb)) with
-                | Some c -> One_cell (wrap c)
-                | None -> Zero_cells)
-            | Neq -> Zero_cells)
-        | Path (Suc (mev, g), mb), Path (Suc (nev, h), nb) -> (
-            let m' = Modality.Path (mev, mb) in
-            let nk' = Modality.Path (nev, nb) in
-            match Modality.Gen.compare g h with
-            | Eq -> (
-                match count m' nk' with
-                | Zero_cells -> Zero_cells
-                | Many_cells -> Many_cells
-                | One_cell c ->
-                    One_cell
-                      (wrap
-                         (Modalcell.hcomp
-                            (Suc (Zero, g))
-                            (Suc (Zero, g))
-                            c
-                            (Modalcell.id (Modality.of_gen g)))))
-            | Neq -> (
-                match
-                  ( Modality.Gen.compare g Box.modality,
-                    Modality.Gen.compare h Diamond.modality,
-                    Modality.Gen.compare g Triangle.modality,
-                    Modality.Gen.compare h Nabla.modality )
-                with
-                | Eq, Eq, _, _ -> (
-                    (* ι : □ ⇒ ◇ *)
-                    match count m' nk' with
-                    | Zero_cells -> Zero_cells
-                    | Many_cells -> Many_cells
-                    | One_cell c ->
-                        One_cell
-                          (wrap
-                             (Modalcell.hcomp
-                                (Suc (Zero, Box.modality))
-                                (Suc (Zero, Diamond.modality))
-                                c box_dia)))
-                | _, _, Eq, Eq -> (
-                    (* κ : △ ⇒ ∇ *)
-                    match count m' nk' with
-                    | Zero_cells -> Zero_cells
-                    | Many_cells -> Many_cells
-                    | One_cell c ->
-                        One_cell
-                          (wrap
-                             (Modalcell.hcomp
-                                (Suc (Zero, Triangle.modality))
-                                (Suc (Zero, Nabla.modality))
-                                c tri_nab)))
-                | _ -> Zero_cells))
-        | _ -> Zero_cells in
-      let deeper : (a, m, n, b) count =
-        match nk with
-        | Path (Suc (Suc (nev, g2), g1), nb) -> (
-            match
-              (Modality.Gen.compare g1 Triangle.modality, Modality.Gen.compare g2 Box.modality)
-            with
-            | Eq, Eq ->
-                let n1 = Modality.Path (nev, nb) in
-                let create =
-                  Modalcell.hcomp Zero
-                    (Suc (Suc (Zero, Box.modality), Triangle.modality))
-                    (Modalcell.id n1) tb_unit in
-                strip n1 (fun c -> wrap (Modalcell.vcomp create c))
-            | _ -> Zero_cells)
-        | _ -> Zero_cells in
-      add_count here deeper in
-    add_count kills (strip n (fun c -> c))
+  (* The enumeration recurses on the source (first-applied) ends of the two normal-form words, following the combinatorial description of pairings given at the top of the file.  Each pairing is found exactly once, by case analysis on the fate of the source-most generator of m. *)
+  module Enumerate (C : Collection) = struct
+    let rec cells : type a m n b. (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) C.t =
+     fun m n ->
+      (* First alternative: the source-most generator of m is killed by an arc, whose other end is the last generator of some prefix p of m, with everything inside it killed (see arc_cells); and the cell factors as such a cell p ⇒ 1 at the source end of m followed by a cell from the rest of m to n. *)
+      let kills : (a, m, n, b) C.t =
+        let per_split : (a, m, n, b) C.t -> (a, m, b) split -> (a, m, n, b) C.t =
+         fun acc (Split (p, r, ev)) ->
+          if Modality.length p = 0 then acc
+          else
+            match Mode.compare (Modality.src p) (Modality.tgt p) with
+            | Neq -> acc
+            | Eq ->
+                List.fold_left
+                  (fun acc cp ->
+                    C.add acc
+                      (C.map
+                         (fun c -> Modalcell.vcomp c (Modalcell.hcomp ev Zero (Modalcell.id r) cp))
+                         (cells r n)))
+                  acc (arc_cells p) in
+        List.fold_left per_split C.zero (splits m) in
+      let rec strip : type nk.
+          (a, nk, b) Modality.t ->
+          ((a, m, nk, b) Modalcell.t -> (a, m, n, b) Modalcell.t) ->
+          (a, m, n, b) C.t =
+       fun nk wrap ->
+        let here : (a, m, n, b) C.t =
+          match (m, nk) with
+          | Path (Zero, _), Path (Zero, _) -> C.one (wrap (Modalcell.id m))
+          | Path (Zero, _), Path (Suc (nev, h), nb) -> (
+              (* The (◇, ∇) cap spans the whole of the remaining codomain, so it can only occur when m is exhausted. *)
+              match Modality.Gen.compare h Diamond.modality with
+              | Eq -> (
+                  match cap (Modality.Path (nev, nb)) with
+                  | Some c -> C.one (wrap c)
+                  | None -> C.zero)
+              | Neq -> C.zero)
+          | Path (Suc (mev, g), mb), Path (Suc (nev, h), nb) -> (
+              let m' = Modality.Path (mev, mb) in
+              let nk' = Modality.Path (nev, nb) in
+              match Modality.Gen.compare g h with
+              | Eq ->
+                  C.map
+                    (fun c ->
+                      wrap
+                        (Modalcell.hcomp
+                           (Suc (Zero, g))
+                           (Suc (Zero, g))
+                           c
+                           (Modalcell.id (Modality.of_gen g))))
+                    (cells m' nk')
+              | Neq -> (
+                  match
+                    ( Modality.Gen.compare g Box.modality,
+                      Modality.Gen.compare h Diamond.modality,
+                      Modality.Gen.compare g Triangle.modality,
+                      Modality.Gen.compare h Nabla.modality )
+                  with
+                  | Eq, Eq, _, _ ->
+                      (* ι : □ ⇒ ◇ *)
+                      C.map
+                        (fun c ->
+                          wrap
+                            (Modalcell.hcomp
+                               (Suc (Zero, Box.modality))
+                               (Suc (Zero, Diamond.modality))
+                               c box_dia))
+                        (cells m' nk')
+                  | _, _, Eq, Eq ->
+                      (* κ : △ ⇒ ∇ *)
+                      C.map
+                        (fun c ->
+                          wrap
+                            (Modalcell.hcomp
+                               (Suc (Zero, Triangle.modality))
+                               (Suc (Zero, Nabla.modality))
+                               c tri_nab))
+                        (cells m' nk')
+                  | _ -> C.zero))
+          | _ -> C.zero in
+        let deeper : (a, m, n, b) C.t =
+          match nk with
+          | Path (Suc (Suc (nev, g2), g1), nb) -> (
+              match
+                (Modality.Gen.compare g1 Triangle.modality, Modality.Gen.compare g2 Box.modality)
+              with
+              | Eq, Eq ->
+                  let n1 = Modality.Path (nev, nb) in
+                  let create =
+                    Modalcell.hcomp Zero
+                      (Suc (Suc (Zero, Box.modality), Triangle.modality))
+                      (Modalcell.id n1) tb_unit in
+                  strip n1 (fun c -> wrap (Modalcell.vcomp create c))
+              | _ -> C.zero)
+          | _ -> C.zero in
+        C.add here deeper in
+      C.add kills (strip n (fun c -> c))
+  end
+
+  (* Counting the 2-cells between two normal forms, cutting off at two, and constructing the cell if there is exactly one. *)
+  type (_, _, _, _) count =
+    | Zero_cells : ('a, 'm, 'n, 'b) count
+    | One_cell : ('a, 'm, 'n, 'b) Modalcell.t -> ('a, 'm, 'n, 'b) count
+    | Many_cells : ('a, 'm, 'n, 'b) count
+
+  module Count = Enumerate (struct
+    type ('a, 'm, 'n, 'b) t = ('a, 'm, 'n, 'b) count
+
+    let zero = Zero_cells
+    let one c = One_cell c
+
+    let add : type a m n b. (a, m, n, b) t -> (a, m, n, b) t -> (a, m, n, b) t =
+     fun x y ->
+      match (x, y) with
+      | Zero_cells, y -> y
+      | x, Zero_cells -> x
+      | _ -> Many_cells
+
+    let map : type a m k b c p q d.
+        ((a, m, k, b) Modalcell.t -> (c, p, q, d) Modalcell.t) -> (a, m, k, b) t -> (c, p, q, d) t =
+     fun f -> function
+      | Zero_cells -> Zero_cells
+      | One_cell c -> One_cell (f c)
+      | Many_cells -> Many_cells
+  end)
+
+  (* Listing all the 2-cells between two normal forms.  There are finitely many, since the recursion shortens one of the words at every step, and each is listed once. *)
+  module All = Enumerate (struct
+    type ('a, 'm, 'n, 'b) t = ('a, 'm, 'n, 'b) Modalcell.t list
+
+    let zero = []
+    let one c = [ c ]
+    let add = ( @ )
+    let map = List.map
+  end)
 
   (* A 2-cell can be inserted as an implicit key only when it is unique; if there are several parallel cells, the user must disambiguate.  We normalize both modalities, count the cells between the normal forms, and compose with the normalization isomorphisms. *)
   let find_unique : type a m n b.
@@ -631,9 +661,20 @@ struct
    fun x y ->
     let (Normalize (_, xto, _)) = normalize x in
     let (Normalize (_, _, yfrom)) = normalize y in
-    match count (Modalcell.vtgt xto) (Modalcell.vsrc yfrom) with
+    match Count.cells (Modalcell.vtgt xto) (Modalcell.vsrc yfrom) with
     | One_cell c -> Some (Modalcell.vcomp (Modalcell.vcomp yfrom c) xto)
     | Zero_cells | Many_cells -> None
+
+  (* Since the normalizations are isomorphisms, composing with them is a bijection between the cells between two modalities and those between their normal forms, of which there are finitely many. *)
+  let find_all : type a m n b.
+      (a, m, b) Modality.t -> (a, n, b) Modality.t -> (a, m, n, b) Modalcell.t list option =
+   fun x y ->
+    let (Normalize (_, xto, _)) = normalize x in
+    let (Normalize (_, _, yfrom)) = normalize y in
+    Some
+      (List.map
+         (fun c -> Modalcell.vcomp (Modalcell.vcomp yfrom c) xto)
+         (All.cells (Modalcell.vtgt xto) (Modalcell.vsrc yfrom)))
 
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun m ->
@@ -720,5 +761,5 @@ let install (module V : Variant) modes modalities modalcells =
       Modalcell.rename Cells.dn_unit dn_unit;
       Modalcell.rename Cells.dn_counit dn_counit
   | _ -> failwith "wrong number of modal cell names for gwpt mode theory");
-  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modalcell.choose_enumerating_theory (module Cells : Modalcell.Enumerating_theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

@@ -432,5 +432,5 @@ let install (module V : Variant) modes modalities modalcells =
   let module Box = Modality.Generate (Box) in
   let module Nabla = Modality.Generate (Nabla) in
   let module Cells = LocalCells (V) (Disc) (Type) (Triangle) (Box) (Nabla) in
-  Modalcell.choose_theory (module Cells : Modalcell.Theory);
+  Modalcell.choose_complete_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

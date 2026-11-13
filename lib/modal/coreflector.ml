@@ -141,4 +141,5 @@ let install (module V : Variant) modes modalities modalcells =
   | _ -> failwith ("wrong number of modality names for " ^ V.name ^ " mode theory"));
   Modality.set_one_char true modalities;
   let module Coreflector = Modality.Generate (Flat) in
-  Modalcell.choose_theory (module CoreflectorCells (V) (Testmode) (Coreflector) : Modalcell.Theory)
+  Modalcell.choose_complete_theory
+    (module CoreflectorCells (V) (Testmode) (Coreflector) : Modalcell.Theory)

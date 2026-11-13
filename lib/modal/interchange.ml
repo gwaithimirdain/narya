@@ -214,5 +214,5 @@ let install modes modalities modalcells =
   let module Tld' = Modality.Generate (Tld) in
   let module Rt' = Modality.Generate (Rt) in
   let module Lf' = Modality.Generate (Lf) in
-  Modalcell.choose_theory
+  Modalcell.choose_complete_theory
     (module InterchangeCell (AMode) (BMode) (CMode) (Tri') (Tld') (Rt') (Lf') : Modalcell.Theory)
