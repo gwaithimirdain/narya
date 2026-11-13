@@ -234,5 +234,5 @@ let install (module V : Variant) modes modalities modalcells =
   | [] -> ()
   | [ zero ] -> Modalcell.rename Cells.zero zero
   | _ -> failwith ("wrong number of modal cell names for " ^ V.name ^ " mode theory"));
-  Modalcell.choose_enumerating_theory (module Cells : Modalcell.Enumerating_theory);
+  Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

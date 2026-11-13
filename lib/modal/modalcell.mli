@@ -65,22 +65,16 @@ module type Theory = sig
 
   (* The cell between two modalities, if there is exactly one.  None means that there are none, or more than one, or that the theory can't tell. *)
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
+
+  (* All the cells between two modalities: Some of a list asserts that it contains all of them, while None makes no assertion. *)
+  val find_all :
+    ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t list option
+
   val parametric_locker : 'a Mode.t -> ('a parametric_locker, string) Result.t
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
 
-module type Enumerating_theory = sig
-  include Theory
-
-  val find_all :
-    ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t list option
-end
-
 val choose_theory : (module Theory) -> unit
-val choose_enumerating_theory : (module Enumerating_theory) -> unit
-
-(* For a locally posetal theory whose find_unique decides whether there is a cell. *)
-val choose_complete_theory : (module Theory) -> unit
 val sinister : ('a, 'f, 'b) Modality.t -> ('a, 'f, 'b) sinister option
 
 type (_, _, _, _, _, _) find_unique =

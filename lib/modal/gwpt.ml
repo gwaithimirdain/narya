@@ -746,5 +746,5 @@ let install (module V : Variant) modes modalities modalcells =
       Modalcell.rename Cells.dn_unit dn_unit;
       Modalcell.rename Cells.dn_counit dn_counit
   | _ -> failwith "wrong number of modal cell names for gwpt mode theory");
-  Modalcell.choose_enumerating_theory (module Cells : Modalcell.Enumerating_theory);
+  Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)

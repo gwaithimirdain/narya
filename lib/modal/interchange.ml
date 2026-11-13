@@ -177,6 +177,9 @@ module InterchangeCell
                                 | Eq, Eq -> Some diag
                                 | _ -> None)))))))
 
+  (* Since the theory is locally posetal and find_unique decides whether there is a cell, it finds all of them. *)
+  let find_all m n = Some (Option.to_list (find_unique m n))
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "interchange"
 
@@ -214,5 +217,5 @@ let install modes modalities modalcells =
   let module Tld' = Modality.Generate (Tld) in
   let module Rt' = Modality.Generate (Rt) in
   let module Lf' = Modality.Generate (Lf) in
-  Modalcell.choose_complete_theory
+  Modalcell.choose_theory
     (module InterchangeCell (AMode) (BMode) (CMode) (Tri') (Tld') (Rt') (Lf') : Modalcell.Theory)

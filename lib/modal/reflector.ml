@@ -85,6 +85,9 @@ struct
             Some (Modalcell.prewhisker (Suc (Zero, g)) (Suc (Zero, h)) c (Modality.of_gen g))
         | Neq -> None)
 
+  (* Since the theory is locally posetal and find_unique decides whether there is a cell, it finds all of them. *)
+  let find_all m n = Some (Option.to_list (find_unique m n))
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "reflector"
 
@@ -112,4 +115,4 @@ let install modes modalities modalcells =
   | _ -> failwith "wrong number of modality names for reflector mode theory");
   Modality.set_one_char true modalities;
   let module Reflector = Modality.Generate (Sharp) in
-  Modalcell.choose_complete_theory (module ReflectorCells (Testmode) (Reflector) : Modalcell.Theory)
+  Modalcell.choose_theory (module ReflectorCells (Testmode) (Reflector) : Modalcell.Theory)

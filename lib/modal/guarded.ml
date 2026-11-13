@@ -380,6 +380,9 @@ struct
     | Some b -> Some (Modalcell.vcomp (Modalcell.vcomp yfrom b) xto)
     | None -> None
 
+  (* Since the theory is locally posetal and find_unique decides whether there is a cell, it finds all of them. *)
+  let find_all m n = Some (Option.to_list (find_unique m n))
+
   let parametric_locker : type a. a Mode.t -> (a Modalcell.parametric_locker, string) Result.t =
    fun _ -> Error "guarded"
 
@@ -443,5 +446,5 @@ let install modes modalities modalcells =
   let module Box = Modality.Generate (Box) in
   let module Later = Modality.Generate (Later) in
   let module Cells = GuardedCells (Type) (Timed) (Triangle) (Box) (Later) in
-  Modalcell.choose_complete_theory (module Cells : Modalcell.Theory);
+  Modalcell.choose_theory (module Cells : Modalcell.Theory);
   Modality.choose_theory (module Cells.Modalities : Modality.Theory)
