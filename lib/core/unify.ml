@@ -38,7 +38,16 @@ let try_solve_direct : type mode a b.
             | None -> `Not_solved
             | Some
                 (Renamed_ctx
-                   { ctx = rctx; check_type; in_image; inverted; prekeyed; wrap; contracted }) -> (
+                   {
+                     ctx = rctx;
+                     check_type;
+                     in_image;
+                     inverted;
+                     prekeyed;
+                     candidates;
+                     wrap;
+                     contracted;
+                   }) -> (
                 (* If we don't know the type at which they are being compared, we must check that the type of v is that of u. *)
                 let typed =
                   match ty with
@@ -59,7 +68,7 @@ let try_solve_direct : type mode a b.
                     | None ->
                         Result.map wrap
                           (readback_unif_solution meta rctx ~check_type ~in_image ~inverted
-                             ~prekeyed v (Lazy.force uty)) in
+                             ~prekeyed ~candidates v (Lazy.force uty)) in
                   match solution with
                   | Ok tm ->
                       Global.solve_unif meta tm;
