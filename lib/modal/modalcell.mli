@@ -84,7 +84,7 @@ val compare :
   ('dom2, 'mu2, 'nu2, 'cod2) t ->
   ('dom1 * 'mu1 * 'nu1 * 'cod1, 'dom2 * 'mu2 * 'nu2 * 'cod2) Util.Eq.compare
 
-val compare_id :
+val compare_id2 :
   ('dom, 'mu, 'nu, 'cod) t ->
   ('dom * 'mu * 'nu, 'cod * 'dom Modality.id * 'dom Modality.id) Util.Eq.compare
 

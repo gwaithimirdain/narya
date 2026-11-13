@@ -23,25 +23,6 @@ let deg_plus_to : type m n nk. on:string -> ?err:dim_err -> (m, n) deg -> nk D.t
       let sk = deg_plus s nk mk in
       Of sk
 
-type _ key_comp = Wrap : ('a, 'm, 'n, 'b) Modalcell.t -> 'a key_comp
-
-let key_vcomp : type a b c m n p q.
-    (a, m, n, b) Modalcell.t -> (a, p, q, c) Modalcell.t -> a key_comp =
- fun cell2 cell1 ->
-  match (Modalcell.compare_id cell2, Modalcell.compare_id cell1) with
-  | Eq, _ -> Wrap cell1
-  | _, Eq -> Wrap cell2
-  | _ -> (
-      match Modality.pushout (Modalcell.vtgt cell1) (Modalcell.vsrc cell2) with
-      | Some (Pushout (mu3, mu4, cod13, dom24)) ->
-          let (Comp cod24) = Modality.comp (Modalcell.vtgt cell2) in
-          let (Comp dom13) = Modality.comp (Modalcell.vsrc cell1) in
-          Wrap
-            (Modalcell.vcomp
-               (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) cell2)
-               (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) cell1))
-      | None -> fatal (Anomaly "incompatible keys"))
-
 (* Degenerate and shift the stored environment of a higher structfield so that one of its stored terms can be evaluated in it.  The data comes from decomposing a partial bijection on the field's evaluation dimension through 'plusdim' (unplus_pbij): 'rr' shuffles the remaining dimensions 'r3 of the outer decomposition with the dimensions 'r4 consumed from the environment dimension 'm, and 'mtr' splits 'm into the kept dimensions 't and the consumed ones 'r4.  The game is to build a degeneracy that we can apply to the m-dimensional environment 'env' so that we can shift it by the plusmap 'ra' and evaluate the corresponding stored term.  That means we need to get an environment whose dimension is something+r34.  We start by adding r3, and then apply a bunch of permutations.
        m + r3
        ≅ (t + r4) + r3    (mtr)
@@ -400,7 +381,7 @@ module Act = struct
       mode normal -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> mode normal =
    fun ({ tm; ty } as nf) s c ->
     (* The public act_* entry points below are wrapped in short_circuit, but the recursive calls within this module are not, and act_apps factors the degeneracy per face, so a residual identity arrives here very often (96% of calls on a 3-dimensional Pi-type lift).  Re-testing here avoids rebuilding an identical normal, and in particular avoids allocating the deferred type-action thunk. *)
-    match (is_id_deg s, Modalcell.compare_id c) with
+    match (is_id_deg s, Modalcell.compare_id2 c) with
     | Some _, Eq -> nf
     | _ -> { tm = act_value tm s c; ty = lazy (act_ty tm (Lazy.force ty) s c) }
 
@@ -535,7 +516,7 @@ module Act = struct
     (* To act on a variable, we accumulate the delayed actions, extending if necessary to match. *)
     | Var { level; deg; key } -> (
         let (DegExt (_, _, deg)) = comp_deg_extending deg s in
-        match Modalcell.compare_id c with
+        match Modalcell.compare_id2 c with
         | Eq -> Var { level; deg; key }
         | Neq -> (
             match Modality.factor (Modalcell.vtgt key) (Modalcell.vsrc c) with
@@ -690,7 +671,7 @@ let short_circuit : type mode mu1 mu2 cod m n a.
     ((m, n) deg -> (mode, mu1, mu2, cod) Modalcell.t -> a) ->
     a =
  fun s c x act ->
-  match (is_id_deg s, Modalcell.compare_id c) with
+  match (is_id_deg s, Modalcell.compare_id2 c) with
   | Some _, Eq -> x
   | _ -> act s c
 
