@@ -1486,7 +1486,7 @@ The same applies to a prekey on the environment of a closure, which arises from 
   
   [1]
 
-In the ambiflector mode theory, the identity modality has two endomorphisms, the identity and zero (ø), so a variable acted on by zero is the image of the same variable with either key, and there is no most general solution.  (Keys are not yet displayed.)
+In the ambiflector mode theory, the identity modality has two endomorphisms, the identity and zero (ø), so a variable acted on by zero is the image of the same variable with either key, and there is no most general solution.  The same goes for the identity at Type in the ambiflection mode theory.  (Keys are not yet displayed.)
 
   $ narya -ambiflector - <<EOF
   > axiom A : Type
@@ -1513,6 +1513,30 @@ In the ambiflector mode theory, the identity modality has two endomorphisms, the
    ￫ error[E2004]
    ￭ stdin
    4 | def twosol (b : A) : A ≔ let u : A ≔ _ in let k : Id A (u #ø) (b #ø) ≔ refl (b #ø) in u
+     ^ can't determine a value for this placeholder
+  
+  [1]
+
+  $ narya -ambiflection - <<EOF
+  > axiom A : Type
+  > def twosol (b : A) : A ≔ let u : A ≔ _ in let k : Id A (u #ø) (b #ø) ≔ refl (b #ø) in u
+  > EOF
+   ￫ error[E0406]
+   ￭ stdin
+   2 | def twosol (b : A) : A ≔ let u : A ≔ _ in let k : Id A (u #ø) (b #ø) ≔ refl (b #ø) in u
+     ^ term synthesized type
+         Id A b b
+       and is being checked against type
+         Id A (let only … in ?u0) b
+       but can't determine whether they are equal, since comparing head terms
+         b
+       and
+         let only … in ?u0
+       depends on unsolved placeholders
+  
+   ￫ error[E2004]
+   ￭ stdin
+   2 | def twosol (b : A) : A ≔ let u : A ≔ _ in let k : Id A (u #ø) (b #ø) ≔ refl (b #ø) in u
      ^ can't determine a value for this placeholder
   
   [1]

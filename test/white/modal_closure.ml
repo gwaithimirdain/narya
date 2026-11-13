@@ -21,6 +21,8 @@ let install = function
   | "tconn" -> Tconn.install (module Tconn.Ordinary : Tconn.Variant) [] [] []
   | "spatial" -> Spatial.install (module Spatial.Ordinary : Spatial.Variant) [] [] []
   | "cospatial" -> Cospatial.install (module Cospatial.Ordinary : Cospatial.Variant) [] [] []
+  | "ambiflection" ->
+      Ambiflection.install (module Ambiflection.Ordinary : Ambiflection.Variant) [] [] []
   | "ambiflector" ->
       Ambiflector.install (module Ambiflector.Ordinary : Ambiflector.Variant) [] [] []
   | t -> failwith ("unknown theory " ^ t)
