@@ -34,6 +34,9 @@ type (_, _, _) identity +=
   | Parens : (closed, No.plus_omega, closed) identity
   | Braces : (closed, No.plus_omega, closed) identity
   | Dot : (closed, No.plus_omega, closed) identity
+  | (* Coloneq is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a labelled implicit argument "{22 ≔ a}". *)
+      Coloneq :
+      (No.strict opn, No.minus_omega, No.nonstrict opn) identity
   | Ellipsis_arg : (closed, No.plus_omega, closed) identity
   | (* AscVar is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a modal ascription "(x :f| _)" used as the head of a field projection. *)
       AscVar :
@@ -295,6 +298,25 @@ and process_apply : type n.
       process_apply ctx { value = Synth (Key (fn, parts)); loc } args
   | (Wrap { value = Notn ((Braces, _), n); loc = braceloc }, loc) :: rest -> (
       match args n with
+      (* An argument in braces can be labelled by the face of the cube of arguments that it supplies, written like the suffix of a cube variable, as in "{22 ≔ a}". *)
+      | [ Token (LBrace, _); Term { value = Notn ((Coloneq, _), m); _ }; Token (RBrace, _) ] -> (
+          match args m with
+          | [ Term { value = Ident ([ label ], _); loc = labelloc }; Token (Coloneq, _); Term arg ]
+            ->
+              let arg = process ctx arg in
+              process_apply ctx
+                {
+                  value =
+                    Synth
+                      (App
+                         ( fn,
+                           locate_opt arg.loc (`Face (locate_opt labelloc label, arg.value)),
+                           locate_opt braceloc `Implicit ));
+                  loc;
+                }
+                rest
+          | Term { loc; _ } :: _ -> fatal ?loc (Parse_error "invalid face label")
+          | _ -> fatal (Anomaly "invalid notation arguments for colon-equals"))
       | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
           let arg = process ctx arg in
           process_apply ctx

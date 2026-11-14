@@ -1345,10 +1345,9 @@ let () =
 
 (* Coloneq is an auxiliary notation only used as a sub-notation of others. *)
 
-type (_, _, _) identity += Coloneq : (No.strict opn, No.minus_omega, No.nonstrict opn) identity
-
+(* The identity of colon-equals was declared in Postprocess. *)
 let coloneq : (No.strict opn, No.minus_omega, No.nonstrict opn) notation =
-  (Coloneq, Infixr No.minus_omega)
+  (Postprocess.Coloneq, Infixr No.minus_omega)
 
 let () =
   make coloneq

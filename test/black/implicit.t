@@ -201,10 +201,14 @@ The identity type of an implicit function-type is an implicit higher-dimensional
    10 | def r4 : Id ({x : A} → B x) f f ≔ {x₀} {x₁} x₂ ↦ refl f {x₀} {x₁} {x₂}
       ^ unexpected explicit abstraction: the function-type is implicit, so its variable must be in braces
   
-   ￫ error[E0702]
+   ￫ error[E0701]
    ￭ stdin
    11 | echo refl f {a} {a} (refl a)
-      ^ unexpected explicit argument: the function-type is implicit, so its argument must be in braces
+      ^ attempt to apply/instantiate
+          ap f .
+        of type
+          Id B ?u0 (f .) (f .)
+        which is not a function-type or universe
   
   ap f
     : {x₀ : A} {x₁ : A} {x₂ : Id A x₀ x₁}
@@ -498,5 +502,76 @@ Implicit higher-dimensional function-types can be written with all their domains
    ￭ stdin
    8 | def bad : Type ≔ {x₀ : A} (x₁ : A) {x₂ : Id A x₀ x₁} →⁽ᵉ⁾ Id B x₂ (f {x₀}) (f {x₁})
      ^ not enough domains for an e-dimensional function type
+  
+  [1]
+
+Braced arguments supply the faces of a cube of arguments, either in order or labelled by face as for the faces of a cube variable.  An implicit cube that isn't complete is completed by placeholders, at a dot or before anything else; an explicit cube's braced arguments supply only its boundary, and it is completed by its primary argument.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom f : {x : A} → B x
+  > axiom g : (x : A) → B x
+  > axiom a : A
+  > axiom a' : A
+  > axiom p : Id A a a'
+  > def t1 : Id B p (f {a}) (f {a'}) ≔ refl f {2 ≔ p}
+  > def t2 : Id B p (f {a}) (f {a'}) ≔ refl f {0 ≔ a} {2 ≔ p}
+  > def t3 : Id B p (f {a}) (f {a'}) ≔ refl f {a} .
+  > def t4 : Id B p (g a) (g a') ≔ refl g {0 ≔ a} p
+  > def t5 : Id B p (g a) (g a') ≔ refl g {a} p
+  > def t6 : Id B p (g a) (g a') ≔ refl g {a} {a'} p
+  > echo refl f {2 ≔ p}
+  > def e1 : Id B p (f {a}) (f {a'}) ≔ refl f {3 ≔ p}
+  > def e2 : Id B p (f {a}) (f {a'}) ≔ refl f {2 ≔ p} {2 ≔ p}
+  > def e3 : Id B p (f {a}) (f {a'}) ≔ refl f {a} {1 ≔ a'} {p}
+  > def e4 : Id B p (g a) (g a') ≔ refl g {2 ≔ p}
+  > def e5 : Id B p (g a) (g a') ≔ refl g {a} .
+  > def e6 : B a ≔ g {0 ≔ a}
+  > def e7 : B a ≔ f {0 ≔ a}
+  > def e8 : Id B p (f {a}) (f {a'}) ≔ refl f {0 ≔ a} {0 ≔ a}
+  > EOF
+  ap f .
+    : Id B p (f .) (f .)
+  
+   ￫ error[E0712]
+   ￭ stdin
+   15 | def e1 : Id B p (f {a}) (f {a'}) ≔ refl f {3 ≔ p}
+      ^ invalid face argument: no face 3 in this cube of arguments
+  
+   ￫ error[E0712]
+   ￭ stdin
+   16 | def e2 : Id B p (f {a}) (f {a'}) ≔ refl f {2 ≔ p} {2 ≔ p}
+      ^ invalid face argument: face 2 is supplied more than once
+  
+   ￫ error[E0712]
+   ￭ stdin
+   17 | def e3 : Id B p (f {a}) (f {a'}) ≔ refl f {a} {1 ≔ a'} {p}
+      ^ invalid face argument: can't mix labelled and unlabelled arguments in one cube
+  
+   ￫ error[E0712]
+   ￭ stdin
+   18 | def e4 : Id B p (g a) (g a') ≔ refl g {2 ≔ p}
+      ^ invalid face argument: the primary argument of an explicit function can't be labelled: 2
+  
+   ￫ error[E0712]
+   ￭ stdin
+   19 | def e5 : Id B p (g a) (g a') ≔ refl g {a} .
+      ^ invalid face argument: a dot can't supply the primary argument of an explicit function
+  
+   ￫ error[E0702]
+   ￭ stdin
+   20 | def e6 : B a ≔ g {0 ≔ a}
+      ^ unexpected implicit argument: the function-type is explicit
+  
+   ￫ error[E0712]
+   ￭ stdin
+   21 | def e7 : B a ≔ f {0 ≔ a}
+      ^ invalid face argument: no face 0 in this cube of arguments
+  
+   ￫ error[E0712]
+   ￭ stdin
+   22 | def e8 : Id B p (f {a}) (f {a'}) ≔ refl f {0 ≔ a} {0 ≔ a}
+      ^ invalid face argument: face 0 is supplied more than once
   
   [1]

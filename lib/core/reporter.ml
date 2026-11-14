@@ -178,6 +178,7 @@ module Code = struct
     | Invalid_nullary_application : t
     | Expected_nullary_application : t
     | Invalid_ellipsis_application : t
+    | Invalid_face_argument : string -> t
     | Checking_tuple_at_degenerated_record : printable -> t
     | Missing_field_in_tuple : 'i Field.t * ('e, 'i, 'r) pbij option -> t
     | Missing_method_in_comatch : 'i Field.t * ('e, 'i, 'r) pbij option -> t
@@ -429,6 +430,7 @@ module Code = struct
     | Invalid_nullary_application -> Error
     | Expected_nullary_application -> Error
     | Invalid_ellipsis_application -> Error
+    | Invalid_face_argument _ -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
     | Missing_field_in_tuple _ -> Error
     | Missing_method_in_comatch _ -> Error
@@ -670,6 +672,7 @@ module Code = struct
     | Invalid_nullary_application -> "E0707"
     | Expected_nullary_application -> "E0708"
     | Invalid_ellipsis_application -> "E0711"
+    | Invalid_face_argument _ -> "E0712"
     | Invalid_higher_letonly _ -> "E0709"
     (* Record fields *)
     | No_such_field _ -> "E0800"
@@ -926,6 +929,7 @@ module Code = struct
       | Invalid_higher_letonly str -> textf "invalid higher-dimensional let-only: %s" str
       | Invalid_nullary_application -> text "invalid nullary application"
       | Expected_nullary_application -> text "expected nullary application"
+      | Invalid_face_argument str -> textf "invalid face argument: %s" str
       | Invalid_ellipsis_application ->
           text
             "nothing to insert or instantiate: ellipsis applied to a term whose type is neither an implicit function-type nor a higher-dimensional type of arity zero"

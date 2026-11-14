@@ -14,8 +14,13 @@ let locate_map f ({ value; loc } : 'a located) = locate_opt loc (f value)
 (* Where an ImplicitApp gets its implicit first argument: the type being checked against itself, or the argument at the given (0-based) position of the constant that type is an application of, such as P in "forall ℕ P".  This is a stopgap until we have unification. *)
 type implicit_source = [ `Goal | `Goal_arg of int ]
 
-(* An argument in an application spine: a term; a dot ".", which inserts one cube of implicit arguments or instantiates one nullary dimension; or an ellipsis "…", which inserts all the leading implicit arguments or instantiates all the leading nullary dimensions (but not both), and must have at least one of these to do.  The last form is internal: it is what remains of an ellipsis that has done at least one of them, recording which, when its remaining work must be postponed, and it may have nothing left to do. *)
-type 'c app_arg = [ `Arg of 'c | `Dot | `Ellipsis | `More_ellipsis of [ `Insert | `Instantiate ] ]
+(* An argument in an application spine: a term; a term labelled by the face of the cube of arguments that it supplies, as in "{22 ≔ a}", which is always implicit; a dot ".", which inserts one cube of implicit arguments or instantiates one nullary dimension; or an ellipsis "…", which inserts all the leading implicit arguments or instantiates all the leading nullary dimensions (but not both), and must have at least one of these to do.  The last form is internal: it is what remains of an ellipsis that has done at least one of them, recording which, when its remaining work must be postponed, and it may have nothing left to do. *)
+type 'c app_arg =
+  [ `Arg of 'c
+  | `Face of string Asai.Range.located * 'c
+  | `Dot
+  | `Ellipsis
+  | `More_ellipsis of [ `Insert | `Instantiate ] ]
 
 module rec Make : functor (I : Indices) -> sig
   module Namevec : module type of Namevec (I)
@@ -540,6 +545,9 @@ module Resolve (R : Resolver) = struct
             | `Arg x ->
                 let arg = check ctx (locate_opt arg.loc x) in
                 locate_opt arg.loc (`Arg arg.value)
+            | `Face (label, x) ->
+                let x = check ctx (locate_opt arg.loc x) in
+                locate_opt arg.loc (`Face (label, x.value))
             | (`Dot | `Ellipsis | `More_ellipsis _) as a -> locate_opt arg.loc a in
           App (check ctx fn, arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)

@@ -4982,7 +4982,13 @@ and synth_apps : type mode a b.
                   doms cods tyargs
                   (locate_opt l (Synth (App (fn, arg, i))))
                   rest
-            | _ -> synth_app ctx filter implicit sfn doms cods tyargs fn args)
+                (* Otherwise we apply it to a cube of arguments.  Any faces of an implicit cube that aren't supplied are placeholders for implicit arguments. *)
+            | _ ->
+                let missing =
+                  match implicit with
+                  | `Implicit -> Some (insertion ctx sfn x)
+                  | `Explicit -> None in
+                synth_app ?missing ctx filter implicit sfn doms cods tyargs fn args)
         (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
         | Canonical (_, UU _, _, tyargs) -> synth_inst ctx sfn tyargs fn args
         (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
@@ -5059,6 +5065,8 @@ and synth_ellipsis : type mode a b.
 and synth_arg_cube : type dom modality mode a b n c.
     ?implicit:implicitness ->
     ?insert:Asai.Range.t option * Code.t ->
+    ?missing:Asai.Range.t option * Code.t ->
+    ?labels:bool ->
     not_enough:Reporter.Code.t ->
     which:string ->
     (mode, a, b) Ctx.t ->
@@ -5072,8 +5080,8 @@ and synth_arg_cube : type dom modality mode a b n c.
     * (Asai.Range.t option
       * a check located
       * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list) =
- fun ?(implicit = `Explicit) ?insert ~not_enough ~which ctx modality choose doms
-     (sfnloc, fn, args) ->
+ fun ?(implicit = `Explicit) ?insert ?missing ?(labels = false) ~not_enough ~which ctx modality
+     choose doms (sfnloc, fn, args) ->
   (* Based on the dimension of the application and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
   let module TakenArgs = struct
     type t =
@@ -5084,15 +5092,108 @@ and synth_arg_cube : type dom modality mode a b n c.
       | Placeholders : Asai.Range.t option * Code.t -> t
       (* Inserting a cube of implicit arguments: all of them are placeholders, and no arguments are consumed. *)
       | Insert : Asai.Range.t option * Code.t -> t
+      (* Some of the arguments in the cube, collected from braced arguments (and the primary argument, if the function-type is explicit), with the others to be placeholders. *)
+      | Collected : (n sface_of, a check located) Hashtbl.t * (Asai.Range.t option * Code.t) -> t
   end in
   let n = CubeOf.dim doms in
   let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+  (* The arguments are consumed from a mutable state, which also accumulates the raw function applied to them so far. *)
+  let state = ref (sfnloc, fn, args) in
+  let consume () =
+    match !state with
+    | _, f, (l, t, impl) :: ts -> state := (l, locate_opt l (Synth (App (f, t, impl))), ts)
+    | _, _, [] -> fatal (Anomaly "no argument to consume") in
+  let current () =
+    let _, _, ts = !state in
+    ts in
+  (* In a function application, braced arguments supply the faces of the cube, either in order, or labelled by the faces they supply, as in "{0 ≔ a} {1 ≔ b}".  They supply all the faces of an implicit cube, or only the boundary faces of an explicit one, which is completed by its primary argument.  An implicit cube that isn't complete is completed by a ".", which is consumed, or else by anything else, which isn't.  Any faces that haven't been supplied are placeholders. *)
+  let collect () : TakenArgs.t =
+    let tbl = Hashtbl.create 10 in
+    let faces = ref [] in
+    CubeOf.miter { it = (fun fa [ _ ] -> faces := SFace_of fa :: !faces) } [ doms ];
+    let faces = List.rev !faces in
+    let top = SFace_of (id_sface n) in
+    let fillable = List.filter (fun f -> implicit = `Implicit || f <> top) faces in
+    let style = ref `None in
+    let complete () = Hashtbl.length tbl = List.length fillable in
+    let primary_error loc =
+      fatal ?loc
+        (Unexpected_implicitness
+           ( `Implicit,
+             "argument",
+             match D.compare_zero n with
+             | Zero -> "the function-type is explicit"
+             | Pos _ -> "expecting explicit primary " ^ which ^ " argument" )) in
+    let rec loop pos =
+      if not (complete ()) then
+        match current () with
+        | (_, { value = `Arg t; loc }, { value = `Implicit; _ }) :: _ -> (
+            if !style = `Labelled then
+              fatal ?loc
+                (Invalid_face_argument "can't mix labelled and unlabelled arguments in one cube");
+            style := `Positional;
+            match pos with
+            | [] -> primary_error loc
+            | f :: pos ->
+                Hashtbl.add tbl f { value = t; loc };
+                consume ();
+                loop pos)
+        | (_, { value = `Face (label, t); loc }, _) :: _ -> (
+            if !style = `Positional then
+              fatal ?loc
+                (Invalid_face_argument "can't mix labelled and unlabelled arguments in one cube");
+            style := `Labelled;
+            let key : n sface_of option =
+              match sface_of_string label.value with
+              | Some (Any_sface fa) -> (
+                  match D.compare (cod_sface fa) n with
+                  | Eq -> Some (SFace_of fa)
+                  | Neq -> None)
+              | None -> None in
+            match key with
+            | None ->
+                fatal ?loc:label.loc
+                  (Invalid_face_argument ("no face " ^ label.value ^ " in this cube of arguments"))
+            | Some key when not (List.mem key fillable) ->
+                fatal ?loc:label.loc
+                  (Invalid_face_argument
+                     ("the primary argument of an explicit function can't be labelled: "
+                     ^ label.value))
+            | Some key when Hashtbl.mem tbl key ->
+                fatal ?loc:label.loc
+                  (Invalid_face_argument ("face " ^ label.value ^ " is supplied more than once"))
+            | Some key ->
+                Hashtbl.add tbl key { value = t; loc };
+                consume ();
+                loop pos)
+        | _ -> () in
+    loop fillable;
+    (match (implicit, current ()) with
+    | `Explicit, (_, { value = `Arg t; loc }, { value = `Explicit; _ }) :: _ ->
+        Hashtbl.add tbl top { value = t; loc };
+        consume ()
+    | `Explicit, (_, { value = `Dot; loc }, _) :: _ ->
+        fatal ?loc
+          (Invalid_face_argument "a dot can't supply the primary argument of an explicit function")
+    | `Explicit, (_, { loc; _ }, { value = `Implicit; _ }) :: _ -> primary_error loc
+    | `Explicit, (_, { loc; _ }, _) :: _ -> fatal ?loc Invalid_ellipsis_application
+    | `Explicit, [] -> fatal not_enough
+    | `Implicit, (_, { value = `Dot; _ }, _) :: _ when not (complete ()) -> consume ()
+    | `Implicit, _ -> ());
+    let missing =
+      match missing with
+      | Some missing -> missing
+      | None -> (sfnloc, Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
+    in
+    Collected (tbl, missing) in
   let taken_args : TakenArgs.t =
     match (args, D.compare_zero n, Endpoints.totally_nullary n) with
     | _ when Option.is_some insert ->
         let loc, err = Option.get insert in
         Insert (loc, err)
     | [], _, _ -> fatal not_enough
+    (* In a function application, braced arguments are collected into a cube. *)
+    | (_, _, { value = `Implicit; _ }) :: _, _, _ when labels -> collect ()
     (* At an implicit function-type, every argument in the cube is implicit, so we take a whole cube. *)
     | (_, _, { value = `Implicit; _ }) :: _, _, _ when implicit = `Implicit -> Take
     | (_, _, { value = `Explicit; loc }) :: _, _, _ when implicit = `Implicit ->
@@ -5123,9 +5224,8 @@ and synth_arg_cube : type dom modality mode a b n c.
     | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
         fatal ?loc (Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
   in
-  (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it lazily, producing Cubes of checked terms and lazy values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go, forcing them only when they are used to instantiate such a type.  We thread the leftover arguments through the cube iteration in a mutable reference. *)
+  (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it lazily, producing Cubes of checked terms and lazy values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go, forcing them only when they are used to instantiate such a type.  We thread the leftover arguments through the cube iteration in the mutable state. *)
   let eargtbl = Hashtbl.create 10 in
-  let state = ref (sfnloc, fn, args) in
   let first = ref true in
   let [ cargs; eargs ] =
     CubeOf.pmap
@@ -5167,6 +5267,15 @@ and synth_arg_cube : type dom modality mode a b n c.
               | `Proper _, Placeholders (loc, err) | _, Insert (loc, err) ->
                   let ctm = check Kinetic lctx { value = Unif (Some err); loc } ty in
                   (ctm, lazy_eval_at (Ctx.env lctx) ctm ty)
+              | _, Collected (tbl, (mloc, merr)) ->
+                  let tm =
+                    match Hashtbl.find_opt tbl (SFace_of fa) with
+                    | Some tm -> tm
+                    | None -> { value = Unif (Some merr); loc = mloc } in
+                  let ctm =
+                    Reporter.mortalize ~fallback:(fun () -> Term.Failed Kinetic) @@ fun () ->
+                    check Kinetic lctx tm ty in
+                  (ctm, lazy_eval_at (Ctx.env lctx) ctm ty)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
               | _ ->
                   let tm =
@@ -5203,7 +5312,10 @@ and synth_arg_cube : type dom modality mode a b n c.
                     | `Arg value -> { value; loc = tm.loc }
                     | `Dot -> fatal ?loc:tm.loc Invalid_nullary_application
                     | `Ellipsis | `More_ellipsis _ -> fatal ?loc:tm.loc Invalid_ellipsis_application
-                  in
+                    | `Face _ ->
+                        fatal ?loc:tm.loc
+                          (Invalid_face_argument
+                             "face labels can only be used in applications of functions") in
                   (* If the argument fails to typecheck, we record it as Failed and go on.  Since it is evaluated lazily, later arguments can still be checked as long as their types, and the output type, don't depend on it. *)
                   let ctm =
                     Reporter.mortalize ~fallback:(fun () -> Term.Failed Kinetic) @@ fun () ->
@@ -5219,6 +5331,7 @@ and synth_arg_cube : type dom modality mode a b n c.
 
 and synth_app : type dom modality mode a b k n.
     ?insert:Asai.Range.t option * Code.t ->
+    ?missing:Asai.Range.t option * Code.t ->
     (mode, a, b) Ctx.t ->
     (dom, modality, mode, k, n) Modality.filter_dim ->
     implicitness ->
@@ -5232,10 +5345,11 @@ and synth_app : type dom modality mode a b k n.
     * (mode, kinetic) value
     * a check located
     * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list =
- fun ?insert ctx filter implicit sfn doms cods tyargs fn args ->
+ fun ?insert ?missing ctx filter implicit sfn doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
-    synth_arg_cube ~implicit ?insert ~not_enough:Not_enough_arguments_to_function
-      ~which:"higher-dimensional application" ctx (Modality.filter_modality filter)
+    synth_arg_cube ~implicit ?insert ?missing ~labels:true
+      ~not_enough:Not_enough_arguments_to_function ~which:"higher-dimensional application" ctx
+      (Modality.filter_modality filter)
       (fun etm _ -> etm)
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these lazily evaluated arguments and instantiate it at the appropriate values of tyargs. *)
@@ -5297,7 +5411,8 @@ and synth_inst : type mode a b n.
             | (l, ({ value = `Dot; _ } as arg), i) :: rest ->
                 state := (l, locate_opt l (Synth (App (fn, arg, i))), rest);
                 (Emp, Emp)
-            | (_, { value = `Arg _; loc }, _) :: _ -> fatal ?loc Expected_nullary_application
+            | (_, { value = `Arg _ | `Face _; loc }, _) :: _ ->
+                fatal ?loc Expected_nullary_application
             (* An ellipsis is handled by synth_apps, which passes a dot here for each step. *)
             | (_, { value = `Ellipsis | `More_ellipsis _; _ }, _) :: _ ->
                 fatal (Anomaly "ellipsis in synth_inst")
@@ -5475,7 +5590,9 @@ and synth_lam : type mode a b c d n.
       | `Arg _ ->
           let extra_remarks = [ Asai.Diagnostic.loctext ?loc:arg.loc "argument" ] in
           fatal ?loc:fn.loc ~extra_remarks
-            (Nonsynthesizing "head of application spine and corresponding argument"))
+            (Nonsynthesizing "head of application spine and corresponding argument")
+      (* A labelled argument is always implicit. *)
+      | `Face _ -> fatal (Anomaly "explicit labelled argument"))
   | _ ->
       fatal ?loc:fn.loc (Nonsynthesizing "head of higher-dimensional or implicit application spine")
 

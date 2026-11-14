@@ -421,6 +421,8 @@ module F = struct
     | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
     | App (fn, { value = `Arg arg; _ }, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg
     | App (fn, { value = `Dot; _ }, _) -> fprintf ppf "App(%a, .)" check fn.value
+    | App (fn, { value = `Face (label, arg); _ }, _) ->
+        fprintf ppf "App(%a, %s ≔ %a)" check fn.value label.value check arg
     | App (fn, { value = `Ellipsis | `More_ellipsis _; _ }, _) ->
         fprintf ppf "App(%a, …)" check fn.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
