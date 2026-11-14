@@ -230,17 +230,22 @@ let rec locks_lock : type a m b tm. (a, m, b, a, tm, b) Lock.t -> (a, tm, b, a, 
 
 (* Witness that a tctx doesn't end with a lock *)
 
-(* The shape of the extension of a checked context by a context entry: either a cube of variables, or nothing for an alias.  Matching on this refines the types of the extension and the extended checked context. *)
-type (_, _, _, _, _, _) ext_kind =
-  | Ext_dim :
-      ( 'mode,
-        'modality,
-        'n,
-        ('mode id, ('modality, 'n) dim_entry) snoc,
-        'b,
-        ('b, ('modality, 'n) dim_entry) snoc )
-      ext_kind
-  | Ext_alias : ('mode, 'modality, 'n, 'mode id, 'b, 'b) ext_kind
+(* The shape of the extension of a checked context 'b by a context entry, yielding the extended checked context 'bb: either a cube of variables, or nothing for an alias (which is a cube of let-bound values whose names refer directly to those values).  Matching on this refines the extended checked context. *)
+type (_, _, _, _) vars =
+  | Vars : ('modality, 'n, 'b, ('b, ('modality, 'n) dim_entry) snoc) vars
+  | Alias : ('modality, 'n, 'b, 'b) vars
+
+(* Extend a tctx according to a vars. *)
+let ext_vars : type dom modality mode n b bb.
+    (mode, b) Tctx.t ->
+    (modality, n, b, bb) vars ->
+    n D.t ->
+    (dom, modality, mode, n, n) Modality.filter_dim ->
+    (mode, bb) Tctx.t =
+ fun ctx vars n filter ->
+  match vars with
+  | Vars -> Tctx.suc ctx (Dim (n, filter))
+  | Alias -> ctx
 
 type _ ends_without_lock =
   | Without_lock_id : 'x id ends_without_lock

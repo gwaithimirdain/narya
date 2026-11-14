@@ -493,11 +493,11 @@ and equal_ordered_env : type mode a b n c d.
   | Emp _ -> Ok ()
   (* A weakening entry contributes nothing to the environment, so we skip it. *)
   | Weaken (envctx, _) -> equal_ordered_env ctx env1 env2 envctx
-  | Ext (envctx, ({ plus_lock = dplus; bindings; _ } as entry), _, comp) -> (
-      match ext_kind entry comp with
+  | Ext (envctx, ({ plus_lock = dplus; bindings; vars; _ } as entry), _) -> (
+      match vars with
       (* An alias contributes nothing to the environment, so we skip it. *)
-      | Ext_alias -> equal_ordered_env ctx env1 env2 envctx
-      | Ext_dim ->
+      | Alias -> equal_ordered_env ctx env1 env2 envctx
+      | Vars ->
           let modality = plus_lock_modality dplus in
           let n = dim_env env1 in
           let (Has_filter filter) = Modality.filter modality n in

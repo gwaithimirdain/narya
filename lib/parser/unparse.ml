@@ -325,7 +325,7 @@ let unparse_meta_name : type mode x b s lt ls rt rs.
 (* Whether the context of a let-only has no clauses to display, because it contains only aliases and weakenings. *)
 let rec letonly_empty : type mode i b. (mode, i, b) ordered_termctx -> bool = function
   | Emp _ -> true
-  | Ext (ctx, { vis = Vis (Alias, _); _ }, _, Zero) -> letonly_empty ctx
+  | Ext (ctx, { vars = Alias; _ }, _) -> letonly_empty ctx
   | Weaken (ctx, _) -> letonly_empty ctx
   | Ext _ | Lock _ -> false
 
@@ -830,18 +830,16 @@ and unparse_letonly_clauses_pending : type mode n i k b.
   match (ctx, tmenv) with
   | Emp _, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty)
   (* An alias has no checked variables, so it isn't substituted for. *)
-  | Ext (ctx, { vis = Vis (Alias, _); _ }, _, Zero), _ ->
-      unparse_letonly_clauses_pending vars ctx tmenv
-  | ( Ext (ctx, ({ bindings; plus_lock; filter = _; vis } as e), _, (Suc (Zero, Dim _) as comp)),
+  | Ext (ctx, { vars = Alias; _ }, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
+  | ( Ext (ctx, { bindings; plus_lock; filter = _; vis; vars = Vars }, _),
       Ext { env; values = Modal (modality, plus, tms); _ } ) ->
-      let Ext_dim = ext_kind e comp in
       let top = CubeOf.find_top bindings in
       let acc, names = unparse_letonly_clauses vars ctx env in
       let n = CubeOf.dim bindings in
       (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
       let name =
         match vis with
-        | Vis (_, { vars = xs; _ }) -> NICubeOf.find_top xs
+        | Vis { names = xs; _ } -> NICubeOf.find_top xs
         | Invis { hints } -> `Anon hints in
       let x, names = Names.add_cube n names name in
       let ty =
@@ -2044,20 +2042,21 @@ let rec unparse_ctx : type dom modality mode a b.
               ty = Wrap (unlocated (Placeholder []));
             } ) )
   | Ext
-      (type edom emod a' x b' bm n b2)
-      ((ctx, ({ plus_lock; bindings; filter = _; vis } as e), af, comp) :
+      (type edom emod a' x b' bm n)
+      ((ctx, { plus_lock; bindings; filter = _; vis; vars = evars }, af) :
         (mode, a', b') ordered_termctx
-        * (edom, emod, mode, b, bm, x, n, b2) Term.entry
-        * (a', x, a) N.plus
-        * (mode, b2, mode, b', unit, b) Tctx.comp) -> (
+        * (edom, emod, mode, x, n, b', b, bm) Term.entry
+        * (a', x, a) N.plus) -> (
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
-      match (ext_kind e comp, vis) with
-      | Ext_dim, Invis { hints; _ } ->
+      match (evars, vis) with
+      (* An invisible alias has neither raw nor checked variables, so there is nothing to display or name. *)
+      | Alias, Invis _ -> (names, result)
+      | Vars, Invis { hints; _ } ->
           (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device: the self-variable of a datatype's constructors, or a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
           let _, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           (names, result)
-      | ext, Vis (kind, { dim; plusdim; vars; hasfields; fields; fplus }) ->
+      | _, Vis { dim; plusdim; names = cube; hasfields; fields; fplus } ->
           let modality = Modality.name (plus_lock_modality plus_lock) in
           (* First we split off the field variables, if any. *)
           let xs, fs = Bwv.unappend fplus xs in
@@ -2072,7 +2071,7 @@ let rec unparse_ctx : type dom modality mode a b.
               left N.suc T.t ->
               left T.t * (left, m, string * [ `Original | `Renamed ]) NFamOf.t =
            fun _ (NFamOf _) (Snoc (xs, x)) -> (xs, NFamOf x) in
-          let _, vardata = Fold.fold_map_right { foldmap = do_var } vars xs in
+          let _, vardata = Fold.fold_map_right { foldmap = do_var } cube xs in
           (* Then we project out the variable names alone.  TODO: Can we do this as part of the same iteration?  It would require a two-output version of the traversal.  *)
           let projector : type left m n.
               (m, n) sface ->
@@ -2084,10 +2083,9 @@ let rec unparse_ctx : type dom modality mode a b.
           let fnames =
             Bwv.mmap (fun [ (x, _); (f, _, _) ] -> (Field.to_string f, x)) [ fs; fields ] in
           let (names : b Names.t) =
-            match (kind, ext) with
-            | Vars, Ext_dim ->
-                Names.unsafe_add names (Variables (dim, plusdim, xs)) (Bwv.to_bwd fnames)
-            | Alias, Ext_alias -> names in
+            match evars with
+            | Vars -> Names.unsafe_add names (Variables (dim, plusdim, xs)) (Bwv.to_bwd fnames)
+            | Alias -> names in
           let xnames = Names.add_lock names plus_lock in
           let lock = Modality.name lock in
           (* Then we iterate forwards through the bindings, unparsing them with these names and adding them to the result. *)
@@ -2131,7 +2129,7 @@ let rec unparse_ctx : type dom modality mode a b.
             [ fs; fields ];
           (* If an alias is zero-dimensional and its value is a metavariable, we record its name for that metavariable (see Names.add_alias). *)
           let names =
-            match (kind, D.compare_zero (CubeOf.dim bindings), (CubeOf.find_top bindings).tm) with
+            match (evars, D.compare_zero (CubeOf.dim bindings), (CubeOf.find_top bindings).tm) with
             | Alias, Zero, Some tm -> Names.add_alias names (fst (NICubeOf.find_top vardata)) tm
             | _ -> names in
           (names, !result))

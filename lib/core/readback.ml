@@ -115,11 +115,11 @@ let rec is_top_bindings : type mode n d dom modality k.
     (mode, n, d) env -> (dom, modality, mode) Modality.t -> (k, dom Binding.t) CubeOf.t -> bool =
  fun env modality bindings ->
   match env with
-  | Ctx (Snoc (ctx, entry, _, comp)) -> (
-      match Ctx.Ordered.ext_kind entry comp with
+  | Ctx (Snoc (ctx, entry, _)) -> (
+      match entry.vars with
       (* An alias isn't part of the environment. *)
-      | Ext_alias -> is_top_bindings (Ctx ctx) modality bindings
-      | Ext_dim -> (
+      | Alias -> is_top_bindings (Ctx ctx) modality bindings
+      | Vars -> (
           match
             ( Modality.compare (Ctx.modality_entry entry) modality,
               D.compare (Ctx.dim_entry entry) (CubeOf.dim bindings) )
@@ -140,8 +140,8 @@ let rec is_identity_ordered_env : type mode a b c d.
   (* Weakening entries and aliases contribute nothing to the checked length or the environment. *)
   | Weaken (ctx, _), _ -> is_identity_ordered_env ctx env envctx
   | _, Weaken (envctx, _) -> is_identity_ordered_env ctx env envctx
-  | Snoc (ctx, _, _, Zero), _ -> is_identity_ordered_env ctx env envctx
-  | _, Ext (envctx, _, _, Zero) -> is_identity_ordered_env ctx env envctx
+  | Snoc (ctx, { vars = Alias; _ }, _), _ -> is_identity_ordered_env ctx env envctx
+  | _, Ext (envctx, { vars = Alias; _ }, _) -> is_identity_ordered_env ctx env envctx
   | Emp _, Emp _ -> Some Eq
   (* Locks we test for equality and then remove from both contexts and the environment. *)
   | Lock (ctx, g), Lock (envctx, g') -> (
@@ -157,10 +157,10 @@ let rec is_identity_ordered_env : type mode a b c d.
             | Some Eq -> Some Eq
             | None -> None
           else None)
-  | Snoc (ctx, entry, _, comp), Ext (envctx, tentry, _, tcomp) -> (
-      match (Ctx.Ordered.ext_kind entry comp, ext_kind tentry tcomp) with
-      | Ext_alias, _ | _, Ext_alias -> None
-      | Ext_dim, Ext_dim -> (
+  | Snoc (ctx, entry, _), Ext (envctx, tentry, _) -> (
+      match (entry.vars, tentry.vars) with
+      | Alias, _ | _, Alias -> None
+      | Vars, Vars -> (
           let modality = Ctx.modality_entry entry in
           let bindings = Ctx.bindings_entry entry in
           let k = CubeOf.dim bindings in
@@ -225,7 +225,7 @@ let rec is_weakened_identity : type mode a b c d.
   Option.is_some (is_identity_ordered_env ctx env envctx)
   ||
   match (ctx, envctx) with
-  | Snoc (rest, _, _, _), _ -> is_weakened_identity rest env envctx
+  | Snoc (rest, _, _), _ -> is_weakened_identity rest env envctx
   | Weaken (rest, _), _ -> is_weakened_identity rest env envctx
   | Lock _, Weaken (envctx, _) -> is_weakened_identity ctx env envctx
   | Lock (ctx, g), Lock (envctx, g') -> (
@@ -239,11 +239,11 @@ let rec is_weakened_identity : type mode a b c d.
   | _ -> false
 
 (* Test whether some face of a context entry is a variable that is let-bound to a given metavariable (whose full context is given) in an environment that is the identity, possibly weakened, on the context to its left locked by the modality of the variable, and whether the given environment for that metavariable (with the locks to the right of the variable stripped off) is also a weakened identity on the context to its left.  If so, return that face.  (The metavariable can be defined in a context shorter than the one to the left of the variable, as happens for the variables bound by a let-rec, whose metavariables all live in the context of the let-rec.) *)
-let let_var_of_meta : type mode a b c d x s mmode cfull dfull dom modality f k b2.
+let let_var_of_meta : type mode a b bb c d x s mmode cfull dfull dom modality f k.
     (mmode, x, dfull, s) Meta.t ->
     (mmode, cfull, dfull) ordered_termctx ->
     (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, f, k, b2) Ctx.entry ->
+    (dom, modality, mode, f, k, b, bb) Ctx.entry ->
     (mode, D.zero, d) env ->
     (mode, c, d) ordered_termctx ->
     k sface_of option =
@@ -294,10 +294,10 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
       (* If not, and the context ends with a variable, we check whether that variable is let-bound to the metavariable, and if so whether the rest of the environment is also an identity. *)
       match (ctx, envctx) with
       (* An alias isn't a variable, so it can't be read back as one, and it doesn't weaken the checked context. *)
-      | Snoc (rest, entry, _, comp), _ -> (
-          match Ctx.Ordered.ext_kind entry comp with
-          | Ext_alias -> find_meta_readback meta fullctx rest env envctx
-          | Ext_dim -> (
+      | Snoc (rest, entry, _), _ -> (
+          match entry.vars with
+          | Alias -> find_meta_readback meta fullctx rest env envctx
+          | Vars -> (
               let k = Ctx.dim_entry entry in
               let filter = Ctx.filter_entry entry in
               match let_var_of_meta meta fullctx rest entry env envctx with
@@ -372,7 +372,7 @@ let readback_meta_at_idenv : type mode a b n c d x s.
 let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mode emp) Eq.t option =
   function
   | Emp _ -> Some Eq
-  | Ext (ctx, _, _, Zero) -> no_checked_vars ctx
+  | Ext (ctx, { vars = Alias; _ }, _) -> no_checked_vars ctx
   | Weaken (ctx, _) -> no_checked_vars ctx
   | Ext _ | Lock _ -> None
 
@@ -972,11 +972,11 @@ and readback_ordered_env : type mode n a b c d.
   | Emp mode -> Emp (mode, dim_env env)
   (* A weakening entry contributes nothing to the environment, so we skip it. *)
   | Weaken (envctx, _) -> readback_ordered_env ctx env envctx
-  | Ext (envctx, ({ plus_lock = dplus; bindings; filter = filtered; _ } as entry), _, comp) -> (
-      match ext_kind entry comp with
+  | Ext (envctx, ({ plus_lock = dplus; bindings; filter = filtered; vars; _ } as entry), _) -> (
+      match vars with
       (* An alias contributes nothing to the environment, so we skip it. *)
-      | Ext_alias -> readback_ordered_env ctx env envctx
-      | Ext_dim ->
+      | Alias -> readback_ordered_env ctx env envctx
+      | Vars ->
           let modality = plus_lock_modality dplus in
           (* The dimension n of the environment gets filtered to m. *)
           let n = dim_env env in
@@ -1063,16 +1063,15 @@ and readback_ordered_env : type mode n a b c d.
 (* Read back a context of values into a context of terms. *)
 
 (* Read back the bindings in the last entry of a context, which live in the whole context locked by the modality of the entry.  Each value or type in the cube of bindings can refer to the variables that come before it in the cube (which include its faces), but not to itself or those that come after it.  So we read them back in the context to the left of the entry extended by delayed copies of its bindings, which can't be found until they are forced, and we force each one after reading back its value and type.  In particular, this prevents a variable let-bound to a metavariable from being read back as itself while reading back its own value (see let_var_of_meta). *)
-and readback_entry : type mode a x ax b bb b2 dom modality n.
+and readback_entry : type mode a x ax b bb dom modality n.
     (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, x, n, b2) Ctx.entry ->
+    (dom, modality, mode, x, n, b, bb) Ctx.entry ->
     (a, x, ax) N.plus ->
-    (mode, b2, mode, b, unit, bb) Tctx.comp ->
     (mode, ax, bb, modality, dom, n) readback_entry =
- fun rest { bindings; filter; vis } ax comp ->
+ fun rest ({ bindings; filter; _ } as e) ax ->
   let modality = Modality.filter_modality filter in
   let delayed = CubeOf.mmap { map = (fun _ [ b ] -> Binding.delay b) } [ bindings ] in
-  let ctx = Ctx.of_ordered (Snoc (rest, { bindings = delayed; filter; vis }, ax, comp)) in
+  let ctx = Ctx.of_ordered (Snoc (rest, { e with bindings = delayed }, ax)) in
   let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
   let bindings =
     CubeOf.mmap
@@ -1094,12 +1093,12 @@ and readback_entry : type mode a x ax b bb b2 dom modality n.
 and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx
     = function
   | Emp mode -> Emp mode
-  | Snoc (rest, ({ bindings; filter; vis } as entry), af, comp) -> (
+  | Snoc (rest, ({ bindings; filter; vis; vars } as entry), af) -> (
       let top = Binding.value (CubeOf.find_top bindings) in
-      let (Readback_entry (plus_lock, lctx, bindings)) = readback_entry rest entry af comp in
+      let (Readback_entry (plus_lock, lctx, bindings)) = readback_entry rest entry af in
       let rest = readback_ordered_ctx rest in
       match vis with
-      | Vis (kind, { dim; plusdim; vars; hasfields; fields; fplus }) ->
+      | Vis { dim; plusdim; names; hasfields; fields; fplus } ->
           (* Fields as illusory variables are only used when typechecking records, which have substitution dimension 0 and can have no higher fields, so as field insertion we can use the identity on zero. *)
           let idm = Modality.id (Ctx.mode lctx) in
           let fins = ins_zero D.zero in
@@ -1109,14 +1108,14 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
                 let fldty = readback_val lctx (tyof_field idm top.tm (Lazy.force top.ty) f fins) in
                 (f, x, fldty))
               fields in
-          let vis = Vis (kind, { dim; plusdim; vars; hasfields; fields; fplus }) in
-          Ext (rest, { plus_lock; bindings; filter; vis }, af, comp)
+          let vis = Vis { dim; plusdim; names; hasfields; fields; fplus } in
+          Ext (rest, { plus_lock; bindings; filter; vis; vars }, af)
       | Invis ->
           (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type we just skip the hints (though internal errors are still reported). *)
           let hints =
             Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
             View.hints_of_ty (Lazy.force top.ty) in
-          Ext (rest, { plus_lock; bindings; filter; vis = Invis { hints } }, af, comp))
+          Ext (rest, { plus_lock; bindings; filter; vis = Invis { hints }; vars }, af))
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
 
