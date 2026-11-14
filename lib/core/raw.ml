@@ -737,24 +737,18 @@ let rec namevec_of_vec : type a b ab.
 (* Produces only explicit lambdas. *)
 let rec lams : type a b ab.
     (a, b, ab) Indexed.bplus ->
-    (string option located, b) Vec.t ->
+    (string option located * [ `Explicit | `Implicit ], b) Vec.t ->
     ab check located ->
     Asai.Range.t option ->
     a check located =
  fun ab xs tm loc ->
   match (ab, xs) with
   | Zero, [] -> tm
-  | Suc ab, name :: xs ->
+  | Suc ab, (name, implicit) :: xs ->
       {
         value =
           Lam
-            {
-              name;
-              cube = locate_opt None `Normal;
-              implicit = `Explicit;
-              dom = None;
-              body = lams ab xs tm loc;
-            };
+            { name; cube = locate_opt None `Normal; implicit; dom = None; body = lams ab xs tm loc };
         loc;
       }
 

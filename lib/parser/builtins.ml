@@ -2279,57 +2279,88 @@ let rec get_discriminees :
   | Term tm :: obs -> (Wrap [ Left (get_discriminee_window (Wrap tm)) ], obs)
   | _ -> invalid "match"
 
+(* A pattern, and whether it is enclosed in braces.  The top-level patterns of a matching abstraction can be in braces, making the abstraction over the variable they match against implicit.  (Braces inside a constructor pattern have a different meaning: a pattern for a face of the boundary of a higher-dimensional argument.)  In a match, the top-level patterns match against discriminees rather than abstracted variables, so they can't be in braces. *)
+let get_top_pattern : type lt ls rt rs.
+    lam:bool -> (lt, ls, rt, rs) parse located -> pattern * [ `Explicit | `Implicit ] =
+ fun ~lam tm ->
+  match tm.value with
+  | Notn ((Braces, _), n) when lam -> (
+      match args n with
+      | [ Token (LBrace, _); Term pat; Token (RBrace, _) ] ->
+          (Postprocess.get_pattern pat, `Implicit)
+      | _ -> invalid "braces")
+  | _ -> (Postprocess.get_pattern tm, `Explicit)
+
 let rec get_patterns : type n.
+    lam:bool ->
     n Fwn.t ->
     observation list ->
-    (pattern, n) Vec.t
+    (pattern * [ `Explicit | `Implicit ], n) Vec.t
     * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
     * observation list =
- fun n obs ->
+ fun ~lam n obs ->
   match (n, obs) with
   | _, [] | Zero, _ -> invalid "match"
   | Suc Zero, Term tm :: Token (Mapsto, (_, loc)) :: obs ->
-      ([ Postprocess.get_pattern tm ], `Normal loc, obs)
+      ([ get_top_pattern ~lam tm ], `Normal loc, obs)
   | Suc Zero, Term tm :: Token (DblMapsto, (_, loc)) :: obs ->
-      ([ Postprocess.get_pattern tm ], `Cube [ locate (ref false) loc ], obs)
+      ([ get_top_pattern ~lam tm ], `Cube [ locate (ref false) loc ], obs)
   | Suc Zero, Term _ :: Term tm :: _ ->
       fatal ?loc:tm.loc (Parse_error "too many match pattern variables")
   | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc (Parse_error "invalid match pattern")
   | Suc (Suc _ as n), Term tm :: Token (Op ",", _) :: obs ->
-      let pats, cube, obs = get_patterns n obs in
-      (Postprocess.get_pattern tm :: pats, cube, obs)
+      let pats, cube, obs = get_patterns ~lam n obs in
+      (get_top_pattern ~lam tm :: pats, cube, obs)
   | Suc (Suc _), Term tm :: _ -> fatal ?loc:tm.loc Wrong_number_of_patterns
   | _ -> invalid "match"
 
-let rec get_branches : type a n. a Matchscope.t -> n Fwn.t -> observation list -> (a, n) branch list
-    =
- fun ctx n obs ->
+(* Get the branches of a match or matching abstraction.  For a matching abstraction, we are given the implicitness of its abstractions, determined by the first branch, and each branch must agree with it. *)
+let rec get_branches : type a n.
+    ?implicits:([ `Explicit | `Implicit ], n) Vec.t ->
+    a Matchscope.t ->
+    n Fwn.t ->
+    observation list ->
+    (a, n) branch list =
+ fun ?implicits ctx n obs ->
   match obs with
   | [ Token (RBracket, _) ] -> []
   | Token (Op "|", _) :: obs -> (
-      let pats, cube, obs = get_patterns n obs in
+      let pats, cube, obs = get_patterns ~lam:(Option.is_some implicits) n obs in
+      (match implicits with
+      | Some implicits ->
+          Vec.miter
+            (fun [ ((pat, i) : pattern * _); first ] ->
+              if i <> first then
+                fatal ?loc:(pattern_loc pat)
+                  (Unexpected_implicitness
+                     ( i,
+                       "pattern",
+                       "all the branches of a matching abstraction must have the same patterns in braces"
+                     )))
+            [ pats; implicits ]
+      | None -> ());
       match obs with
       | Term body :: obs ->
-          let branches = get_branches ctx n obs in
-          (ctx, pats, cube, Wrap body) :: branches
+          let branches = get_branches ?implicits ctx n obs in
+          (ctx, Vec.mmap (fun [ (pat, _) ] -> pat) [ pats ], cube, Wrap body) :: branches
       | _ -> invalid "match")
   | _ -> invalid "match"
 
-(* A version of get_patterns that doesn't require a specific number of patterns in advance. *)
+(* A version of get_patterns that doesn't require a specific number of patterns in advance, used only for the first branch of a matching abstraction. *)
 let rec get_any_patterns :
     observation list ->
-    pattern Vec.wrapped
+    (pattern * [ `Explicit | `Implicit ]) Vec.wrapped
     * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
     * observation list =
  fun obs ->
   match obs with
   | Term tm :: Token (Mapsto, (_, loc)) :: obs ->
-      (Wrap [ Postprocess.get_pattern tm ], `Normal loc, obs)
+      (Wrap [ get_top_pattern ~lam:true tm ], `Normal loc, obs)
   | Term tm :: Token (DblMapsto, (_, loc)) :: obs ->
-      (Wrap [ Postprocess.get_pattern tm ], `Cube [ locate (ref false) loc ], obs)
+      (Wrap [ get_top_pattern ~lam:true tm ], `Cube [ locate (ref false) loc ], obs)
   | Term tm :: Token (Op ",", _) :: obs ->
       let Wrap pats, cube, obs = get_any_patterns obs in
-      (Wrap (Postprocess.get_pattern tm :: pats), cube, obs)
+      (Wrap (get_top_pattern ~lam:true tm :: pats), cube, obs)
   | _ -> invalid "match"
 
 let rec pp_patterns accum obs =
@@ -2557,13 +2588,15 @@ let () =
           match strip_gen_attributes obs with
           | Token (LBracket, _) :: Token (Op "|", _) :: obs | Token (LBracket, _) :: obs -> (
               (* We get the *number* of patterns from the first branch. *)
-              let Wrap pats, cube, obs = get_any_patterns obs in
+              let Wrap patsi, cube, obs = get_any_patterns obs in
+              let pats = Vec.mmap (fun [ (pat, _) ] -> pat) [ patsi ] in
+              let implicits = Vec.mmap (fun [ (_, i) ] -> i) [ patsi ] in
               match obs with
               | Term body :: obs ->
                   let n = Vec.length pats in
                   let (Bplus an) = Raw.Indexed.bplus n in
                   let ctx, xs = Matchscope.exts an (Matchscope.make ctx) in
-                  let branches = get_branches ctx n obs in
+                  let branches = get_branches ~implicits ctx n obs in
                   let mtch, highers =
                     process_branches ctx
                       (Vec.mmap (fun [ i ] -> Either.Right (disc_var i)) [ xs ])
@@ -2576,8 +2609,8 @@ let () =
                         locate_opt mtch.loc (Synth (Match { data with highers }))
                     | _, [] -> mtch
                     | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match") in
-                  (* NB: Raw.lams produces only explicit lambdas.  Pattern-matching lambdas can't be used for implicit ones. *)
-                  Raw.lams an (Vec.init (fun () -> (unlocated None, ())) n ()) mtch loc
+                  (* The abstractions are implicit where the patterns are in braces. *)
+                  Raw.lams an (Vec.mmap (fun [ i ] -> (unlocated None, i)) [ implicits ]) mtch loc
               | _ -> invalid "match")
           | _ -> invalid "match");
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "matching abstraction"));

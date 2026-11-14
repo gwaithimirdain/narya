@@ -211,3 +211,39 @@ The identity type of an implicit function-type is an implicit higher-dimensional
       →⁽ᵉ⁾ Id B {x₀} {x₁} x₂ (f {x₀}) (f {x₁})
   
   [1]
+
+In a matching abstraction, a top-level pattern in braces makes the abstraction over the variable it matches implicit.  All the branches must agree.
+
+  $ narya - <<EOF
+  > def Nat : Type ≔ data [ zero. | suc. (_ : Nat) ]
+  > def p : {_ : Nat} → Nat ≔ [ {zero.} ↦ zero. | {suc. n} ↦ n ]
+  > echo p {3}
+  > def q : {_ : Nat} (_ : Nat) → Nat ≔ [ {zero.}, m ↦ m | {suc. n}, _ ↦ n ]
+  > about q
+  > def v : {_ : Nat} → Nat ≔ [ {n} ↦ n ]
+  > def b1 : {_ : Nat} → Nat ≔ [ {zero.} ↦ zero. | suc. n ↦ n ]
+  > def b2 : {_ : Nat} → Nat ≔ [ zero. ↦ zero. | suc. n ↦ n ]
+  > def b3 : Nat → Nat ≔ [ {zero.} ↦ zero. | {suc. n} ↦ n ]
+  > EOF
+  2
+    : Nat
+  
+  {𝑥} 𝑦 ↦ match 𝑥 [ suc. n ↦ n | zero. ↦ 𝑦 ]
+    : {𝑥 : Nat} → Nat → Nat
+  
+   ￫ error[E0702]
+   ￭ stdin
+   7 | def b1 : {_ : Nat} → Nat ≔ [ {zero.} ↦ zero. | suc. n ↦ n ]
+     ^ unexpected explicit pattern: all the branches of a matching abstraction must have the same patterns in braces
+  
+   ￫ error[E0702]
+   ￭ stdin
+   8 | def b2 : {_ : Nat} → Nat ≔ [ zero. ↦ zero. | suc. n ↦ n ]
+     ^ unexpected explicit abstraction: the function-type is implicit, so its variable must be in braces
+  
+   ￫ error[E0702]
+   ￭ stdin
+   9 | def b3 : Nat → Nat ≔ [ {zero.} ↦ zero. | {suc. n} ↦ n ]
+     ^ unexpected implicit abstraction: expecting explicit variable
+  
+  [1]
