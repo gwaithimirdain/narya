@@ -609,3 +609,20 @@ A matching abstraction at a higher-dimensional function-type, such as the identi
      ^ e-dimensional match requires cube abstraction
   
   [1]
+
+The boundary of a higher-dimensional application can't be read off the type of its primary argument while that type is still unknown, as when it depends on an implicit argument determined only by a later argument.  Then the boundary is left to placeholders, which are solved once it is known.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > axiom h : A → B
+  > def R : Type ≔ sig (fst : A, snd : Id A fst fst)
+  > def app {X : Type} (k : X → Type) (x : X) : Type ≔ k x
+  > axiom r : R
+  > def t : Type ≔ app (w ↦ Id (Id B (h (w .fst)) (h (w .fst))) (refl h (w .snd)) (refl h (w .snd))) r
+  > echo t
+  > EOF
+  B⁽ᵉᵉ⁾ (ap h (refl r .fst)) (ap h (refl r .fst)) (ap h (r .snd))
+    (ap h (r .snd))
+    : Type
+  

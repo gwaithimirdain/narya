@@ -5027,14 +5027,19 @@ and synth_arg_cube : type dom modality mode a b n c.
       when synth_has_synth toptm -> (
         (* We synthesize its type, extract the instantiation arguments, and store them to fill in the boundary arguments. *)
         let _, argty = synth Kinetic lctx (locate_opt loc toptm) in
-        let (Full_tube argtyargs) = get_tyargs argty "primary argument" in
-        (* A function of one dimension can be applied to a primary argument of a *higher* dimension, since a cube is also a square.  So we require only that the dimension of argtyargs factors through the application dimension. *)
-        match D.factor (TubeOf.inst argtyargs) (CubeOf.dim doms) with
-        | Some (Factor nk) -> Given (loc, nk, argtyargs)
-        | None ->
-            fatal ~severity:Asai.Diagnostic.Error ?loc
-              (Insufficient_dimension
-                 { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
+        (* If its type is stuck on a metavariable, we can't yet see its instantiation arguments, so we leave placeholders for the boundary, to be determined by comparing their instantiation with that type once it is known. *)
+        if stuck_after_retry argty then
+          Placeholders
+            (loc, Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
+        else
+          let (Full_tube argtyargs) = get_tyargs argty "primary argument" in
+          (* A function of one dimension can be applied to a primary argument of a *higher* dimension, since a cube is also a square.  So we require only that the dimension of argtyargs factors through the application dimension. *)
+          match D.factor (TubeOf.inst argtyargs) (CubeOf.dim doms) with
+          | Some (Factor nk) -> Given (loc, nk, argtyargs)
+          | None ->
+              fatal ~severity:Asai.Diagnostic.Error ?loc
+                (Insufficient_dimension
+                   { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
     (* If it isn't, the boundary has to be determined by something else, so we leave placeholders for it, as if the user had written them. *)
     | (_, { value = `Arg _; loc }, { value = `Explicit; _ }) :: _, Pos _, false ->
         Placeholders
