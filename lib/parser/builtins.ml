@@ -364,7 +364,7 @@ let rec raw_lam : type a b ab.
         match (dom, body) with
         | None, _ -> Lam { name; cube; implicit; dom = None; body }
         | Some (Wrap dom), { value = Synth body; loc } ->
-            Synth (AscLam (name, modality, process ctx dom, locate_opt loc body))
+            Synth (AscLam (name, implicit, modality, process ctx dom, locate_opt loc body))
         | Some (Wrap dom), _ ->
             let dom = Some (modality, process ctx dom) in
             Lam { name; cube; implicit; dom; body } in
@@ -1143,7 +1143,8 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi ([ locate_opt None None ], modality, cdom, cod)); loc }
+      | `Lower, _, _ ->
+          { value = Synth (Pi ([ locate_opt None None ], `Explicit, modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
@@ -1158,14 +1159,16 @@ let rec process_pi : type n lt ls rt rs.
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
-  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } :: doms -> (
+  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit; _ } :: doms -> (
       (* A pi-type binds all the variables of a group at once, so that their shared domain is processed only once, in the scope outside all of them. *)
       let cdom = process ctx dom in
       let (Pi_vars (names, ctx)) = pi_vars ctx x xs in
       let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (names, modality, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi (names, implicit, modality, cdom, cod)); loc }
+      | `Higher, _, _ when implicit = `Implicit ->
+          fatal ?loc (Unimplemented "implicit higher function-types")
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
@@ -1175,8 +1178,7 @@ let rec process_pi : type n lt ls rt rs.
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
-  | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx higher doms cod
-  | Dep { implicit = `Implicit; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
+  | Dep { vars = []; _ } :: doms -> process_pi ctx higher doms cod
 
 (* One group of domains for an instantiated higher pi-type: a telescope consisting of the implicit boundary domains and ending with the (first) explicit primary domain.  The number of domains needed is not known until typechecking time (it is determined by the modality, which can't be parsed until the modes are known), so we just collect them all in a telescope; but the *grouping* into successive higher pi-types is visible at parse time, since each group consists of implicit domains followed by a single explicit one. *)
 type _ higher_dom_group =
@@ -3223,7 +3225,7 @@ let rec process_dataconstr : type n.
                   | Dep { vars; modality; ty; implicit = `Explicit; _ } ->
                       Some (var_names vars, modality, ty)
                   | Dep { implicit = `Implicit; _ } ->
-                      fatal (Unimplemented "general implicit function-types")
+                      fatal (Unimplemented "implicit constructor arguments")
                   | Nondep { ty; _ } -> Some ([ None ], locate_opt None [], ty))
                 doms in
             process_dataconstr ctx tel_args (Some cod)

@@ -416,13 +416,13 @@ module F = struct
               else "." ^ f ^ "." ^ String.concat "" (List.map string_of_int p)
           | `Int i -> "." ^ string_of_int i)
     | Key (tm, parts) -> fprintf ppf "Key(%a, #%s)" synth tm.value (String.concat "." parts.value)
-    | Pi (_, _, _, _) -> fprintf ppf "Pi(?)"
+    | Pi (_, _, _, _, _) -> fprintf ppf "Pi(?)"
     | HigherPi (_, _, _, _) -> fprintf ppf "HigherPi(?)"
     | InstHigherPi (_, _, _, _) -> fprintf ppf "InstHigherPi(?)"
     | App (fn, { value = Some arg; _ }, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg
     | App (fn, { value = None; _ }, _) -> fprintf ppf "App(%a, .)" check fn.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
-    | AscLam (x, _, dom, body) ->
+    | AscLam (x, _, _, dom, body) ->
         fprintf ppf "AscLam(%s, %a, %a)"
           (Option.value ~default:"_" x.value)
           check dom.value synth body.value

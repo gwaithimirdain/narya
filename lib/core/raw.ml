@@ -32,6 +32,7 @@ module rec Make : functor (I : Indices) -> sig
     | Key : 'a synth located * string list located -> 'a synth
     | Pi :
         ('a, 'b Fwn.suc, 'ab) Namevec.t
+        * [ `Explicit | `Implicit ]
         * string located list located
         * 'a check located
         * 'ab check located
@@ -50,7 +51,11 @@ module rec Make : functor (I : Indices) -> sig
         -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
     | AscLam :
-        I.name located * string located list located * 'a check located * 'a I.suc synth located
+        I.name located
+        * [ `Explicit | `Implicit ]
+        * string located list located
+        * 'a check located
+        * 'a I.suc synth located
         -> 'a synth
     | UU : 'mode Mode.t -> 'a synth
     | Let :
@@ -201,6 +206,7 @@ functor
       (* A pi-type binding one or more variables, all with the same domain, such as "(x y : A) → B".  The domain is stored only once, in the outer scope, so it is processed and typechecked only once. *)
       | Pi :
           ('a, 'b Fwn.suc, 'ab) Namevec.t
+          * [ `Explicit | `Implicit ]
           * string located list located
           * 'a check located
           * 'ab check located
@@ -223,7 +229,11 @@ functor
       | Asc : 'a check located * 'a check located -> 'a synth
       (* Abstraction with ascribed variable and synthesizing body.  Currently can't be a cube or implicit.  *)
       | AscLam :
-          I.name located * string located list located * 'a check located * 'a I.suc synth located
+          I.name located
+          * [ `Explicit | `Implicit ]
+          * string located list located
+          * 'a check located
+          * 'a I.suc synth located
           -> 'a synth
       (* A universe knows its mode. *)
       | UU : 'mode Mode.t -> 'a synth
@@ -503,9 +513,9 @@ module Resolve (R : Resolver) = struct
       | Const c -> Const c
       | Field (tm, fld, lock) -> Field (synth ctx tm, fld, lock)
       | Key (tm, parts) -> Key (synth ctx tm, parts)
-      | Pi (xs, modality, dom, cod) ->
+      | Pi (xs, implicit, modality, dom, cod) ->
           let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
-          Pi (renames ctx xs ab2, modality, check ctx dom, check (append ctx xs ab2) cod)
+          Pi (renames ctx xs ab2, implicit, modality, check ctx dom, check (append ctx xs ab2) cod)
       | HigherPi (xs, modality, dom, cod) ->
           let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
           HigherPi (renames ctx xs ab2, modality, synth ctx dom, synth (append ctx xs ab2) cod)
@@ -523,9 +533,13 @@ module Resolve (R : Resolver) = struct
             | None -> locate_opt arg.loc None in
           App (check ctx fn, arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)
-      | AscLam (x, modality, dom, body) ->
+      | AscLam (x, implicit, modality, dom, body) ->
           AscLam
-            (locate_map (R.rename ctx) x, modality, check ctx dom, synth (R.snoc ctx x.value) body)
+            ( locate_map (R.rename ctx) x,
+              implicit,
+              modality,
+              check ctx dom,
+              synth (R.snoc ctx x.value) body )
       | UU mode -> UU mode
       | Let (x, modality, tm, body) ->
           Let (R.rename ctx x, modality, synth ctx tm, (check (R.snoc ctx x)) body)

@@ -422,7 +422,7 @@ let rec get_spine : type mode a s.
         fn,
         _,
         _,
-        _,
+        implicit,
         (* Modalities are not printed with applications *)
         Modal (type am) ((_modality, plus, arg) : _ * _ * (_, (_, am, kinetic) Term.term) CubeOf.t)
       ) -> (
@@ -434,10 +434,14 @@ let rec get_spine : type mode a s.
           {
             it =
               (fun fa [ (x : (_, am, kinetic) Term.term) ] ->
-                match (Display.implicits (), is_id_sface fa, all_args) with
-                | `Hide, None, false -> ()
-                | _, None, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
-                | _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Explicit)));
+                match (implicit, Display.implicits (), is_id_sface fa, all_args) with
+                (* All the arguments of an implicit application are implicit, and are hidden unless the user has asked to display implicit arguments. *)
+                | `Implicit, `Hide, _, _ -> ()
+                | `Implicit, `Show, _, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
+                (* The boundary of an explicit application is hidden in the same way, unless it is needed because the primary argument doesn't synthesize. *)
+                | `Explicit, `Hide, None, false -> ()
+                | `Explicit, _, None, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
+                | `Explicit, _, Some _, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Explicit)));
           }
           [ arg ];
         !s in
@@ -677,7 +681,9 @@ let rec unparse : type mode n lt ls rt rs s.
   | App _ -> (
       match get_spine tm with
       | `App (fn, args) ->
-          unparse_spine vars (`Term fn) (Bwd.map (make_unparser_implicit vars) args) li ri
+          (* A notation is applied to explicit arguments, so if implicit arguments are being displayed (which they are only if requested), we display the application as a spine instead. *)
+          let notation = not (Bwd.exists (fun (Spine_arg (_, _, i)) -> i = `Implicit) args) in
+          unparse_spine ~notation vars (`Term fn) (Bwd.map (make_unparser_implicit vars) args) li ri
       | `Field (head, fld, ins, args) ->
           unparse_spine vars
             (`Field (head, fld, ins))
@@ -1371,6 +1377,7 @@ and unparse_comatch : type mode n a s et lt ls rt rs.
 (* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing.  The flag ~more indicates that the spine will be applied to more arguments, so that its right edge faces a juxtaposition (see word_like_notation). *)
 and unparse_spine : type mode n lt ls rt rs s.
     ?more:bool ->
+    ?notation:bool ->
     n Names.t ->
     [ `Term of (mode, n, s) term
     | `Constr of Constr.t
@@ -1381,14 +1388,14 @@ and unparse_spine : type mode n lt ls rt rs s.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun ?(more = false) vars head args li ri ->
+ fun ?(more = false) ?(notation = true) vars head args li ri ->
   (* A head whose right edge faces a juxtaposition, and an argument whose left edge does (or whose right edge does, if it is followed by more arguments), are parenthesized if that edge is word-like. *)
   let head_parens tm = if more && word_like_notation `Right tm then parenthesize tm else tm in
   let arg_parens ?(more = more) tm =
     if word_like_notation `Left tm || (more && word_like_notation `Right tm) then parenthesize tm
     else tm in
   (* First we check whether the head is a term with an associated notation, and if so whether it is applied to enough arguments to instantiate that notation. *)
-  match get_notation head args with
+  match if notation then get_notation head args else None with
   (* If it's applied to exactly the right number of arguments, we unparse it as that notation. *)
   | Some (Wrap notn, args, inner_symbols, Emp) ->
       head_parens (unparse_notation notn args inner_symbols li ri)
@@ -1412,7 +1419,9 @@ and unparse_spine : type mode n lt ls rt rs s.
           (* As before, if the application doesn't fit in its tightness interval, we have to parenthesize it. *)
           match (No.Interval.contains li No.plus_omega, No.Interval.contains ri No.plus_omega) with
           | Some left_ok, Some right_ok ->
-              let fn = unparse_spine ~more:true vars head args li No.Interval.plus_omega_only in
+              let fn =
+                unparse_spine ~more:true ~notation vars head args li No.Interval.plus_omega_only
+              in
               let arg = arg_parens (arg.unparse No.Interval.empty ri) in
               (* We parenthesize the argument if the style dictates and it doesn't already have parentheses. *)
               let arg =
@@ -1422,7 +1431,7 @@ and unparse_spine : type mode n lt ls rt rs s.
               unlocated (App { fn; arg; left_ok; right_ok })
           | _ ->
               let fn =
-                unparse_spine ~more:true vars head args No.Interval.plus_omega_only
+                unparse_spine ~more:true ~notation vars head args No.Interval.plus_omega_only
                   No.Interval.plus_omega_only in
               (* Since the whole application is parenthesized, the right edge of its last argument doesn't face a juxtaposition. *)
               let arg =
@@ -1608,7 +1617,7 @@ and unparse_lam : type mode n lt ls rt rs s.
  fun cube vars xs body li ri ->
   (* Modalities are not printed in abstractions *)
   match body with
-  | Lam ((Variables (m, _, _) as boundvars), _, _filter, _, inner) -> (
+  | Lam ((Variables (m, _, _) as boundvars), _, _filter, lam_implicit, inner) -> (
       match (cube, D.compare m D.zero) with
       | `Normal, Eq | `Cube, Neq ->
           let Variables (_, _, x), vars = Names.add vars boundvars in
@@ -1622,10 +1631,11 @@ and unparse_lam : type mode n lt ls rt rs s.
               (left, k, string) NFamOf.t ->
               (left, k, unit) NFamOf.t * (string * [ `Explicit | `Implicit ]) Bwd.t =
            fun s acc (NFamOf x) ->
+            (* The boundary variables are always in braces, and so is the top one if the abstraction is implicit. *)
             let implicit =
               match is_id_sface s with
               | None -> `Implicit
-              | Some _ -> `Explicit in
+              | Some _ -> lam_implicit in
             (NFamOf (), Snoc (acc, (x, implicit))) in
           unparse_lam cube vars
             (snd (Fold.fold_map_left { foldmap = (fun s acc x -> folder s acc x) } xs x))
@@ -1745,12 +1755,12 @@ and unparse_inst : type mode n n' lt ls rt rs m k mk s.
  fun vars ty argvars tyargs li ri ->
   match (D.compare_zero (TubeOf.uninst tyargs), D.compare_zero (TubeOf.inst tyargs), ty) with
   (* A fully instantiated higher pi-type we can unparse prettily.  The instantiation is at the outer (unfiltered) dimension, that of the codomains. *)
-  | Zero, Pos _, Pi { x; filter; implicit = _; doms = Modal (_, plus, doms); cods } -> (
+  | Zero, Pos _, Pi { x; filter; implicit; doms = Modal (_, plus, doms); cods } -> (
       match D.compare (TubeOf.inst tyargs) (CodCube.dim cods) with
       | Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
           let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (argvars, x)) } [ tyargs ] in
-          unparse_higher_pi vars Emp x filter plus doms cods tyargs li ri
+          unparse_higher_pi vars Emp x filter implicit plus doms cods tyargs li ri
       | Neq ->
           fatal (Dimension_mismatch ("unparsing higher pi", TubeOf.inst tyargs, CodCube.dim cods)))
   | _ ->
@@ -1809,12 +1819,12 @@ and unparse_pis : type mode a lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun dim notn vars accum tm li ri ->
   match tm with
-  | Pi { x; filter; implicit = _; doms = Modal (modality, plus, doms); cods } -> (
+  | Pi { x; filter; implicit; doms = Modal (modality, plus, doms); cods } -> (
       match (D.compare_zero (CodCube.dim cods), dim) with
       | Zero, `Arrow | Pos _, `DblArrow -> (
-          (* Nontrivially modal pi-types are always printed dependently *)
-          match (top_variable x, Modality.compare_id modality) with
-          | (`Anon _ as anon), Eq ->
+          (* Nontrivially modal pi-types are always printed dependently, and so are implicit ones, since there is no non-dependent implicit arrow. *)
+          match (top_variable x, Modality.compare_id modality, implicit) with
+          | (`Anon _ as anon), Eq, `Explicit ->
               (* non-dependent pi-type *)
               let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) anon) in
               let dim =
@@ -1831,7 +1841,7 @@ and unparse_pis : type mode a lt ls rt rs.
                         li ri);
                 }
                 li ri
-          | x, _ ->
+          | x, _, _ ->
               (* dependent pi-type *)
               let Variables (_, _, x), newvars =
                 Names.add vars (singleton_variables (CubeOf.dim doms) x) in
@@ -1841,7 +1851,8 @@ and unparse_pis : type mode a lt ls rt rs.
                      {
                        unparse =
                          (fun _ _ ->
-                           unparse_pi_dom (NICubeOf.find_top x) (Modality.name modality)
+                           unparse_pi_dom ~implicit:(implicit = `Implicit) (NICubeOf.find_top x)
+                             (Modality.name modality)
                              (unparse (Names.add_lock vars plus) (CubeOf.find_top doms)
                                 No.Interval.entire No.Interval.entire));
                      } ))
@@ -1934,6 +1945,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
     unparser Bwd.t ->
     k variables ->
     (dom, modality, mode, k, n) Modality.filter_dim ->
+    implicitness ->
     (a, mode, modality, dom, am) plus_lock ->
     (k, (dom, am, kinetic) term) CubeOf.t ->
     (n, dom * modality * mode * a) CodCube.t ->
@@ -1941,7 +1953,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars accum xs filter plus doms cods tyargs li ri ->
+ fun vars accum xs filter pi_implicit plus doms cods tyargs li ri ->
   let modality = Modality.filter_modality filter in
   let n = CodCube.dim cods in
   let kfilter = Modality.filter_idempotent filter in
@@ -1969,7 +1981,8 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
                            kfilter,
                            plus_with_locks_of_plus_lock xsplus )));
               } in
-          let implicit = Option.is_none (is_id_sface s) in
+          (* The boundary domains are always in braces, and so is the top one if the pi-type is implicit. *)
+          let implicit = Option.is_none (is_id_sface s) || pi_implicit = `Implicit in
           (* Here we use the flexibility allowed by unparse_inst to have the type and the instantiation arguments in different contexts, since the type is not in the context extended by the new variables.  However, it's important that we get the context for the type by *removing* those new variables from newvars, rather than using the original vars, since that retains the extra information stored in a Names.t about how many copies of a variable there have been, for future renaming use.  *)
           let dom =
             unparse_inst
@@ -2034,13 +2047,15 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
       {
         x = newxs;
         filter = newfilter;
-        implicit = _;
+        implicit = newimplicit;
         doms = Modal (_, newplus, newdoms);
         cods = newcods;
       } -> (
       (* If it's another pi-type, it must be of the same outer dimension since it is an (uninstantiated!) n-dimensional type, and we continue recursively. *)
       match D.compare (CodCube.dim newcods) n with
-      | Eq -> unparse_higher_pi newvars accum newxs newfilter newplus newdoms newcods tyargs li ri
+      | Eq ->
+          unparse_higher_pi newvars accum newxs newfilter newimplicit newplus newdoms newcods tyargs
+            li ri
       | Neq -> fatal (Dimension_mismatch ("unparse_higher_pi recursion", CodCube.dim newcods, n)))
   (* It might also be a *partially* instantiated *higher* dimensional pi-type, in which case we combine the instantiation arguments to make it fully instantiated.  We don't continue accumulating domains as in the previous case, though, because in this case the codomain has different dimension, and hence needs its own arrow. *)
   | Inst
@@ -2049,7 +2064,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
           {
             x = newxs;
             filter = newfilter;
-            implicit = _;
+            implicit = newimplicit;
             doms = Modal (_, newplus, newdoms);
             cods = newcods;
           },
@@ -2066,8 +2081,8 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
             {
               unparse =
                 (fun li ri ->
-                  unparse_higher_pi newvars Emp newxs newfilter newplus newdoms newcods plustyargs
-                    li ri);
+                  unparse_higher_pi newvars Emp newxs newfilter newimplicit newplus newdoms newcods
+                    plustyargs li ri);
             } in
           unparse_pis_final (`Arrow (Some (CodCube.dim cods))) arrow vars accum tm li ri
       | Neq, _ ->

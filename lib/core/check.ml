@@ -533,7 +533,7 @@ and synth_has_case_tree : type a. a synth -> bool = function
   | Let (_, _, _, body) -> check_has_case_tree body.value
   | Letrec (_, _, body) -> check_has_case_tree body.value
   | Asc (tm, _) -> check_has_case_tree tm.value
-  | AscLam (_, _, _, body) -> synth_has_case_tree body.value
+  | AscLam (_, _, _, _, body) -> synth_has_case_tree body.value
   | SFirst (alts, arg) ->
       List.exists (fun (_, stm, _) -> synth_has_case_tree stm) alts
       || Option.fold ~none:false ~some:synth_has_case_tree arg
@@ -557,7 +557,7 @@ let rec synth_has_synth : type a. a synth -> bool = function
   | Var _ | Const _ | UU _ | Pi _ | InstHigherPi _ | Asc _ | Fail _ -> true
   | Field (tm, _, _) | Key (tm, _) -> synth_has_synth tm.value
   | HigherPi (_, _, dom, cod) -> synth_has_synth dom.value && synth_has_synth cod.value
-  | AscLam (_, _, _, body) -> synth_has_synth body.value
+  | AscLam (_, _, _, _, body) -> synth_has_synth body.value
   | App (fn, _, _) -> head_has_synth fn.value
   | Let (_, _, v, body) -> synth_has_synth v.value && check_has_synth body.value
   | Letrec (_, _, body) -> check_has_synth body.value
@@ -781,7 +781,7 @@ let rec check : type mode a b s.
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs filter newargs in
             match cube.value with
-            (* If the abstraction is not a cube, we slurp up the right number of lambdas for the dimension of the pi-type, requiring all but the top variable to be {implicit}, and pick up the body inside them.  We do this by building a cube of variables of the right dimension while maintaining the current term as an indexed state.  We also build a sum of raw lengths, since we need that to extend the context.  Note that we never need to manually "count" how many faces there are in a cube of any dimension, or discuss how to put them in order: the counting and ordering is handled automatically by iterating through a cube. *)
+            (* If the abstraction is not a cube, we slurp up the right number of lambdas for the dimension of the pi-type, requiring all but the top variable to be {implicit}, and the top variable to be implicit exactly when the pi-type is, and pick up the body inside them.  We do this by building a cube of variables of the right dimension while maintaining the current term as an indexed state.  We also build a sum of raw lengths, since we need that to extend the context.  Note that we never need to manually "count" how many faces there are in a cube of any dimension, or discuss how to put them in order: the counting and ordering is handled automatically by iterating through a cube. *)
             | `Normal -> (
                 let module S = struct
                   type 'b t =
@@ -808,12 +808,19 @@ let rec check : type mode a b s.
                                       };
                                   _;
                                 } ) -> (
-                              match (is_id_sface fa, implicit) with
-                              | Some _, `Implicit ->
+                              match (is_id_sface fa, implicit, piimplicit) with
+                              | Some _, `Implicit, `Explicit ->
                                   fatal ?loc:name.loc
                                     (Unexpected_implicitness
                                        (`Implicit, "abstraction", "expecting explicit variable"))
-                              | None, `Explicit ->
+                              | Some _, `Explicit, `Implicit ->
+                                  fatal ?loc:name.loc
+                                    (Unexpected_implicitness
+                                       ( `Explicit,
+                                         "abstraction",
+                                         "the function-type is implicit, so its variable must be in braces"
+                                       ))
+                              | None, `Explicit, _ ->
                                   fatal ?loc:name.loc
                                     (Unexpected_implicitness
                                        (`Explicit, "abstraction", "expecting implicit variable"))
@@ -841,9 +848,19 @@ let rec check : type mode a b s.
                 (match D.compare_zero m with
                 | Zero -> mortal ?loc:cube.loc (Zero_dimensional_cube_abstraction "function")
                 | Pos _ -> ());
-                match implicit with
-                | `Implicit -> fatal (Unimplemented "general implicit functions")
-                | `Explicit ->
+                (* A cube abstraction binds the whole cube at once, so it is in braces exactly when the function-type is implicit. *)
+                match (implicit, piimplicit) with
+                | `Implicit, `Explicit ->
+                    fatal ?loc:xloc
+                      (Unexpected_implicitness
+                         (`Implicit, "cube abstraction", "the function-type is explicit"))
+                | `Explicit, `Implicit ->
+                    fatal ?loc:xloc
+                      (Unexpected_implicitness
+                         ( `Explicit,
+                           "cube abstraction",
+                           "the function-type is implicit, so its variable must be in braces" ))
+                | _ ->
                     (match !absdim with
                     | None -> absdim := Some (Wrap m, xloc)
                     | Some (Wrap m', xloc') -> (
@@ -4076,7 +4093,7 @@ and synth : type mode a b s.
         match Modal.Mode.compare umode mode with
         | Eq -> (realize status (Term.UU (mode, D.zero)), universe mode D.zero)
         | Neq -> fatal (Mode_mismatch (`User, "synthesizing universe", umode, None, mode)))
-    | Pi (xs, modality, dom, cod), _ -> (
+    | Pi (xs, implicit, modality, dom, cod), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing pi-type" (e :> modality_error)
         | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
@@ -4107,7 +4124,7 @@ and synth : type mode a b s.
                     plus_with_locks_of_dim_plus_lock D.zero (Modality.filter_zero modality) newplus
                   in
                   let newcdom = weaken_gen plus_src cdom plus_tgt in
-                  pi
+                  pi ~implicit
                     (singleton_variables D.zero (View.hinted x.value edom))
                     (Modal (modality, plus_src, cdom))
                     (bind newctx newplus newcdom xs cod) in
@@ -4548,7 +4565,7 @@ and synth : type mode a b s.
               Reporter.mortalize ~fallback:(fun () -> Term.Failed (energy status)) @@ fun () ->
               check status ctx tm ety in
             (ctm, ety))
-    | AscLam ({ value = x; loc = _ }, modality, dom, body), _ -> (
+    | AscLam ({ value = x; loc = _ }, implicit, modality, dom, body), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing ascribed lambda" (e :> modality_error)
         | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
@@ -4576,17 +4593,17 @@ and synth : type mode a b s.
                   let arg = CubeOf.singleton xnf in
                   Potential
                     ( c,
-                      Snoc (args, Arg (filter, `Explicit, arg, ins_zero D.zero)),
-                      fun tm -> hyp (Lam (xs, D.zero, Modality.filter_zero modality, `Explicit, tm))
+                      Snoc (args, Arg (filter, implicit, arg, ins_zero D.zero)),
+                      fun tm -> hyp (Lam (xs, D.zero, Modality.filter_zero modality, implicit, tm))
                     ) in
             let cbody, scod = synth newstatus newctx body in
             let ty =
               eval_term (Ctx.env ctx)
-                (pi
+                (pi ~implicit
                    (singleton_variables D.zero (View.hinted x edom))
                    (Modal (modality, plus, cdom))
                    (readback_val newctx scod)) in
-            (Lam (xs, D.zero, filter, `Explicit, cbody), ty))
+            (Lam (xs, D.zero, filter, implicit, cbody), ty))
     | Let (x, modality, v, body), _ ->
         (* The synthesized type of the body will be the type of the let-binding, so we pass in the 'synthed' callback. *)
         let ctm, Not_none ety =
@@ -4903,6 +4920,7 @@ and synth_apps : type mode a b.
 
 (* This is a common subroutine for synth_app and synth_inst that picks up a whole cube of arguments and checks their types.  The checked arguments are evaluated lazily, since often their values aren't needed (e.g. if the codomain is non-dependent).  Since in one case we need a cube of lazy values and the other case a cube of normals, we let the caller choose, given each lazy value and its type. *)
 and synth_arg_cube : type dom modality mode a b n c.
+    ?implicit:implicitness ->
     not_enough:Reporter.Code.t ->
     which:string ->
     (mode, a, b) Ctx.t ->
@@ -4916,7 +4934,7 @@ and synth_arg_cube : type dom modality mode a b n c.
     * (Asai.Range.t option
       * a check located
       * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list) =
- fun ~not_enough ~which ctx modality choose doms (sfnloc, fn, args) ->
+ fun ?(implicit = `Explicit) ~not_enough ~which ctx modality choose doms (sfnloc, fn, args) ->
   (* Based on the dimension of the application and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
   let module TakenArgs = struct
     type t =
@@ -4931,6 +4949,14 @@ and synth_arg_cube : type dom modality mode a b n c.
   let taken_args : TakenArgs.t =
     match (args, D.compare_zero n, Endpoints.totally_nullary n) with
     | [], _, _ -> fatal not_enough
+    (* At an implicit function-type, every argument in the cube is implicit, so we take a whole cube. *)
+    | (_, _, { value = `Implicit; _ }) :: _, _, _ when implicit = `Implicit -> Take
+    | (_, _, { value = `Explicit; loc }) :: _, _, _ when implicit = `Implicit ->
+        fatal ?loc
+          (Unexpected_implicitness
+             ( `Explicit,
+               "argument",
+               "the function-type is implicit, so its argument must be in braces" ))
     (* If the first argument is implicit, or if the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
     | (_, _, { value = `Implicit; _ }) :: _, Pos _, false | _, Zero, _ | _, _, true -> Take
     (* Otherwise, the first argument must be explicit.  If it is synthesizing, we can get the boundary from its type. *)
@@ -5004,12 +5030,21 @@ and synth_arg_cube : type dom modality mode a b n c.
                     | [] -> with_loc loc @@ fun () -> fatal not_enough
                     | (l, t, ({ value = i; loc } as impl)) :: ts ->
                         (match (is_id_sface fa, i) with
-                        | Some _, `Implicit ->
+                        | Some _, `Implicit when implicit = `Explicit ->
                             fatal ?loc
                               (Unexpected_implicitness
                                  ( `Implicit,
                                    "argument",
-                                   "expecting explicit primary " ^ which ^ " argument" ))
+                                   match D.compare_zero n with
+                                   | Zero -> "the function-type is explicit"
+                                   | Pos _ -> "expecting explicit primary " ^ which ^ " argument" ))
+                        | Some _, `Explicit when implicit = `Implicit ->
+                            fatal ?loc
+                              (Unexpected_implicitness
+                                 ( `Explicit,
+                                   "argument",
+                                   "the function-type is implicit, so its argument must be in braces"
+                                 ))
                         | None, `Explicit ->
                             fatal ?loc
                               (Unexpected_implicitness
@@ -5052,7 +5087,7 @@ and synth_app : type dom modality mode a b k n.
     * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
  fun ctx filter implicit sfn doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
-    synth_arg_cube ~not_enough:Not_enough_arguments_to_function
+    synth_arg_cube ~implicit ~not_enough:Not_enough_arguments_to_function
       ~which:"higher-dimensional application" ctx (Modality.filter_modality filter)
       (fun etm _ -> etm)
       doms (sfn.loc, fn, args) in
@@ -5487,7 +5522,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
           | None -> None)
       (* Key operations are not yet implemented, so we can't synthesize their mode. *)
       | Synth (Key (_, _)) -> None
-      | Synth (Pi (_, modality, dom, cod)) -> (
+      | Synth (Pi (_, _, modality, dom, cod)) -> (
           match synth_mode cod with
           | Some mode -> Some mode
           | None -> (
@@ -5517,7 +5552,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
           match synth_mode ty with
           | Some mode -> Some mode
           | None -> synth_mode tm)
-      | Synth (AscLam (_, modality, dom, body)) -> (
+      | Synth (AscLam (_, _, modality, dom, body)) -> (
           match synth_mode (locate_opt body.loc (Synth body.value)) with
           | Some mode -> Some mode
           | None -> (
