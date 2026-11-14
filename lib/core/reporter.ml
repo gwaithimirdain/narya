@@ -197,7 +197,6 @@ module Code = struct
     | Checking_tuple_at_nonrecord : printable -> t
     | Choice_mismatch : printable -> t
     | Calc_error : printable -> t
-    | No_implicit_goal_arg : printable * printable -> t
     | Comatching_at_noncodata : printable -> t
     | Comatching_at_degenerated_codata : printable -> t
     | No_such_constructor :
@@ -449,7 +448,6 @@ module Code = struct
     | Checking_tuple_at_nonrecord _ -> Error
     | Choice_mismatch _ -> Error
     | Calc_error _ -> Error
-    | No_implicit_goal_arg _ -> Error
     | Comatching_at_noncodata _ -> Error
     | Comatching_at_degenerated_codata _ -> Error
     | No_such_constructor _ -> Error
@@ -736,7 +734,6 @@ module Code = struct
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
-    | No_implicit_goal_arg _ -> "E1602"
     (* Modal type theory *)
     | Mode_mismatch _ -> "E1700"
     | Modality_mismatch _ -> "E1701"
@@ -966,9 +963,6 @@ module Code = struct
       | Choice_mismatch ty ->
           textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed (print ty)
       | Calc_error e -> textf "error in calc: %a" pp_printed (print e)
-      | No_implicit_goal_arg (fn, ty) ->
-          textf "@[<hv 0>can't take an implicit argument for@;<1 2>%a@ from type@;<1 2>%a@]"
-            pp_printed (print fn) pp_printed (print ty)
       | Comatching_at_noncodata ty ->
           textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed (print ty)
       | No_such_constructor (d, c) -> (

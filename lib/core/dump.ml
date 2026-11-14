@@ -388,12 +388,6 @@ module F = struct
     | Hole _ -> fprintf ppf "Hole"
     | Unif _ -> fprintf ppf "Unif"
     | Realize x -> fprintf ppf "Realize %a" check x
-    | ImplicitApp (fn, _, args) ->
-        fprintf ppf "ImplicitApp (%a," synth fn.value;
-        List.iter
-          (fun (_, (x : a check Asai.Range.located)) -> fprintf ppf "%a, " check x.value)
-          args;
-        fprintf ppf ")"
     | Embed _ -> .
     | First tms ->
         fprintf ppf "First(%a)"
@@ -438,7 +432,6 @@ module F = struct
         fprintf ppf "Match (%a, (%a))" synth tm.value branches br
     | UU mode -> fprintf ppf "%s" (Mode.name mode)
     | Fail _ -> fprintf ppf "Error"
-    | ImplicitSApp (fn, _, arg) -> fprintf ppf "ImplicitSApp(%a, %a)" synth fn.value synth arg.value
     | SFirst (tms, arg) ->
         fprintf ppf "SFirst(%a, %a)"
           (pp_print_list ~pp_sep:(fun ppf () -> pp_print_string ppf ", ") synth)

@@ -11,9 +11,6 @@ let locate_map f ({ value; loc } : 'a located) = locate_opt loc (f value)
 
 (* Raw (unchecked) terms, using intrinsically well-scoped De Bruijn indices, and separated into synthesizing terms and checking terms.  These match the user-facing syntax rather than the internal syntax.  In particular, applications, abstractions, and pi-types are all unary, there is only one universe, and the only operator actions are refl (including Id) and sym. *)
 
-(* Where an ImplicitApp gets its implicit first argument: the type being checked against itself, or the argument at the given (0-based) position of the constant that type is an application of, such as P in "forall ℕ P".  This is a stopgap until we have unification. *)
-type implicit_source = [ `Goal | `Goal_arg of int ]
-
 (* An argument in an application spine: a term; a term labelled by the face of the cube of arguments that it supplies, as in "{22 ≔ a}", which is always implicit; a dot ".", which inserts one cube of implicit arguments or instantiates one nullary dimension; or an ellipsis "…", which inserts all the leading implicit arguments or instantiates all the leading nullary dimensions (but not both), and must have at least one of these to do.  The last form is internal: it is what remains of an ellipsis that has done at least one of them, recording which, when its remaining work must be postponed, and it may have nothing left to do. *)
 type 'c app_arg =
   [ `Arg of 'c
@@ -81,7 +78,6 @@ module rec Make : functor (I : Indices) -> sig
       }
         -> 'a synth
     | Fail : Reporter.Code.t -> 'a synth
-    | ImplicitSApp : 'a synth located * Asai.Range.t option * 'a synth located -> 'a synth
     | SFirst :
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
         * 'a synth option
@@ -130,9 +126,6 @@ module rec Make : functor (I : Indices) -> sig
         -> 'a check
     | Unif : Reporter.Code.t option -> 'a check
     | Realize : 'a check -> 'a check
-    | ImplicitApp :
-        'a synth located * implicit_source * (Asai.Range.t option * 'a check located) list
-        -> 'a check
     | Embed : 'a I.embed -> 'a check
     | First :
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a check * bool) list
@@ -272,8 +265,6 @@ functor
         }
           -> 'a synth
       | Fail : Reporter.Code.t -> 'a synth
-      (* Pass the synthesized type of an argument as an implicit first argument of a function. *)
-      | ImplicitSApp : 'a synth located * Asai.Range.t option * 'a synth located -> 'a synth
       (* Try several terms, testing for each whether the synthesized type of the specified term has certain constructors or fields. *)
       | SFirst :
           ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
@@ -338,10 +329,6 @@ functor
       | Unif : Reporter.Code.t option -> 'a check
       (* Force a leaf of the case tree *)
       | Realize : 'a check -> 'a check
-      (* Pass the type being checked against, or one of the arguments of the constant it is an application of, as the implicit first argument of a function. *)
-      | ImplicitApp :
-          'a synth located * implicit_source * (Asai.Range.t option * 'a check located) list
-          -> 'a check
       (* Embed an arbitrary object *)
       | Embed : 'a I.embed -> 'a check
       (* Try several terms, testing for each whether the goal type has certain constructors or fields. *)
@@ -584,7 +571,6 @@ module Resolve (R : Resolver) = struct
           let refutables = Option.map (refutables ctx) r in
           Match { tm; window; sort; branches; refutables; highers }
       | Fail e -> Fail e
-      | ImplicitSApp (fn, apploc, arg) -> ImplicitSApp (synth ctx fn, apploc, synth ctx arg)
       | SFirst (tms, arg) ->
           SFirst
             ( List.map (fun (t, x, b) -> (t, (synth ctx (locate_opt tm.loc x)).value, b)) tms,
@@ -647,8 +633,6 @@ module Resolve (R : Resolver) = struct
       | Hole { scope; loc; li; ri; num } -> Hole { scope = R.rescope ctx scope; loc; li; ri; num }
       | Unif err -> Unif err
       | Realize x -> Realize (check ctx (locate_opt tm.loc x)).value
-      | ImplicitApp (fn, src, args) ->
-          ImplicitApp (synth ctx fn, src, List.map (fun (l, x) -> (l, check ctx x)) args)
       | Embed e -> (
           match R.embed ctx e with
           | Left x -> (check ctx (locate_opt tm.loc x)).value

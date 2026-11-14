@@ -191,10 +191,15 @@ comparisons (§4).
   variables.  This is the explicit non-refining form suggested by `E1103`
   messages.  It is also on its own branch `match-return-placeholder` for
   master.
-- **Not yet**: implicit arguments.  `ImplicitApp` / `ImplicitSApp` will be
-  removed once they exist, so no work goes into supporting them.  A general
-  `_ : _` rule for all synthesizing positions was tried before postponement
-  existed and dropped.
+- **Implicit arguments** (branch `implicits`) build on placeholders:
+  applying a function of implicit function-type `{x : A} → B x` to an
+  explicit argument, or to `.` or `…`, or projecting from it, inserts
+  placeholders for its implicit arguments (`Check.synth_apps`,
+  `synth_ellipsis`, and the `Insert` and `Stream` modes of
+  `synth_arg_cube`), reported as E2005 if undetermined.  The old stopgaps
+  `ImplicitApp` / `ImplicitSApp` have been removed.  A general `_ : _` rule
+  for all synthesizing positions was tried before postponement existed and
+  dropped.
 
 ## 4. Equality with metavariables (`equal.ml`)
 
@@ -594,8 +599,8 @@ unfolding them.
 
 ## 9. Open points
 
-Next (user's plan): **implicit arguments**, in a new session, and then
-remove `ImplicitApp` / `ImplicitSApp`.  Implicits may make performance
+Implicit arguments are implemented on the branch `implicits`, and
+`ImplicitApp` / `ImplicitSApp` are gone.  Implicits may make performance
 matter more.
 
 Deferred or not started:
