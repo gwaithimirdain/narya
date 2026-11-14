@@ -49,11 +49,13 @@ let get_notation : type mode n s. [> `Term of (mode, n, s) term | `Constr of Con
     (* TODO: Can we associate notations to Fields too? *)
     | _ -> None in
   (* There's probably a more efficient way to do this that doesn't involve converting to and from forwards lists, but this way is more natural and easier to understand, and I think this is unlikely to be a performance bottleneck. *)
+  (* An argument in the position of a placeholder in the definition of the notation is omitted. *)
   let rec take_labeled labels elts acc =
     match (labels, elts) with
     | [], _ -> return (acc, elts)
     | _ :: _, [] -> None
-    | k :: labels, x :: elts -> take_labeled labels elts (acc |> StringMap.add k x) in
+    | Some k :: labels, x :: elts -> take_labeled labels elts (acc |> StringMap.add k x)
+    | None :: labels, _ :: elts -> take_labeled labels elts acc in
   let* first, rest = take_labeled val_vars (Bwd.to_list args) StringMap.empty in
   let first =
     List.map (fun k -> StringMap.find_opt k first <|> Anomaly "not found in get_notation") pat_vars

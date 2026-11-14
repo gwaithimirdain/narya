@@ -123,7 +123,8 @@ type ('left, 'tight, 'right) prenotation_data = {
   fixity : ('left, 'tight, 'right) fixity;
   pattern : ('left, 'right) Pattern.t;
   key : key;
-  val_vars : string list;
+  (* The arguments of the head in the definition of the notation: variables of the pattern, or placeholders. *)
+  val_vars : string option list;
 }
 
 type prenotation = User : ('left, 'tight, 'right) prenotation_data -> prenotation
@@ -134,7 +135,7 @@ type notation = {
   keys : key list;
   notn : Notation.t;
   pat_vars : string list;
-  val_vars : string list;
+  val_vars : string option list;
   inner_symbols : [ `Single of Token.t | `Multiple of Token.t * Token.t option list * Token.t ];
 }
 
@@ -215,17 +216,27 @@ let make_user : prenotation -> notation =
                 let spine =
                   List.fold_left
                     (fun acc k ->
-                      match StringMap.find_opt k args with
-                      | None -> fatal (Anomaly "not found processing user")
-                      | Some arg ->
-                          Raw.App
-                            ( { value = Synth acc; loc },
-                              { value = `Arg arg.value; loc = arg.loc },
-                              Asai.Range.locate_opt None `Explicit ))
+                      (* A placeholder in the definition of the notation becomes a placeholder in each use of it. *)
+                      let arg : _ Raw.check Asai.Range.located =
+                        match k with
+                        | None -> { value = Raw.Unif None; loc }
+                        | Some k -> (
+                            match StringMap.find_opt k args with
+                            | None -> fatal (Anomaly "not found processing user")
+                            | Some arg -> arg) in
+                      Raw.App
+                        ( { value = Synth acc; loc },
+                          { value = `Arg arg.value; loc = arg.loc },
+                          Asai.Range.locate_opt None `Explicit ))
                     (Const c) val_vars in
                 Raw.Synth spine
             | `Constr (c, _) ->
-                let args = List.map (fun k -> StringMap.find k args) val_vars in
+                let args =
+                  List.map
+                    (function
+                      | None -> ({ value = Raw.Unif None; loc } : _ Raw.check Asai.Range.located)
+                      | Some k -> StringMap.find k args)
+                    val_vars in
                 Raw.Constr
                   ( { value = c; loc },
                     List.map
@@ -248,7 +259,10 @@ let make_user : prenotation -> notation =
           match key with
           | `Constr (c, _) ->
               (* A user notation's pattern variables are always ordinary (cube) ones; there is no way to give explicit boundaries for them. *)
-              let explicit k = Matchpattern.explicit (StringMap.find k args) in
+              (* A placeholder in the definition of the notation becomes a wildcard. *)
+              let explicit = function
+                | None -> Matchpattern.explicit (Var { value = None; loc })
+                | Some k -> Matchpattern.explicit (StringMap.find k args) in
               let (Wrap args) = Vec.of_list_map explicit val_vars in
               Matchpattern.Constr ({ value = c; loc }, args)
           | _ -> fatal (Anomaly "make_user"));

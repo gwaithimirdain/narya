@@ -626,3 +626,53 @@ The boundary of a higher-dimensional application can't be read off the type of i
     (ap h (r .snd))
     : Type
   
+
+The definition of a notation can have placeholders in place of some arguments of its head, which are placeholders in each use of the notation, wildcards when it is used as a pattern, and omitted when a term is displayed with it.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom plus (X : Type) (x y : X) : X
+  > axiom a : A
+  > notation(0) x "+" y ≔ plus _ x y
+  > echo a + a
+  > def t : A ≔ a + (a + a)
+  > echo plus A a a
+  > def List : Type ≔ data [ nil. | cons. (C : Type) (_ : C) (_ : List) ]
+  > notation(5) x "::" xs ≔ cons. _ x xs
+  > def l : List ≔ a :: (a :: nil.)
+  > echo l
+  > def len (xs : List) : List ≔ match xs [ nil. ↦ nil. | _ :: ys ↦ len ys ]
+  > echo len l
+  > notation(1) x "*" y ≔ plus _ x z
+  > EOF
+  a + a
+    : A
+  
+  a + a
+    : A
+  
+  a :: (a :: nil.)
+    : List
+  
+  nil.
+    : List
+  
+   ￫ error[E2206]
+   ￮ unused notation variable: 'y'
+  
+  [1]
+
+Placeholders in the definition of a notation are preserved by reformatting.
+
+  $ cat >rf2.ny <<EOF
+  > axiom A : Type
+  > axiom plus (X : Type) (x y : X) : X
+  > notation(0) x "+" y ≔ plus   _ x y
+  > EOF
+  $ narya rf2.ny
+  $ cat rf2.ny
+  axiom A : Type
+  
+  axiom plus (X : Type) (x y : X) : X
+  
+  notation(0) x "+" y ≔ plus _ x y
