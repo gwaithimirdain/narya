@@ -505,7 +505,7 @@ Implicit higher-dimensional function-types can be written with all their domains
   
   [1]
 
-Braced arguments supply the faces of a cube of arguments, either in order or labelled by face as for the faces of a cube variable.  An implicit cube that isn't complete is completed by placeholders, at a dot or before anything else; an explicit cube's braced arguments supply only its boundary, and it is completed by its primary argument.
+Braced arguments supply the faces of a cube of arguments in order, each either the next face or labelled by its face as for the faces of a cube variable, skipping any faces in between, which are placeholders.  An implicit cube ends after its top face, at a dot, or before anything else; an explicit cube's braced arguments supply only its boundary, and it is completed by its primary argument.
 
   $ narya - <<EOF
   > axiom A : Type
@@ -530,6 +530,11 @@ Braced arguments supply the faces of a cube of arguments, either in order or lab
   > def e6 : B a ≔ g {0 ≔ a}
   > def e7 : B a ≔ f {0 ≔ a}
   > def e8 : Id B p (f {a}) (f {a'}) ≔ refl f {0 ≔ a} {0 ≔ a}
+  > def t7 : Id B p (f {a}) (f {a'}) ≔ refl f {a} {2 ≔ p}
+  > def t8 : Id B p (g a) (g a') ≔ refl g {1 ≔ a'} p
+  > axiom h : {x : A} {y : A} → A
+  > def t9 : Id A (h {a} {a}) (h {a'} {a'}) ≔ refl h {2 ≔ p} {2 ≔ p}
+  > def e9 : Id B p (f {a}) (f {a'}) ≔ refl f {1 ≔ a'} {0 ≔ a} {2 ≔ p}
   > EOF
   ap f .
     : Id B p (f .) (f .)
@@ -539,15 +544,14 @@ Braced arguments supply the faces of a cube of arguments, either in order or lab
    15 | def e1 : Id B p (f {a}) (f {a'}) ≔ refl f {3 ≔ p}
       ^ invalid face argument: no face 3 in this cube of arguments
   
-   ￫ error[E0712]
+   ￫ error[E0701]
    ￭ stdin
    16 | def e2 : Id B p (f {a}) (f {a'}) ≔ refl f {2 ≔ p} {2 ≔ p}
-      ^ invalid face argument: face 2 is supplied more than once
-  
-   ￫ error[E0712]
-   ￭ stdin
-   17 | def e3 : Id B p (f {a}) (f {a'}) ≔ refl f {a} {1 ≔ a'} {p}
-      ^ invalid face argument: can't mix labelled and unlabelled arguments in one cube
+      ^ attempt to apply/instantiate
+          ap f .
+        of type
+          Id B p (f .) (f .)
+        which is not a function-type or universe
   
    ￫ error[E0712]
    ￭ stdin
@@ -559,10 +563,10 @@ Braced arguments supply the faces of a cube of arguments, either in order or lab
    19 | def e5 : Id B p (g a) (g a') ≔ refl g {a} .
       ^ invalid face argument: a dot can't supply the primary argument of an explicit function
   
-   ￫ error[E0702]
+   ￫ error[E0712]
    ￭ stdin
    20 | def e6 : B a ≔ g {0 ≔ a}
-      ^ unexpected implicit argument: the function-type is explicit
+      ^ invalid face argument: no face 0 in this cube of arguments
   
    ￫ error[E0712]
    ￭ stdin
@@ -572,6 +576,11 @@ Braced arguments supply the faces of a cube of arguments, either in order or lab
    ￫ error[E0712]
    ￭ stdin
    22 | def e8 : Id B p (f {a}) (f {a'}) ≔ refl f {0 ≔ a} {0 ≔ a}
-      ^ invalid face argument: face 0 is supplied more than once
+      ^ invalid face argument: face 0 is out of order or repeated: faces must be given in order, and a dot starts the next cube
+  
+   ￫ error[E0712]
+   ￭ stdin
+   27 | def e9 : Id B p (f {a}) (f {a'}) ≔ refl f {1 ≔ a'} {0 ≔ a} {2 ≔ p}
+      ^ invalid face argument: face 0 is out of order or repeated: faces must be given in order, and a dot starts the next cube
   
   [1]

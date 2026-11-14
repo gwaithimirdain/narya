@@ -5092,8 +5092,8 @@ and synth_arg_cube : type dom modality mode a b n c.
       | Placeholders : Asai.Range.t option * Code.t -> t
       (* Inserting a cube of implicit arguments: all of them are placeholders, and no arguments are consumed. *)
       | Insert : Asai.Range.t option * Code.t -> t
-      (* Some of the arguments in the cube, collected from braced arguments (and the primary argument, if the function-type is explicit), with the others to be placeholders. *)
-      | Collected : (n sface_of, a check located) Hashtbl.t * (Asai.Range.t option * Code.t) -> t
+      (* Braced arguments supplying faces of the cube in order (and the primary argument, if the function-type is explicit), with the others to be placeholders (see stream_arg). *)
+      | Stream : t
   end in
   let n = CubeOf.dim doms in
   let (Locked (plus, lctx)) = Ctx.lock ctx modality in
@@ -5106,94 +5106,101 @@ and synth_arg_cube : type dom modality mode a b n c.
   let current () =
     let _, _, ts = !state in
     ts in
-  (* In a function application, braced arguments supply the faces of the cube, either in order, or labelled by the faces they supply, as in "{0 ≔ a} {1 ≔ b}".  They supply all the faces of an implicit cube, or only the boundary faces of an explicit one, which is completed by its primary argument.  An implicit cube that isn't complete is completed by a ".", which is consumed, or else by anything else, which isn't.  Any faces that haven't been supplied are placeholders. *)
-  let collect () : TakenArgs.t =
-    let tbl = Hashtbl.create 10 in
-    let faces = ref [] in
-    CubeOf.miter { it = (fun fa [ _ ] -> faces := SFace_of fa :: !faces) } [ doms ];
-    let faces = List.rev !faces in
-    let top = SFace_of (id_sface n) in
-    let fillable = List.filter (fun f -> implicit = `Implicit || f <> top) faces in
-    let style = ref `None in
-    let complete () = Hashtbl.length tbl = List.length fillable in
-    let primary_error loc =
-      fatal ?loc
-        (Unexpected_implicitness
-           ( `Implicit,
-             "argument",
-             match D.compare_zero n with
-             | Zero -> "the function-type is explicit"
-             | Pos _ -> "expecting explicit primary " ^ which ^ " argument" )) in
-    let rec loop pos =
-      if not (complete ()) then
-        match current () with
-        | (_, { value = `Arg t; loc }, { value = `Implicit; _ }) :: _ -> (
-            if !style = `Labelled then
-              fatal ?loc
-                (Invalid_face_argument "can't mix labelled and unlabelled arguments in one cube");
-            style := `Positional;
-            match pos with
-            | [] -> primary_error loc
-            | f :: pos ->
-                Hashtbl.add tbl f { value = t; loc };
-                consume ();
-                loop pos)
-        | (_, { value = `Face (label, t); loc }, _) :: _ -> (
-            if !style = `Positional then
-              fatal ?loc
-                (Invalid_face_argument "can't mix labelled and unlabelled arguments in one cube");
-            style := `Labelled;
-            let key : n sface_of option =
-              match sface_of_string label.value with
-              | Some (Any_sface fa) -> (
-                  match D.compare (cod_sface fa) n with
-                  | Eq -> Some (SFace_of fa)
-                  | Neq -> None)
-              | None -> None in
-            match key with
-            | None ->
-                fatal ?loc:label.loc
-                  (Invalid_face_argument ("no face " ^ label.value ^ " in this cube of arguments"))
-            | Some key when not (List.mem key fillable) ->
-                fatal ?loc:label.loc
-                  (Invalid_face_argument
-                     ("the primary argument of an explicit function can't be labelled: "
-                     ^ label.value))
-            | Some key when Hashtbl.mem tbl key ->
-                fatal ?loc:label.loc
-                  (Invalid_face_argument ("face " ^ label.value ^ " is supplied more than once"))
-            | Some key ->
-                Hashtbl.add tbl key { value = t; loc };
-                consume ();
-                loop pos)
-        | _ -> () in
-    loop fillable;
-    (match (implicit, current ()) with
-    | `Explicit, (_, { value = `Arg t; loc }, { value = `Explicit; _ }) :: _ ->
-        Hashtbl.add tbl top { value = t; loc };
-        consume ()
-    | `Explicit, (_, { value = `Dot; loc }, _) :: _ ->
-        fatal ?loc
-          (Invalid_face_argument "a dot can't supply the primary argument of an explicit function")
-    | `Explicit, (_, { loc; _ }, { value = `Implicit; _ }) :: _ -> primary_error loc
-    | `Explicit, (_, { loc; _ }, _) :: _ -> fatal ?loc Invalid_ellipsis_application
-    | `Explicit, [] -> fatal not_enough
-    | `Implicit, (_, { value = `Dot; _ }, _) :: _ when not (complete ()) -> consume ()
-    | `Implicit, _ -> ());
-    let missing =
-      match missing with
-      | Some missing -> missing
-      | None -> (sfnloc, Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
-    in
-    Collected (tbl, missing) in
+  (* In a function application, braced arguments supply the faces of the cube in order, each either the next one or labelled by the face it supplies, as in "{0 ≔ a} {2 ≔ p}", skipping any faces in between.  They supply the faces of an implicit cube, or the boundary faces of an explicit one, whose top face is its primary argument.  Faces that aren't supplied are placeholders.  An implicit cube ends after its top face, or at a ".", which is consumed, or before anything else.  Since the faces are traversed in the same order, we deal with the arguments as we reach their faces (see below). *)
+  let faces =
+    lazy
+      (let faces = ref [] in
+       CubeOf.miter { it = (fun fa [ _ ] -> faces := SFace_of fa :: !faces) } [ doms ];
+       List.rev !faces) in
+  (* The position of a face in that order, given its label. *)
+  let face_index (label : string located) : int =
+    let key : n sface_of option =
+      match sface_of_string label.value with
+      | Some (Any_sface fa) -> (
+          match D.compare (cod_sface fa) n with
+          | Eq -> Some (SFace_of fa)
+          | Neq -> None)
+      | None -> None in
+    let rec find i = function
+      | [] -> None
+      | f :: fs -> if Some f = key then Some i else find (i + 1) fs in
+    match find 0 (Lazy.force faces) with
+    | Some i -> i
+    | None ->
+        fatal ?loc:label.loc
+          (Invalid_face_argument ("no face " ^ label.value ^ " in this cube of arguments")) in
+  let primary_error loc =
+    fatal ?loc
+      (Unexpected_implicitness
+         ( `Implicit,
+           "argument",
+           match D.compare_zero n with
+           | Zero -> "the function-type is explicit"
+           | Pos _ -> "expecting explicit primary " ^ which ^ " argument" )) in
+  let order_error (label : string located) =
+    fatal ?loc:label.loc
+      (Invalid_face_argument
+         ("face "
+         ^ label.value
+         ^ " is out of order or repeated: faces must be given in order, and a dot starts the next cube"
+         )) in
+  (* Whether the arguments of the current cube have ended, so that the remaining faces are placeholders. *)
+  let ended = ref false in
+  (* The argument to supply the face at a given position, or None if it is a placeholder. *)
+  let stream_arg (i : int) (is_top : bool) : a check located option =
+    (* Even if its boundary has ended, an explicit cube still has its primary argument. *)
+    if !ended && not (implicit = `Explicit && is_top) then None
+    else
+      match (implicit, is_top, current ()) with
+      (* The primary argument of an explicit cube. *)
+      | `Explicit, true, (_, { value = `Arg t; loc }, { value = `Explicit; _ }) :: _ ->
+          consume ();
+          Some { value = t; loc }
+      | `Explicit, true, (_, { value = `Face (label, _); _ }, _) :: _ ->
+          if face_index label < i then order_error label
+          else
+            fatal ?loc:label.loc
+              (Invalid_face_argument
+                 ("the primary argument of an explicit function can't be labelled: " ^ label.value))
+      | `Explicit, true, (_, { loc; _ }, { value = `Implicit; _ }) :: _ -> primary_error loc
+      | `Explicit, _, (_, { value = `Dot; loc }, _) :: _ ->
+          fatal ?loc
+            (Invalid_face_argument "a dot can't supply the primary argument of an explicit function")
+      | `Explicit, true, (_, { loc; _ }, _) :: _ -> fatal ?loc Invalid_ellipsis_application
+      | `Explicit, true, [] -> fatal not_enough
+      (* A face supplied in braces, either the next one or labelled. *)
+      | _, _, (_, { value = `Arg t; loc }, { value = `Implicit; _ }) :: _ ->
+          consume ();
+          Some { value = t; loc }
+      | _, _, (_, { value = `Face (label, t); loc }, _) :: _ ->
+          let j = face_index label in
+          if j = i then (
+            consume ();
+            Some { value = t; loc })
+          else if j > i then None
+          else order_error label
+      (* A dot ends an implicit cube, and is consumed. *)
+      | `Implicit, _, (_, { value = `Dot; _ }, _) :: _ ->
+          consume ();
+          ended := true;
+          None
+      (* Anything else ends the cube, or the boundary of an explicit cube, without being consumed. *)
+      | _, _, _ ->
+          ended := true;
+          None in
+  let missing =
+    match missing with
+    | Some missing -> missing
+    | None -> (sfnloc, Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
+  in
   let taken_args : TakenArgs.t =
     match (args, D.compare_zero n, Endpoints.totally_nullary n) with
     | _ when Option.is_some insert ->
         let loc, err = Option.get insert in
         Insert (loc, err)
     | [], _, _ -> fatal not_enough
-    (* In a function application, braced arguments are collected into a cube. *)
-    | (_, _, { value = `Implicit; _ }) :: _, _, _ when labels -> collect ()
+    (* In a function application, braced arguments supply the faces of the cube in order. *)
+    | (_, _, { value = `Implicit; _ }) :: _, _, _ when labels -> Stream
     (* At an implicit function-type, every argument in the cube is implicit, so we take a whole cube. *)
     | (_, _, { value = `Implicit; _ }) :: _, _, _ when implicit = `Implicit -> Take
     | (_, _, { value = `Explicit; loc }) :: _, _, _ when implicit = `Implicit ->
@@ -5227,6 +5234,8 @@ and synth_arg_cube : type dom modality mode a b n c.
   (* Pick up the right number of arguments for the dimension, leaving the others for a later call to synth_app.  Then check each argument against the corresponding type in "doms", instantiated at the appropriate evaluated previous arguments, and evaluate it lazily, producing Cubes of checked terms and lazy values.  Since each argument has to be checked against a type instantiated at the *values* of the previous ones, we also store those in a hashtable as we go, forcing them only when they are used to instantiate such a type.  We thread the leftover arguments through the cube iteration in the mutable state. *)
   let eargtbl = Hashtbl.create 10 in
   let first = ref true in
+  (* The position of the current face, for supplying arguments in order. *)
+  let position = ref 0 in
   let [ cargs; eargs ] =
     CubeOf.pmap
       {
@@ -5267,11 +5276,15 @@ and synth_arg_cube : type dom modality mode a b n c.
               | `Proper _, Placeholders (loc, err) | _, Insert (loc, err) ->
                   let ctm = check Kinetic lctx { value = Unif (Some err); loc } ty in
                   (ctm, lazy_eval_at (Ctx.env lctx) ctm ty)
-              | _, Collected (tbl, (mloc, merr)) ->
+              | _, Stream ->
+                  let i = !position in
+                  incr position;
                   let tm =
-                    match Hashtbl.find_opt tbl (SFace_of fa) with
+                    match stream_arg i (Option.is_some (is_id_sface fa)) with
                     | Some tm -> tm
-                    | None -> { value = Unif (Some merr); loc = mloc } in
+                    | None ->
+                        let mloc, merr = missing in
+                        { value = Unif (Some merr); loc = mloc } in
                   let ctm =
                     Reporter.mortalize ~fallback:(fun () -> Term.Failed Kinetic) @@ fun () ->
                     check Kinetic lctx tm ty in
