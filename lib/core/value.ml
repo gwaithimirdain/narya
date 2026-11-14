@@ -22,6 +22,13 @@ type level = int * int
 (* Internal values, the result of evaluation, with closures for abstractions.  Use De Bruijn *levels*, so that weakening is implicit.  Fully internal unbiased syntax lives here: in addition to higher-dimensional applications and abstractions, we also have higher-dimensional pi-types, higher-dimensional universes, and instantiations of higher-dimensional types.  Separated into neutrals and normals, so that there are no beta-redexes.  Explicit substitutions (environments) are stored on binders, for NBE. *)
 
 (* The codomains of a pi-type are stored as a Cube of binders, and since binders are a type family this dependence has to be specified by applying a module functor (rather than just parametrizing a type).  Since values are defined mutually with binders, we need to "apply the functor Cube" mutually with the definition of these types.  This is possible using a recursive module. *)
+(* Each neutral is given a different number when it is created, to stand for its physical identity (see Neu below). *)
+let neutrals = ref 0
+
+let fresh_id () =
+  incr neutrals;
+  !neutrals
+
 module rec Value : sig
   (* A recursive module is required to specify its module type explicitly.  We make this as transparent as possible, so the module type is nearly a copy of the module itself.  For the comments, see the actual definition below. *)
   module BindFam : sig
@@ -129,6 +136,7 @@ module rec Value : sig
         args : ('hmode, 'mode, 'any, 'fail) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
+        id : int;
       }
         -> ('mode, kinetic) value
     | Constr :
@@ -366,6 +374,8 @@ end = struct
         args : ('hmode, 'mode, 'any, 'fail) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
+        (* A number that distinguishes this neutral from every other one created in this run (see fresh_id), so that tables keyed by the physical identity of a neutral can hash it.  It has no meaning beyond that: two neutrals with different ids may be equal, even structurally identical. *)
+        id : int;
       }
         -> ('mode, kinetic) value
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
@@ -742,6 +752,7 @@ let var : type dom modality mode.
       args = Emp;
       value = ready Unrealized;
       ty = Lazy.from_val ty;
+      id = fresh_id ();
     }
 
 (* Project out a cube or tube of values from a cube or tube of normals *)
@@ -874,7 +885,14 @@ let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
                   inst_fields = Some fields;
                 })) in
       let v =
-        Neu { head = Live (UU (mode, n)); args = Emp; value; ty = lazy (universe_ty mode n) } in
+        Neu
+          {
+            head = Live (UU (mode, n));
+            args = Emp;
+            value;
+            ty = lazy (universe_ty mode n);
+            id = fresh_id ();
+          } in
       universe_cache := Cached_universe (mode, n, v) :: !universe_cache;
       v
 
@@ -917,6 +935,7 @@ and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
           args = Snoc (Emp, Inst (n', args));
           value;
           ty = lazy (universe mode D.zero);
+          id = fresh_id ();
         }
 
 (* A failed term with a given type (see Failed above).  Each call creates a new value. *)
@@ -928,6 +947,7 @@ let failed : type mode. mode Mode.t -> (mode, kinetic) value Lazy.t -> (mode, ki
       args = Emp;
       value = defer (fun () -> fatal (Dependent "failed term"));
       ty;
+      id = fresh_id ();
     }
 
 (* A failed type, i.e. a failed term whose type is the universe.  This is also the type of a failed term whose type is unknown. *)

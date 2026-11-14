@@ -66,7 +66,7 @@ module F = struct
   let rec dvalue : type mode s. int -> formatter -> (mode, s) value -> unit =
    fun depth ppf v ->
     match v with
-    | Neu { head = h; args = a; value = _; ty } ->
+    | Neu { head = h; args = a; value = _; ty; id = _ } ->
         if depth > 0 then
           fprintf ppf "Neu (%a, %a, %a)" neu_head h apps a (dvalue (depth - 1)) (Lazy.force ty)
         else fprintf ppf "Neu (%a, %a, ?)" neu_head h apps a
@@ -297,6 +297,7 @@ module F = struct
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
     | Weaken (_, tm, _) -> fprintf ppf "Weaken (%a)" term tm
+    | Share (i, tm) -> fprintf ppf "Share (%d, %a)" i term tm
     | Failed _ -> fprintf ppf "Failed"
 
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =

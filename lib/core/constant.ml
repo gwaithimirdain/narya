@@ -3,9 +3,9 @@
 open Util
 open Origin
 
-(* A constant is identified by an autonumber, scoped by an Origin. *)
+(* A constant is identified by an autonumber, scoped by an Origin, which can be updated in place by linking (see Origin.make_canonical). *)
 module Constant = struct
-  type t = Origin.t * int
+  type t = int Origin.origined
 
   let compare (x : t) (y : t) = compare x y
 end
@@ -20,15 +20,10 @@ let make () : t =
   let current = Origin.current () in
   let number = Versioned.get counters in
   Versioned.set counters (number + 1);
-  (current, number)
+  { origin = current; value = number }
 
-(* Recreate a constant with an altered file identifier, as when linking. *)
-let remake f ((c : Origin.t), i) =
-  match c with
-  | File n -> (Origin.File (f n), i)
-  (* Built-in constants should be created in the same order with the same identifiers in every execution run, so we don't need to change them. *)
-  | Top -> (c, i)
-  | Instant _ -> raise (Failure "Constant: can't remake interactive constant")
+(* Link a constant unmarshaled from a compiled file, in place. *)
+let relink f (c : t) = Origin.make_canonical f c
 
 (* A constant Table is mutable and versioned, and can store any kind of data. *)
 module Table = struct
@@ -37,10 +32,12 @@ module Table = struct
   type 'a t = 'a IntMap.t Versioned.t
 
   let make () = Versioned.make ~default:(fun () -> IntMap.empty) ~inherit_values:false
-  let find_opt (c, i) tbl = Option.bind (Versioned.get_at tbl c) (IntMap.find_opt i)
 
-  let add (c, i) v tbl =
-    if c = Origin.current () then Versioned.set tbl (IntMap.add i v (Versioned.get tbl))
+  let find_opt ({ origin; value = number } : Constant.t) tbl =
+    Option.bind (Versioned.get_at tbl origin) (IntMap.find_opt number)
+
+  let add ({ origin; value = number } : Constant.t) v tbl =
+    if origin = Origin.current () then Versioned.set tbl (IntMap.add number v (Versioned.get tbl))
     else raise (Failure "Constant.Table: can only add to the current origin")
 
   (* Get or set all the data associated to a single file. *)

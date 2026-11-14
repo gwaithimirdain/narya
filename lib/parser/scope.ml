@@ -234,11 +234,12 @@ let define ?loc name =
   include_singleton (name, ((`Constant c, loc), ()));
   c
 
-(* Re-create a Constant.t at linking, and associate its old original name to the new re-created version. *)
-let redefine old_original_names find_in_table oldc =
-  let newc = Constant.remake find_in_table oldc in
-  Hashtbl.add original_names newc (Hashtbl.find old_original_names oldc);
-  newc
+(* Link a Constant.t in place, and associate its old original name to it.  The table of old original names is keyed by the constants before linking, so we have to look it up first. *)
+let redefine old_original_names find_in_table c =
+  let name = Hashtbl.find old_original_names c in
+  Constant.relink find_in_table c;
+  Hashtbl.add original_names c name;
+  c
 
 (* Install a user notation and define a name to equal it.  Returns a list of the old notations shadowed by this one. *)
 let define_notation user ?loc name =
@@ -382,11 +383,11 @@ let from_istream chan find_in_table =
       | `Constant c, loc -> ((`Constant (redefine old_original_names find_in_table c), loc), tag)
       | `Notation (User.User u), loc ->
           (* We also have to link the notation objects, since they contain constant names (print keys) and their own identities, both of which are scoped by the file that defined them.  The notation tree itself has to be compiled afresh, since it contains functions and so can't be marshaled; that gives it a new runtime identity, but its linked Id still says which notation it is. *)
-          let key =
-            match u.key with
-            | `Constant c -> `Constant (Constant.remake find_in_table c)
-            | `Constr (c, i) -> `Constr (c, i) in
-          let u = User.User { u with key; id = User.Id.remake find_in_table u.id } in
+          (match u.key with
+          | `Constant c -> Constant.relink find_in_table c
+          | `Constr _ -> ());
+          User.Id.relink find_in_table u.id;
+          let u = User.User u in
           ((`Notation (u, User.make_user u), loc), tag))
     (Istream.unmarshal chan
       : ( [ `Constant of Constant.t | `Notation of User.prenotation ] * Asai.Range.t option,

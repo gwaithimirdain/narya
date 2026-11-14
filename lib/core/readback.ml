@@ -85,6 +85,8 @@ let rec canonical_head : type mode a s. (mode, a, s) term -> [ `Canonical | `Oth
   | Inst (_, tm, _) -> canonical_head tm
   | Act (_, tm, _, _) -> canonical_head tm
   | Key { tm; _ } -> canonical_head tm
+  | Weaken (_, tm, _) -> canonical_head tm
+  | Share (_, tm) -> canonical_head tm
   | _ -> `Other
 
 module ValuePair = struct
@@ -108,6 +110,37 @@ let apply_status : type mode s dom modality k n.
   match status with
   | Kinetic -> Kinetic
   | Potential neutral -> Potential (apply_term neutral filter args)
+
+(* Sharing in readback.  A value that is read back more than once within one readback, such as a type that occurs several times in a type obtained by substitution, would otherwise be read back as a separate copy each time, so that the resulting term would be as large as the fully unfolded tree even though the value shares its subterms in memory.  This can make, for instance, the stored type of a definition without a type annotation exponentially larger than necessary.  So within a sharing scope (see [sharing], which every readback called from outside this module opens), we remember the terms that neutral values have been read back to, and the contexts they were read back in.  If the same (physically equal) value is read back again in a context that extends that one by variables (but no locks), we reuse the earlier term, wrapped in a Share node and weakened into the current context, so that the result shares it in memory too (and on disk, since marshaling preserves sharing). *)
+
+(* The values whose readbacks we remember are neutrals, identified physically, together with whether they were read back for display.  Since OCaml can't hash a value by its address, and a structural hash doesn't distinguish the many neutrals that have the same structure but are physically different, each neutral carries an identifying number (see Value.fresh_id), and we key the table on that. *)
+module Shared_table = Hashtbl.Make (struct
+  type t = int * bool
+
+  let equal ((x, dx) : t) ((y, dy) : t) = x = y && dx = dy
+  let hash ((x, d) : t) = if d then lnot x else x
+end)
+
+(* An earlier readback of a value: the context it was read back in, and the result.  The same value may have been read back in several contexts, none of which is a prefix of another, so we store a list of these for each value.  The first occurrence of the result in the output is the term itself.  The later ones are a Share node wrapping it (the same node for all of them), created when the term is first reused, which carries a number identifying the term so that a traversal of the output, such as linking, can recognize it without hashing it. *)
+type shared =
+  | Shared : {
+      ctx : ('mode, 'a, 'b) Ctx.Ordered.t;
+      tm : ('mode, 'b, kinetic) term;
+      mutable share : ('mode, 'b, kinetic) term option;
+    }
+      -> shared
+
+(* The number of Share nodes created so far in this run, from which they take their identifying numbers.  These are thus different for all the Share nodes in the terms produced by one run, and in particular for all those in one compiled file. *)
+let shares = ref 0
+let sharing_table : shared list Shared_table.t option ref = ref None
+
+(* Run a callback in a sharing scope, unless we are already in one. *)
+let sharing (f : unit -> 'a) : 'a =
+  match !sharing_table with
+  | Some _ -> f ()
+  | None ->
+      sharing_table := Some (Shared_table.create 100);
+      Fun.protect ~finally:(fun () -> sharing_table := None) f
 
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
@@ -466,9 +499,54 @@ and readback_at_type : type mode a z s.
 and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
  fun ctx x ->
   match x with
+  (* A variable, constant, or universe is no larger as a term than a reference to an earlier readback of it would be, and is quicker to read back than to look up. *)
+  | Neu { head = Live (Var _ | Const _ | UU _); args = Emp; _ } -> readback_val_unshared ctx x
+  | Neu { head = Live _; id; _ } when Option.is_some !sharing_table -> readback_shared ctx id x
+  | _ -> readback_val_unshared ctx x
+
+(* Read back a neutral in a sharing scope, reusing an earlier readback of the same value in a prefix of the current context if there is one. *)
+and readback_shared : type mode a z.
+    (mode, z, a) Ctx.t -> int -> (mode, kinetic) value -> (mode, a, kinetic) term =
+ fun (Permute { ctx = octx; _ } as ctx) id x ->
+  let table = Option.get !sharing_table in
+  let mode = Ctx.mode ctx in
+  let key = (id, Displaying.read ()) in
+  let earlier = Option.value ~default:[] (Shared_table.find_opt table key) in
+  (* The key determines the value, but we still compare the modes of the stored contexts with ours to get the type of the stored term. *)
+  match
+    List.find_map
+      (fun (Shared ({ ctx = sctx; _ } as shared)) : (mode, a, kinetic) term option ->
+        match Mode.compare (Ctx.Ordered.mode sctx) mode with
+        | Neq -> None
+        | Eq ->
+            Option.map
+              (fun w ->
+                (* The later occurrences of a term are all the same Share node, which is created when the first of them is. *)
+                let share =
+                  match shared.share with
+                  | Some share -> share
+                  | None ->
+                      incr shares;
+                      let share = Share (!shares, shared.tm) in
+                      shared.share <- Some share;
+                      share in
+                w share)
+              (Ctx.Ordered.find_prefix sctx octx))
+      earlier
+  with
+  | Some tm -> tm
+  | None ->
+      let tm = readback_val_unshared ctx x in
+      Shared_table.replace table key (Shared { ctx = octx; tm; share = None } :: earlier);
+      tm
+
+and readback_val_unshared : type mode a z s.
+    (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
+ fun ctx x ->
+  match x with
   (* A failed term is read back as Failed, without forcing its value (which would fail). *)
   | Neu { head = Failed _; _ } -> Failed Kinetic
-  | Neu { head = Live head; args; value; ty } -> (
+  | Neu { head = Live head; args; value; ty; id = _ } -> (
       match (force_eval value, Displaying.read ()) with
       | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
       | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
@@ -615,15 +693,10 @@ and readback_pi : type c z dom modality mode k n.
     let sargs = CubeOf.subcube fb args in
     let (BindFam b) = BindCube.find cods fa in
     Cod (kfilter, readback_val sctx (apply_binder_term b kfilter sargs)) in
-  Term.Pi
-    {
-      x;
-      filter;
-      doms =
-        Modal
-          (modality, plus, CubeOf.mmap { map = (fun _ [ dom ] -> readback_val lctx dom) } [ doms ]);
-      cods = CodCube.build n { build };
-    }
+  (* We read back the domains before the codomains, rather than in OCaml's unspecified order of evaluation of record fields, so that in a sharing scope a value that occurs in both is read back first in the shorter context, and can be reused in the longer one. *)
+  let rdoms = CubeOf.mmap { map = (fun _ [ dom ] -> readback_val lctx dom) } [ doms ] in
+  let cods = CodCube.build n { build } in
+  Term.Pi { x; filter; doms = Modal (modality, plus, rdoms); cods }
 
 (* Read back a vector of values, whose types are the domains of the constructor's function-type.  That function-type is walked one argument at a time, applying its codomain to each argument as it is read back.  Each domain also has to be instantiated at a boundary, supplied as a vector of tubes. *)
 and readback_at_pi : type mode n c b z.
@@ -1160,7 +1233,7 @@ and readback_permuted_codata : type mode a b m k mk e n.
 and uninstantiate : type mode. mode Mode.t -> (mode, kinetic) value -> mode normal =
  fun mode ty ->
   match view_term ty with
-  | Neu { head; args = Snoc (base_args, Inst (_, insargs)); value; ty = instty } -> (
+  | Neu { head; args = Snoc (base_args, Inst (_, insargs)); value; ty = instty; id = _ } -> (
       match view_type (Lazy.force instty) "uninstantiate" with
       | Canonical (_, UU (_, umk), uins, uargs) -> (
           let Eq = eq_of_ins_zero uins in
@@ -1177,7 +1250,15 @@ and uninstantiate : type mode. mode Mode.t -> (mode, kinetic) value -> mode norm
               let boundary = TubeOf.plus_tube (TubeOf.plus insargs) outer inner in
               let uty = lazy (inst (universe mode (TubeOf.out insargs)) boundary) in
               {
-                tm = Neu { head; args = base_args; value = uninstantiate_value value; ty = uty };
+                tm =
+                  Neu
+                    {
+                      head;
+                      args = base_args;
+                      value = uninstantiate_value value;
+                      ty = uty;
+                      id = fresh_id ();
+                    };
                 ty = uty;
               })
       | _ -> fatal (Anomaly "uninstantiating a type whose type is not a universe"))
@@ -1215,3 +1296,52 @@ let rec readback_about : type mode a b.
       | Realize v -> readback_about ctx v
       | Unrealized -> None)
   | _ -> None
+
+(* Every readback shares repeated values (see sharing) within each call from outside this module.  So we shadow the entry points above by versions that open a sharing scope.  Their recursive calls to each other above stay inside the scope opened by the outermost call, without the cost of opening one. *)
+let readback_nf : type mode a z.
+    ?eta:bool -> (mode, z, a) Ctx.t -> mode normal -> (mode, a, kinetic) term =
+ fun ?eta ctx x -> sharing @@ fun () -> readback_nf ?eta ctx x
+
+let readback_at : type mode a z s.
+    ?eta:bool ->
+    (mode, s) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (mode, s) value ->
+    (mode, kinetic) value ->
+    (mode, a, s) term =
+ fun ?eta status ctx tm ty -> sharing @@ fun () -> readback_at ?eta status ctx tm ty
+
+let readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
+ fun ctx x -> sharing @@ fun () -> readback_val ctx x
+
+let readback_neu : type hmode mode a z any.
+    ?canonical:[ `Canonical | `Other ] ->
+    (mode, z, a) Ctx.t ->
+    hmode head ->
+    (hmode, mode, any, live) apps ->
+    (mode, a, kinetic) term =
+ fun ?canonical ctx head apps -> sharing @@ fun () -> readback_neu ?canonical ctx head apps
+
+let readback_head : type mode c z.
+    ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
+    =
+ fun ?canonical ctx h -> sharing @@ fun () -> readback_head ?canonical ctx h
+
+let readback_env : type mode n a b c d.
+    (mode, a, b) Ctx.t -> (mode, n, d) Value.env -> (mode, c, d) termctx -> (mode, b, n, d) Term.env
+    =
+ fun ctx env envctx -> sharing @@ fun () -> readback_env ctx env envctx
+
+let readback_ordered_env : type mode n a b c d.
+    (mode, a, b) Ctx.t ->
+    (mode, n, d) Value.env ->
+    (mode, c, d) ordered_termctx ->
+    (mode, b, n, d) Term.env =
+ fun ctx env envctx -> sharing @@ fun () -> readback_ordered_env ctx env envctx
+
+let readback_ctx : type mode a b. (mode, a, b) Ctx.t -> (mode, a, b) termctx =
+ fun ctx -> sharing @@ fun () -> readback_ctx ctx
+
+let readback_about : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) Value.value -> (mode, b, potential) Term.term option =
+ fun ctx value -> sharing @@ fun () -> readback_about ctx value

@@ -17,6 +17,10 @@ module Origin : sig
   type t = Top | File of File.t | Instant of Instant.t
 
   val to_string : t -> string
+
+  type 'a origined = { mutable origin : t; value : 'a }
+
+  val make_canonical : (File.t -> File.t) -> 'a origined -> unit
   val current : unit -> t
   val holes_allowed : unit -> (unit, [ `File of string | `Other of string ]) Result.t
   val run : (unit -> 'a) -> 'a

@@ -161,6 +161,9 @@ let app_entry : type hmode dom modality mode f n any.
                 ins_zero n ) )
       else fatal (Anomaly "let-bound variable in Ctx.apps")
 
+(* Weakening of terms, under a name that isn't shadowed by the weakening of ordered contexts below. *)
+let weaken_term = weaken
+
 module Ordered = struct
   type ('mode, _, _) t =
     | Emp : 'mode Mode.t -> ('mode, N.zero, 'mode emp) t
@@ -690,6 +693,53 @@ module Ordered = struct
     let (Locked (plus_src, relocked_ctx)) = lock removed_ctx src in
     let weakened_ctx = weaken relocked_ctx code raw_plus in
     Replaced (weakened_ctx, plus_src)
+
+  (* Whether two ordered contexts are the same, entry by entry, returning the equality of their modes and checked lengths.  Entries are the same if their bindings are physically equal, which we check before looking at the rest of the contexts, so that this fails quickly when they differ. *)
+  let rec same : type m1 a1 b1 m2 a2 b2.
+      (m1, a1, b1) t -> (m2, a2, b2) t -> (m1 * b1, m2 * b2) Eq.t option =
+   fun c1 c2 ->
+    match (c1, c2) with
+    | Emp m1, Emp m2 -> (
+        match Mode.compare m1 m2 with
+        | Eq -> Some Eq
+        | Neq -> None)
+    | Snoc (r1, e1, _), Snoc (r2, e2, _) -> (
+        match
+          ( Modality.compare (modality_entry e1) (modality_entry e2),
+            D.compare (dim_entry e1) (dim_entry e2) )
+        with
+        | Eq, Eq -> (
+            if not (bindings_entry e1 == bindings_entry e2) then None
+            else
+              match same r1 r2 with
+              | Some Eq -> Some Eq
+              | None -> None)
+        | _ -> None)
+    | Lock (r1, g1), Lock (r2, g2) -> (
+        match (Modality.Gen.compare g1 g2, same r1 r2) with
+        | Eq, Some Eq -> Some Eq
+        | _ -> None)
+    | Weaken (r1, _), Weaken (r2, _) -> (
+        match same r1 r2 with
+        | Some Eq -> Some Eq
+        | None -> None)
+    | _ -> None
+
+  (* If an ordered context [prefix] is the same as an initial segment of [ctx] that is followed only by variables and weakenings, return the weakening of terms from one to the other. *)
+  let rec find_prefix : type mode a1 b1 a2 b2.
+      (mode, a1, b1) t ->
+      (mode, a2, b2) t ->
+      ((mode, b1, kinetic) term -> (mode, b2, kinetic) term) option =
+   fun prefix ctx ->
+    match same prefix ctx with
+    | Some Eq -> Some (fun tm -> tm)
+    | None -> (
+        match ctx with
+        | Snoc (rest, _, _) ->
+            let m = mode rest in
+            Option.map (fun w tm -> weaken_term m (w tm)) (find_prefix prefix rest)
+        | Weaken (rest, _) -> find_prefix prefix rest
+        | Lock _ | Emp _ -> None)
 end
 
 (* Now we define contexts that add a permutation of the raw indices.  For efficiency reasons we also precompute its environment as the context is built and store it.  We also store the next De Bruijn level (cube only, not internal face level) that may be added to the context; in most cases this equals the length of the context, but during bind_some we work temporarily with rearranged contexts containing old De Bruijn levels so it may be greater than the length.  The permutation acts only on variables, not on locks; it should only permute variables with other variables that have NO LOCKS IN BETWEEN, but we don't enforce that statically.  In particular, therefore, the mode of the permuted context is the same as the mode of its ordered version. *)

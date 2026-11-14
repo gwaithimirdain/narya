@@ -130,13 +130,13 @@ let to_channel_origin chan origin flags =
   Constant.Table.to_channel_origin chan origin constants flags;
   Metatable.to_channel_origin chan origin metas flags
 
-let link_definition f (Definition { mode; ty; tm; parametric }) =
-  let ty = Link.term f ty in
-  let tm =
-    match tm with
-    | `Axiom -> `Axiom
-    | `Defined tm -> `Defined (Link.term f tm) in
-  Definition { mode; ty; tm; parametric }
+(* Linking happens in place (see Link), so we return the same definition. *)
+let link_definition f (Definition { ty; tm; _ } as d) =
+  Link.term f ty;
+  (match tm with
+  | `Axiom -> ()
+  | `Defined tm -> Link.term f tm);
+  d
 
 type origin_entry =
   (definition, Code.t) Result.t Constant.Table.origin_entry * unit Metatable.origin_entry
@@ -151,6 +151,7 @@ let add_file i (c, m) =
 (* Returns the new file data for constants and metas. *)
 let from_istream_origin f chan i =
   invalidate ();
+  Fun.protect ~finally:Link.reset @@ fun () ->
   (* NB in a tuple (a,b), OCaml executes b before a!  But we have to unmarshal the constants before the metas, because that's the order we marshaled them in, so we control the order of execution with let.  *)
   let cs = Constant.Table.from_istream_origin chan (Result.map (link_definition f)) i constants in
   let ms =
@@ -159,7 +160,9 @@ let from_istream_origin f chan i =
         map =
           (fun _ df ->
             match df with
-            | Ok df -> Ok (Link.metadef f df)
+            | Ok df ->
+                Link.metadef f df;
+                Ok df
             | Error e -> Error e);
       }
       i metas in
