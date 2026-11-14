@@ -180,7 +180,7 @@ let rec motive_of_family : type dom window mode a b.
 let spine : type a.
     a check located ->
     a check located
-    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
+    * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list =
  fun tm ->
   let rec spine tm args =
     match tm.value with
@@ -1094,7 +1094,7 @@ let rec check : type mode a b s.
                       let args =
                         List.map
                           (fun (l, x) ->
-                            (l, { value = Some x.value; loc = x.loc }, locate_opt None `Explicit))
+                            (l, { value = `Arg x.value; loc = x.loc }, locate_opt None `Explicit))
                           args in
                       synth_apps ctx new_sfn new_sty { value = Synth fn.value; loc = fn.loc } args
                   | _ -> (new_sfn.value, new_sty) in
@@ -1217,7 +1217,7 @@ and postpone_apps : type mode a b.
     (mode, b, kinetic) term located ->
     (mode, kinetic) value ->
     a check located ->
-    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list ->
     (mode, b, kinetic) term * (mode, kinetic) value =
  fun ctx sfn sty fn args ->
   let loc =
@@ -1417,6 +1417,17 @@ and check_synthesized : type mode a b.
     Option.value undetermined ~default:(fun why ->
         Code.Undetermined_synthesized_type { got = PVal (ctx, sty); expected = PVal (ctx, ty); why })
   in
+  (* Implicit arguments aren't inserted at the end of an application spine, so if a term of implicit function-type is checked against a type that isn't a function-type, the user probably forgot to apply it to "." or "…". *)
+  let extra_remarks () =
+    Reporter.discard_errors ~fallback:(fun () -> []) @@ fun () ->
+    match (view_type sty "check_synthesized", view_type ty "check_synthesized") with
+    | Canonical (_, Pi { implicit = `Implicit; _ }, _, _), Canonical (_, Pi _, _, _) -> []
+    | Canonical (_, Pi { implicit = `Implicit; _ }, _, _), _ ->
+        [
+          Asai.Diagnostic.loctext
+            "the term has an implicit function-type: to insert its implicit arguments, apply it to \".\" or \"…\"";
+        ]
+    | _ -> [] in
   match retrying (fun () -> compare ctx sty ty) with
   | Ok () -> ktm
   | Error (Stuck (why, blockers)) ->
@@ -1432,12 +1443,12 @@ and check_synthesized : type mode a b.
             `Stuck blockers
         | Error (Unequal why) ->
             Global.release_unif meta (Failed Kinetic);
-            mortal ?loc (mismatch why);
+            mortal ?loc ~extra_remarks:(extra_remarks ()) (mismatch why);
             `Done in
       let report () = mortal ?loc (undetermined !last) in
       Global.postpone ~blockers ~attempt ~report;
       guarded
-  | Error (Unequal why) -> fatal (mismatch why)
+  | Error (Unequal why) -> fatal ~extra_remarks:(extra_remarks ()) (mismatch why)
 
 (* Deal with checking a potential term in kinetic position *)
 and kinetic_of_potential : type mode a b.
@@ -4046,8 +4057,16 @@ and synth : type mode a b s.
          fun fm ->
           let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
           let stm, sty = synth Kinetic lctx tm in
-          let etm = eval_term (Ctx.env lctx) stm in
           let project () =
+            (* A function can't be projected from, so if the term belongs to an implicit function-type, we first insert all of its leading implicit arguments, as for an ellipsis. *)
+            let stm, sty =
+              match view_type sty "synthesizing field projection" with
+              | Canonical (_, Pi { implicit = `Implicit; _ }, _, _) ->
+                  synth_ellipsis ~doing:`Insert lctx { value = stm; loc = tm.loc } sty
+                    (locate_opt tm.loc (Synth tm.value))
+                    (tm.loc, locate_opt tm.loc (`More_ellipsis `Insert), locate_opt tm.loc `Explicit)
+              | _ -> (stm, sty) in
+            let etm = eval_term (Ctx.env lctx) stm in
             let WithIns (fld, ins), newty = tyof_field_withname fm lctx etm sty fld in
             (Term.Field (Kinetic, Modal (fm, plus_lock, stm), fld, ins), newty) in
           (* If the type of the term is stuck on a metavariable, we don't know what fields it has, so we postpone the projection, as for applications in postpone_apps. *)
@@ -4889,38 +4908,115 @@ and synth_apps : type mode a b.
     (mode, b, kinetic) term located ->
     (mode, kinetic) value ->
     a check located ->
-    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list ->
     (mode, b, kinetic) term * (mode, kinetic) value =
  fun ctx sfn sty fn args ->
+  match args with
+  (* An ellipsis does as many steps as it can, so we deal with it separately. *)
+  | (l, ({ value = (`Ellipsis | `More_ellipsis _) as e; _ } as arg), i) :: rest -> (
+      let doing =
+        match e with
+        | `Ellipsis -> `Either
+        | `More_ellipsis d -> (d :> [ `Either | `Insert | `Instantiate ]) in
+      let tm, ty = synth_ellipsis ~doing ctx sfn sty fn (l, arg, i) in
+      let fn = locate_opt l (Synth (App (fn, arg, i))) in
+      match rest with
+      | [] -> (tm, ty)
+      | _ :: _ -> synth_apps ctx { value = tm; loc = l } ty fn rest)
   (* If the type of the function is stuck on a metavariable, we don't know what to do yet. *)
-  if stuck_after_retry sty then postpone_apps ctx sfn sty fn args
+  | _ when stuck_after_retry sty -> postpone_apps ctx sfn sty fn args
+  | _ -> (
+      (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
+      let asfn, aty, afn, aargs =
+        match view_type sty "synthesizing application spine" with
+        (* The obvious thing we can "apply" is an element of a pi-type. *)
+        | Canonical (_, Pi { x; filter; implicit; doms; cods }, ins, tyargs) -> (
+            let Eq = eq_of_ins_zero ins in
+            match (implicit, args) with
+            (* Applying an implicit function to an explicit argument first applies it to new placeholders for a cube of implicit arguments, without consuming the argument. *)
+            | `Implicit, (_, { value = `Arg _; _ }, { value = `Explicit; _ }) :: _ ->
+                synth_app ~insert:(insertion ctx sfn x) ctx filter implicit sfn doms cods tyargs fn
+                  args
+            (* A dot does the same, and is consumed. *)
+            | `Implicit, (l, ({ value = `Dot; _ } as arg), i) :: rest ->
+                synth_app ~insert:(insertion ctx sfn x) ctx filter implicit { sfn with loc = l }
+                  doms cods tyargs
+                  (locate_opt l (Synth (App (fn, arg, i))))
+                  rest
+            | _ -> synth_app ctx filter implicit sfn doms cods tyargs fn args)
+        (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
+        | Canonical (_, UU _, _, tyargs) -> synth_inst ctx sfn tyargs fn args
+        (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
+        | _ ->
+            fatal ?loc:sfn.loc
+              (Applying_nonfunction_nontype (PTerm (ctx, sfn.value), PVal (ctx, sty))) in
+      (* synth_app and synth_inst fail if there aren't enough arguments.  If they used up all the arguments, we're done; otherwise we continue with the rest of the arguments. *)
+      match aargs with
+      | [] -> (asfn.value, aty)
+      | _ :: _ ->
+          with_loc asfn.loc (fun () ->
+              Annotate.ctx Kinetic ctx afn;
+              Annotate.ty ctx aty;
+              Annotate.tm ctx asfn.value);
+          synth_apps ctx asfn aty afn aargs)
+
+(* The location and error code of the placeholders inserted for a cube of implicit arguments of a function, named after the variable of its function-type. *)
+and insertion : type mode a b n.
+    (mode, a, b) Ctx.t ->
+    (mode, b, kinetic) term located ->
+    n variables ->
+    Asai.Range.t option * Code.t =
+ fun ctx sfn x ->
+  ( sfn.loc,
+    Undetermined_implicit_argument (option_of_binder_name (top_variable x), PTerm (ctx, sfn.value))
+  )
+
+(* Apply something to an ellipsis: if its type is an implicit function-type, insert placeholders for all of its leading cubes of implicit arguments; if it is a higher-dimensional type of arity zero, instantiate it at all of its leading nullary dimensions.  These don't combine: once we have done one of them, as recorded by [doing], we continue only with that one, so that inserting the implicit arguments of a function whose codomain is a higher-dimensional type doesn't also instantiate that type.  If we haven't done either yet, there must be one to do.  If the type is stuck on a metavariable, we postpone the rest of the work, remembering what we were doing. *)
+and synth_ellipsis : type mode a b.
+    doing:[ `Either | `Insert | `Instantiate ] ->
+    (mode, a, b) Ctx.t ->
+    (mode, b, kinetic) term located ->
+    (mode, kinetic) value ->
+    a check located ->
+    Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located ->
+    (mode, b, kinetic) term * (mode, kinetic) value =
+ fun ~doing ctx sfn sty fn (l, arg, i) ->
+  let applied = locate_opt l (Synth (App (fn, arg, i))) in
+  if stuck_after_retry sty then
+    let value =
+      match doing with
+      | `Either -> `Ellipsis
+      | (`Insert | `Instantiate) as d -> `More_ellipsis d in
+    postpone_apps ctx sfn sty fn [ (l, { arg with value }, i) ]
   else
-    (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
-    let asfn, aty, afn, aargs =
-      match view_type sty "synthesizing application spine" with
-      (* The obvious thing we can "apply" is an element of a pi-type. *)
-      | Canonical (_, Pi { x = _; filter; implicit; doms; cods }, ins, tyargs) ->
+    let step : ((mode, b, kinetic) term located * (mode, kinetic) value * _) option =
+      match (view_type sty "synthesizing ellipsis", doing) with
+      | ( Canonical (_, Pi { x; filter; implicit = `Implicit; doms; cods }, ins, tyargs),
+          (`Either | `Insert) ) ->
           let Eq = eq_of_ins_zero ins in
-          synth_app ctx filter implicit sfn doms cods tyargs fn args
-      (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
-      | Canonical (_, UU _, _, tyargs) -> synth_inst ctx sfn tyargs fn args
-      (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
-      | _ ->
-          fatal ?loc:sfn.loc
-            (Applying_nonfunction_nontype (PTerm (ctx, sfn.value), PVal (ctx, sty))) in
-    (* synth_app and synth_inst fail if there aren't enough arguments.  If they used up all the arguments, we're done; otherwise we continue with the rest of the arguments. *)
-    match aargs with
-    | [] -> (asfn.value, aty)
-    | _ :: _ ->
-        with_loc asfn.loc (fun () ->
-            Annotate.ctx Kinetic ctx afn;
-            Annotate.ty ctx aty;
-            Annotate.tm ctx asfn.value);
-        synth_apps ctx asfn aty afn aargs
+          let asfn, aty, _, _ =
+            synth_app ~insert:(insertion ctx sfn x) ctx filter `Implicit { sfn with loc = l } doms
+              cods tyargs applied [] in
+          Some (asfn, aty, `Insert)
+      | Canonical (_, UU _, _, tyargs), (`Either | `Instantiate) -> (
+          let n = TubeOf.inst tyargs in
+          match D.compare_zero n with
+          | Pos _ when Endpoints.totally_nullary n ->
+              let asfn, aty, _, _ =
+                synth_inst ctx { sfn with loc = l } tyargs applied
+                  [ (l, { arg with value = `Dot }, i) ] in
+              Some (asfn, aty, `Instantiate)
+          | _ -> None)
+      | _ -> None in
+    match (step, doing) with
+    | Some (asfn, aty, doing), _ -> synth_ellipsis ~doing ctx asfn aty fn (l, arg, i)
+    | None, `Either -> fatal ?loc:arg.loc Invalid_ellipsis_application
+    | None, (`Insert | `Instantiate) -> (sfn.value, sty)
 
 (* This is a common subroutine for synth_app and synth_inst that picks up a whole cube of arguments and checks their types.  The checked arguments are evaluated lazily, since often their values aren't needed (e.g. if the codomain is non-dependent).  Since in one case we need a cube of lazy values and the other case a cube of normals, we let the caller choose, given each lazy value and its type. *)
 and synth_arg_cube : type dom modality mode a b n c.
     ?implicit:implicitness ->
+    ?insert:Asai.Range.t option * Code.t ->
     not_enough:Reporter.Code.t ->
     which:string ->
     (mode, a, b) Ctx.t ->
@@ -4929,12 +5025,13 @@ and synth_arg_cube : type dom modality mode a b n c.
     (n, (dom, kinetic) value) CubeOf.t ->
     Asai.Range.t option
     * a check located
-    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list ->
     ((n, dom, modality, mode, b, kinetic) modal_term_cube * (n, c) CubeOf.t)
     * (Asai.Range.t option
       * a check located
-      * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list) =
- fun ?(implicit = `Explicit) ~not_enough ~which ctx modality choose doms (sfnloc, fn, args) ->
+      * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list) =
+ fun ?(implicit = `Explicit) ?insert ~not_enough ~which ctx modality choose doms
+     (sfnloc, fn, args) ->
   (* Based on the dimension of the application and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
   let module TakenArgs = struct
     type t =
@@ -4943,11 +5040,16 @@ and synth_arg_cube : type dom modality mode a b n c.
           Asai.Range.t option * (n, 'k, 'nk) D.plus * (D.zero, 'nk, 'nk, dom normal) TubeOf.t
           -> t
       | Placeholders : Asai.Range.t option * Code.t -> t
+      (* Inserting a cube of implicit arguments: all of them are placeholders, and no arguments are consumed. *)
+      | Insert : Asai.Range.t option * Code.t -> t
   end in
   let n = CubeOf.dim doms in
   let (Locked (plus, lctx)) = Ctx.lock ctx modality in
   let taken_args : TakenArgs.t =
     match (args, D.compare_zero n, Endpoints.totally_nullary n) with
+    | _ when Option.is_some insert ->
+        let loc, err = Option.get insert in
+        Insert (loc, err)
     | [], _, _ -> fatal not_enough
     (* At an implicit function-type, every argument in the cube is implicit, so we take a whole cube. *)
     | (_, _, { value = `Implicit; _ }) :: _, _, _ when implicit = `Implicit -> Take
@@ -4960,7 +5062,7 @@ and synth_arg_cube : type dom modality mode a b n c.
     (* If the first argument is implicit, or if the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
     | (_, _, { value = `Implicit; _ }) :: _, Pos _, false | _, Zero, _ | _, _, true -> Take
     (* Otherwise, the first argument must be explicit.  If it is synthesizing, we can get the boundary from its type. *)
-    | (_, { value = Some (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false
+    | (_, { value = `Arg (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false
       when synth_has_synth toptm -> (
         (* We synthesize its type, extract the instantiation arguments, and store them to fill in the boundary arguments. *)
         let _, argty = synth Kinetic lctx (locate_opt loc toptm) in
@@ -4973,7 +5075,7 @@ and synth_arg_cube : type dom modality mode a b n c.
               (Insufficient_dimension
                  { needed = CubeOf.dim doms; got = TubeOf.inst argtyargs; which }))
     (* If it isn't, the boundary has to be determined by something else, so we leave placeholders for it, as if the user had written them. *)
-    | (_, { value = Some _; loc }, { value = `Explicit; _ }) :: _, Pos _, false ->
+    | (_, { value = `Arg _; loc }, { value = `Explicit; _ }) :: _, Pos _, false ->
         Placeholders
           (loc, Nonsynthesizing ("primary argument with implicit " ^ which ^ " boundaries"))
     | (_, { loc; _ }, { value = `Explicit; _ }) :: _, Pos _, false ->
@@ -5020,7 +5122,7 @@ and synth_arg_cube : type dom modality mode a b n c.
                           lctx ctm (Lazy.force ety) ty toploc) in
                   if gtm == ctm then (ctm, ready (Val etm))
                   else (gtm, lazy_eval_at (Ctx.env lctx) gtm ty)
-              | `Proper _, Placeholders (loc, err) ->
+              | `Proper _, Placeholders (loc, err) | _, Insert (loc, err) ->
                   let ctm = check Kinetic lctx { value = Unif (Some err); loc } ty in
                   (ctm, lazy_eval_at (Ctx.env lctx) ctm ty)
               (* Otherwise, we pull an argument of the appropriate implicitness, check it against the correct type. *)
@@ -5056,8 +5158,10 @@ and synth_arg_cube : type dom modality mode a b n c.
                         t in
                   let tm =
                     match tm.value with
-                    | Some value -> { value; loc = tm.loc }
-                    | None -> fatal ?loc:tm.loc Invalid_nullary_application in
+                    | `Arg value -> { value; loc = tm.loc }
+                    | `Dot -> fatal ?loc:tm.loc Invalid_nullary_application
+                    | `Ellipsis | `More_ellipsis _ -> fatal ?loc:tm.loc Invalid_ellipsis_application
+                  in
                   (* If the argument fails to typecheck, we record it as Failed and go on.  Since it is evaluated lazily, later arguments can still be checked as long as their types, and the output type, don't depend on it. *)
                   let ctm =
                     Reporter.mortalize ~fallback:(fun () -> Term.Failed Kinetic) @@ fun () ->
@@ -5072,6 +5176,7 @@ and synth_arg_cube : type dom modality mode a b n c.
   ((Modal (modality, plus, cargs), eargs), !state)
 
 and synth_app : type dom modality mode a b k n.
+    ?insert:Asai.Range.t option * Code.t ->
     (mode, a, b) Ctx.t ->
     (dom, modality, mode, k, n) Modality.filter_dim ->
     implicitness ->
@@ -5080,14 +5185,14 @@ and synth_app : type dom modality mode a b k n.
     (n, mode * modality * dom) BindCube.t ->
     (D.zero, n, n, mode normal) TubeOf.t ->
     a check located ->
-    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list ->
     (mode, b, kinetic) term located
     * (mode, kinetic) value
     * a check located
-    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
- fun ctx filter implicit sfn doms cods tyargs fn args ->
+    * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list =
+ fun ?insert ctx filter implicit sfn doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
-    synth_arg_cube ~implicit ~not_enough:Not_enough_arguments_to_function
+    synth_arg_cube ~implicit ?insert ~not_enough:Not_enough_arguments_to_function
       ~which:"higher-dimensional application" ctx (Modality.filter_modality filter)
       (fun etm _ -> etm)
       doms (sfn.loc, fn, args) in
@@ -5107,11 +5212,11 @@ and synth_inst : type mode a b n.
     (mode, b, kinetic) term located ->
     (D.zero, n, n, mode normal) TubeOf.t ->
     a check located ->
-    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list ->
     (mode, b, kinetic) term located
     * (mode, kinetic) value
     * a check located
-    * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
+    * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list =
  fun ctx sfn tyargs fn args ->
   let n = TubeOf.inst tyargs in
   match D.compare_zero n with
@@ -5147,10 +5252,13 @@ and synth_inst : type mode a b n.
         | Nat Zero -> (
             (* If instantiating a nullary dimension, we expect a single . argument. *)
             match args with
-            | (l, ({ value = None; _ } as arg), i) :: rest ->
+            | (l, ({ value = `Dot; _ } as arg), i) :: rest ->
                 state := (l, locate_opt l (Synth (App (fn, arg, i))), rest);
                 (Emp, Emp)
-            | (_, { value = Some _; loc }, _) :: _ -> fatal ?loc Expected_nullary_application
+            | (_, { value = `Arg _; loc }, _) :: _ -> fatal ?loc Expected_nullary_application
+            (* An ellipsis is handled by synth_apps, which passes a dot here for each step. *)
+            | (_, { value = `Ellipsis | `More_ellipsis _; _ }, _) :: _ ->
+                fatal (Anomaly "ellipsis in synth_inst")
             | [] -> fatal Not_enough_arguments_to_instantiation) in
       let newloc, newfn, rest = !state in
       (* The synthesized type *of* the instantiation is itself a full instantiation of a universe, at the instantiations of the type arguments at the evaluated term arguments.  This is computed by tyof_inst. *)
@@ -5165,7 +5273,7 @@ and synth_inst : type mode a b n.
 and synth_or_check_apps : type mode a b.
     (mode, a, b) Ctx.t ->
     a check located ->
-    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list ->
     (mode, kinetic) value option ->
     (mode, b, kinetic) term * (mode, kinetic) value =
  fun ctx fn args ty ->
@@ -5191,7 +5299,7 @@ and synth_or_check_apps : type mode a b.
       let total = if arity > 0 && explicit mod arity = 0 then explicit / arity else 0 in
       let dim = max 0 (total - depth fn) in
       let located x = locate_opt fn.loc x in
-      let app i fn = located (Synth (App (fn, located (Some (Unif None)), located i))) in
+      let app i fn = located (Synth (App (fn, located (`Arg (Unif None)), located i))) in
       (* The type of a dim-dimensional type is an instantiation of an iterated degeneracy of the universe, at placeholders. *)
       let rec iterate : 'x. int -> ('x -> 'x) -> 'x -> 'x =
        fun n f x -> if n = 0 then x else iterate (n - 1) f (f x) in
@@ -5239,7 +5347,7 @@ and synth_lam : type mode a b c d n.
     (mode, c, d) Ctx.t ->
     c check located ->
     (mode, a, b) Ctx.t ->
-    (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list ->
+    (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list ->
     (mode, kinetic) value option ->
     (mode, d, kinetic) term * (mode, kinetic) value =
  fun n ctx fn argctx args ty ->
@@ -5300,7 +5408,7 @@ and synth_lam : type mode a b c d n.
   | ( Lam { name; cube = { value = `Normal; _ }; implicit = `Explicit; dom = None; body },
       (_, arg, { value = `Explicit; _ }) :: args ) -> (
       match arg.value with
-      | Some (Synth sarg) ->
+      | `Arg (Synth sarg) ->
           let _, sargty = synth Kinetic argctx (locate_opt arg.loc sarg) in
           let edom =
             unact_ty ~err:(Unimplemented "typechecking degenerated redexes with arity 0") sargty n
@@ -5320,8 +5428,9 @@ and synth_lam : type mode a b c d n.
                  (Modal (idm, plus_no_lock mode, cdom))
                  (readback_val newctx scod)) in
           (Lam (xs, D.zero, Modality.filter_zero idm, `Explicit, cbody), scod)
-      | None -> fatal ?loc:arg.loc Invalid_nullary_application
-      | _ ->
+      | `Dot -> fatal ?loc:arg.loc Invalid_nullary_application
+      | `Ellipsis | `More_ellipsis _ -> fatal ?loc:arg.loc Invalid_ellipsis_application
+      | `Arg _ ->
           let extra_remarks = [ Asai.Diagnostic.loctext ?loc:arg.loc "argument" ] in
           fatal ?loc:fn.loc ~extra_remarks
             (Nonsynthesizing "head of application spine and corresponding argument"))

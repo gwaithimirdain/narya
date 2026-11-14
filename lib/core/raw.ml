@@ -14,6 +14,9 @@ let locate_map f ({ value; loc } : 'a located) = locate_opt loc (f value)
 (* Where an ImplicitApp gets its implicit first argument: the type being checked against itself, or the argument at the given (0-based) position of the constant that type is an application of, such as P in "forall ℕ P".  This is a stopgap until we have unification. *)
 type implicit_source = [ `Goal | `Goal_arg of int ]
 
+(* An argument in an application spine: a term; a dot ".", which inserts one cube of implicit arguments or instantiates one nullary dimension; or an ellipsis "…", which inserts all the leading implicit arguments or instantiates all the leading nullary dimensions (but not both), and must have at least one of these to do.  The last form is internal: it is what remains of an ellipsis that has done at least one of them, recording which, when its remaining work must be postponed, and it may have nothing left to do. *)
+type 'c app_arg = [ `Arg of 'c | `Dot | `Ellipsis | `More_ellipsis of [ `Insert | `Instantiate ] ]
+
 module rec Make : functor (I : Indices) -> sig
   module Namevec : module type of Namevec (I)
   module Patternvars : module type of Patternvars (I)
@@ -47,7 +50,7 @@ module rec Make : functor (I : Indices) -> sig
         'n D.pos * ('a, 'b, 'ab) tel * ('ab, 'c, 'abc) Namevec.t * 'abc check located
         -> 'a synth
     | App :
-        'a check located * 'a check option located * [ `Implicit | `Explicit ] located
+        'a check located * 'a check app_arg located * [ `Implicit | `Explicit ] located
         -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
     | AscLam :
@@ -224,7 +227,7 @@ functor
           -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :
-          'a check located * 'a check option located * [ `Implicit | `Explicit ] located
+          'a check located * 'a check app_arg located * [ `Implicit | `Explicit ] located
           -> 'a synth
       | Asc : 'a check located * 'a check located -> 'a synth
       (* Abstraction with ascribed variable and synthesizing body.  Currently can't be a cube or implicit.  *)
@@ -527,10 +530,10 @@ module Resolve (R : Resolver) = struct
       | App (fn, arg, impl) ->
           let arg =
             match arg.value with
-            | Some x ->
+            | `Arg x ->
                 let arg = check ctx (locate_opt arg.loc x) in
-                locate_opt arg.loc (Some arg.value)
-            | None -> locate_opt arg.loc None in
+                locate_opt arg.loc (`Arg arg.value)
+            | (`Dot | `Ellipsis | `More_ellipsis _) as a -> locate_opt arg.loc a in
           App (check ctx fn, arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)
       | AscLam (x, implicit, modality, dom, body) ->

@@ -220,7 +220,7 @@ let make_user : prenotation -> notation =
                       | Some arg ->
                           Raw.App
                             ( { value = Synth acc; loc },
-                              { value = Some arg.value; loc = arg.loc },
+                              { value = `Arg arg.value; loc = arg.loc },
                               Asai.Range.locate_opt None `Explicit ))
                     (Const c) val_vars in
                 Raw.Synth spine

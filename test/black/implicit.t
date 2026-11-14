@@ -247,3 +247,146 @@ In a matching abstraction, a top-level pattern in braces makes the abstraction o
      ^ unexpected implicit abstraction: expecting explicit variable
   
   [1]
+
+Applying an implicit function to an explicit argument inserts placeholders for its leading implicit arguments.  A dot inserts one (cube of) implicit argument, and an ellipsis inserts all the leading ones.  They are also inserted before a field projection.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom a : A
+  > axiom b : B a
+  > axiom f : {x : A} → B x
+  > axiom g : {x : A} (y : B x) → B x
+  > def t1 : B a ≔ g b
+  > echo g b
+  > def t2 : B a ≔ f .
+  > def t3 : B a ≔ f …
+  > def id : {X : Type} (x : X) → X ≔ {X} x ↦ x
+  > echo id b
+  > axiom h : {x : A} {y : B x} (z : A) → A
+  > def t4 : A ≔ h {a} {b} a
+  > def t5 : A ≔ h . {b} a
+  > def t6 (y : B a) : A ≔ h . {y} a
+  > def R : Type ≔ sig ( fst : A, snd : A )
+  > axiom r : {x : A} {y : B x} → R
+  > def t7 : A ≔ (r {a} {b}) .fst
+  > EOF
+  g b
+    : B a
+  
+  b
+    : B a
+  
+
+Implicit arguments that can't be determined are reported.  A term of implicit function-type isn't applied to its implicit arguments automatically if it isn't applied to anything, so checking it against a type that isn't a function-type suggests inserting them.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom a : A
+  > axiom b : B a
+  > axiom f : {x : A} → B x
+  > axiom h : {x : A} {y : B x} (z : A) → A
+  > echo h a
+  > echo h . . a
+  > def R : Type ≔ sig ( fst : A, snd : A )
+  > axiom r : {x : A} → R
+  > echo r .fst
+  > def t : B a ≔ f
+  > echo b …
+  > EOF
+   ￫ error[E2005]
+   ￭ stdin
+   7 | echo h a
+     ^ can't determine implicit argument x of h
+  
+   ￫ error[E2005]
+   ￭ stdin
+   8 | echo h . . a
+     ^ can't determine implicit argument x of h
+  
+   ￫ error[E2005]
+   ￭ stdin
+   8 | echo h . . a
+     ^ can't determine implicit argument y of h
+  
+   ￫ error[E2005]
+   ￭ stdin
+   11 | echo r .fst
+      ^ can't determine implicit argument x of r
+  
+   ￫ error[E0401]
+   ￭ stdin
+   12 | def t : B a ≔ f
+      ^ term synthesized type
+          {x : A} → B x
+        but is being checked against type
+          B a
+        unequal head terms:
+          {x : A} → B x
+        does not equal
+          B
+   ￮ the term has an implicit function-type: to insert its implicit arguments, apply it to "." or "…"
+  
+   ￫ error[E0711]
+   ￭ stdin
+   13 | echo b …
+      ^ nothing to insert or instantiate: ellipsis applied to a term whose type is neither an implicit function-type nor a higher-dimensional type of arity zero
+  
+  [1]
+
+Notations insert implicit arguments in the same way, and are used for display when implicit arguments are hidden.
+
+  $ narya - <<EOF
+  > def List (A : Type) : Type ≔ data [ nil. | cons. (_ : A) (_ : List A) ]
+  > def append : {A : Type} (xs ys : List A) → List A
+  >   ≔ {A} xs ys ↦ match xs [ nil. ↦ ys | cons. x xs ↦ cons. x (append xs ys) ]
+  > notation(3) xs "++" ys ≔ append xs ys
+  > def l2 (A : Type) (xs : List A) : List A ≔ xs ++ xs
+  > about l2
+  > display implicits ≔ on
+  > about l2
+  > EOF
+  A xs ↦ xs ++ xs
+    : (A : Type) (xs : List A) → List A
+  
+  A xs ↦ append {A} xs xs
+    : (A : Type) (xs : List A) → List A
+  
+
+In arity zero, an ellipsis also instantiates all the leading nullary dimensions of a type, but it doesn't do both kinds of steps at once.
+
+  $ narya -parametric -arity 0 -direction w,wk - <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > axiom T : {x : A} → Type
+  > echo wk (wk A) …
+  > echo wk (wk A) . …
+  > synth wk (wk T) {wk (wk a)} …
+  > synth wk (wk T) {wk (wk a)} . .
+  > synth wk (wk T) {wk (wk a)} … …
+  > echo wk (wk A) . . …
+  > EOF
+  A⁽ʷʷ⁾ . .
+    : Type
+  
+  A⁽ʷʷ⁾ . .
+    : Type
+  
+  wk (wk T) . .
+    : Type
+  
+  wk (wk T) . .
+    : Type
+  
+   ￫ error[E0711]
+   ￭ stdin
+   8 | synth wk (wk T) {wk (wk a)} … …
+     ^ nothing to insert or instantiate: ellipsis applied to a term whose type is neither an implicit function-type nor a higher-dimensional type of arity zero
+  
+   ￫ error[E0711]
+   ￭ stdin
+   9 | echo wk (wk A) . . …
+     ^ nothing to insert or instantiate: ellipsis applied to a term whose type is neither an implicit function-type nor a higher-dimensional type of arity zero
+  
+  [1]

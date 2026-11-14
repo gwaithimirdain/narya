@@ -177,6 +177,7 @@ module Code = struct
     | Invalid_higher_letonly : string -> t
     | Invalid_nullary_application : t
     | Expected_nullary_application : t
+    | Invalid_ellipsis_application : t
     | Checking_tuple_at_degenerated_record : printable -> t
     | Missing_field_in_tuple : 'i Field.t * ('e, 'i, 'r) pbij option -> t
     | Missing_method_in_comatch : 'i Field.t * ('e, 'i, 'r) pbij option -> t
@@ -382,6 +383,7 @@ module Code = struct
     | Fatalize : string -> t
     | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
     | Unsolved_unification_meta : t
+    | Undetermined_implicit_argument : string option * printable -> t
     | Invalid_instant : string -> t
     | Oracle_failed : oracle_error -> t
     | Extern : { code : string; text : string; error : extern_error } -> t
@@ -426,6 +428,7 @@ module Code = struct
     | Invalid_higher_letonly _ -> Error
     | Invalid_nullary_application -> Error
     | Expected_nullary_application -> Error
+    | Invalid_ellipsis_application -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
     | Missing_field_in_tuple _ -> Error
     | Missing_method_in_comatch _ -> Error
@@ -582,6 +585,7 @@ module Code = struct
     | Fatalize _ -> Error
     | No_holes_allowed _ -> Error
     | Unsolved_unification_meta -> Error
+    | Undetermined_implicit_argument _ -> Error
     | Invalid_instant _ -> Bug
     | Wrong_dimension_of_field _ -> Error
     | Invalid_field_suffix _ -> Error
@@ -665,6 +669,7 @@ module Code = struct
     | Invalid_higher_function _ -> "E0706"
     | Invalid_nullary_application -> "E0707"
     | Expected_nullary_application -> "E0708"
+    | Invalid_ellipsis_application -> "E0711"
     | Invalid_higher_letonly _ -> "E0709"
     (* Record fields *)
     | No_such_field _ -> "E0800"
@@ -752,6 +757,7 @@ module Code = struct
     | Forbidden_interactive_command _ -> "E2001"
     | No_holes_allowed _ -> "E2002"
     | Unsolved_unification_meta -> "E2004"
+    | Undetermined_implicit_argument _ -> "E2005"
     | Invalid_instant _ -> "E2003"
     (* def *)
     | Redefining_constant _ -> "E2100"
@@ -920,6 +926,9 @@ module Code = struct
       | Invalid_higher_letonly str -> textf "invalid higher-dimensional let-only: %s" str
       | Invalid_nullary_application -> text "invalid nullary application"
       | Expected_nullary_application -> text "expected nullary application"
+      | Invalid_ellipsis_application ->
+          text
+            "nothing to insert or instantiate: ellipsis applied to a term whose type is neither an implicit function-type nor a higher-dimensional type of arity zero"
       | Checking_tuple_at_degenerated_record r ->
           textf "can't check a tuple against a record %a with a nonidentity degeneracy applied"
             pp_printed (print r)
@@ -1413,6 +1422,10 @@ module Code = struct
           | `Other where -> textf "%s cannot contain holes" where)
       | Invalid_instant instant -> textf "invalid instant: %s" instant
       | Unsolved_unification_meta -> textf "can't determine a value for this placeholder"
+      | Undetermined_implicit_argument (x, fn) -> (
+          match x with
+          | Some x -> textf "can't determine implicit argument %s of %a" x pp_printed (print fn)
+          | None -> textf "can't determine an implicit argument of %a" pp_printed (print fn))
       | Oracle_failed _ -> text "oracle failed"
       | Extern { text = t; _ } -> text t
       | Invalid_flags -> text "invalid combination of command-line flags"

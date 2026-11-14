@@ -1613,6 +1613,23 @@ let () =
       is_case = (fun _ -> false);
     }
 
+(* An ellipsis "…" as an argument is an auxiliary notation for applying a function to all of its leading implicit arguments, or instantiating a type at all of its leading nullary dimensions.  It was defined in postprocess.ml. *)
+let () =
+  make Postprocess.ellipsis
+    {
+      name = "ellipsis";
+      tree = Closed_entry (eop Ellipsis (Done_closed Postprocess.ellipsis));
+      processor = (fun _ _ loc -> fatal ?loc (Parse_error "bare ellipsis"));
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "ellipsis"));
+      print_term =
+        Some
+          (function
+          | [ Token (Ellipsis, (ws, _)) ] -> (Token.pp Ellipsis, ws)
+          | _ -> invalid "ellipsis");
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
 (* ********************
    Attributes
    ******************** *)
@@ -3602,6 +3619,7 @@ let install () =
     Situation.add coloneq;
     Situation.add comatch;
     Situation.add Postprocess.dot;
+    Situation.add Postprocess.ellipsis;
     Situation.add implicit_mtch;
     Situation.add explicit_mtch;
     Situation.add mtchlam;

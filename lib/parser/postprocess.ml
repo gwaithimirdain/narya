@@ -34,6 +34,7 @@ type (_, _, _) identity +=
   | Parens : (closed, No.plus_omega, closed) identity
   | Braces : (closed, No.plus_omega, closed) identity
   | Dot : (closed, No.plus_omega, closed) identity
+  | Ellipsis_arg : (closed, No.plus_omega, closed) identity
   | (* AscVar is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a modal ascription "(x :f| _)" used as the head of a field projection. *)
       AscVar :
       (closed, No.plus_omega, closed) identity
@@ -41,6 +42,7 @@ type (_, _, _) identity +=
 let parens : (closed, No.plus_omega, closed) notation = (Parens, Outfix)
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
 let dot : (closed, No.plus_omega, closed) notation = (Dot, Outfix)
+let ellipsis : (closed, No.plus_omega, closed) notation = (Ellipsis_arg, Outfix)
 let ascvar : (closed, No.plus_omega, closed) notation = (AscVar, Outfix)
 
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
@@ -298,21 +300,25 @@ and process_apply : type n.
           process_apply ctx
             {
               value =
-                Synth (App (fn, locate_opt arg.loc (Some arg.value), locate_opt braceloc `Implicit));
+                Synth (App (fn, locate_opt arg.loc (`Arg arg.value), locate_opt braceloc `Implicit));
               loc;
             }
             rest
       | _ -> fatal (Anomaly "invalid notation arguments for braces"))
   | (Wrap { value = Notn ((Dot, _), _); loc = dotloc }, loc) :: rest ->
       process_apply ctx
-        { value = Synth (App (fn, locate_opt dotloc None, locate_opt None `Explicit)); loc }
+        { value = Synth (App (fn, locate_opt dotloc `Dot, locate_opt None `Explicit)); loc }
+        rest
+  | (Wrap { value = Notn ((Ellipsis_arg, _), _); loc = eloc }, loc) :: rest ->
+      process_apply ctx
+        { value = Synth (App (fn, locate_opt eloc `Ellipsis, locate_opt None `Explicit)); loc }
         rest
   | (Wrap arg, loc) :: args ->
       let arg = process ctx arg in
       process_apply ctx
         {
           value =
-            Synth (App (fn, locate_opt arg.loc (Some arg.value), locate_opt arg.loc `Explicit));
+            Synth (App (fn, locate_opt arg.loc (`Arg arg.value), locate_opt arg.loc `Explicit));
           loc;
         }
         args
