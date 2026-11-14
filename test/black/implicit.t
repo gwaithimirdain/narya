@@ -584,3 +584,28 @@ Braced arguments supply the faces of a cube of arguments in order, each either t
       ^ invalid face argument: face 0 is out of order or repeated: faces must be given in order, and a dot starts the next cube
   
   [1]
+
+A matching abstraction at a higher-dimensional function-type, such as the identity type of a function-type, abstracts over a cube variable, which it matches against, so its branches must also be cube branches.  This works for implicit higher-dimensional function-types as well.
+
+  $ narya - <<EOF
+  > def Nat : Type ≔ data [ zero. | suc. (_ : Nat) ]
+  > def f : Nat → Nat ≔ [ zero. ↦ zero. | suc. n ↦ n ]
+  > def r : Id (Nat → Nat) f f ≔ [ zero. ⤇ zero. | suc. n ⤇ n.2 ]
+  > about r
+  > echo r {2} {2} (refl (2 : Nat))
+  > def fi : {_ : Nat} → Nat ≔ [ {zero.} ↦ zero. | {suc. n} ↦ n ]
+  > def ri : Id ({_ : Nat} → Nat) fi fi ≔ [ {zero.} ⤇ zero. | {suc. n} ⤇ n.2 ]
+  > def bad : Id (Nat → Nat) f f ≔ [ zero. ↦ zero. | suc. n ↦ n ]
+  > EOF
+  𝑥 ⤇ match 𝑥.2 [ suc. n ⤇ n.2 | zero. ⤇ refl 0 ]
+    : {𝑥₀ : Nat} {𝑥₁ : Nat} (𝑥₂ : Nat⁽ᵉ⁾ 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Nat⁽ᵉ⁾ (f 𝑥₀) (f 𝑥₁)
+  
+  refl 1
+    : Nat⁽ᵉ⁾ 1 1
+  
+   ￫ error[E0510]
+   ￭ stdin
+   8 | def bad : Id (Nat → Nat) f f ≔ [ zero. ↦ zero. | suc. n ↦ n ]
+     ^ e-dimensional match requires cube abstraction
+  
+  [1]

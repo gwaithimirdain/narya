@@ -348,7 +348,7 @@ let rec get_vars : type n lt ls rt rs.
 
 let rec raw_lam : type a b ab.
     (string option, ab) Bwv.t ->
-    [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located ->
+    [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal | `Generated ] located ->
     (a, b, ab) N.plus ->
     (string located list located, b) Bwv.t ->
     (Asai.Range.t option * wrapped_parse option * [ `Explicit | `Implicit ], b) Bwv.t ->

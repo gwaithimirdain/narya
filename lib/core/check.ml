@@ -792,7 +792,13 @@ let rec check : type mode a b s.
                       fun tm -> hyp (Lam (xs, m, filter, piimplicit, tm)) ) in
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs filter newargs in
-            match cube.value with
+            (* A generated abstraction is a cube abstraction exactly when the function-type is higher-dimensional. *)
+            let cube_kind =
+              match (cube.value, D.compare_zero m) with
+              | `Generated, Zero -> `Normal
+              | `Generated, Pos _ -> `Cube (ref None)
+              | ((`Normal | `Cube _) as c), _ -> c in
+            match cube_kind with
             (* If the abstraction is not a cube, we slurp up the right number of lambdas for the dimension of the pi-type, requiring all but the top variable to be {implicit}, and the top variable to be implicit exactly when the pi-type is, and pick up the body inside them.  We do this by building a cube of variables of the right dimension while maintaining the current term as an indexed state.  We also build a sum of raw lengths, since we need that to extend the context.  Note that we never need to manually "count" how many faces there are in a cube of any dimension, or discuss how to put them in order: the counting and ordering is handled automatically by iterating through a cube. *)
             | `Normal -> (
                 let module S = struct
@@ -813,7 +819,7 @@ let rec check : type mode a b s.
                                     Lam
                                       {
                                         name;
-                                        cube = { value = `Normal; _ };
+                                        cube = { value = `Normal | `Generated; _ };
                                         implicit;
                                         dom = _;
                                         body;
