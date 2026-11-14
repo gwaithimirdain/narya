@@ -270,6 +270,7 @@ let rec synths : type mode n. (mode, n, kinetic) term -> bool = function
   | Unact (_, tm) -> synths tm
   | Shift (_, _, tm) -> synths tm
   | Weaken (_, tm, _) -> synths tm
+  | Share (_, tm) -> synths tm
   | Failed _ -> false
 
 (* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
@@ -684,6 +685,7 @@ let rec unparse : type mode n lt ls rt rs s.
   | Weaken (plus_lock, tm, Plus_lock (_, comp)) ->
       (* We remove the names of the locks, then the weakened variable, and then put back the locks. *)
       unparse (Names.add_lock (Names.remove (Names.split vars comp) Now) plus_lock) tm li ri
+  | Share (_, tm) -> unparse vars tm li ri
   (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
   | Failed _ -> fatal (Dependent "unparsing failed component")
 

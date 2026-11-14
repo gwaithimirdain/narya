@@ -5,19 +5,16 @@ open Origin
 
 (* When "linking" a pre-compiled file with the current run, we need to walk the unmarshaled terms and replace the old autonumbers of files, from when the file was compiled, with the current ones.  We do this in place, by mutating the origins of the constants and metavariables that occur in them (see Origin.make_canonical), so that the terms are not reallocated and keep any sharing they had when they were marshaled (see Readback.sharing).  A constant or metavariable that has already been linked is recognized by its origin, so it is never linked twice, even if it is reached more than once.
 
-   For the same reason, we try not to walk a shared subterm more than once.  The sharing produced by readback appears as a term that also occurs underneath weakenings, so at weakenings we remember the (physical) terms we have already walked.  OCaml can't hash values by their addresses, since the garbage collector moves them, so we hash them structurally, and since the structural hash of a term can depend on the origins we are mutating, we record a term after walking it, when it has stopped changing.  A lookup that misses only costs a repeated walk, which is harmless since linking is idempotent.  We compare terms with physical equality on their untyped representations (Obj.repr), since the terms we compare have different static types; this is only a comparison, never a coercion, and physical equality of blocks means they are the same memory, which we have already linked. *)
+   For the same reason, we don't walk a shared subterm more than once.  The later occurrences of a term that readback shared are wrapped in a Share node that carries a number identifying it, so we remember the terms we have already walked by those numbers.  (OCaml can't hash values by their addresses, since the garbage collector moves them, and a structural hash is of little use since many different terms have the same structure.)  The first occurrence of a shared term is not wrapped, so it is walked separately from the wrapped ones (and again whenever a shared term that contains it is), which is harmless since linking is idempotent.  The numbers are different for all the Share nodes created in one run, hence for all those in one compiled file, but to be safe we also check that the term we remembered is physically the same one, on its untyped representation (Obj.repr) since the terms we compare have different static types; this is only a comparison, never a coercion. *)
 
-(* A hash table keyed by physical identity: since there is no hash of addresses, we hash structurally (bounded, so that each hash is cheap), and compare with physical equality.  The polymorphic Hashtbl would instead compare keys structurally, which on shared terms would cost as much as walking them. *)
-module Walked = Hashtbl.Make (struct
-  type t = Obj.t
+let walked : (int, Obj.t) Hashtbl.t = Hashtbl.create 100
 
-  let equal = ( == )
-  let hash = Hashtbl.hash_param 8 32
-end)
+let already_walked (i : int) (x : Obj.t) =
+  match Hashtbl.find_opt walked i with
+  | Some y -> x == y
+  | None -> false
 
-let walked : unit Walked.t = Walked.create 100
-let already_walked (x : Obj.t) = Obj.is_block x && Walked.mem walked x
-let record_walked (x : Obj.t) = if Obj.is_block x then Walked.replace walked x ()
+let record_walked (i : int) (x : Obj.t) = Hashtbl.replace walked i x
 
 let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> unit =
  fun f tm ->
@@ -65,10 +62,11 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> unit =
   | Unshift (_, _, tm) -> term f tm
   | Unact (_, tm) -> term f tm
   | Shift (_, _, tm) -> term f tm
-  | Weaken (_, tm, _) ->
-      if not (already_walked (Obj.repr tm)) then (
+  | Weaken (_, tm, _) -> term f tm
+  | Share (i, tm) ->
+      if not (already_walked i (Obj.repr tm)) then (
         term f tm;
-        record_walked (Obj.repr tm))
+        record_walked i (Obj.repr tm))
   | Failed _ -> ()
 
 and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> unit =
@@ -177,4 +175,4 @@ let metadef : type mode x y z. (File.t -> File.t) -> (mode, x, y, z) Metadef.t -
   Positivity.link_recursion f data.recursion
 
 (* Forget the terms walked so far, at the end of linking a compiled file. *)
-let reset () = Walked.reset walked
+let reset () = Hashtbl.reset walked

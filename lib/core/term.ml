@@ -197,6 +197,7 @@ module rec Term : sig
         * ('src, 'bmu, 's) term
         * (('b, ('modality, 'n) dim_entry) snoc, 'tgt, 'mu, 'src, 'bnmu) plus_lock
         -> ('src, 'bnmu, 's) term
+    | Share : int * ('mode, 'a, kinetic) term -> ('mode, 'a, kinetic) term
     | Failed : 's energy -> ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
@@ -538,6 +539,8 @@ end = struct
         * ('src, 'bmu, 's) term
         * (('b, ('modality, 'n) dim_entry) snoc, 'tgt, 'mu, 'src, 'bnmu) plus_lock
         -> ('src, 'bnmu, 's) term
+    (* A term that occurs more than once in the output of a readback, wrapped in this node at each occurrence but the first (see Readback.sharing).  It means the same as the term it contains.  The number identifies that term among those produced by the same run, so that a traversal that needs to visit each term only once, such as linking, can recognize it. *)
+    | Share : int * ('mode, 'a, kinetic) term -> ('mode, 'a, kinetic) term
     (* A term that failed to typecheck, such as a component of a structure (a field of a struct, or a constructor of a datatype), allowing the rest of the term or structure to be checked and used.  Evaluating it produces a failed value (see Value.Failed), which fails silently when it is inspected. *)
     | Failed : 's energy -> ('mode, 'a, 's) term
 
@@ -818,6 +821,7 @@ let rec is_failed : type mode a s. (mode, a, s) term -> bool = function
   | Unact (_, tm) -> is_failed tm
   | Shift (_, _, tm) -> is_failed tm
   | Weaken (_, tm, _) -> is_failed tm
+  | Share (_, tm) -> is_failed tm
   | _ -> false
 
 (* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
@@ -855,8 +859,9 @@ let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = functio
           let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
           let (Wrap n) = pi_arity cod in
           Wrap (Suc n))
-  (* A weakening doesn't change the structure of a term (it can appear here if the function-type was read back with sharing, see Readback.sharing). *)
+  (* A weakening or a sharing node doesn't change the structure of a term (they can appear here if the function-type was read back with sharing, see Readback.sharing). *)
   | Weaken (_, tm, _) -> pi_arity tm
+  | Share (_, tm) -> pi_arity tm
   (* A constructor that failed to typecheck has no known arity, so anything that needs it fails dependently. *)
   | tm when is_failed tm -> Reporter.fatal (Dependent "arity of failed constructor")
   | _ -> Wrap Zero
@@ -872,6 +877,7 @@ let rec pi_names : type mode a. (mode, a, kinetic) term -> string option list = 
           let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
           option_of_binder_name (top_variable x) :: pi_names cod)
   | Weaken (_, tm, _) -> pi_names tm
+  | Share (_, tm) -> pi_names tm
   | _ -> []
 
 let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function

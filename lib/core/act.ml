@@ -172,7 +172,7 @@ module Act = struct
       (mode, status) value =
    fun v s c ->
     match v with
-    | Neu { head; args; value; ty } ->
+    | Neu { head; args; value; ty; id = _ } ->
         (* We act on the applications from the outside (last) to the inside, since the degeneracy has to be factored and may leave neutral insertions behind.  The resulting inner degeneracy then acts on the head. *)
         let Any_deg s', Wrap hc, args = act_apps args s c in
         let head = act_neu_head head s' hc in
@@ -180,7 +180,7 @@ module Act = struct
         let value = act_lazy_eval value s c in
         (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine.  We are careful not to force the original type until the acted type is itself demanded, since computing types of acted terms can cascade (the type's own spine contains normals whose types are acted in turn) and the acted type is frequently never inspected. *)
         let ty = lazy (act_ty v (Lazy.force ty) s c) in
-        Neu { head; args; value; ty }
+        Neu { head; args; value; ty; id = fresh_id () }
     | Lam (x, filter, body) ->
         let (Of fa) = deg_plus_to s (dim_binder body) ~on:"lambda" in
         let (Filter_deg (fa', filter')) = Modality.filter_deg filter fa in
@@ -419,7 +419,7 @@ module Act = struct
     (* If the type is failed, so is the type of the acted term. *)
     | Neu { head = Failed mode; args = Emp; _ } -> failed_type mode
     (* The type must be UU 0, since this IS a TYPE (that has elements).  But we don't bother checking that it is. *)
-    | Neu { head = Live head; args; value; ty } ->
+    | Neu { head = Live head; args; value; ty; id = _ } ->
         (* Pull off the instantiation, perhaps empty, from the end of the arguments. *)
         let base_args, Full_tube inst_args =
           match args with
@@ -473,7 +473,7 @@ module Act = struct
                        })
               | Pos _ -> fatal (Anomaly "non fully instantiated type in act_ty"))
           | Val _ -> fatal (Anomaly "non-canonical potential value in act_ty") in
-        Neu { head = Live head; args; value; ty }
+        Neu { head = Live head; args; value; ty; id = fresh_id () }
 
   (* Subroutine of gact_ty that acts on the instantiation arguments of a type, keeping them a full tube. *)
   and gact_ty_instargs : type mode mu1 mu2 cod a b n.
