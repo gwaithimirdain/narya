@@ -31,7 +31,7 @@ Implicit function-types are written with braces around their domains, as are the
    ￫ info[I0000]
    ￮ constant t defined
   
-  f
+  f .
     : B a
   
   {𝑥 : A} → B a
@@ -40,10 +40,10 @@ Implicit function-types are written with braces around their domains, as are the
    ￫ info[I0000]
    ￮ constant g defined
   
-  {y} ↦ f
+  {y} ↦ f .
     : {x : A} → B x
   
-  {x} ↦ f
+  {x} ↦ f .
     : {x : A} → B x
   
    ￫ info[I0000]
@@ -130,7 +130,7 @@ Implicit arguments are displayed only if requested, in which case a notation isn
   > echo (y ↦ g {a} y) : B a → B a
   > echo ({y} ↦ f {y}) : {x : A} → B x
   > EOF
-  f !
+  f . !
     : B a
   
   y ↦ y !
@@ -186,10 +186,10 @@ The identity type of an implicit function-type is an implicit higher-dimensional
   > synth refl f
   > EOF
   ap f
-    : {x₀ : A} {x₁ : A} {x₂ : Id A x₀ x₁} →⁽ᵉ⁾ Id B x₂ f f
+    : {x₀ : A} {x₁ : A} {x₂ : Id A x₀ x₁} →⁽ᵉ⁾ Id B x₂ (f .) (f .)
   
-  ap f
-    : Id B (refl a) f f
+  ap f .
+    : Id B (refl a) (f .) (f .)
   
    ￫ error[E0702]
    ￭ stdin
@@ -373,10 +373,10 @@ In arity zero, an ellipsis also instantiates all the leading nullary dimensions 
   A⁽ʷʷ⁾ . .
     : Type
   
-  wk (wk T) . .
+  wk (wk T) . . .
     : Type
   
-  wk (wk T) . .
+  wk (wk T) . . .
     : Type
   
    ￫ error[E0711]
@@ -390,3 +390,27 @@ In arity zero, an ellipsis also instantiates all the leading nullary dimensions 
      ^ nothing to insert or instantiate: ellipsis applied to a term whose type is neither an implicit function-type nor a higher-dimensional type of arity zero
   
   [1]
+
+With implicit arguments hidden, a hidden cube of them is displayed as a dot, so that the display re-parses, unless it would be inserted anyway because it is followed by an explicit argument or a field projection.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom a : A
+  > axiom B : A → Type
+  > axiom b : B a
+  > def R : Type ≔ sig ( fst : A, snd : A )
+  > axiom r : {x : A} {y : B x} → R
+  > axiom g : {x : A} (y : B x) → B x
+  > echo r {a} {b}
+  > echo (r {a} {b}) .snd
+  > echo g {a} b
+  > EOF
+  r . .
+    : R
+  
+  r .snd
+    : A
+  
+  g b
+    : B a
+  

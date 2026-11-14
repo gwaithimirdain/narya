@@ -403,12 +403,12 @@ let show_ins : type nk n k. (nk, n, k) insertion -> int list =
       | Pos _ -> ints_of_ins ins)
   | _ -> ints_of_ins ins
 
-(* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine).  We don't include the modality, since modalities are not printed with applications. *)
+(* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine).  We don't include the modality, since modalities are not printed with applications.  An argument can be explicit, implicit (printed in braces), or a hidden cube of implicit arguments, which is printed as a dot unless it would be inserted automatically when re-parsing (see drop_inserted). *)
 type (_, _) spine_arg =
   | Spine_arg :
       (('a, 'mode, 'modality, 'dom, 'an) plus_lock, ('a, 'an) Eq.t) Either.t
       * ('dom, 'an, 's) term
-      * [ `Implicit | `Explicit ]
+      * [ `Implicit | `Explicit | `Hidden ]
       -> ('a, 's) spine_arg
 
 let rec get_spine : type mode a s.
@@ -435,8 +435,9 @@ let rec get_spine : type mode a s.
             it =
               (fun fa [ (x : (_, am, kinetic) Term.term) ] ->
                 match (implicit, Display.implicits (), is_id_sface fa, all_args) with
-                (* All the arguments of an implicit application are implicit, and are hidden unless the user has asked to display implicit arguments. *)
-                | `Implicit, `Hide, _, _ -> ()
+                (* All the arguments of an implicit application are implicit, and are hidden unless the user has asked to display implicit arguments.  A hidden cube of them is recorded once, by its top face. *)
+                | `Implicit, `Hide, Some _, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Hidden))
+                | `Implicit, `Hide, None, _ -> ()
                 | `Implicit, `Show, _, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
                 (* The boundary of an explicit application is hidden in the same way, unless it is needed because the primary argument doesn't synthesize. *)
                 | `Explicit, `Hide, None, false -> ()
@@ -467,6 +468,17 @@ let rec get_spine : type mode a s.
       | Eq, Plus_with_locks (Zero, Zero _), Plus_lock (Zero _, Zero) -> get_spine body
       | _ -> `App (tm, Emp))
   | tm -> `App (tm, Emp)
+
+(* A hidden cube of implicit arguments in a spine is omitted entirely if re-parsing would insert it automatically, namely if it is followed by an explicit argument (perhaps after other hidden ones) or, when [dots_at_end] is false, by a field projection.  Otherwise it is displayed as a dot, which inserts it explicitly. *)
+let drop_inserted : type a s. dots_at_end:bool -> (a, s) spine_arg Bwd.t -> (a, s) spine_arg Bwd.t =
+ fun ~dots_at_end args ->
+  let rec go droppable acc = function
+    | Bwd.Emp -> acc
+    | Bwd.Snoc (args, (Spine_arg (_, _, `Hidden) as arg)) ->
+        if droppable then go true acc args else go false (arg :: acc) args
+    | Bwd.Snoc (args, (Spine_arg (_, _, `Explicit) as arg)) -> go true (arg :: acc) args
+    | Bwd.Snoc (args, (Spine_arg (_, _, `Implicit) as arg)) -> go false (arg :: acc) args in
+  Bwd.of_list (go (not dots_at_end) [] args)
 
 (* Build a field projection "x .fld" as a parse tree, for use as the "self" pattern in unparsing codatatypes and records.  It is built in the "entire" tightness interval and packed existentially into an observation at the call site. *)
 let unparse_field_app (x : string) (fld : string) (pbij : string list) :
@@ -633,12 +645,13 @@ let decide_keys : type mode a mu nu cod e.
 
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type mode n lt ls rt rs s.
+    ?dots_at_end:bool ->
     n Names.t ->
     (mode, n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars tm li ri ->
+ fun ?(dots_at_end = true) vars tm li ri ->
   match tm with
   | Var x -> unlocated (Ident (Names.lookup vars x, []))
   | Const c -> (
@@ -681,19 +694,22 @@ let rec unparse : type mode n lt ls rt rs s.
   | App _ -> (
       match get_spine tm with
       | `App (fn, args) ->
-          (* A notation is applied to explicit arguments, so if implicit arguments are being displayed (which they are only if requested), we display the application as a spine instead. *)
-          let notation = not (Bwd.exists (fun (Spine_arg (_, _, i)) -> i = `Implicit) args) in
+          let args = drop_inserted ~dots_at_end args in
+          (* A notation is applied to explicit arguments, so if implicit arguments are being displayed (which they are only if requested, or as dots), we display the application as a spine instead. *)
+          let notation = not (Bwd.exists (fun (Spine_arg (_, _, i)) -> i <> `Explicit) args) in
           unparse_spine ~notation vars (`Term fn) (Bwd.map (make_unparser_implicit vars) args) li ri
       | `Field (head, fld, ins, args) ->
           unparse_spine vars
             (`Field (head, fld, ins))
-            (Bwd.map (make_unparser_implicit vars) args)
+            (Bwd.map (make_unparser_implicit vars) (drop_inserted ~dots_at_end args))
             li ri)
   (* A nontrivial key is treated by get_spine as an opaque head, which routes back to here; we handle it directly rather than through get_spine (which would loop). *)
   | Key { tm = body; cell; plus_tgt = Plus_with_locks (comp, _); plus_src } ->
       unparse_key vars body cell comp plus_src li ri
   | Act (_, tm, s, sort) ->
-      unparse_act ~sort vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
+      (* An identity degeneracy is invisible, so whatever follows the action follows its body. *)
+      let dots_at_end = dots_at_end || Option.is_none (is_id_deg s) in
+      unparse_act ~sort vars { unparse = (fun li ri -> unparse ~dots_at_end vars tm li ri) } s li ri
   | Let (x, Modal (modality, plus, tm), body) -> (
       let tm = unparse (Names.add_lock vars plus) tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)
@@ -988,6 +1004,7 @@ and make_unparser_implicit : type n. n Names.t -> (n, kinetic) spine_arg -> unpa
             let tm = unparse vars tm No.Interval.entire No.Interval.entire in
             braceize tm);
       }
+  | `Hidden -> { unparse = (fun li ri -> unparse_notation Postprocess.dot [] (`Single Dot) li ri) }
 
 (* Unparse a canonical type (a datatype or codatatype/record). *)
 and unparse_canonical : type mode n lt ls rt rs.
@@ -1458,7 +1475,7 @@ and unparse_modal_field : type mode dom f n am lt ls rt rs s.
     (lt, ls, rt, rs) parse located =
  fun vars fm plus_lock itm fld ins li ri ->
   let lvars = Names.add_lock vars plus_lock in
-  let inner = unparse lvars itm No.Interval.entire No.Interval.entire in
+  let inner = unparse ~dots_at_end:false lvars itm No.Interval.entire No.Interval.entire in
   (* Thunks, so that each use below is polymorphic in the surrounding tightness interval. *)
   let asc () = unparse_modal_ascription inner fm in
   let arg () = unlocated (Field (fld, List.map string_of_int ins, [])) in
@@ -1482,12 +1499,15 @@ and unparse_field : type mode n lt ls rt rs s.
   | Some res -> res
   | None -> (
       match (No.Interval.contains li No.plus_omega, No.Interval.contains ri No.plus_omega) with
+      (* A field projection inserts the implicit arguments of what it projects from, so they don't need dots. *)
       | Some left_ok, Some right_ok ->
-          let fn = unparse vars tm li No.Interval.plus_omega_only in
+          let fn = unparse ~dots_at_end:false vars tm li No.Interval.plus_omega_only in
           let arg = unlocated (Field (fld, List.map string_of_int ins, [])) in
           unlocated (App { fn; arg; left_ok; right_ok })
       | _ ->
-          let fn = unparse vars tm No.Interval.plus_omega_only No.Interval.plus_omega_only in
+          let fn =
+            unparse ~dots_at_end:false vars tm No.Interval.plus_omega_only
+              No.Interval.plus_omega_only in
           let arg = unlocated (Field (fld, List.map string_of_int ins, [])) in
           let left_ok = No.le_refl No.plus_omega in
           let right_ok = No.le_refl No.plus_omega in

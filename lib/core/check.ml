@@ -4960,16 +4960,19 @@ and synth_apps : type mode a b.
               Annotate.tm ctx asfn.value);
           synth_apps ctx asfn aty afn aargs)
 
-(* The location and error code of the placeholders inserted for a cube of implicit arguments of a function, named after the variable of its function-type. *)
+(* The location and error code of the placeholders inserted for a cube of implicit arguments of a function, named after the variable of its function-type.  The function is displayed without any implicit arguments it has already been applied to, since those are usually ones inserted before this one. *)
 and insertion : type mode a b n.
     (mode, a, b) Ctx.t ->
     (mode, b, kinetic) term located ->
     n variables ->
     Asai.Range.t option * Code.t =
  fun ctx sfn x ->
+  let rec strip : (mode, b, kinetic) term -> (mode, b, kinetic) term = function
+    | App (_, fn, _, _, `Implicit, _) -> strip fn
+    | tm -> tm in
   ( sfn.loc,
-    Undetermined_implicit_argument (option_of_binder_name (top_variable x), PTerm (ctx, sfn.value))
-  )
+    Undetermined_implicit_argument
+      (option_of_binder_name (top_variable x), PTerm (ctx, strip sfn.value)) )
 
 (* Apply something to an ellipsis: if its type is an implicit function-type, insert placeholders for all of its leading cubes of implicit arguments; if it is a higher-dimensional type of arity zero, instantiate it at all of its leading nullary dimensions.  These don't combine: once we have done one of them, as recorded by [doing], we continue only with that one, so that inserting the implicit arguments of a function whose codomain is a higher-dimensional type doesn't also instantiate that type.  If we haven't done either yet, there must be one to do.  If the type is stuck on a metavariable, we postpone the rest of the work, remembering what we were doing. *)
 and synth_ellipsis : type mode a b.
