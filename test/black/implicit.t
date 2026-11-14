@@ -478,3 +478,25 @@ Braces in parameters are preserved by reformatting.
   def id {X : Type} (x : X) : X ≔ x
   
   axiom f {x y : A} (z : A) : A
+
+Implicit higher-dimensional function-types can be written with all their domains in braces, or with "⇒", and the type of the identity of an implicit function re-parses.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom f : {x : A} → B x
+  > def T1 : Type ≔ {x₀ : A} {x₁ : A} {x₂ : Id A x₀ x₁} →⁽ᵉ⁾ Id B x₂ (f {x₀}) (f {x₁})
+  > def r1 : T1 ≔ refl f
+  > synth ({x : Id A} ⇒ Id B x.2) f f
+  > def r2 : ({x : Id A} ⇒ Id B x.2) f f ≔ refl f
+  > def bad : Type ≔ {x₀ : A} (x₁ : A) {x₂ : Id A x₀ x₁} →⁽ᵉ⁾ Id B x₂ (f {x₀}) (f {x₁})
+  > EOF
+  {x₀ : A} {x₁ : A} {x₂ : Id A x₀ x₁} →⁽ᵉ⁾ Id B x₂ (f .) (f .)
+    : Type
+  
+   ￫ error[E0705]
+   ￭ stdin
+   8 | def bad : Type ≔ {x₀ : A} (x₁ : A) {x₂ : Id A x₀ x₁} →⁽ᵉ⁾ Id B x₂ (f {x₀}) (f {x₁})
+     ^ not enough domains for an e-dimensional function type
+  
+  [1]

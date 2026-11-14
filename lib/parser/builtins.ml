@@ -1151,6 +1151,7 @@ let rec process_pi : type n lt ls rt rs.
               Synth
                 (HigherPi
                    ( [ locate_opt None None ],
+                     `Explicit,
                      modality,
                      locate_opt cdom.loc sdom,
                      locate_opt cod.loc scod ));
@@ -1167,12 +1168,12 @@ let rec process_pi : type n lt ls rt rs.
       let loc = Range.merge_opt loc cod.loc in
       match (higher, cdom.value, cod.value) with
       | `Lower, _, _ -> { value = Synth (Pi (names, implicit, modality, cdom, cod)); loc }
-      | `Higher, _, _ when implicit = `Implicit ->
-          fatal ?loc (Unimplemented "implicit higher function-types")
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
-              Synth (HigherPi (names, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+              Synth
+                (HigherPi
+                   (names, implicit, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
             loc;
           }
       | `Higher, Synth _, _ ->
@@ -1180,72 +1181,39 @@ let rec process_pi : type n lt ls rt rs.
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
   | Dep { vars = []; _ } :: doms -> process_pi ctx higher doms cod
 
-(* One group of domains for an instantiated higher pi-type: a telescope consisting of the implicit boundary domains and ending with the (first) explicit primary domain.  The number of domains needed is not known until typechecking time (it is determined by the modality, which can't be parsed until the modes are known), so we just collect them all in a telescope; but the *grouping* into successive higher pi-types is visible at parse time, since each group consists of implicit domains followed by a single explicit one. *)
-type _ higher_dom_group =
-  | Higher_dom_group :
-      ('n, 'b, 'nb) tel
-      (* Other variables sharing the type of the primary domain (see Raw.InstHigherPi). *)
-      * ('nb, 'c, 'nbc) Indexed.Namevec.t
-      * (string option, 'nbc) Bwv.t
-      * pi_dom list
-      * Asai.Range.t option
-      -> 'n higher_dom_group
+(* The domains of a sequence of instantiated higher pi-types, as one telescope, together with the scope extended by their variables.  The division of the telescope into pi-types is done at typechecking time (see Raw.InstHigherPi), since it depends on the modalities. *)
+type _ higher_doms =
+  | Higher_doms :
+      ('n, 'b, 'nb) tel * (string option, 'nb) Bwv.t * Asai.Range.t option
+      -> 'n higher_doms
 
-(* A possibly-empty list of variables, as a Namevec, together with the scope extended by them. *)
-type _ some_vars =
-  | Some_vars : ('n, 'c, 'nc) Indexed.Namevec.t * (string option, 'nc) Bwv.t -> 'n some_vars
-
-let rec some_vars : type n.
-    (string option, n) Bwv.t -> (string option located * Whitespace.t list) list -> n some_vars =
- fun ctx xs ->
-  match xs with
-  | [] -> Some_vars ([], ctx)
-  | (x, _) :: xs ->
-      let (Some_vars (names, ctx)) = some_vars (Bwv.snoc ctx x.value) xs in
-      Some_vars (x :: names, ctx)
-
-let rec process_higher_dom_group : type n.
-    (string option, n) Bwv.t -> pi_dom list -> Asai.Range.t option -> n higher_dom_group =
- fun ctx doms loc ->
+let rec process_higher_doms : type n. (string option, n) Bwv.t -> pi_dom list -> n higher_doms =
+ fun ctx doms ->
   match doms with
-  | [] ->
-      fatal
-        (Unexpected_implicitness
-           (`Implicit, "domain", "the primary domain of a higher function-type must be explicit"))
-  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } :: rest -> (
+  | [] -> Higher_doms (Emp, ctx, None)
+  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit; _ } :: rest ->
       (* The other variables of a group share its type, which we process only once, in the scope outside all of them. *)
       let cdom = process ctx dom in
-      let loc =
-        match loc with
-        | Some loc -> Some loc
-        | None -> xloc in
-      match implicit with
-      | `Explicit ->
-          (* The primary domain ends the group, so any other variables sharing its type become further pi-types with only a primary domain. *)
-          let (Some_vars (names, newctx)) = some_vars (Bwv.snoc ctx x.value) xs in
-          Higher_dom_group (Ext (x.value, `Explicit, modality, cdom, Emp), names, newctx, rest, loc)
-      | `Implicit ->
-          let (Higher_dom_group (tele, names, newctx, rest2, loc2)) =
-            process_higher_dom_same (Bwv.snoc ctx x.value) xs rest loc in
-          Higher_dom_group
-            (Ext (x.value, `Implicit, modality, cdom, tele), names, newctx, rest2, loc2))
-  | _ -> invalid "higher pi"
+      let (Higher_doms (tele, newctx, _)) =
+        process_higher_doms_same (Bwv.snoc ctx x.value) xs rest in
+      Higher_doms (Ext (x.value, implicit, modality, cdom, tele), newctx, loc)
+  | Dep { vars = []; _ } :: rest -> process_higher_doms ctx rest
+  | Nondep _ :: _ -> fatal (Invalid_higher_function "non-dependent domain")
 
-and process_higher_dom_same : type n.
+and process_higher_doms_same : type n.
     (string option, n) Bwv.t ->
     (string option located * Whitespace.t list) list ->
     pi_dom list ->
-    Asai.Range.t option ->
-    n higher_dom_group =
- fun ctx xs doms loc ->
+    n higher_doms =
+ fun ctx xs doms ->
   match xs with
-  | [] -> process_higher_dom_group ctx doms loc
+  | [] -> process_higher_doms ctx doms
   | (x, _) :: xs ->
-      let (Higher_dom_group (tele, names, newctx, rest, loc)) =
-        process_higher_dom_same (Bwv.snoc ctx x.value) xs doms loc in
-      Higher_dom_group (Same (x.value, tele), names, newctx, rest, loc)
+      let (Higher_doms (tele, newctx, loc)) =
+        process_higher_doms_same (Bwv.snoc ctx x.value) xs doms in
+      Higher_doms (Same (x.value, tele), newctx, loc)
 
-let rec process_inst_higher_pi : type n lt ls rt rs m.
+let process_inst_higher_pi : type n lt ls rt rs m.
     (string option, n) Bwv.t ->
     m D.pos ->
     pi_dom list ->
@@ -1255,11 +1223,10 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
   match doms with
   | [] -> process ctx cod
   | _ :: _ ->
-      let (Higher_dom_group (tele, names, newctx, doms, loc)) =
-        process_higher_dom_group ctx doms None in
-      let cod = process_inst_higher_pi newctx dim doms cod in
+      let (Higher_doms (tele, newctx, loc)) = process_higher_doms ctx doms in
+      let cod = process newctx cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (InstHigherPi (dim, tele, names, cod)); loc }
+      { value = Synth (InstHigherPi (dim, tele, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 

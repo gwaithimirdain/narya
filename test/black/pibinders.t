@@ -327,7 +327,9 @@ Otherwise that isn't allowed, since the later variables would have no boundaries
   $ narya -no-reformat shared.ny
    ￫ error[E0706]
    ￭ $TESTCASE_ROOT/shared.ny
+   2 | echo {x₀ x₁ : A} (x₂
    3 |   y₂
-     ^ invalid higher function-type: a primary domain with boundaries can't be shared by several variables
+   4 |   : refl A x₀ x₁) →⁽ᵉ⁾ A
+     ^ invalid higher function-type: a primary domain with boundaries can't be shared by several variables, such as y₂
   
   [1]

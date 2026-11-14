@@ -332,6 +332,17 @@ type (_, _, _, _, _) checked_tel =
       -> ('mode, 'a, 'b, 'c, 'ac) checked_tel
 
 (* The previous entry of a telescope being checked, for the following entries that share its type (see Raw.Same): its modality, its checked type in the context locked by that modality, and that type evaluated.  If it failed to typecheck, the checked type is Failed and the evaluated one is a failed type. *)
+(* When checking a sequence of instantiated higher pi-types (see Raw.InstHigherPi), the primary domain of the previous one, in case the next one shares its type: its modality, evaluated type, location, and implicitness, and whether it was the only domain of its pi-type, since otherwise it can't be shared. *)
+type _ inst_prev =
+  | Inst_prev : {
+      modality : ('dom, 'modality, 'mode) Modality.t;
+      edom : ('dom, kinetic) value;
+      loc : Asai.Range.t option;
+      implicit : implicitness;
+      single : bool;
+    }
+      -> 'mode inst_prev
+
 type (_, _) tel_prev =
   | Tel_prev :
       implicitness
@@ -557,7 +568,7 @@ and synth_has_case_tree : type a. a synth -> bool = function
 let rec synth_has_synth : type a. a synth -> bool = function
   | Var _ | Const _ | UU _ | Pi _ | InstHigherPi _ | Asc _ | Fail _ -> true
   | Field (tm, _, _) | Key (tm, _) -> synth_has_synth tm.value
-  | HigherPi (_, _, dom, cod) -> synth_has_synth dom.value && synth_has_synth cod.value
+  | HigherPi (_, _, _, dom, cod) -> synth_has_synth dom.value && synth_has_synth cod.value
   | AscLam (_, _, _, _, body) -> synth_has_synth body.value
   | App (fn, _, _) -> head_has_synth fn.value
   | Let (_, _, v, body) -> synth_has_synth v.value && check_has_synth body.value
@@ -4149,7 +4160,7 @@ and synth : type mode a b s.
                     (Modal (modality, plus_src, cdom))
                     (bind newctx newplus newcdom xs cod) in
             (realize status (bind ctx plus cdom xs cod), universe mode D.zero))
-    | HigherPi (xs, modality, dom, cod), _ -> (
+    | HigherPi (xs, implicit, modality, dom, cod), _ -> (
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
         | Ok (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) -> (
@@ -4261,7 +4272,8 @@ and synth : type mode a b s.
                                                     singleton_variables (dom_sface fb)
                                                       (View.hinted x (CubeOf.find edoms fb));
                                                   filter = tfilter;
-                                                  implicit = `Explicit;
+                                                  (* The boundary of an implicit higher function-type consists of implicit function-types. *)
+                                                  implicit;
                                                   doms =
                                                     Modal (modality, plus, CubeOf.subcube fb cdoms);
                                                   cods = CodCube.subcube t' ccods;
@@ -4285,7 +4297,7 @@ and synth : type mode a b s.
                                       {
                                         x = singleton_variables k (View.hinted x edom);
                                         filter = nfilter;
-                                        implicit = `Explicit;
+                                        implicit;
                                         doms = Modal (modality, plus, cdoms);
                                         cods = ccods;
                                       },
@@ -4295,246 +4307,272 @@ and synth : type mode a b s.
                     (realize status tm, ty))
             | _ -> fatal (Invalid_higher_function "invalid single domain")))
     | ( InstHigherPi
-          (type n nb an c anc)
-          ((n', doms, extras, cod) :
-            n D.pos * (a, nb, an) Raw.tel * (an, c, anc) Raw.Namevec.t * anc check located),
-        _ ) -> (
-        let modalities = Raw.mods_of_tel doms in
-        let modality =
-          List.fold_left
-            (fun (m1 : mode Modality.src_wrapped option) m2 ->
-              match (m1, Modality.of_name_tgt mode m2.value) with
-              | _, Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
-              | None, Ok m -> Some m
-              | Some (Wrap m1), Ok (Wrap m2) -> (
-                  match Modality.compare m1 m2 with
-                  | Eq -> Some (Wrap m1)
-                  | Neq -> fatal (Modality_mismatch (`User, "synthesizing higher pi-type", m1, m2))))
-            None modalities in
-        match modality with
-        | None -> fatal (Anomaly "no modality found when synthesizing higher pi-type")
-        | Some (Wrap (type dom modality) (modality : (dom, modality, mode) Modality.t)) ->
-            (* The dimension annotating the arrow is the outer (unfiltered) dimension n.  We filter it by the modality to obtain the dimension k of the cube of domains. *)
-            let n = D.pos n' in
-            let (Has_filter (type kf) (nfilter : (dom, modality, mode, kf, n) Modality.filter_dim))
-                =
-              Modality.filter modality n in
-            let k = Modality.filtered n nfilter in
-            let kfilter = Modality.filter_idempotent nfilter in
-            (* We check one group of domains, ending with a primary domain, which may be shared by some further variables (extras), each of which forms another group with only that domain.  The previous evaluated domain is supplied when the group starts with a domain that shares it. *)
-            let rec group : type a b r ar c arc.
-                (mode, a, b) Ctx.t ->
-                (a, r, ar) Raw.tel ->
-                ((dom, kinetic) value * Asai.Range.t option) option ->
-                (ar, c, arc) Raw.Namevec.t ->
-                arc check located ->
-                (mode, b, kinetic) term =
-             fun ctx doms prev extras cod ->
-              let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-              let domstbl = Hashtbl.create 10 in
-              let varstbl = Hashtbl.create 10 in
-              (* We check the domains by traversing the faces of the filtered dimension k, consuming entries of the raw telescope as we go and raising an error if there are too few.  The state of the traversal carries the current context along with a witness of its raw length and the remaining telescope, which keeps the raw indices of the telescope entries aligned with the context. *)
-              let module S = struct
-                (* The state also remembers the evaluated type of the previous domain and its location, in case the next one shares it. *)
-                type _ t =
-                  | State : {
-                      xctx : (dom, 'ac, 'e) Ctx.t;
-                      plus : (a, 'c, 'ac) N.plus;
-                      tele : ('ac, 'r, ar) Raw.tel;
-                      prev : ((dom, kinetic) value * Asai.Range.t option) option;
-                    }
-                      -> 'c t
+          (type n nb an)
+          ((n', doms, cod) : n D.pos * (a, nb, an) Raw.tel * an check located),
+        _ ) ->
+        let n = D.pos n' in
+        (* The telescope of domains is divided into successive pi-types, each taking as many domains as the cube of its filtered dimension has faces.  Each one gets its modality from its first domain, and if that shares the type of the previous domain, as in "(x y : A) →⁽ᵉ⁾ B", from that one. *)
+        let rec pis : type a b r ar.
+            (mode, a, b) Ctx.t ->
+            (a, r, ar) Raw.tel ->
+            mode inst_prev option ->
+            ar check located ->
+            (mode, b, kinetic) term =
+         fun ctx doms prev cod ->
+          match (doms, prev) with
+          | Emp, _ ->
+              (* We check the codomain against universe 0, since it should be fully instantiated. *)
+              check Kinetic ctx cod (universe mode D.zero)
+          | Ext (_, _, modality, _, _), _ -> (
+              match Modality.of_name_tgt mode modality.value with
+              | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
+              | Ok (Wrap modality) -> group modality ctx doms None cod)
+          | Same _, Some (Inst_prev { modality; edom; loc; implicit; single = true }) ->
+              group modality ctx doms (Some (edom, loc, implicit)) cod
+          | Same (x, _), Some (Inst_prev { single = false; _ }) ->
+              fatal
+                (Invalid_higher_function
+                   ("a primary domain with boundaries can't be shared by several variables, such as "
+                   ^ Option.value x ~default:"_"))
+          | Same _, None -> fatal (Anomaly "Same at the start of a telescope")
+        (* Check one pi-type, at a given modality, whose domains start the given telescope.  The previous evaluated domain is supplied when the group starts with a domain that shares it. *)
+        and group : type dom modality a b r ar.
+            (dom, modality, mode) Modality.t ->
+            (mode, a, b) Ctx.t ->
+            (a, r, ar) Raw.tel ->
+            ((dom, kinetic) value * Asai.Range.t option * implicitness) option ->
+            ar check located ->
+            (mode, b, kinetic) term =
+         fun modality ctx doms prev cod ->
+          (* The dimension annotating the arrow is the outer (unfiltered) dimension n.  We filter it by the modality to obtain the dimension k of the cube of domains. *)
+          let (Has_filter (type kf) (nfilter : (dom, modality, mode, kf, n) Modality.filter_dim)) =
+            Modality.filter modality n in
+          let k = Modality.filtered n nfilter in
+          let kfilter = Modality.filter_idempotent nfilter in
+          (* The pi-type is implicit exactly when its primary domain is, which we record when we reach it. *)
+          let pi_implicit = ref `Explicit in
+          let (Locked (plus, lctx)) = Ctx.lock ctx modality in
+          let domstbl = Hashtbl.create 10 in
+          let varstbl = Hashtbl.create 10 in
+          (* We check the domains by traversing the faces of the filtered dimension k, consuming entries of the raw telescope as we go and raising an error if there are too few.  The state of the traversal carries the current context along with a witness of its raw length and the remaining telescope, which keeps the raw indices of the telescope entries aligned with the context. *)
+          let module S = struct
+            (* The state also remembers the evaluated type of the previous domain, its location, and its implicitness, in case the next one shares it. *)
+            type _ t =
+              | State : {
+                  xctx : (dom, 'ac, 'e) Ctx.t;
+                  plus : (a, 'c, 'ac) N.plus;
+                  tele : ('ac, 'r, ar) Raw.tel;
+                  prev : ((dom, kinetic) value * Asai.Range.t option * implicitness) option;
+                }
+                  -> 'c t
 
-                (* The next domain: its variable, its evaluated type and location, and the rest of the telescope. *)
-                type _ entry =
-                  | Entry :
-                      string option
-                      * (dom, kinetic) value
-                      * Asai.Range.t option
-                      * ('ac N.suc, 'r, ar) Raw.tel
-                      -> 'ac entry
-              end in
-              let module Build = NICubeOf.Traverse (S) in
-              let build : type left m.
-                  (m, kf) sface -> left S.t -> (left, m, binder_name) Build.fwrap_left =
-               fun s (State { xctx; plus = ac; tele; prev }) ->
-                let (Entry (x, edom, domloc, rest)) : _ S.entry =
-                  match tele with
-                  | Emp -> fatal (Not_enough_domains k)
-                  | Ext (x, _, _, dom, rest) ->
-                      (* We check the domains against universe 0, since they should be fully instantiated. *)
-                      let cdom = check Kinetic xctx dom (universe (Modality.src modality) D.zero) in
-                      Entry (x, eval_term (Ctx.env xctx) cdom, dom.loc, rest)
-                  (* A domain that shares the type of the previous one, which was checked in the scope outside both of them, has the same evaluated type. *)
-                  | Same (x, rest) -> (
-                      match prev with
-                      | Some (edom, domloc) -> Entry (x, edom, domloc, rest)
-                      | None -> fatal (Anomaly "Same at the start of a telescope")) in
-                let m = dom_sface s in
-                (* Further errors here should also be reported on the relevant domain term. *)
-                with_loc domloc @@ fun () : (left, m, binder_name) Build.fwrap_left ->
-                (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
-                Reporter.try_with ~fatal:(fun d ->
-                    match d.message with
-                    | No_such_level _ ->
-                        fatal ?loc:d.explanation.loc
-                          (Invalid_higher_function "invalid domain scope")
-                    | _ -> fatal_diagnostic d)
-                @@ fun () : (left, m, binder_name) Build.fwrap_left ->
-                let dom, tyargs =
-                  match D.compare_zero m with
-                  | Zero ->
-                      ( readback_val lctx edom,
-                        (TubeOf.empty D.zero : (D.zero, m, m, dom normal) TubeOf.t) )
-                  (* If the dimension of this domain is supposed to be positive, the supplied domain must be fully instantiated by at least that dimension (perhaps more, since it could come from something higher-dimensional).  We pull off those instantiation arguments. *)
-                  | Pos m -> (
-                      match split_inst m (view_term edom) with
-                      | Some (Head_apps (head, Any args), tyargs) ->
-                          (* After spliting off those instantiation arguments, we read back the rest of the type in the *original* context, to make sure it makes sense there and yield the term domain. *)
-                          (readback_neu lctx head args, tyargs)
-                      | None -> fatal (Invalid_higher_function "invalid domain")) in
-                (* Then we check that the instantiation arguments we pulled off are each equal to the corresponding *variable* from the earlier domains. *)
-                TubeOf.miter
-                  {
-                    it =
-                      (fun t [ arg ] ->
-                        match
-                          retrying (fun () ->
-                              equal_nf xctx arg
-                                (Hashtbl.find varstbl (SFace_of (comp_sface s (sface_of_tface t)))))
-                        with
-                        | Ok () -> ()
-                        | Error _ -> fatal (Invalid_higher_function "invalid domain boundary"));
-                  }
-                  [ tyargs ];
-                (* We "return" the domain term by adding it to a hashtbl. *)
-                Hashtbl.add domstbl (SFace_of s) dom;
-                (* I think we want the identity modalities here since this is temporary for adding a bunch of domains to the same context. *)
-                let idm = Modality.id (Ctx.mode xctx) in
-                let newctx = Ctx.ext xctx idm x edom in
-                (* We also get and store the normal corresponding to this variable, for checking the tyargs of later domains. *)
-                (match Ctx.lookup newctx (Top, None) with
-                | Found (Lookup { value; modality; plus = Plus_with_locks (_, locks); _ }) -> (
-                    (* The modality and lock must be trivial since we just added it. *)
-                    match (Modality.compare_id modality, Modality.compare_id (Locks.cod locks)) with
-                    | Eq, Eq -> Hashtbl.add varstbl (SFace_of s) value
-                    | _ -> fatal (Anomaly "invalid modalities when checking InstHigherPi"))
-                | Aliased _ -> fatal (Anomaly "alias when checking InstHigherPi"));
-                Fwrap
-                  ( NFamOf (View.hinted x edom),
-                    State { xctx = newctx; plus = Suc ac; tele = rest; prev = Some (edom, domloc) }
-                  ) in
-              (* We don't care about the produced context, since its checked length is wrong.  We want just one cube of variables, the total raw length added to the previous one, and the leftover telescope.  *)
-              let (Wrap (xs, State { xctx = _; plus = af; tele = rest; prev = last })) =
-                Build.build_left k { build } (State { xctx = lctx; plus = Zero; tele = doms; prev })
-              in
-              match rest with
-              | Ext (_, _, _, { loc; _ }, _) ->
-                  fatal ?loc (Invalid_higher_function "too many domains for the dimension")
-              | Same _ -> fatal (Invalid_higher_function "too many domains for the dimension")
-              | Emp -> (
-                  (* Since the leftover telescope is empty, the raw context at its end, which is the context of the codomain, is equal to the current raw context. *)
-                  let cdoms =
-                    CubeOf.build k { build = (fun s -> Hashtbl.find domstbl (SFace_of s)) } in
-                  let _, binds =
-                    dom_vars ctx modality
-                      (CubeOf.mmap { map = (fun _ [ x ] -> eval_term (Ctx.env lctx) x) } [ cdoms ])
-                  in
-                  let xsv = Variables (D.zero, D.zero_plus k, xs) in
-                  let newctx = Ctx.vis ctx kfilter D.zero (D.zero_plus k) xs binds af in
-                  let ccod =
-                    match extras with
-                    (* We likewise check the codomain against universe 0. *)
-                    | [] -> check Kinetic newctx cod (universe mode D.zero)
-                    (* If there are more variables sharing the primary domain, the codomain is the pi-type whose only domain is that shared one.  There can't have been any boundary domains, since then those variables would need their own. *)
-                    | { value = y; loc = yloc } :: extras -> (
-                        match Raw.fwn_of_tel doms with
-                        | Suc Zero -> group newctx (Same (y, Emp)) last extras cod
-                        | _ ->
-                            fatal ?loc:yloc
-                              (Invalid_higher_function
-                                 "a primary domain with boundaries can't be shared by several variables")
-                        ) in
-                  with_loc cod.loc @@ fun () ->
-                  Reporter.try_with ~fatal:(fun d ->
-                      match d.message with
-                      | No_such_level _ ->
-                          fatal ?loc:d.explanation.loc
-                            (Invalid_higher_function "invalid codomain scope")
-                      | _ -> fatal_diagnostic d)
-                  @@ fun () ->
-                  (* It must also be fully instantiated at at least the total dimension. *)
-                  match split_inst n' (eval_term (Ctx.env newctx) ccod) with
-                  | None -> fatal (Invalid_higher_function "invalid codomain")
+            (* The next domain: its variable, its evaluated type, location, and implicitness, and the rest of the telescope. *)
+            type _ entry =
+              | Entry :
+                  string option
+                  * (dom, kinetic) value
+                  * Asai.Range.t option
+                  * implicitness
+                  * ('ac N.suc, 'r, ar) Raw.tel
+                  -> 'ac entry
+          end in
+          let module Build = NICubeOf.Traverse (S) in
+          let build : type left m.
+              (m, kf) sface -> left S.t -> (left, m, binder_name) Build.fwrap_left =
+           fun s (State { xctx; plus = ac; tele; prev }) ->
+            let (Entry (x, edom, domloc, implicit, rest)) : _ S.entry =
+              match tele with
+              | Emp -> fatal (Not_enough_domains k)
+              | Ext (x, implicit, dmod, dom, rest) ->
+                  (* All the domains of a pi-type have its modality. *)
+                  (match Modality.of_name_tgt mode dmod.value with
+                  | Error e -> modality_fatal "synthesizing higher pi-type" (e :> modality_error)
+                  | Ok (Wrap dmod) -> (
+                      match Modality.compare dmod modality with
+                      | Eq -> ()
+                      | Neq ->
+                          fatal ?loc:dom.loc
+                            (Modality_mismatch (`User, "synthesizing higher pi-type", modality, dmod))
+                      ));
+                  (* We check the domains against universe 0, since they should be fully instantiated. *)
+                  let cdom = check Kinetic xctx dom (universe (Modality.src modality) D.zero) in
+                  Entry (x, eval_term (Ctx.env xctx) cdom, dom.loc, implicit, rest)
+              (* A domain that shares the type of the previous one, which was checked in the scope outside both of them, has the same evaluated type and implicitness. *)
+              | Same (x, rest) -> (
+                  match prev with
+                  | Some (edom, domloc, implicit) -> Entry (x, edom, domloc, implicit, rest)
+                  | None -> fatal (Anomaly "Same at the start of a telescope")) in
+            (* The boundary domains must be implicit, and the primary one determines the implicitness of the pi-type. *)
+            (match (is_id_sface s, implicit) with
+            | Some _, _ -> pi_implicit := implicit
+            | None, `Implicit -> ()
+            (* An explicit domain where a boundary domain is needed is presumably a primary domain, so the boundary domains before it are missing. *)
+            | None, `Explicit -> fatal ?loc:domloc (Not_enough_domains k));
+            let m = dom_sface s in
+            (* Further errors here should also be reported on the relevant domain term. *)
+            with_loc domloc @@ fun () : (left, m, binder_name) Build.fwrap_left ->
+            (* No_such_level indicates a readback failure, meaning that some domain or boundary was not defined in the correct context (e.g. used unavailable variables). *)
+            Reporter.try_with ~fatal:(fun d ->
+                match d.message with
+                | No_such_level _ ->
+                    fatal ?loc:d.explanation.loc (Invalid_higher_function "invalid domain scope")
+                | _ -> fatal_diagnostic d)
+            @@ fun () : (left, m, binder_name) Build.fwrap_left ->
+            let dom, tyargs =
+              match D.compare_zero m with
+              | Zero ->
+                  ( readback_val lctx edom,
+                    (TubeOf.empty D.zero : (D.zero, m, m, dom normal) TubeOf.t) )
+              (* If the dimension of this domain is supposed to be positive, the supplied domain must be fully instantiated by at least that dimension (perhaps more, since it could come from something higher-dimensional).  We pull off those instantiation arguments. *)
+              | Pos m -> (
+                  match split_inst m (view_term edom) with
                   | Some (Head_apps (head, Any args), tyargs) ->
-                      (* After spliting off those instantiation arguments, we read back the rest of the type to yield the top-dimensional codomain. *)
-                      let cod = readback_neu newctx head args in
-                      (* To get the lower-dimensional codomains, and the instantation arguments of the whole pi-type, we iterate through the split-off tyargs. *)
-                      let [ ecods; piargs ] =
-                        let map : type m.
-                            (m, D.zero, n, n) tface ->
-                            (m, (mode normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft ->
-                            ( m,
-                              ( [ `Neu of mode head_apps | `Val of (mode, kinetic) value ],
-                                ((mode, b, kinetic) term, Tlist.nil) Tlist.cons )
-                              Tlist.cons )
-                            CubeOf.Heter.hft =
-                         fun s [ { tm; ty } ] ->
-                          (* The type of this argument must *also* be instantiated at the correct dimension; we want the not-instantiated part. *)
-                          let cod =
-                            match D.compare_zero (dom_tface s) with
-                            | Zero -> `Val (Lazy.force ty)
-                            | Pos m -> (
-                                match split_inst m (view_term (Lazy.force ty)) with
-                                | Some (head_apps, _) ->
-                                    (* I don't think we need to check that the instantiation arguments are correct or do anything with them; since this was obtained from typechecking the given cod, they *must* be correct. *)
-                                    `Neu head_apps
-                                | None ->
-                                    (* Is this ever possible, or is it a bug? *)
-                                    fatal (Invalid_higher_function "invalid codomain weirdness"))
-                          in
-                          (* The value of this argument must be read back and abstracted over the appropriate variables, namely the modal filtering of its face of the cube of variables. *)
-                          let s = sface_of_tface s in
-                          let (Filter_sface (fb, sfilter)) = Modality.filter_sface nfilter s in
-                          let codxs = sub_variables fb xsv in
-                          let (Any_ctx codctx) =
-                            Ctx.variables_vis ctx
-                              (Modality.filter_idempotent sfilter)
-                              codxs (CubeOf.subcube fb binds) in
-                          let body = readback_at Kinetic codctx tm (Lazy.force ty) in
-                          [ cod; Term.Lam (codxs, dom_sface s, sfilter, `Explicit, body) ] in
-                        TubeOf.pmap { map } [ tyargs ] (Cons (Cons Nil)) in
-                      (* We build the cube of codomains by reading back the lower-dimensional ones in a context extended by the appropriate partial cube of variables, and adding the top-dimensional one. *)
-                      let cods =
-                        let build : type m. (m, n) sface -> (m, dom * modality * mode * b) CodFam.t
-                            =
-                         fun s ->
-                          match pface_of_sface s with
-                          | `Proper t -> (
-                              let (Filter_sface (fb, sfilter)) = Modality.filter_sface nfilter s in
-                              let (Any_ctx codctx) =
-                                Ctx.variables_vis ctx
-                                  (Modality.filter_idempotent sfilter)
-                                  (sub_variables fb xsv) (CubeOf.subcube fb binds) in
-                              match TubeOf.find ecods t with
-                              | `Neu (Head_apps (head, Any args)) ->
-                                  Cod (sfilter, readback_neu codctx head args)
-                              | `Val ty -> Cod (sfilter, readback_val codctx ty))
-                          | `Id Eq -> Cod (nfilter, cod) in
-                        CodCube.build n { build } in
-                      (Inst
-                         ( Kinetic,
-                           Pi
-                             {
-                               x = xsv;
-                               filter = nfilter;
-                               implicit = `Explicit;
-                               doms = Modal (modality, plus, cdoms);
-                               cods;
-                             },
-                           piargs )
-                        : (mode, b, kinetic) term)) in
-            (realize status (group ctx doms None extras cod), universe mode D.zero))
+                      (* After spliting off those instantiation arguments, we read back the rest of the type in the *original* context, to make sure it makes sense there and yield the term domain. *)
+                      (readback_neu lctx head args, tyargs)
+                  | None -> fatal (Invalid_higher_function "invalid domain")) in
+            (* Then we check that the instantiation arguments we pulled off are each equal to the corresponding *variable* from the earlier domains. *)
+            TubeOf.miter
+              {
+                it =
+                  (fun t [ arg ] ->
+                    match
+                      retrying (fun () ->
+                          equal_nf xctx arg
+                            (Hashtbl.find varstbl (SFace_of (comp_sface s (sface_of_tface t)))))
+                    with
+                    | Ok () -> ()
+                    | Error _ -> fatal (Invalid_higher_function "invalid domain boundary"));
+              }
+              [ tyargs ];
+            (* We "return" the domain term by adding it to a hashtbl. *)
+            Hashtbl.add domstbl (SFace_of s) dom;
+            (* I think we want the identity modalities here since this is temporary for adding a bunch of domains to the same context. *)
+            let idm = Modality.id (Ctx.mode xctx) in
+            let newctx = Ctx.ext xctx idm x edom in
+            (* We also get and store the normal corresponding to this variable, for checking the tyargs of later domains. *)
+            (match Ctx.lookup newctx (Top, None) with
+            | Found (Lookup { value; modality; plus = Plus_with_locks (_, locks); _ }) -> (
+                (* The modality and lock must be trivial since we just added it. *)
+                match (Modality.compare_id modality, Modality.compare_id (Locks.cod locks)) with
+                | Eq, Eq -> Hashtbl.add varstbl (SFace_of s) value
+                | _ -> fatal (Anomaly "invalid modalities when checking InstHigherPi"))
+            | Aliased _ -> fatal (Anomaly "alias when checking InstHigherPi"));
+            Fwrap
+              ( NFamOf (View.hinted x edom),
+                State
+                  {
+                    xctx = newctx;
+                    plus = Suc ac;
+                    tele = rest;
+                    prev = Some (edom, domloc, implicit);
+                  } ) in
+          (* We don't care about the produced context, since its checked length is wrong.  We want just one cube of variables, the total raw length added to the previous one, and the leftover telescope.  *)
+          let (Wrap (xs, State { xctx = _; plus = af; tele = rest; prev = last })) =
+            Build.build_left k { build } (State { xctx = lctx; plus = Zero; tele = doms; prev })
+          in
+          let pi_implicit = !pi_implicit in
+          let cdoms = CubeOf.build k { build = (fun s -> Hashtbl.find domstbl (SFace_of s)) } in
+          let _, binds =
+            dom_vars ctx modality
+              (CubeOf.mmap { map = (fun _ [ x ] -> eval_term (Ctx.env lctx) x) } [ cdoms ]) in
+          let xsv = Variables (D.zero, D.zero_plus k, xs) in
+          let newctx = Ctx.vis ctx kfilter D.zero (D.zero_plus k) xs binds af in
+          (* The codomain is the rest of the pi-types, if there are any domains left, and otherwise the supplied codomain.  A domain left that shares the type of the primary one can only start a pi-type if this one had no boundary domains. *)
+          let ccod =
+            let prev =
+              Option.map
+                (fun (edom, loc, implicit) ->
+                  Inst_prev
+                    {
+                      modality;
+                      edom;
+                      loc;
+                      implicit;
+                      single =
+                        (match D.compare_zero k with
+                          | Zero -> true
+                          | Pos _ -> false)
+                        || Endpoints.totally_nullary k;
+                    })
+                last in
+            pis newctx rest prev cod in
+          with_loc cod.loc @@ fun () ->
+          Reporter.try_with ~fatal:(fun d ->
+              match d.message with
+              | No_such_level _ ->
+                  fatal ?loc:d.explanation.loc (Invalid_higher_function "invalid codomain scope")
+              | _ -> fatal_diagnostic d)
+          @@ fun () ->
+          (* It must also be fully instantiated at at least the total dimension. *)
+          match split_inst n' (eval_term (Ctx.env newctx) ccod) with
+          | None -> fatal (Invalid_higher_function "invalid codomain")
+          | Some (Head_apps (head, Any args), tyargs) ->
+              (* After spliting off those instantiation arguments, we read back the rest of the type to yield the top-dimensional codomain. *)
+              let cod = readback_neu newctx head args in
+              (* To get the lower-dimensional codomains, and the instantation arguments of the whole pi-type, we iterate through the split-off tyargs. *)
+              let [ ecods; piargs ] =
+                let map : type m.
+                    (m, D.zero, n, n) tface ->
+                    (m, (mode normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft ->
+                    ( m,
+                      ( [ `Neu of mode head_apps | `Val of (mode, kinetic) value ],
+                        ((mode, b, kinetic) term, Tlist.nil) Tlist.cons )
+                      Tlist.cons )
+                    CubeOf.Heter.hft =
+                 fun s [ { tm; ty } ] ->
+                  (* The type of this argument must *also* be instantiated at the correct dimension; we want the not-instantiated part. *)
+                  let cod =
+                    match D.compare_zero (dom_tface s) with
+                    | Zero -> `Val (Lazy.force ty)
+                    | Pos m -> (
+                        match split_inst m (view_term (Lazy.force ty)) with
+                        | Some (head_apps, _) ->
+                            (* I don't think we need to check that the instantiation arguments are correct or do anything with them; since this was obtained from typechecking the given cod, they *must* be correct. *)
+                            `Neu head_apps
+                        | None ->
+                            (* Is this ever possible, or is it a bug? *)
+                            fatal (Invalid_higher_function "invalid codomain weirdness")) in
+                  (* The value of this argument must be read back and abstracted over the appropriate variables, namely the modal filtering of its face of the cube of variables. *)
+                  let s = sface_of_tface s in
+                  let (Filter_sface (fb, sfilter)) = Modality.filter_sface nfilter s in
+                  let codxs = sub_variables fb xsv in
+                  let (Any_ctx codctx) =
+                    Ctx.variables_vis ctx
+                      (Modality.filter_idempotent sfilter)
+                      codxs (CubeOf.subcube fb binds) in
+                  let body = readback_at Kinetic codctx tm (Lazy.force ty) in
+                  [ cod; Term.Lam (codxs, dom_sface s, sfilter, pi_implicit, body) ] in
+                TubeOf.pmap { map } [ tyargs ] (Cons (Cons Nil)) in
+              (* We build the cube of codomains by reading back the lower-dimensional ones in a context extended by the appropriate partial cube of variables, and adding the top-dimensional one. *)
+              let cods =
+                let build : type m. (m, n) sface -> (m, dom * modality * mode * b) CodFam.t =
+                 fun s ->
+                  match pface_of_sface s with
+                  | `Proper t -> (
+                      let (Filter_sface (fb, sfilter)) = Modality.filter_sface nfilter s in
+                      let (Any_ctx codctx) =
+                        Ctx.variables_vis ctx
+                          (Modality.filter_idempotent sfilter)
+                          (sub_variables fb xsv) (CubeOf.subcube fb binds) in
+                      match TubeOf.find ecods t with
+                      | `Neu (Head_apps (head, Any args)) ->
+                          Cod (sfilter, readback_neu codctx head args)
+                      | `Val ty -> Cod (sfilter, readback_val codctx ty))
+                  | `Id Eq -> Cod (nfilter, cod) in
+                CodCube.build n { build } in
+              (Inst
+                 ( Kinetic,
+                   Pi
+                     {
+                       x = xsv;
+                       filter = nfilter;
+                       implicit = pi_implicit;
+                       doms = Modal (modality, plus, cdoms);
+                       cods;
+                     },
+                   piargs )
+                : (mode, b, kinetic) term) in
+        (realize status (pis ctx doms None cod), universe mode D.zero)
     | App _, _ ->
         (* If there's at least one application, we slurp up all the applications and then iterate through them. *)
         let fn, args = spine { value = Synth tm.value; loc = tm.loc } in
@@ -5645,7 +5683,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
                   | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
                   | Error _ -> None)
               | None -> None))
-      | Synth (HigherPi (_, modality, dom, cod)) -> (
+      | Synth (HigherPi (_, _, modality, dom, cod)) -> (
           match synth_mode (locate_opt cod.loc (Synth cod.value)) with
           | Some mode -> Some mode
           | None -> (
@@ -5655,7 +5693,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
                   | Ok (Wrap modality) -> Some (Wrap (Modality.tgt modality))
                   | Error _ -> None)
               | None -> None))
-      | Synth (InstHigherPi (_, doms, _, cod)) -> (
+      | Synth (InstHigherPi (_, doms, cod)) -> (
           match synth_mode cod with
           | Some mode -> Some mode
           | None -> synth_mode_tel doms)

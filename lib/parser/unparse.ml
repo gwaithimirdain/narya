@@ -2058,7 +2058,8 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
                       weaken_dim (dom_sface fb) sfilter' nonlam,
                       dom_tface s,
                       sfilter,
-                      `Explicit,
+                      (* The instantiation arguments of an implicit higher function-type are implicit functions. *)
+                      pi_implicit,
                       Modal (modality, plusm, lamargs) ) )) in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
   (* We only need the top codomain. *)

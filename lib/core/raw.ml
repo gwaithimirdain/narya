@@ -42,13 +42,12 @@ module rec Make : functor (I : Indices) -> sig
         -> 'a synth
     | HigherPi :
         ('a, 'b Fwn.suc, 'ab) Namevec.t
+        * [ `Explicit | `Implicit ]
         * string located list located
         * 'a synth located
         * 'ab synth located
         -> 'a synth
-    | InstHigherPi :
-        'n D.pos * ('a, 'b, 'ab) tel * ('ab, 'c, 'abc) Namevec.t * 'abc check located
-        -> 'a synth
+    | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
     | App :
         'a check located * 'a check app_arg located * [ `Implicit | `Explicit ] located
         -> 'a synth
@@ -221,14 +220,13 @@ functor
       (* Similarly, a higher pi-type can bind several variables with the same domain. *)
       | HigherPi :
           ('a, 'b Fwn.suc, 'ab) Namevec.t
+          * [ `Explicit | `Implicit ]
           * string located list located
           * 'a synth located
           * 'ab synth located
           -> 'a synth
-      (* An n-dimensional pi-type, fully instantiated, with all its domains supplied.  The dimension 'n is the outer (unfiltered) dimension; the domains form a telescope whose length must match the number of faces of the *filtered* dimension, which is not known until typechecking (since parsing the modality annotations requires knowing the modes).  The primary (last) domain can be shared by some further variables, such as y in "(x y : A) →⁽ᵉ⁾ B", each of which forms another such pi-type with that single domain.  This is only possible when the filtered dimension has only one face, i.e. when the arity is zero or the modality filters out the dimension, so that there are no boundary domains. *)
-      | InstHigherPi :
-          'n D.pos * ('a, 'b, 'ab) tel * ('ab, 'c, 'abc) Namevec.t * 'abc check located
-          -> 'a synth
+      (* A sequence of n-dimensional pi-types, fully instantiated, with all their domains supplied, as in "{x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ B".  The dimension 'n is the outer (unfiltered) dimension.  The domains of all the pi-types form one telescope, which is divided into the pi-types at typechecking time: each takes as many domains as the number of faces of its *filtered* dimension, which depends on its modality and hence isn't known until the modes are known.  Its boundary domains must be implicit, and it is implicit exactly when its primary (last) domain is.  A domain can share the type of the previous one, such as y in "(x y : A) →⁽ᵉ⁾ B"; this makes sense at the start of a pi-type only if it has a single domain, i.e. when the arity is zero or the modality filters out the dimension, so that there are no boundary domains. *)
+      | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :
           'a check located * 'a check app_arg located * [ `Implicit | `Explicit ] located
@@ -528,14 +526,14 @@ module Resolve (R : Resolver) = struct
       | Pi (xs, implicit, modality, dom, cod) ->
           let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
           Pi (renames ctx xs ab2, implicit, modality, check ctx dom, check (append ctx xs ab2) cod)
-      | HigherPi (xs, modality, dom, cod) ->
+      | HigherPi (xs, implicit, modality, dom, cod) ->
           let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
-          HigherPi (renames ctx xs ab2, modality, synth ctx dom, synth (append ctx xs ab2) cod)
-      | InstHigherPi (n, doms, xs, cod) ->
+          HigherPi
+            (renames ctx xs ab2, implicit, modality, synth ctx dom, synth (append ctx xs ab2) cod)
+      | InstHigherPi (n, doms, cod) ->
           let (Bplus ab) = R.T2.bplus (R.T1.fwn_of_tel doms) in
           let doms2, ctx2 = tel ctx doms ab in
-          let (Bplus ac2) = R.T2.bplus (R.T1.Namevec.length xs) in
-          InstHigherPi (n, doms2, renames ctx2 xs ac2, check (append ctx2 xs ac2) cod)
+          InstHigherPi (n, doms2, check ctx2 cod)
       | App (fn, arg, impl) ->
           let arg =
             match arg.value with
