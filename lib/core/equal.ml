@@ -154,7 +154,7 @@ let blockers_of : type mode s. (mode, s) value -> blocker list =
   let rec arg_blockers : type hmode mode any. (hmode, mode, any, live) apps -> blocker list =
     function
     | Emp -> []
-    | Snoc (rest, Arg (_, xs, _)) ->
+    | Snoc (rest, Arg (_, _, xs, _)) ->
         union_blockers (arg_blockers rest) (Option.to_list (blocker_of (CubeOf.find_top xs).tm))
     | Snoc (rest, Field _) -> arg_blockers rest
     | Snoc (rest, Inst _) -> arg_blockers rest in
@@ -376,7 +376,7 @@ and equal_at : type mode a b.
     (* The type must be fully instantiated. *)
     match view_type ty "equal_at" with
     (* The only interesting thing here happens when the type is one with an eta-rule, such as a pi-type. *)
-    | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs) ->
+    | Canonical (_, Pi { x = name; filter; implicit = _; doms; cods }, ins, tyargs) ->
         if equal_at_eta_spines ctx x y then Ok ()
         else
           let modality = Modality.filter_modality filter in
@@ -604,14 +604,15 @@ and equal_head : type mode a b. (mode, a, b) Ctx.t -> mode head -> mode head -> 
       | _ -> None)
   | ( Pi
         (type xdom xmodality xk n)
-        ({ x = name; filter = filter1; doms = dom1s; cods = cod1s } :
+        ({ x = name; filter = filter1; implicit = implicit1; doms = dom1s; cods = cod1s } :
           (xdom, xmodality, mode, xk, n) pi_args),
-      Pi { x = _; filter = filter2; doms = dom2s; cods = cod2s } ) -> (
-      (* If two pi-types have the same dimension, equal domains, and equal codomains, they are equal and have the same type (an instantiation of the universe of that dimension at pi-types formed from the lower-dimensional domains and codomains). *)
+      Pi { x = _; filter = filter2; implicit = implicit2; doms = dom2s; cods = cod2s } ) -> (
+      (* If two pi-types have the same dimension, implicitness, equal domains, and equal codomains, they are equal and have the same type (an instantiation of the universe of that dimension at pi-types formed from the lower-dimensional domains and codomains).  An implicit pi-type is never equal to an explicit one. *)
       let modality1, modality2 =
         (Modality.filter_modality filter1, Modality.filter_modality filter2) in
       let n = BindCube.dim cod1s in
       match (D.compare (BindCube.dim cod2s) n, Modality.compare modality1 modality2) with
+      | _ when implicit1 <> implicit2 -> None
       | Eq, Eq ->
           let Eq = Modality.filter_uniq filter1 filter2 in
           let (Locked (_, lctx)) = Ctx.lock ctx modality1 in
@@ -659,7 +660,8 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
           | Some (Ok ()) -> return ()
           | Some (Error err) -> Some (Error (map_why (fun why -> Heads why) err))
           | None -> Some (fail (Heads (Terms (PHead (ctx, head1), PHead (ctx, head2)))))))
-  | Snoc (rest1, Arg (filter1, a1, i1)), Snoc (rest2, Arg (filter2, a2, i2)) -> (
+  (* Arguments in the same position of the spines of equal functions have the same implicitness, since it is determined by their types. *)
+  | Snoc (rest1, Arg (filter1, _, a1, i1)), Snoc (rest2, Arg (filter2, _, a2, i2)) -> (
       let modality1 = Modality.filter_modality filter1 in
       let modality2 = Modality.filter_modality filter2 in
       match Modality.compare modality1 modality2 with
@@ -712,7 +714,8 @@ and equal_at_pi : type mode n b c d.
   | [], [], [] -> Ok ()
   | Modal (xfilter, x) :: xs, Modal (yfilter, y) :: ys, tyargs :: tyargs_rest -> (
       (* The constructor's function-type value must be a pi-type; we compare the arguments at its domain (instantiated at the corresponding arguments of the lower-dimensional constructors) and continue with the codomain applied to the argument cube. *)
-      let (Viewed_pi { x = _; filter; doms; cods }) = view_pi "equal_at_pi" n (Lazy.force fnty) in
+      let (Viewed_pi { x = _; filter; implicit = _; doms; cods }) =
+        view_pi "equal_at_pi" n (Lazy.force fnty) in
       let pimod = Modality.filter_modality filter in
       let xmodality = Modality.filter_modality xfilter in
       let ymodality = Modality.filter_modality yfilter in

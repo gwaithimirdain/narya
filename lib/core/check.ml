@@ -37,7 +37,7 @@ let rec typefam : type mode a b. (mode, a, b) Ctx.t -> (mode, kinetic) value -> 
       match D.compare n D.zero with
       | Eq -> 0
       | Neq -> fatal (Unimplemented "higher-dimensional datatypes"))
-  | Canonical (_, Pi { x; filter; doms; cods }, _, tyargs) -> (
+  | Canonical (_, Pi { x; filter; implicit = _; doms; cods }, _, tyargs) -> (
       let modality = Modality.filter_modality filter in
       (* In practice, these dimensions will always be zero also if the function succeeds, otherwise the eventual output would have to be higher-dimensional too.  But it doesn't hurt to be more general, and will require less change if we eventually implement higher-dimensional datatypes. *)
       match (D.compare (TubeOf.inst tyargs) (BindCube.dim cods), Modality.compare_id modality) with
@@ -115,6 +115,7 @@ let rec motive_of_family : type dom window mode a b.
         {
           x = singleton_variables D.zero (`Anon no_hints);
           filter;
+          implicit = `Explicit;
           doms = Modal (window, left_plus, CubeOf.singleton dom);
           cods = CodCube.singleton (Cod (filter, cod));
         },
@@ -139,7 +140,7 @@ let rec motive_of_family : type dom window mode a b.
     Fwrap (Ftm (plus_window, cv), Any_ctx newctx) in
   (* We start by inspecting the type of the family passed. *)
   match view_type ty "motive_of_family" with
-  | Canonical (_, Pi { x; filter = ffilter; doms; cods }, ins, tyargs) -> (
+  | Canonical (_, Pi { x; filter = ffilter; implicit = _; doms; cods }, ins, tyargs) -> (
       (* The type family itself must be non-modal (any modal window is carried separately). *)
       match Modality.compare_id (Modality.filter_modality ffilter) with
       | Neq -> fatal (Anomaly "modal family in motive_of_family")
@@ -731,7 +732,8 @@ let rec check : type mode a b s.
             ( _,
               Pi
                 (type dom modality n)
-                ({ x = _; filter; doms; cods } : (dom, modality, mode, n, _) pi_args),
+                ({ x = _; filter; implicit = piimplicit; doms; cods } :
+                  (dom, modality, mode, n, _) pi_args),
               ins,
               tyargs ) -> (
             let modality = Modality.filter_modality filter in
@@ -774,8 +776,8 @@ let rec check : type mode a b s.
                   let arg = CubeOf.mmap { map = (fun _ [ x ] -> Ctx.Binding.value x) } [ newnfs ] in
                   Potential
                     ( c,
-                      Snoc (args, Arg (filter, arg, ins_zero m)),
-                      fun tm -> hyp (Lam (xs, m, filter, tm)) ) in
+                      Snoc (args, Arg (filter, piimplicit, arg, ins_zero m)),
+                      fun tm -> hyp (Lam (xs, m, filter, piimplicit, tm)) ) in
             (* Apply and instantiate the codomain to those arguments to get a type to check the body at. *)
             let output = tyof_app cods tyargs filter newargs in
             match cube.value with
@@ -833,7 +835,7 @@ let rec check : type mode a b s.
                       Ctx.vis ctx
                         (Modality.filter_idempotent filter)
                         D.zero (D.zero_plus k) names newnfs af in
-                    Lam (xs, m, filter, check (mkstatus xs status) ctx body output)
+                    Lam (xs, m, filter, piimplicit, check (mkstatus xs status) ctx body output)
                 | Wrap (_, Missing j) -> fatal ?loc:cube.loc (Not_enough_lambdas j))
             | `Cube absdim -> (
                 (match D.compare_zero m with
@@ -862,7 +864,7 @@ let rec check : type mode a b s.
                         (View.hinted x (Lazy.force (Ctx.Binding.value (CubeOf.find_top newnfs)).ty))
                     in
                     let ctx = Ctx.cube_vis ctx (Modality.filter_idempotent filter) x newnfs in
-                    Lam (xs, m, filter, check (mkstatus xs status) ctx body output)))
+                    Lam (xs, m, filter, piimplicit, check (mkstatus xs status) ctx body output)))
         | _ -> fatal (Checking_lambda_at_nonfunction (PVal (ctx, ty))))
     | Struct (Noeta, tms), Potential _ -> (
         retry_if_stuck ty;
@@ -1027,7 +1029,7 @@ let rec check : type mode a b s.
         (* Now we act like synth on an application. *)
         let sfn, sty = synth Kinetic ctx fn in
         match view_type sty "ImplicitApp" with
-        | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) -> (
+        | Canonical (_, Pi { x = _; filter; implicit = _; doms; cods }, ins, tyargs) -> (
             let Eq = eq_of_ins_zero ins in
             let modality = Modality.filter_modality filter in
             (* Only 0-dimensional and non-modal applications are allowed. *)
@@ -1065,6 +1067,7 @@ let rec check : type mode a b s.
                          sfn,
                          D.zero,
                          Modality.filter_id mode D.zero,
+                         `Explicit,
                          Modal (idm, plus_no_lock mode, CubeOf.singleton carg) )) in
                 let new_sty = tyof_app cods tyargs filter (CubeOf.singleton arg) in
                 (* And then proceed applying to the rest of the arguments, if any. *)
@@ -2645,7 +2648,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
                            (readback_env oldctx metaenv (Global.find_meta meta).termctx) )
                  | Constant (c, cmode, dim) -> Constant (c, cmode, dim) in
                (erhead, Emp)
-           | Snoc (rest, Arg (filter, xs, ins)) ->
+           | Snoc (rest, Arg (filter, implicit, xs, ins)) ->
                let modality = Modality.filter_modality filter in
                let (Locked (plus, loldctx)) = Ctx.lock oldctx modality in
                let lnewenv = lock_env newenv plus in
@@ -2655,6 +2658,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
                    ( errest,
                      Arg
                        ( filter,
+                         implicit,
                          CubeOf.mmap
                            {
                              map =
@@ -2732,7 +2736,7 @@ and check_empty_match_lam : type mode a b.
       (( _,
          Pi
            (type dom domodality dd)
-           ({ x = _; filter; doms; cods } : (dom, domodality, mode, dd, k) pi_args),
+           ({ x = _; filter; implicit; doms; cods } : (dom, domodality, mode, dd, k) pi_args),
          ins,
          tyargs ) :
         hmode head
@@ -2780,6 +2784,7 @@ and check_empty_match_lam : type mode a b.
             ( xs,
               outer_dim,
               filter,
+              implicit,
               Match
                 {
                   window = modality;
@@ -2796,11 +2801,12 @@ and check_empty_match_lam : type mode a b.
                   branches = Constr.Map.empty;
                 } )
       | None, `Notfirst ->
-          Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst)
+          Term.Lam (xs, outer_dim, filter, implicit, check_empty_match_lam newctx output `Notfirst)
       | None, `First ->
           Reporter.try_with
             (fun () ->
-              Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst))
+              Term.Lam
+                (xs, outer_dim, filter, implicit, check_empty_match_lam newctx output `Notfirst))
             ~fatal:(fun d ->
               match d.message with
               | Invalid_refutation -> (
@@ -2999,8 +3005,9 @@ and implicit_goal_arg : type mode a b.
     | Cons
         ( Arg
             (type dom modality n k m mk)
-            ((filter, arg, ins) :
+            ((filter, _, arg, ins) :
               (dom, modality, m1, n, m) Modality.filter_dim
+              * implicitness
               * (n, dom normal) CubeOf.t
               * (mk, m, k) insertion),
           rest ) -> (
@@ -3045,8 +3052,9 @@ and get_indices : type mode hmode1 hmode2 a b any1 any2.
     | Cons
         ( Arg
             (type dom modality n k m mk)
-            ((filter, arg, ins) :
+            ((filter, _, arg, ins) :
               (dom, modality, m1, n, m) Modality.filter_dim
+              * implicitness
               * (n, dom normal) CubeOf.t
               * (mk, m, k) insertion),
           rest ) -> (
@@ -3729,8 +3737,9 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                    ( apps,
                      Arg
                        (type dom modality n m mz z)
-                       ((filter_nm, arg, appins) :
+                       ((filter_nm, implicit, arg, appins) :
                          (dom, modality, m2, n, m) Modality.filter_dim
+                         * implicitness
                          * (n, dom normal) CubeOf.t
                          * (mz, m, z) insertion) ) ->
                    let n = CubeOf.dim arg in
@@ -3788,7 +3797,7 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                        }
                        [ etms; etys ] in
                    let head, newapps = erapps ctx degenv apps in
-                   (head, Snoc (newapps, Arg (filter_sn_rm, newarg, newins)))
+                   (head, Snoc (newapps, Arg (filter_sn_rm, implicit, newarg, newins)))
                | Snoc (_, Inst _) ->
                    fatal (Anomaly "inst in eval-readback when checking higher field") in
             let head, args = erapps ctx degenv args in
@@ -4215,6 +4224,7 @@ and synth : type mode a b s.
                                                     singleton_variables (dom_sface fb)
                                                       (View.hinted x (CubeOf.find edoms fb));
                                                   filter = tfilter;
+                                                  implicit = `Explicit;
                                                   doms =
                                                     Modal (modality, plus, CubeOf.subcube fb cdoms);
                                                   cods = CodCube.subcube t' ccods;
@@ -4238,6 +4248,7 @@ and synth : type mode a b s.
                                       {
                                         x = singleton_variables k (View.hinted x edom);
                                         filter = nfilter;
+                                        implicit = `Explicit;
                                         doms = Modal (modality, plus, cdoms);
                                         cods = ccods;
                                       },
@@ -4454,7 +4465,7 @@ and synth : type mode a b s.
                               (Modality.filter_idempotent sfilter)
                               codxs (CubeOf.subcube fb binds) in
                           let body = readback_at Kinetic codctx tm (Lazy.force ty) in
-                          [ cod; Term.Lam (codxs, dom_sface s, sfilter, body) ] in
+                          [ cod; Term.Lam (codxs, dom_sface s, sfilter, `Explicit, body) ] in
                         TubeOf.pmap { map } [ tyargs ] (Cons (Cons Nil)) in
                       (* We build the cube of codomains by reading back the lower-dimensional ones in a context extended by the appropriate partial cube of variables, and adding the top-dimensional one. *)
                       let cods =
@@ -4480,6 +4491,7 @@ and synth : type mode a b s.
                              {
                                x = xsv;
                                filter = nfilter;
+                               implicit = `Explicit;
                                doms = Modal (modality, plus, cdoms);
                                cods;
                              },
@@ -4564,8 +4576,9 @@ and synth : type mode a b s.
                   let arg = CubeOf.singleton xnf in
                   Potential
                     ( c,
-                      Snoc (args, Arg (filter, arg, ins_zero D.zero)),
-                      fun tm -> hyp (Lam (xs, D.zero, Modality.filter_zero modality, tm)) ) in
+                      Snoc (args, Arg (filter, `Explicit, arg, ins_zero D.zero)),
+                      fun tm -> hyp (Lam (xs, D.zero, Modality.filter_zero modality, `Explicit, tm))
+                    ) in
             let cbody, scod = synth newstatus newctx body in
             let ty =
               eval_term (Ctx.env ctx)
@@ -4573,7 +4586,7 @@ and synth : type mode a b s.
                    (singleton_variables D.zero (View.hinted x edom))
                    (Modal (modality, plus, cdom))
                    (readback_val newctx scod)) in
-            (Lam (xs, D.zero, filter, cbody), ty))
+            (Lam (xs, D.zero, filter, `Explicit, cbody), ty))
     | Let (x, modality, v, body), _ ->
         (* The synthesized type of the body will be the type of the let-binding, so we pass in the 'synthed' callback. *)
         let ctm, Not_none ety =
@@ -4623,7 +4636,7 @@ and synth : type mode a b s.
         (* We read back the synthesized type, so we can put it as the first argument in the generated term. *)
         let cargty = readback_val ctx sargty in
         match view_type sfnty "ImplicitSApp" with
-        | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) -> (
+        | Canonical (_, Pi { x = _; filter; implicit = _; doms; cods }, ins, tyargs) -> (
             let Eq = eq_of_ins_zero ins in
             let modality = Modality.filter_modality filter in
             (* Only 0-dimensional non-modal applications are allowed, and the first argument must be a type. *)
@@ -4641,6 +4654,7 @@ and synth : type mode a b s.
                          sfn,
                          BindCube.dim cods,
                          filter,
+                         `Explicit,
                          Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton cargty) ))
                 in
                 let new_sty = tyof_app cods tyargs filter (CubeOf.singleton sargty) in
@@ -4650,7 +4664,7 @@ and synth : type mode a b s.
                    exponential time. *)
                 let ((stm, sty) : (mode, b, kinetic) term * (mode, kinetic) value) =
                   match view_type new_sty "ImplicitSApp" with
-                  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) -> (
+                  | Canonical (_, Pi { x = _; filter; implicit = _; doms; cods }, ins, tyargs) -> (
                       let Eq = eq_of_ins_zero ins in
                       let modality = Modality.filter_modality filter in
                       match (D.compare (CubeOf.dim doms) D.zero, Modality.compare_id modality) with
@@ -4667,6 +4681,7 @@ and synth : type mode a b s.
                                     new_sfn.value,
                                     BindCube.dim cods,
                                     filter,
+                                    `Explicit,
                                     Modal
                                       (Modality.id mode, plus_no_lock mode, CubeOf.singleton sarg)
                                   ),
@@ -4867,9 +4882,9 @@ and synth_apps : type mode a b.
     let asfn, aty, afn, aargs =
       match view_type sty "synthesizing application spine" with
       (* The obvious thing we can "apply" is an element of a pi-type. *)
-      | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs) ->
+      | Canonical (_, Pi { x = _; filter; implicit; doms; cods }, ins, tyargs) ->
           let Eq = eq_of_ins_zero ins in
-          synth_app ctx filter sfn doms cods tyargs fn args
+          synth_app ctx filter implicit sfn doms cods tyargs fn args
       (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
       | Canonical (_, UU _, _, tyargs) -> synth_inst ctx sfn tyargs fn args
       (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
@@ -5024,6 +5039,7 @@ and synth_arg_cube : type dom modality mode a b n c.
 and synth_app : type dom modality mode a b k n.
     (mode, a, b) Ctx.t ->
     (dom, modality, mode, k, n) Modality.filter_dim ->
+    implicitness ->
     (mode, b, kinetic) term located ->
     (k, (dom, kinetic) value) CubeOf.t ->
     (n, mode * modality * dom) BindCube.t ->
@@ -5034,7 +5050,7 @@ and synth_app : type dom modality mode a b k n.
     * (mode, kinetic) value
     * a check located
     * (Asai.Range.t option * a check option located * [ `Implicit | `Explicit ] located) list =
- fun ctx filter sfn doms cods tyargs fn args ->
+ fun ctx filter implicit sfn doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
     synth_arg_cube ~not_enough:Not_enough_arguments_to_function
       ~which:"higher-dimensional application" ctx (Modality.filter_modality filter)
@@ -5042,7 +5058,10 @@ and synth_app : type dom modality mode a b k n.
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these lazily evaluated arguments and instantiate it at the appropriate values of tyargs. *)
   let output = tyof_app_lazy cods tyargs filter eargs in
-  ( { value = Term.App (Kinetic, sfn.value, BindCube.dim cods, filter, cargs); loc = newloc },
+  ( {
+      value = Term.App (Kinetic, sfn.value, BindCube.dim cods, filter, implicit, cargs);
+      loc = newloc;
+    },
     output,
     newfn,
     rest )
@@ -5241,7 +5260,7 @@ and synth_lam : type mode a b c d n.
                  (singleton_variables D.zero (View.hinted name.value edom))
                  (Modal (modality, plus, cdom))
                  (readback_val newctx scod)) in
-          (Lam (xs, D.zero, Modality.filter_zero modality, cbody), scod))
+          (Lam (xs, D.zero, Modality.filter_zero modality, `Explicit, cbody), scod))
   (* If there are arguments left, and the head is a normal explicit abstraction (no higher abstractions are allowed), and the application is also explicit (but might be higher-dimensional, if there is a degeneracy), we try synthesizing a type from the argument. *)
   | ( Lam { name; cube = { value = `Normal; _ }; implicit = `Explicit; dom = None; body },
       (_, arg, { value = `Explicit; _ }) :: args ) -> (
@@ -5265,7 +5284,7 @@ and synth_lam : type mode a b c d n.
                  (singleton_variables D.zero (View.hinted name.value edom))
                  (Modal (idm, plus_no_lock mode, cdom))
                  (readback_val newctx scod)) in
-          (Lam (xs, D.zero, Modality.filter_zero idm, cbody), scod)
+          (Lam (xs, D.zero, Modality.filter_zero idm, `Explicit, cbody), scod)
       | None -> fatal ?loc:arg.loc Invalid_nullary_application
       | _ ->
           let extra_remarks = [ Asai.Diagnostic.loctext ?loc:arg.loc "argument" ] in
@@ -5293,7 +5312,7 @@ and check_at_pi : type mode n a c e.
   | [], [] -> (fnty, [])
   | (_, impl) :: _, tyargs :: tyargs_rest -> (
       (* The constructor's function-type value must be a pi-type.  Its domain cube contains the argument type of the constructor already evaluated at the parameters and the previously checked argument values (at all the faces of the modally filtered dimension k of the ambient dimension n); we instantiate its top at the corresponding arguments of the lower-dimensional versions of the constructor, check the user-supplied argument value against it in the modally locked context, and continue with the codomain applied to the checked argument cube. *)
-      let (Viewed_pi { x = _; filter; doms; cods }) = view_pi "check_at_pi" n fnty in
+      let (Viewed_pi { x = _; filter; implicit = _; doms; cods }) = view_pi "check_at_pi" n fnty in
       let modality = Modality.filter_modality filter in
       let (Locked (eplus, lctx)) = Ctx.lock ctx modality in
       let tyarg = modal_boundary_tube "check_at_pi" n filter doms tyargs in
@@ -5551,13 +5570,13 @@ let rec raw_of_expansion : type a.
   let unif = locate_opt loc (Unif (Some err)) in
   match shape with
   | [] -> unif
-  | Abs (name, cube) :: rest ->
+  | Abs (name, cube, implicit) :: rest ->
       locate_opt loc
         (Lam
            {
              name = locate_opt loc name;
              cube = locate_opt loc (if cube then `Cube (ref None) else `Normal);
-             implicit = `Explicit;
+             implicit;
              dom = None;
              body = raw_of_expansion loc err rest;
            })

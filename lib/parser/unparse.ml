@@ -364,7 +364,7 @@ let rec synths : type mode n s. (mode, n, s) term -> bool =
   | Letonly _ -> true
   | Constr _ | Lam _ | Struct _ -> false
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
-  | App (_, fn, _, _, _) -> synths fn
+  | App (_, fn, _, _, _, _) -> synths fn
   | Act (_, tm, _, _) -> synths tm
   | Let (_, _, body) -> synths body
   (* A key is either omitted from the display, or applied to its body as a postfix that requires the body to synthesize. *)
@@ -420,6 +420,7 @@ let rec get_spine : type mode a s.
   | App
       ( _,
         fn,
+        _,
         _,
         _,
         (* Modalities are not printed with applications *)
@@ -772,7 +773,7 @@ let rec unparse : type mode n lt ls rt rs s.
                (prefix ~notn:letonly
                   ~inner:(Multiple (dimtok Let (dim_term_env tmenv), binding, wstok In))
                   ~last:body ~right_ok)))
-  | Lam (Variables (m, _, _), _, _, _) ->
+  | Lam (Variables (m, _, _), _, _, _, _) ->
       (* Modalities aren't printed on abstractions *)
       let cube =
         match D.compare m D.zero with
@@ -1199,7 +1200,7 @@ and unparse_dataconstr : type mode a lt ls rt rs.
       b Names.t -> unparser Bwd.t -> (mode, b, kinetic) term -> (lt, ls, rt, rs) parse located =
    fun vars accum tm ->
     match tm with
-    | Pi { x; filter; doms = Modal (modality, plus, doms); cods } -> (
+    | Pi { x; filter; implicit = _; doms = Modal (modality, plus, doms); cods } -> (
         match D.compare_zero (CodCube.dim cods) with
         | Pos _ -> output vars accum tm
         | Zero ->
@@ -1607,7 +1608,7 @@ and unparse_lam : type mode n lt ls rt rs s.
  fun cube vars xs body li ri ->
   (* Modalities are not printed in abstractions *)
   match body with
-  | Lam ((Variables (m, _, _) as boundvars), _, _filter, inner) -> (
+  | Lam ((Variables (m, _, _) as boundvars), _, _filter, _, inner) -> (
       match (cube, D.compare m D.zero) with
       | `Normal, Eq | `Cube, Neq ->
           let Variables (_, _, x), vars = Names.add vars boundvars in
@@ -1744,7 +1745,7 @@ and unparse_inst : type mode n n' lt ls rt rs m k mk s.
  fun vars ty argvars tyargs li ri ->
   match (D.compare_zero (TubeOf.uninst tyargs), D.compare_zero (TubeOf.inst tyargs), ty) with
   (* A fully instantiated higher pi-type we can unparse prettily.  The instantiation is at the outer (unfiltered) dimension, that of the codomains. *)
-  | Zero, Pos _, Pi { x; filter; doms = Modal (_, plus, doms); cods } -> (
+  | Zero, Pos _, Pi { x; filter; implicit = _; doms = Modal (_, plus, doms); cods } -> (
       match D.compare (TubeOf.inst tyargs) (CodCube.dim cods) with
       | Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
@@ -1808,7 +1809,7 @@ and unparse_pis : type mode a lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun dim notn vars accum tm li ri ->
   match tm with
-  | Pi { x; filter; doms = Modal (modality, plus, doms); cods } -> (
+  | Pi { x; filter; implicit = _; doms = Modal (modality, plus, doms); cods } -> (
       match (D.compare_zero (CodCube.dim cods), dim) with
       | Zero, `Arrow | Pos _, `DblArrow -> (
           (* Nontrivially modal pi-types are always printed dependently *)
@@ -1992,7 +1993,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
           let _, (lamvars : (b, (modality, ks) dim_entry) snoc Names.t) =
             Names.add_strings lamvars lam_xs in
           match lam with
-          | Lam (ys, nd, lfilter, body) -> (
+          | Lam (ys, nd, lfilter, _, body) -> (
               let _ = ys in
               match
                 ( D.compare nd (dom_tface s),
@@ -2024,11 +2025,19 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
                       weaken_dim (dom_sface fb) sfilter' nonlam,
                       dom_tface s,
                       sfilter,
+                      `Explicit,
                       Modal (modality, plusm, lamargs) ) )) in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
   (* We only need the top codomain. *)
   match cod_top filter cods with
-  | Pi { x = newxs; filter = newfilter; doms = Modal (_, newplus, newdoms); cods = newcods } -> (
+  | Pi
+      {
+        x = newxs;
+        filter = newfilter;
+        implicit = _;
+        doms = Modal (_, newplus, newdoms);
+        cods = newcods;
+      } -> (
       (* If it's another pi-type, it must be of the same outer dimension since it is an (uninstantiated!) n-dimensional type, and we continue recursively. *)
       match D.compare (CodCube.dim newcods) n with
       | Eq -> unparse_higher_pi newvars accum newxs newfilter newplus newdoms newcods tyargs li ri
@@ -2036,7 +2045,14 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
   (* It might also be a *partially* instantiated *higher* dimensional pi-type, in which case we combine the instantiation arguments to make it fully instantiated.  We don't continue accumulating domains as in the previous case, though, because in this case the codomain has different dimension, and hence needs its own arrow. *)
   | Inst
       ( _,
-        Pi { x = newxs; filter = newfilter; doms = Modal (_, newplus, newdoms); cods = newcods },
+        Pi
+          {
+            x = newxs;
+            filter = newfilter;
+            implicit = _;
+            doms = Modal (_, newplus, newdoms);
+            cods = newcods;
+          },
         newtyargs ) -> (
       match
         ( D.compare (TubeOf.out newtyargs) (CodCube.dim newcods),

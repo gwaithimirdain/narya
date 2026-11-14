@@ -171,6 +171,7 @@ module Codata = struct
                           ( singleton_variables f.glue (`Anon no_hints),
                             f.glue,
                             Modality.filter_id mode f.glue,
+                            `Explicit,
                             fld_ty ) ) in
                   StructfieldAbwd.Entry
                     ( fld,
@@ -187,6 +188,7 @@ module Codata = struct
                                            weaken mode sty,
                                            Hott.dim,
                                            idf,
+                                           `Explicit,
                                            Modal (idm, plus_no_lock mode, xcube) )),
                                     trlift,
                                     ins ))
@@ -238,6 +240,7 @@ module Codata = struct
                ( xname,
                  D.zero,
                  Modality.filter_id mode D.zero,
+                 `Explicit,
                  Struct { dim; eta; energy = Potential; fields } ))
       (* This is the tr.1/tr.2 case when we should use the bisimulation data supplied.  The insertion is an insertion into g, the glue dimension.  Currently we don't do anything here, however, because the only case when this could happen is for a glue type, and we deal with those specially by bootstrapping their fibrancy and insesrting it using the is_glue marker.  *)
       | Right _ins -> None in
@@ -258,6 +261,7 @@ module Codata = struct
                ( xname,
                  D.zero,
                  Modality.filter_id mode D.zero,
+                 `Explicit,
                  Struct { dim = dimh; eta; energy = Potential; fields } ))
       | Right _ins -> None in
     let liftr = PlusPbijmap.build glue Hott.dim { build = (fun p -> lift `Right liftr p) } in
@@ -344,9 +348,11 @@ module Codata = struct
                                                             ( xsname,
                                                               D.zero,
                                                               Modality.filter_id mode D.zero,
+                                                              `Explicit,
                                                               fldty ) )))),
                                              Hott.dim,
                                              idf,
+                                             `Explicit,
                                              Modal (idm, plus_no_lock mode, xcube) ),
                                          (* x and y are elements of the dim-dimensional codatatype, so their fields are projected at dimension dim (which is nonzero when id is iterated). *)
                                          TubeOf.mmap
@@ -380,10 +386,12 @@ module Codata = struct
                    ( xname,
                      D.zero,
                      Modality.filter_id mode D.zero,
+                     `Explicit,
                      Lam
                        ( yname,
                          D.zero,
                          Modality.filter_id mode D.zero,
+                         `Explicit,
                          Struct { dim = glue; eta = Noeta; energy = Potential; fields = fib } ) )
           | Pos _ ->
               (* The bisim .id case.  Again, this would be only for glue, so we ignore it. *)

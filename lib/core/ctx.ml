@@ -81,8 +81,11 @@ let app_entry : type hmode dom modality mode f n b2 any.
     let n = CubeOf.dim bindings in
     Snoc
       ( apps,
-        Arg (filter, CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ], ins_zero n)
-      )
+        Arg
+          ( filter,
+            `Explicit,
+            CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ],
+            ins_zero n ) )
   else fatal (Anomaly "let-bound variable in Ctx.apps")
 
 (* The extension of a checked context by one cube of variables, as contributed by a visible or invisible entry. *)
@@ -595,7 +598,8 @@ module Ordered = struct
           _,
           Suc (Zero, Dim _) )
       when all_free bindings ->
-        lam ctx (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, tree))
+        lam ctx
+          (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, `Explicit, tree))
     | Snoc (ctx, { bindings; filter; vis = Invis }, _, Suc (Zero, Dim _)) when all_free bindings ->
         (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
         let hints =
@@ -606,6 +610,7 @@ module Ordered = struct
              ( singleton_variables (CubeOf.dim bindings) (`Anon hints),
                CubeOf.dim bindings,
                filter,
+               `Explicit,
                tree ))
     | _ -> fatal (Anomaly "let-bound variable in Ctx.lam")
 

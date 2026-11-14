@@ -165,7 +165,7 @@ module F = struct
       formatter -> (mode1, mode2, any, inst) apps_entry -> unit =
    fun ppf e ->
     match e with
-    | Arg (_, xs, _) -> cubeof normal ppf xs
+    | Arg (_, _, xs, _) -> cubeof normal ppf xs
     | Field (_, fld, plus, ins) -> (
         (* 'ins' is an *outer* insertion, not the field insertion.  The field insertion has been pushed inside and become the 'plus'. *)
         (* Intrinsic dimension *)
@@ -279,9 +279,9 @@ module F = struct
           (let (Cod (filt, t)) = CodCube.find_top cods in
            let Eq = Modality.filter_uniq filter filt in
            (t : (mode, (b, (modality, k) Tctx.dim_entry) Tctx.suc, s) term))
-    | App (_, fn, _, _, Modal (_modality, _al, arg)) ->
+    | App (_, fn, _, _, _, Modal (_modality, _al, arg)) ->
         fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
-    | Lam (x, _, filter, body) ->
+    | Lam (x, _, filter, _, body) ->
         fprintf ppf "Lam^(%s) (?, %s, %a)"
           (string_of_dim (dim_variables x))
           (Modality.to_string (Modality.filter_modality filter))

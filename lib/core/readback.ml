@@ -109,7 +109,7 @@ let rec sort_of_ty : type mode a z.
     ?isfunc:bool -> (mode, z, a) Ctx.t -> mode View.view_type -> [ `Type | `Function | `Other ] =
  fun ?(isfunc = false) ctx -> function
   | Canonical (_, UU _, _, _) -> `Type
-  | Canonical (_, Pi { x = _; filter; doms; cods }, _, tyargs) -> (
+  | Canonical (_, Pi { x = _; filter; implicit = _; doms; cods }, _, tyargs) -> (
       match D.compare (TubeOf.inst tyargs) (BindCube.dim cods) with
       | Neq -> fatal (Dimension_mismatch ("sort_of_ty", TubeOf.inst tyargs, CubeOf.dim doms))
       | Eq ->
@@ -129,7 +129,7 @@ let sort_of_val : type mode. mode Mode.t -> (mode, kinetic) value -> [ `Type | `
 (* Whether a constant is defined to be a canonical type, possibly a family of them.  Such a constant is displayed with a superscript degeneracy rather than a name like "Id", even if the term in which it appears is not itself a type (e.g. a field projection out of a degenerated record type). *)
 let rec is_canonical_def : type mode a. (mode, a, potential) term -> bool = function
   | Canonical _ -> true
-  | Lam (_, _, _, body) -> is_canonical_def body
+  | Lam (_, _, _, _, body) -> is_canonical_def body
   | _ -> false
 
 let is_canonical_const : Constant.t -> [ `Canonical | `Other ] =
@@ -143,7 +143,7 @@ let is_canonical_const : Constant.t -> [ `Canonical | `Other ] =
 (* The same question for a term rather than a value, by looking at the head of its application spine.  This is used when annotating a degeneracy at typechecking time, so that a term displayed without being read back (e.g. by the "synth" command) is displayed the same way as one that is read back. *)
 let rec canonical_head : type mode a s. (mode, a, s) term -> [ `Canonical | `Other ] = function
   | Const c -> is_canonical_const c
-  | App (_, fn, _, _, _) -> canonical_head fn
+  | App (_, fn, _, _, _, _) -> canonical_head fn
   | Inst (_, tm, _) -> canonical_head tm
   | Act (_, tm, _, _) -> canonical_head tm
   | Key { tm; _ } -> canonical_head tm
@@ -801,7 +801,8 @@ and readback_at_type : type mode a z s.
   let vty = view_type ty "readback_at" in
   match (vty, view) with
   (* Abstractions (kinetic or potential) are read back uniformly by extending the context using their pi-type. *)
-  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs), Lam (x, filter2, body) -> (
+  | Canonical (_, Pi { x = _; filter; implicit; doms; cods }, ins, tyargs), Lam (x, filter2, body)
+    -> (
       let Eq = eq_of_ins_zero ins in
       (* The instantiation of the type, and the dimension of the binder, are both the *outer* (unfiltered) dimension of the pi-type; the variable cube and the domains live at the filtered dimension. *)
       let n = BindCube.dim cods in
@@ -830,9 +831,10 @@ and readback_at_type : type mode a z s.
             readback_eval ~eta (apply_status status filter args) newctx (apply tm filter args)
               output in
           after_same_depth ();
-          Term.Lam (x, n, filter, body))
+          (* An abstraction is implicit exactly when its function-type is. *)
+          Term.Lam (x, n, filter, implicit, body))
   (* If eta-expansion of functions is enabled, we do an eta-expanding readback of any term at a pi-type. *)
-  | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm when eta ->
+  | Canonical (_, Pi { x = name; filter; implicit; doms; cods }, ins, tyargs), tm when eta ->
       let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
       let name = View.fill_hints doms name in
@@ -844,6 +846,7 @@ and readback_at_type : type mode a z s.
         ( name,
           BindCube.dim cods,
           filter,
+          implicit,
           readback_eval ~eta
             (apply_status status filter newargs)
             newctx (apply tm filter newargs) output )
@@ -1121,7 +1124,7 @@ and readback_val_unbudgeted : type mode a z s.
          | Some { napps; _ } -> spine_length args < napps
          | None -> false -> (
       match view_type (Lazy.force ty) "readback_val" with
-      | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs) ->
+      | Canonical (_, Pi { x = name; filter; implicit; doms; cods }, ins, tyargs) ->
           let modality = Modality.filter_modality filter in
           let Eq = eq_of_ins_zero ins in
           let name = View.fill_hints doms name in
@@ -1133,6 +1136,7 @@ and readback_val_unbudgeted : type mode a z s.
             ( name,
               BindCube.dim cods,
               filter,
+              implicit,
               readback_eval Kinetic newctx (apply x filter newargs) output )
       | _ -> raise (Unsolvable `Flexible))
   | Neu { head = Live head; args; value; ty; acted = _ } -> (
@@ -1223,7 +1227,7 @@ and readback_neu : type hmode mode a z any.
   | None -> (
       match (apps, head) with
       | Emp, _ -> readback_head ~canonical ctx head
-      | Snoc (apps, Arg (filter, args, ins)), _ ->
+      | Snoc (apps, Arg (filter, implicit, args, ins)), _ ->
           let modality = Modality.filter_modality filter in
           let (To p) = deg_of_ins ins in
           let (Locked (plus, lctx)) = Ctx.lock ctx modality in
@@ -1234,6 +1238,7 @@ and readback_neu : type hmode mode a z any.
                   readback_neu ~canonical ctx head apps,
                   cod_left_ins ins,
                   filter,
+                  implicit,
                   Modal
                     ( modality,
                       plus,
@@ -1412,7 +1417,7 @@ and readback_inverted_apps : type hmode mode a z any.
   let flex () = raise (Unsolvable `Flexible) in
   let rec args_of : type any. (hmode, mode, any, live) apps -> arg_cube list = function
     | Emp -> []
-    | Snoc (apps, Arg (filter, args, ins)) -> (
+    | Snoc (apps, Arg (filter, _, args, ins)) -> (
         match is_id_ins ins with
         | Some _ ->
             Arg_cube (Modality.src (Modality.filter_modality filter), cod_left_ins ins, args)
@@ -1749,7 +1754,7 @@ and readback_head : type mode c z.
 
 and readback_pi : type c z dom modality mode k n.
     (mode, z, c) Ctx.t -> (dom, modality, mode, k, n) pi_args -> (mode, c, kinetic) term =
- fun ctx { x; filter; doms; cods } ->
+ fun ctx { x; filter; implicit; doms; cods } ->
   let n = BindCube.dim cods in
   let modality = Modality.filter_modality filter in
   let x = View.fill_hints doms x in
@@ -1772,6 +1777,7 @@ and readback_pi : type c z dom modality mode k n.
     {
       x;
       filter;
+      implicit;
       doms =
         Modal
           (modality, plus, CubeOf.mmap { map = (fun _ [ dom ] -> readback_val lctx dom) } [ doms ]);
@@ -1791,7 +1797,8 @@ and readback_at_pi : type mode n c b z.
   | [], [] -> []
   | Modal (xfilter, x) :: xs, tyargs :: tyargs_rest -> (
       (* The constructor's function-type value must be a pi-type; we read back the argument at its domain (instantiated at the corresponding arguments of the lower-dimensional constructors, which are also read back to form the boundary of the argument cube) and continue with the codomain applied to the argument cube. *)
-      let (Viewed_pi { x = _; filter; doms; cods }) = view_pi "readback_at_pi" n (Lazy.force fnty) in
+      let (Viewed_pi { x = _; filter; implicit = _; doms; cods }) =
+        view_pi "readback_at_pi" n (Lazy.force fnty) in
       let pimod = Modality.filter_modality filter in
       let xmodality = Modality.filter_modality xfilter in
       match Modality.compare xmodality pimod with
@@ -2003,6 +2010,7 @@ and readback_data : type mode a b m j ij.
           t,
           dim,
           Modality.filter_id mode dim,
+          `Explicit,
           Modal
             ( Modality.id mode,
               plus_no_lock mode,
@@ -2054,7 +2062,7 @@ and readback_constr_function : type mode lev e n.
     (mode, e, kinetic) term =
  fun ctx n c args ft ->
   match view_type ft "readback_constr_function" with
-  | Canonical (_, Pi { x; filter; doms; cods }, ins, tyargs) -> (
+  | Canonical (_, Pi { x; filter; implicit; doms; cods }, ins, tyargs) -> (
       (* Walk the pi-type exactly as in the eta-expanding readback of a term at a pi-type (readback_at, ~eta case), introducing a cube of fresh variables for each argument.  We accumulate those variables as we go. *)
       let Eq = eq_of_ins_zero ins in
       match D.compare (BindCube.dim cods) n with
@@ -2068,7 +2076,7 @@ and readback_constr_function : type mode lev e n.
           let output = tyof_app cods tyargs filter newargs in
           let body =
             readback_constr_function newctx n c (Snoc (args, Modal (filter, newargs))) output in
-          Term.Lam (name, n, filter, body))
+          Term.Lam (name, n, filter, implicit, body))
   | _ ->
       (* ft is now the datatype instance; the constructor applied to all the abstracted argument variables, read back at this fully-extended context.   We read back the accumulated argument variables at the fully-extended context to form the constructor's argument spine. *)
       let cargs =
@@ -2511,7 +2519,7 @@ let keyed_var : type mode s. (mode, s) value -> (level * any_cell) option = func
 let rec applied_vars : type hmode mode any.
     (hmode, mode, any, live) apps -> applied_cube list option = function
   | Emp -> Some []
-  | Snoc (args, Arg (filter, xs, ins)) -> (
+  | Snoc (args, Arg (filter, _, xs, ins)) -> (
       match is_id_ins ins with
       | Some _ -> (
           let faces = ref [] in
@@ -2795,7 +2803,7 @@ let renamed_binder : type dom modality mode n m.
   | Some ty -> (
       Reporter.discard_errors ~fallback:anon @@ fun () ->
       match view_type ~severity:Asai.Diagnostic.Error ty "renamed_binder" with
-      | Canonical (_, Pi { x; filter = pifilter; doms; cods }, ins, tyargs) -> (
+      | Canonical (_, Pi { x; filter = pifilter; implicit = _; doms; cods }, ins, tyargs) -> (
           let Eq = eq_of_ins_zero ins in
           match
             ( Modality.compare (Modality.filter_modality filter) (Modality.filter_modality pifilter),
@@ -2959,7 +2967,7 @@ let renamed_ctx : type mode a b c d n x any.
             scan mctx (remove_top env)) in
   let rec scan_args : type any. (mode, mode, any, live) apps -> int = function
     | Emp -> 0
-    | Snoc (args, Arg (filter, xs, ins)) ->
+    | Snoc (args, Arg (filter, _, xs, ins)) ->
         (* A degeneracy on the application isn't part of a renaming. *)
         if Option.is_none (is_id_ins ins) then raise_notrace Not_renaming;
         let pos = scan_args args in
@@ -3133,11 +3141,11 @@ let renamed_ctx : type mode a b c d n x any.
    fun rest args ty vspine ->
     match args with
     | Emp -> (Renamed_args (rest, (fun tm -> tm), ty), 0)
-    | Snoc (args, Arg (filter, xs, ins)) ->
+    | Snoc (args, Arg (filter, implicit, xs, ins)) ->
         (* If the last arguments agree, we can continue to compare the rest of the arguments and try to omit this one. *)
         let vprefix : mode contractible option =
           match vspine with
-          | Some (Contractible (head, Snoc (vargs, Arg (vfilter, ys, vins))))
+          | Some (Contractible (head, Snoc (vargs, Arg (vfilter, _, ys, vins))))
             when same_arg filter xs ins vfilter ys vins -> Some (Contractible (head, vargs))
           | _ -> None in
         let Renamed_args (rest, wrap, ty), pos = go_args rest args ty vprefix in
@@ -3181,7 +3189,10 @@ let renamed_ctx : type mode a b c d n x any.
         let dim = cod_left_ins ins in
         let vars, ty = renamed_binder ty filter dim xs in
         ( Renamed_args
-            (Ctx.Ordered.invis rest ifilter vbs, (fun tm -> wrap (Lam (vars, dim, filter, tm))), ty),
+            ( Ctx.Ordered.invis rest ifilter vbs,
+              (* The abstraction over an argument is implicit exactly when the argument is, since both are determined by the type of the metavariable. *)
+              (fun tm -> wrap (Lam (vars, dim, filter, implicit, tm))),
+              ty ),
           pos + 1 )
     | Snoc (_, Field _) | Snoc (_, Inst _) -> raise_notrace Not_renaming in
   match (env, args) with

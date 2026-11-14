@@ -370,7 +370,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
               [ used_tys ] in
           (* The types not in used_tys form a complete m+n tube, which will be the remaining instantiation arguments of the type of the result.  We don't need to worry about that here, it's taken care of in "inst". *)
           Val (inst newtm newargs))
-  | Lam (Variables (n, n_k, vars), p, filter, body) ->
+  | Lam (Variables (n, n_k, vars), p, filter, _, body) ->
       let m = dim_env env in
       let modality = Modality.filter_modality filter in
       let (Has_filter filter_lm) = Modality.filter modality m in
@@ -384,8 +384,9 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            ( Variables (D.plus_out l l_n, ln_k, vars),
              Modality.filter_plus l_nk m_p filter_lm filter,
              eval_binder env m_p modality filter body ))
-  | App (Potential, _, _, _, _) -> fatal (Evaluating_display_term "potential application")
-  | App (Kinetic, fn, k, filter_nk, Modal (modality, al, args)) ->
+  | App (Potential, _, _, _, _, _) -> fatal (Evaluating_display_term "potential application")
+  (* The implicitness of an application is determined by the type of the function, so evaluation doesn't need it. *)
+  | App (Kinetic, fn, k, filter_nk, _, Modal (modality, al, args)) ->
       (* First we evaluate the function. *)
       let efn = eval_term env fn in
       (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  However, the stored cube of arguments is at the *filtered* dimension of the original application, and likewise the arguments of the substituted application must be at *its* filtered dimension, which is (filtered m)+n.  So, as in the Constr case below, we filter the dimension m of the environment by the modality, acting on the environment by a face to cut it down to the filtered dimension. *)
@@ -452,7 +453,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       Val (Constr (constr, mn, eargs))
   | Pi
       (type l n dom modality)
-      ({ x; filter = lfilter; doms; cods } : (l, n, dom, modality, mode, b) Term.pi_args) ->
+      ({ x; filter = lfilter; implicit; doms; cods } : (l, n, dom, modality, mode, b) Term.pi_args)
+    ->
       let (Term.Modal (modality, al, doms)) = doms in
       (* We are starting with an n-dimensional pi-type and evaluating it in an m-dimensional environment, producing an (m+n)-dimensional result.  The domains of the given pi-type filter the dimension n to l. *)
       let l, n = (CubeOf.dim doms, CodCube.dim cods) in
@@ -510,7 +512,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
         let (SFace_of_plus (ab, fa', fb')) = sface_of_plus k_l fab' in
         let subdoms, subcods = (CubeOf.subcube fab' doms, BindCube.subcube fab cods) in
         let subx = plus_variables (dom_sface fa') ab (sub_variables fb' x) in
-        let head : mode head = Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods } in
+        let head : mode head =
+          Pi { x = subx; filter = ufilter; implicit; doms = subdoms; cods = subcods } in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         let fields : (mode * u * potential * no_eta) Value.StructfieldAbwd.t =
           match (is_id_sface fab, Fibrancy.PiValuesMap.find_opt modality !Fibrancy.pi) with
@@ -548,7 +551,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                (Canonical
                   {
                     mode = mode_env env;
-                    canonical = Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods };
+                    canonical =
+                      Pi { x = subx; filter = ufilter; implicit; doms = subdoms; cods = subcods };
                     tyargs = TubeOf.empty kl;
                     ins = ins_zero kl;
                     fields;
@@ -771,7 +775,7 @@ and apply : type dom modality mode n m s.
   | Neu { head = Live _ as head; args; value; ty = (lazy ty); acted = _ } -> (
       (* ... we check that its type is fully instantiated... *)
       match view_type ty "apply" with
-      | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) -> (
+      | Canonical (_, Pi { filter; implicit; doms; cods; _ }, ins, tyargs) -> (
           let pi_modality = Modality.filter_modality filter in
           (* ... and that the pi-type and its instantiation have the correct dimension. *)
           let k = CubeOf.dim doms in
@@ -789,11 +793,12 @@ and apply : type dom modality mode n m s.
               let newty = lazy (tyof_app cods tyargs filter arg) in
               (* We add the new argument to the existing application spine. *)
               let rest = args in
-              let args = Snoc (rest, Arg (filter, newarg, ins_zero m)) in
+              (* The application is implicit exactly when the function-type is, which we record for display. *)
+              let args = Snoc (rest, Arg (filter, implicit, newarg, ins_zero m)) in
               (* We add the argument to the lazy value and return a glued neutral, which is the same as an earlier one if that was the same function (physically the same head and spine) applied to physically the same arguments (see Value.hashcons). *)
-              let value = apply_lazy value m filter newarg in
+              let value = apply_lazy value m filter implicit newarg in
               let same : (mode, kinetic) value -> bool = function
-                | Neu { head = h; args = Snoc (r, Arg (_, xs, _)); _ } -> (
+                | Neu { head = h; args = Snoc (r, Arg (_, _, xs, _)); _ } -> (
                     Obj.repr h == Obj.repr head
                     && Obj.repr r == Obj.repr rest
                     &&
@@ -1629,7 +1634,7 @@ and app_eval_entry : type mode1 mode2 s any inst.
     (mode1, s) evaluation -> (mode1, mode2, any, inst) apps_entry -> (mode2, s) evaluation =
  fun ev e ->
   match e with
-  | Arg (filter, xs, ins) -> (
+  | Arg (filter, _, xs, ins) -> (
       let modality = Modality.filter_modality filter in
       let mode = Modality.tgt modality in
       let (To p) = deg_of_ins ins in
@@ -1901,10 +1906,12 @@ and inst_fibrancy_fields : type mode m n mn.
                            ( Emp,
                              Arg
                                ( Modality.filter_id mode (CubeOf.dim xcube),
+                                 `Explicit,
                                  xcube,
                                  ins_zero (CubeOf.dim xcube) ) ),
                          Arg
                            ( Modality.filter_id mode (CubeOf.dim ycube),
+                             `Explicit,
                              ycube,
                              ins_zero (CubeOf.dim ycube) ) ))
                 with

@@ -127,7 +127,8 @@ let rec ext_pi : type dom window mode a b c ac e n.
   | ( :: ) (type a1) ((x, xs) : (a, a1) Raw.Patternvars.arg * _) -> (
       let m = dim_env env in
       (* The constructor's function-type is an uninstantiated m-dimensional pi-type; we view it as in check_at_pi (view_type would demand full instantiation). *)
-      let (Viewed_pi { x = pix; filter = pifilter; doms; cods }) = view_pi "ext_pi" m ft in
+      let (Viewed_pi { x = pix; filter = pifilter; implicit = _; doms; cods }) =
+        view_pi "ext_pi" m ft in
       (* The annotation is the (raw) modality of this pi's domain; we recompute its dimension filter and compose it with the window modality. *)
       let annotation = Modality.filter_modality pifilter in
       let (Has_filter afilter) = Modality.filter annotation m in
@@ -205,7 +206,7 @@ let rec get_pi_vars : type mode a b.
     binder_name Bwd.t =
  fun ctx cube xs ty ->
   match View.view_type ty "get_pi_vars" with
-  | Canonical (_, Pi { x; filter; doms; cods }, ins, tyargs) -> (
+  | Canonical (_, Pi { x; filter; implicit = _; doms; cods }, ins, tyargs) -> (
       let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
       match (D.compare_zero (CubeOf.dim doms), cube) with

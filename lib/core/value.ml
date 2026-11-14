@@ -140,6 +140,7 @@ module rec Value : sig
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;
     filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
+    implicit : implicitness;
     doms : ('n, ('dom, kinetic) value) CubeOf.t;
     cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
   }
@@ -153,6 +154,7 @@ module rec Value : sig
   and (_, _, _, _) apps_entry =
     | Arg :
         ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * implicitness
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
         -> ('mode, 'mode, 'any, noninst) apps_entry
@@ -468,6 +470,7 @@ end = struct
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;
     filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
+    implicit : implicitness;
     doms : ('n, ('dom, kinetic) value) CubeOf.t;
     cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
   }
@@ -485,6 +488,7 @@ end = struct
     (* m is the dimension of the function being applied, n is the dimension of the arguments *)
     | Arg :
         ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * implicitness
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
         -> ('mode, 'mode, 'any, noninst) apps_entry
@@ -839,12 +843,13 @@ let apply_lazy : type dom modality mode m n s.
     (mode, s) lazy_eval ->
     m D.t ->
     (dom, modality, mode, n, m) Modality.filter_dim ->
+    implicitness ->
     (n, dom normal) CubeOf.t ->
     (mode, s) lazy_eval =
- fun lev m filter xs ->
+ fun lev m filter implicit xs ->
   match !lev with
   | Ready Unrealized -> lev
-  | _ -> ref (Applied (lev, Apps (Arg (filter, xs, ins_zero m))))
+  | _ -> ref (Applied (lev, Apps (Arg (filter, implicit, xs, ins_zero m))))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
@@ -905,7 +910,7 @@ let hashcons_head_hash : type mode fail. (mode, fail) neu_head -> int = function
 (* The hash of a spine, from the hashes of the heads of its arguments, its field names, and its instantiation dimensions. *)
 let rec hashcons_apps_hash : type h mode any fail. (h, mode, any, fail) apps -> int = function
   | Emp -> 0
-  | Snoc (rest, Arg (_, xs, _)) ->
+  | Snoc (rest, Arg (_, _, xs, _)) ->
       Hashtbl.hash (hashcons_apps_hash rest, hashcons_arg_hash (CubeOf.find_top xs).tm)
   | Snoc (rest, Field (_, fld, _, _)) -> Hashtbl.hash (hashcons_apps_hash rest, Field.to_string fld)
   | Snoc (rest, Inst (_, args)) ->
@@ -1243,7 +1248,7 @@ module Fwd_app = struct
       (hmode, mode2, noninst, live) apps =
    fun apps app ->
     match app with
-    | Arg (filter, arg, ins) -> Snoc (apps, Arg (filter, arg, ins))
+    | Arg (filter, implicit, arg, ins) -> Snoc (apps, Arg (filter, implicit, arg, ins))
     | Field (f, fld, plus, ins) -> Snoc (apps, Field (f, fld, plus, ins))
 
   let of_apps : type hmode mode any. (hmode, mode, any, live) apps -> (hmode, mode) fwd =

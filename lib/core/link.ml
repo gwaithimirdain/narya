@@ -21,20 +21,22 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | UU (mode, n) -> UU (mode, n)
   | Inst (energy, tm, args) ->
       Inst (energy, term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
-  | Pi { x; filter; doms = Modal (modality, al, doms); cods } ->
+  | Pi { x; filter; implicit; doms = Modal (modality, al, doms); cods } ->
       Pi
         {
           x;
           filter;
+          implicit;
           doms = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ]);
           cods = CodCube.mmap { map = (fun _ [ Cod (filt, x) ] -> Cod (filt, term f x)) } [ cods ];
         }
-  | App (energy, fn, m, filter, Modal (modality, al, args)) ->
+  | App (energy, fn, m, filter, implicit, Modal (modality, al, args)) ->
       App
         ( energy,
           term f fn,
           m,
           filter,
+          implicit,
           Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ]) )
   | Constr (c, n, args) ->
       Constr
@@ -49,7 +51,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Let (x, Modal (modality, al, v), body) -> Let (x, Modal (modality, al, term f v), term f body)
   | Letonly { termctx = tc; env = e; tm = body; ty } ->
       Letonly { termctx = termctx f tc; env = env f e; tm = term f body; ty = term f ty }
-  | Lam (x, p, filter, body) -> Lam (x, p, filter, term f body)
+  | Lam (x, p, filter, implicit, body) -> Lam (x, p, filter, implicit, term f body)
   | Struct { eta; dim; fields = flds; energy } ->
       Struct
         {

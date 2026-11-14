@@ -69,7 +69,9 @@ let () =
                ( a,
                  ad,
                  am,
-                 Lam (b, bd, bm, Lam (r, rd, rm, Lam (re, red, rem, Canonical (Codata c)))) ));
+                 _,
+                 Lam (b, bd, bm, _, Lam (r, rd, rm, _, Lam (re, red, rem, _, Canonical (Codata c))))
+               ));
         mode;
         _;
       } -> (
@@ -91,16 +93,23 @@ let () =
               ( a,
                 ad,
                 am,
+                `Explicit,
                 Lam
                   ( b,
                     bd,
                     bm,
+                    `Explicit,
                     Lam
                       ( r,
                         rd,
                         rm,
-                        Lam (re, red, rem, Canonical (Codata { c with is_glue = Some Glue })) ) ) )
-          in
+                        `Explicit,
+                        Lam
+                          ( re,
+                            red,
+                            rem,
+                            `Explicit,
+                            Canonical (Codata { c with is_glue = Some Glue }) ) ) ) ) in
           Global.set glue mode glue_def
       | _ -> fatal (Anomaly "glue has wrong dimension or modality"))
   | _ -> fatal (Anomaly "glue undefined"));
@@ -121,6 +130,7 @@ let () =
                  ( x,
                    _,
                    modality,
+                   _,
                    Canonical (Codata { eta = Noeta; evaldim; dim; plusdim; fields; _ }) ));
           mode;
           _;
@@ -171,7 +181,10 @@ let () =
                   ( aa,
                     aad,
                     aam,
-                    Lam (bb, bbd, bbm, Lam (e, ed, em, Struct ({ fields; eta = Noeta; _ } as s))) ));
+                    _,
+                    Lam
+                      (bb, bbd, bbm, _, Lam (e, ed, em, _, Struct ({ fields; eta = Noeta; _ } as s)))
+                  ));
            mode;
            _;
          } :
@@ -202,6 +215,7 @@ let () =
                                          (( b,
                                             bd,
                                             bm,
+                                            _,
                                             Realize
                                               (App
                                                  ( Kinetic,
@@ -213,25 +227,31 @@ let () =
                                                              ( Kinetic,
                                                                App
                                                                  ( Kinetic,
-                                                                   App (Kinetic, Const c, _, _, _),
+                                                                   App (Kinetic, Const c, _, _, _, _),
+                                                                   _,
                                                                    _,
                                                                    _,
                                                                    _ ),
                                                                _,
                                                                _,
+                                                               _,
                                                                _ ),
+                                                           _,
                                                            _,
                                                            _,
                                                            _ ),
                                                        _,
                                                        _,
+                                                       _,
                                                        _ ),
+                                                   _,
                                                    _,
                                                    _,
                                                    Modal (modality, plus, tm) )) ) :
                                            k variables
                                            * kn D.t
                                            * (dom, modality, gmode, k, kn) Modality.filter_dim
+                                           * Core.Term.implicitness
                                            * _) ) :
                                       _ * (gmode, a, potential) Term.term)
                                   when c = eq_trr -> (
@@ -243,6 +263,7 @@ let () =
                                               ( b,
                                                 bd,
                                                 bm,
+                                                `Explicit,
                                                 Realize
                                                   (CubeOf.find_top tm
                                                     : ( gmode,
@@ -258,7 +279,13 @@ let () =
               | s -> s)
             fields in
         Global.set fib_rtr mode
-          (Lam (aa, aad, aam, Lam (bb, bbd, bbm, Lam (e, ed, em, Struct { s with fields }))))
+          (Lam
+             ( aa,
+               aad,
+               aam,
+               `Explicit,
+               Lam (bb, bbd, bbm, `Explicit, Lam (e, ed, em, `Explicit, Struct { s with fields }))
+             ))
     | _ -> ());
     (match Global.find_const id_rtr with
     | Definition
@@ -270,40 +297,54 @@ let () =
                   ( a0,
                     a0d,
                     a0m,
+                    _,
                     Lam
                       ( a1,
                         a1d,
                         a1m,
+                        _,
                         Lam
                           ( a2,
                             a2d,
                             a2m,
+                            _,
                             Lam
                               ( b0,
                                 b0d,
                                 b0m,
+                                _,
                                 Lam
                                   ( b1,
                                     b1d,
                                     b1m,
+                                    _,
                                     Lam
                                       ( b2,
                                         b2d,
                                         b2m,
+                                        _,
                                         Lam
                                           ( e0,
                                             e0d,
                                             e0m,
+                                            _,
                                             Lam
                                               ( e1,
                                                 e1d,
                                                 e1m,
+                                                _,
                                                 Lam
                                                   ( e2,
                                                     e2d,
                                                     e2m,
-                                                    Lam (x0, x0d, x0m, Lam (x1, x1d, x1m, Struct s))
-                                                  ) ) ) ) ) ) ) ) ));
+                                                    _,
+                                                    Lam
+                                                      ( x0,
+                                                        x0d,
+                                                        x0m,
+                                                        _,
+                                                        Lam (x1, x1d, x1m, _, Struct s) ) ) ) ) ) )
+                              ) ) ) ));
            mode;
            _;
          } :
@@ -323,6 +364,7 @@ let () =
                       (( b,
                          bd,
                          bm,
+                         _,
                          Realize
                            (App
                               (type dom modality n m)
@@ -343,37 +385,47 @@ let () =
                                                            ( Kinetic,
                                                              App
                                                                ( Kinetic,
-                                                                 App (Kinetic, Const c, _, _, _),
+                                                                 App (Kinetic, Const c, _, _, _, _),
+                                                                 _,
                                                                  _,
                                                                  _,
                                                                  _ ),
                                                              _,
                                                              _,
+                                                             _,
                                                              _ ),
+                                                         _,
                                                          _,
                                                          _,
                                                          _ ),
                                                      _,
                                                      _,
+                                                     _,
                                                      _ ),
+                                                 _,
                                                  _,
                                                  _,
                                                  _ ),
                                              _,
                                              _,
+                                             _,
                                              _ ),
+                                         _,
                                          _,
                                          _,
                                          _ ),
                                      _,
                                      _,
+                                     _,
                                      _ ),
+                                 _,
                                  _,
                                  _,
                                  Modal (modality, plus, tm) ) :
                                 _
                                 * _
                                 * m D.t
+                                * _
                                 * _
                                 * ( n,
                                     dom,
@@ -385,6 +437,7 @@ let () =
                         k variables
                         * kn D.t
                         * (dom', modality', mode, k, kn) Modality.filter_dim
+                        * Core.Term.implicitness
                         * _)
                     when c = eq_trr2 -> (
                       match (Modality.compare_id modality, plus) with
@@ -398,6 +451,7 @@ let () =
                                     ( b,
                                       bd,
                                       bm,
+                                      `Explicit,
                                       Realize
                                         (CubeOf.find_top tm
                                           : ( mode,
@@ -414,44 +468,59 @@ let () =
              ( a0,
                a0d,
                a0m,
+               `Explicit,
                Lam
                  ( a1,
                    a1d,
                    a1m,
+                   `Explicit,
                    Lam
                      ( a2,
                        a2d,
                        a2m,
+                       `Explicit,
                        Lam
                          ( b0,
                            b0d,
                            b0m,
+                           `Explicit,
                            Lam
                              ( b1,
                                b1d,
                                b1m,
+                               `Explicit,
                                Lam
                                  ( b2,
                                    b2d,
                                    b2m,
+                                   `Explicit,
                                    Lam
                                      ( e0,
                                        e0d,
                                        e0m,
+                                       `Explicit,
                                        Lam
                                          ( e1,
                                            e1d,
                                            e1m,
+                                           `Explicit,
                                            Lam
                                              ( e2,
                                                e2d,
                                                e2m,
+                                               `Explicit,
                                                Lam
                                                  ( x0,
                                                    x0d,
                                                    x0m,
-                                                   Lam (x1, x1d, x1m, Struct { s with fields }) ) )
-                                         ) ) ) ) ) ) ) ))
+                                                   `Explicit,
+                                                   Lam
+                                                     ( x1,
+                                                       x1d,
+                                                       x1m,
+                                                       `Explicit,
+                                                       Struct { s with fields } ) ) ) ) ) ) ) ) ) )
+             ))
     | _ -> ());
 
     (* We adjust the case tree boundary for id_pi_rtr to avoid exposing that constant to the user when a higher fibrancy field is applied only to a function but not a further argument. *)
@@ -464,25 +533,34 @@ let () =
                  ( a0,
                    a0d,
                    a0m,
+                   _,
                    Lam
                      ( a1,
                        a1d,
                        a1m,
+                       _,
                        Lam
                          ( a2,
                            a2d,
                            a2m,
+                           _,
                            Lam
                              ( b0,
                                b0d,
                                b0m,
+                               _,
                                Lam
                                  ( b1,
                                    b1d,
                                    b1m,
+                                   _,
                                    Lam
-                                     (b2, b2d, b2m, Lam (f0, f0d, f0m, Lam (f1, f1d, f1m, Struct s)))
-                                 ) ) ) ) ));
+                                     ( b2,
+                                       b2d,
+                                       b2m,
+                                       _,
+                                       Lam (f0, f0d, f0m, _, Lam (f1, f1d, f1m, _, Struct s)) ) ) )
+                         ) ) ));
           mode;
           _;
         } ->
@@ -490,8 +568,15 @@ let () =
           Bwd.map
             Term.StructfieldAbwd.(
               function
-              | Entry (fld, Lower (adj, plst, Lam (f, fd, fm, Lam (a, ad, am, Realize tm)), l)) ->
-                  Entry (fld, Lower (adj, plst, Lam (f, fd, fm, Realize (Lam (a, ad, am, tm))), l))
+              | Entry (fld, Lower (adj, plst, Lam (f, fd, fm, _, Lam (a, ad, am, _, Realize tm)), l))
+                ->
+                  Entry
+                    ( fld,
+                      Lower
+                        ( adj,
+                          plst,
+                          Lam (f, fd, fm, `Explicit, Realize (Lam (a, ad, am, `Explicit, tm))),
+                          l ) )
               | Entry
                   ( fld,
                     Lower
@@ -501,8 +586,13 @@ let () =
                           ( f,
                             fd,
                             fm,
-                            Lam (a0, a0d, a0m, Lam (a1, a1d, a1m, Lam (a2, a2d, a2m, Realize tm)))
-                          ),
+                            _,
+                            Lam
+                              ( a0,
+                                a0d,
+                                a0m,
+                                _,
+                                Lam (a1, a1d, a1m, _, Lam (a2, a2d, a2m, _, Realize tm)) ) ),
                         l ) ) ->
                   Entry
                     ( fld,
@@ -513,8 +603,15 @@ let () =
                             ( f,
                               fd,
                               fm,
+                              `Explicit,
                               Realize
-                                (Lam (a0, a0d, a0m, Lam (a1, a1d, a1m, Lam (a2, a2d, a2m, tm)))) ),
+                                (Lam
+                                   ( a0,
+                                     a0d,
+                                     a0m,
+                                     `Explicit,
+                                     Lam (a1, a1d, a1m, `Explicit, Lam (a2, a2d, a2m, `Explicit, tm))
+                                   )) ),
                           l ) )
               | s -> s)
             s.fields in
@@ -523,28 +620,39 @@ let () =
              ( a0,
                a0d,
                a0m,
+               `Explicit,
                Lam
                  ( a1,
                    a1d,
                    a1m,
+                   `Explicit,
                    Lam
                      ( a2,
                        a2d,
                        a2m,
+                       `Explicit,
                        Lam
                          ( b0,
                            b0d,
                            b0m,
+                           `Explicit,
                            Lam
                              ( b1,
                                b1d,
                                b1m,
+                               `Explicit,
                                Lam
                                  ( b2,
                                    b2d,
                                    b2m,
-                                   Lam (f0, f0d, f0m, Lam (f1, f1d, f1m, Struct { s with fields }))
-                                 ) ) ) ) ) ))
+                                   `Explicit,
+                                   Lam
+                                     ( f0,
+                                       f0d,
+                                       f0m,
+                                       `Explicit,
+                                       Lam (f1, f1d, f1m, `Explicit, Struct { s with fields }) ) )
+                             ) ) ) ) ))
     | _ -> fatal (Anomaly "id_pi_rtr undefined"));
 
     (* As with id_pi_rtr, so with glue_rtr *)
@@ -557,15 +665,19 @@ let () =
                  ( aa,
                    aad,
                    aam,
+                   _,
                    Lam
                      ( bb,
                        bbd,
                        bbm,
+                       _,
                        Lam
                          ( rr,
                            rrd,
                            rrm,
-                           Lam (re, red, rem, Lam (a, ad, am, Lam (b, bd, bm, Struct s))) ) ) ));
+                           _,
+                           Lam (re, red, rem, _, Lam (a, ad, am, _, Lam (b, bd, bm, _, Struct s)))
+                         ) ) ));
           mode;
           _;
         } ->
@@ -578,7 +690,7 @@ let () =
                     Lower
                       ( adj,
                         plst,
-                        Lam (r, rd, rm, Struct { dim; fields; eta = Eta; energy = Potential }),
+                        Lam (r, rd, rm, _, Struct { dim; fields; eta = Eta; energy = Potential }),
                         l ) ) ->
                   let fields =
                     Bwd.map
@@ -597,6 +709,7 @@ let () =
                             ( r,
                               rd,
                               rm,
+                              `Explicit,
                               Realize (Struct { dim; fields; eta = Eta; energy = Kinetic }) ),
                           l ) )
               | x -> x)
@@ -606,16 +719,28 @@ let () =
              ( aa,
                aad,
                aam,
+               `Explicit,
                Lam
                  ( bb,
                    bbd,
                    bbm,
+                   `Explicit,
                    Lam
                      ( rr,
                        rrd,
                        rrm,
-                       Lam (re, red, rem, Lam (a, ad, am, Lam (b, bd, bm, Struct { s with fields })))
-                     ) ) ))
+                       `Explicit,
+                       Lam
+                         ( re,
+                           red,
+                           rem,
+                           `Explicit,
+                           Lam
+                             ( a,
+                               ad,
+                               am,
+                               `Explicit,
+                               Lam (b, bd, bm, `Explicit, Struct { s with fields }) ) ) ) ) ))
     | _ -> fatal (Anomaly "glue_rtr_rtr undefined"));
 
     (* Now we pull out the fields from the definition of fib_pi to insert them in Fibrancy.pi. *)
@@ -628,7 +753,8 @@ let () =
                  ( a,
                    ad,
                    am,
-                   Lam (b, bd, bm, Struct { dim; fields; eta = Noeta; energy = Potential }) ));
+                   _,
+                   Lam (b, bd, bm, _, Struct { dim; fields; eta = Noeta; energy = Potential }) ));
           _;
         } -> (
         let _ = (ad, bd) in
@@ -653,9 +779,15 @@ let () =
                                 Option.map
                                   (function
                                     | Term.PlusFam.PlusFam
-                                        (p, Lam (f, fd, fm, Lam (a, ad, am, Realize tm))) ->
+                                        (p, Lam (f, fd, fm, _, Lam (a, ad, am, _, Realize tm))) ->
                                         Term.PlusFam.PlusFam
-                                          (p, Lam (f, fd, fm, Realize (Lam (a, ad, am, tm))))
+                                          ( p,
+                                            Lam
+                                              ( f,
+                                                fd,
+                                                fm,
+                                                `Explicit,
+                                                Realize (Lam (a, ad, am, `Explicit, tm)) ) )
                                     | y -> y)
                                   x);
                           }
@@ -678,15 +810,19 @@ let () =
                  ( a,
                    _,
                    am,
+                   _,
                    Lam
                      ( b,
                        _,
                        bm,
+                       _,
                        Lam
                          ( r,
                            _,
                            rm,
-                           Lam (re, _, rem, Struct { dim; fields; eta = Noeta; energy = Potential })
+                           _,
+                           Lam
+                             (re, _, rem, _, Struct { dim; fields; eta = Noeta; energy = Potential })
                          ) ) ));
           mode;
           _;

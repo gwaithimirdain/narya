@@ -91,7 +91,7 @@ let rec inverse_of_spine : type a b c hmode mode any.
  fun ins args ->
   match args with
   | Emp -> inverse_of_ins ins
-  | Snoc (rest, Arg (_, _, argins)) -> (
+  | Snoc (rest, Arg (_, _, _, argins)) -> (
       match (inverse_of_ins argins, inverse_of_spine ins rest) with
       | None, inner -> inner
       | outer, None -> outer
@@ -129,9 +129,9 @@ let try_solve : type mode a b.
                 (Some (gact_ty None ty pinv idc))))
   | _ -> try_solve_direct ctx u v ty
 
-(* A metavariable that is projected from, perhaps after being applied to some arguments, has to be solved by a tuple, since we can only get information about one field from the projection, and the other fields have to be left unknown.  This is always correct, by eta-conversion, so it doesn't affect whether the solution is most general; but it does create more metavariables, so we do it only when solving an equation that requires it.  To avoid having to duplicate the logic for typechecking tuples, particularly regarding modal fields (whose components live in a locked context, and possibly a different mode), we do this by constructing a raw term out of abstractions, tuples, and placeholders, and typechecking it at the type of the metavariable.  Since typechecking comes later, we record here just the shape of the term, consisting of an abstraction for each argument (with a name, and whether it is a cube abstraction), a tuple for each projection (with all the field names and the one that continues), and a permutation wherever the occurrence of the metavariable has one, since then the term that is projected from is that permutation of the metavariable and hence the metavariable must be its inverse acting on a tuple.  There is no need for a final sequence of abstractions, since the metavariables created for the tuple components can just be applied to the same arguments. *)
+(* A metavariable that is projected from, perhaps after being applied to some arguments, has to be solved by a tuple, since we can only get information about one field from the projection, and the other fields have to be left unknown.  This is always correct, by eta-conversion, so it doesn't affect whether the solution is most general; but it does create more metavariables, so we do it only when solving an equation that requires it.  To avoid having to duplicate the logic for typechecking tuples, particularly regarding modal fields (whose components live in a locked context, and possibly a different mode), we do this by constructing a raw term out of abstractions, tuples, and placeholders, and typechecking it at the type of the metavariable.  Since typechecking comes later, we record here just the shape of the term, consisting of an abstraction for each argument (with a name, whether it is a cube abstraction, and whether it is implicit), a tuple for each projection (with all the field names and the one that continues), and a permutation wherever the occurrence of the metavariable has one, since then the term that is projected from is that permutation of the metavariable and hence the metavariable must be its inverse acting on a tuple.  There is no need for a final sequence of abstractions, since the metavariables created for the tuple components can just be applied to the same arguments. *)
 type expansion =
-  | Abs : string option * bool -> expansion
+  | Abs : string option * bool * implicitness -> expansion
   | Tuple : string list * string -> expansion
   | Perm : ('m, 'n) deg -> expansion
   | Constructor : Constr.t * int -> expansion
@@ -184,14 +184,15 @@ let expansion_shape : type hmode mode any.
         let cur, shape = go args in
         let shape =
           match entry with
-          | Arg (_, xs, ins) -> (
+          | Arg (_, _, xs, ins) -> (
               match tyof cur with
-              | Canonical (_, Pi { x; _ }, _, _) -> (
+              | Canonical (_, Pi { x; implicit; _ }, _, _) -> (
                   let cube =
                     match D.compare_zero (CubeOf.dim xs) with
                     | Zero -> false
                     | Pos _ -> true in
-                  let shape = Abs (option_of_binder_name (top_variable x), cube) :: shape in
+                  let shape =
+                    Abs (option_of_binder_name (top_variable x), cube, implicit) :: shape in
                   match inverse_of_ins ins with
                   | Some (Any_deg pinv) -> Perm pinv :: shape
                   | None -> shape)
@@ -327,12 +328,12 @@ let rec solve_singletons () =
             if is_singleton ctx ety then
               let shape =
                 match view_type ~severity:Asai.Diagnostic.Error ety "solve_singletons" with
-                | Canonical (_, Pi { x; doms; _ }, _, _) ->
+                | Canonical (_, Pi { x; implicit; doms; _ }, _, _) ->
                     let cube =
                       match D.compare_zero (CubeOf.dim doms) with
                       | Zero -> false
                       | Pos _ -> true in
-                    [ Abs (option_of_binder_name (top_variable x), cube) ]
+                    [ Abs (option_of_binder_name (top_variable x), cube, implicit) ]
                 | Canonical (_, Codata { eta = Eta; fields; _ }, ins, _) -> (
                     let tuple = Tuple (field_names fields (cod_left_ins ins), "") in
                     (* If the record has a nonidentity insertion, it isn't actually a record type, but it is isomorphic to one by a permutation.  So its element is a tuple with that permutation acting on it. *)

@@ -19,6 +19,9 @@ type (_, _, _, _) is_glue =
         has_eta )
       is_glue
 
+(* Whether a function-type is implicit, so that its arguments are inserted automatically when it is applied to an explicit argument, and are written in braces.  This is recorded in function-types, and also in abstractions and applications, so that they can be displayed accordingly; but an abstraction or application is implicit exactly when the function-type it belongs to is. *)
+type implicitness = [ `Explicit | `Implicit ]
+
 (* ******************** Typechecked terms ******************** *)
 
 (* Typechecked, but unevaluated, terms.  Uses De Bruijn indices that are intrinsically well-scoped by Tctxs, but are no longer separated into synthesizing and checking; hence without type ascriptions.  Note that extending a Tctx by a dimension 'k means adding a whole cube of new variables, which are indexed by the position of that dimension together with a strict face of it.  (At user-level, those variables may all be accessed as faces of one "cube variable", or they may have independent names, but internally there is no difference.)
@@ -141,6 +144,7 @@ module rec Term : sig
         * ('mode, 'a, 's) term
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * implicitness
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, 's) term
     | Constr :
@@ -175,6 +179,7 @@ module rec Term : sig
         'k variables
         * 'n D.t
         * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * implicitness
         * ('mode, ('a, ('modality, 'k) dim_entry) snoc, 's) Term.term
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
@@ -200,6 +205,7 @@ module rec Term : sig
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
     filter : ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim;
+    implicit : implicitness;
     doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
     cods : ('n, 'dom * 'modality * 'mode * 'a) CodCube.t;
   }
@@ -507,6 +513,7 @@ end = struct
         * ('mode, 'a, 's) term
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * implicitness
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, 's) term
     | Constr :
@@ -546,6 +553,7 @@ end = struct
         'k variables
         * 'n D.t
         * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * implicitness
         * ('mode, ('a, ('modality, 'k) dim_entry) snoc, 's) Term.term
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
@@ -577,6 +585,7 @@ end = struct
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
     filter : ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim;
+    implicit : implicitness;
     doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
     cods : ('n, 'dom * 'modality * 'mode * 'a) CodCube.t;
   }
@@ -813,30 +822,37 @@ let singleton_fieldtype : type i gmode b rb.
 let rec nth_var : type mode a b s. (mode, a, s) term -> b Bwd.t -> any_variables option =
  fun tr args ->
   match tr with
-  | Lam (x, _, _, body) -> (
+  | Lam (x, _, _, _, body) -> (
       match args with
       | Emp -> Some (Any x)
       | Snoc (args, _) -> nth_var body args)
   | _ -> None
 
 let pi : type mode modality a.
+    ?implicit:implicitness ->
     D.zero variables ->
     (mode, modality, a, kinetic) modal_term ->
     (mode, (a, (modality, D.zero) dim_entry) snoc, kinetic) term ->
     (mode, a, kinetic) term =
- fun x (Modal (modality, plus, dom)) cod ->
+ fun ?(implicit = `Explicit) x (Modal (modality, plus, dom)) cod ->
   let filter = Modality.filter_zero modality in
   Pi
     {
       x;
       filter;
+      implicit;
       doms = Modal (modality, plus, CubeOf.singleton dom);
       cods = CodCube.singleton (Cod (filter, cod));
     }
 
-let app fn modality al arg =
+let app ?(implicit = `Explicit) fn modality al arg =
   App
-    (Kinetic, fn, D.zero, Modality.filter_zero modality, Modal (modality, al, CubeOf.singleton arg))
+    ( Kinetic,
+      fn,
+      D.zero,
+      Modality.filter_zero modality,
+      implicit,
+      Modal (modality, al, CubeOf.singleton arg) )
 
 let appid fn mode arg =
   App
@@ -844,6 +860,7 @@ let appid fn mode arg =
       fn,
       D.zero,
       Modality.filter_id mode D.zero,
+      `Explicit,
       Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg) )
 
 let apps fn mode args =
@@ -946,7 +963,7 @@ end
 
 (* Count the number of zero-dimensional pi-types on the front of a term, i.e. the length of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to determine a datatype constructor's arity from its stored function-type.  We peel only zero-dimensional pis: a dimension-killing modality can have a zero-dimensional domain cube on a positive-dimensional pi, which must not be counted, and the codomain of a higher pi is not a constructor argument. *)
 let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = function
-  | Pi { x = _; filter; doms = Modal (modality, _, _); cods } -> (
+  | Pi { x = _; filter; implicit = _; doms = Modal (modality, _, _); cods } -> (
       match D.compare_zero (CodCube.dim cods) with
       | Pos _ -> Wrap Zero
       | Zero ->
@@ -961,7 +978,7 @@ let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = functio
 
 (* Collect the binder names of the zero-dimensional pi-types on the front of a term, in order, as a plain list — the names of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to name the pattern variables when displaying a "split". *)
 let rec pi_names : type mode a. (mode, a, kinetic) term -> string option list = function
-  | Pi { x; filter; doms = Modal (modality, _, _); cods } -> (
+  | Pi { x; filter; implicit = _; doms = Modal (modality, _, _); cods } -> (
       match D.compare_zero (CodCube.dim cods) with
       | Pos _ -> []
       | Zero ->

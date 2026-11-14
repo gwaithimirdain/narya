@@ -361,9 +361,9 @@ module Act = struct
     (* Unlike degeneracy actions, modal key actions do not change the *identity* of a canonical type, only the *arguments* it is applied to.  Therefore, the modal cell is ignored when acting on a universe, it only acts on the domains and codomains of a pi-type, and on the indices of a datatype and their types (tyfam). *)
     match tm with
     | UU (mode, _) -> UU (mode, dom_deg fa)
-    | Pi { x; filter; doms; cods } ->
+    | Pi { x; filter; implicit; doms; cods } ->
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa cell in
-        Pi { x = act_variables x fb; filter; doms; cods }
+        Pi { x = act_variables x fb; filter; implicit; doms; cods }
     | Data { dim = _; tyfam; indices; constrs; recursive; hints } ->
         let tyfam = act_lazy_eval tyfam fa cell in
         let indices =
@@ -563,10 +563,10 @@ module Act = struct
     | UU (mode, nk) ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in
         UU (mode, dom_deg fa)
-    | Pi { x; filter; doms; cods } ->
+    | Pi { x; filter; implicit; doms; cods } ->
         let (Of fa) = deg_plus_to s (BindCube.dim cods) ~on:"pi-type head" in
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa c in
-        Pi { x = act_variables x fb; filter; doms; cods }
+        Pi { x = act_variables x fb; filter; implicit; doms; cods }
 
   and act_pi : type dom modality mode mu1 mu2 cod m n k.
       (dom, modality, mode, k, n) Modality.filter_dim ->
@@ -604,7 +604,7 @@ module Act = struct
     match apps with
     | Emp -> (Any_deg s, Wrap c, Emp)
     (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
-    | Snoc (rest, Arg (filter, args, ins)) ->
+    | Snoc (rest, Arg (filter, implicit, args, ins)) ->
         (* In the function case, we also act on the arguments by factorization of dimensions and by whiskering of keys. *)
         let modality = Modality.filter_modality filter in
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
@@ -613,7 +613,7 @@ module Act = struct
           let (Wrap newc) = Modalcell.prewhisker_wrapped c modality in
           act_cube { act = (fun x s c -> act_normal x s c) } args fb newc in
         let new_s, new_c, new_rest = act_apps rest fa c in
-        (new_s, new_c, Snoc (new_rest, Arg (arg_filter, new_arg, new_ins)))
+        (new_s, new_c, Snoc (new_rest, Arg (arg_filter, implicit, new_arg, new_ins)))
     | Snoc (rest, Field (filter, fld, fldplus, ins)) -> (
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* Note that we don't need to change the degeneracy on the outside, since it can be extended on the right as needed. *)
