@@ -185,22 +185,25 @@ module Parse = struct
     | None -> return (None, w)
     | Some xs -> fatal ~loc:(Range.convert loc) (Invalid_variable xs)
 
-  let parameter =
-    let* wslparen = token LParen in
+  (* A group of parameters, in parentheses, or in braces if they are implicit. *)
+  let parameter_in (ldelim : Token.t) (rdelim : Token.t) implicit =
+    let* wslparen = token ldelim in
     let* name, names = one_or_more variable in
     let names = name :: names in
     let* wscolon = token Colon in
-    let* modality_or_ty = C.term [ RParen; Op "|" ] in
+    let* modality_or_ty = C.term [ rdelim; Op "|" ] in
     let* modality, wsbar, ty, wsrparen =
-      (let* wsrparen = token RParen in
+      (let* wsrparen = token rdelim in
        return ([], [], modality_or_ty, wsrparen))
       </> let* wsbar = token (Op "|") in
-          let* ty = C.term [ RParen ] in
-          let* wsrparen = token RParen in
+          let* ty = C.term [ rdelim ] in
+          let* wsrparen = token rdelim in
           let (Wrap modality) = modality_or_ty in
           let modality = (Builtins.get_modality Fun.id modality).value in
           return (modality, wsbar, ty, wsrparen) in
-    return ({ wslparen; names; wscolon; modality; wsbar; ty; wsrparen } : Parameter.t)
+    return ({ implicit; wslparen; names; wscolon; modality; wsbar; ty; wsrparen } : Parameter.t)
+
+  let parameter = parameter_in LParen RParen `Explicit </> parameter_in LBrace RBrace `Implicit
 
   let attribute : type a. a StringsMap.t -> a attribute option t =
    fun values ->
@@ -1494,7 +1497,7 @@ let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document
   let open PPrint in
   match params with
   | [] -> (empty, prews)
-  | { wslparen; names; modality; wsbar; wscolon; ty; wsrparen } :: params ->
+  | { implicit; wslparen; names; modality; wsbar; wscolon; ty; wsrparen } :: params ->
       let pnames, wnames =
         List.fold_left
           (fun (accum, prews) (name, wsname) ->
@@ -1504,14 +1507,14 @@ let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document
       ( group
           (pp_ws `Break prews
           ^^ group
-               (Token.pp LParen
+               (Token.pp (if implicit = `Implicit then LBrace else LParen)
                ^^ pp_ws `None wslparen
                ^^ group pnames
                ^^ optional (pp_ws `Break) wnames)
           ^^ Token.pp Colon
           ^^ Builtins.pp_modality wscolon fst modality wsbar
           ^^ pp_complete_term ty `None
-          ^^ Token.pp RParen)
+          ^^ Token.pp (if implicit = `Implicit then RBrace else RParen))
         ^^ pparams,
         wparams )
 

@@ -937,12 +937,13 @@ let rec is_failed : type mode a s. (mode, a, s) term -> bool = function
   | Shift (_, _, tm) -> is_failed tm
   | _ -> false
 
-(* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
+(* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated, and implicit (as can the parameters of a definition). *)
 module Telescope = struct
   type ('mode, 'a, 'b, 'ab) t =
     | Emp : ('mode, 'a, Fwn.zero, 'a) t
     | Ext :
         string option
+        * implicitness
         * ('mode, 'modality, 'a, kinetic) modal_term
         * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 'b, 'ab) t
         -> ('mode, 'a, 'b Fwn.suc, 'ab) t
@@ -952,13 +953,22 @@ module Telescope = struct
    fun doms cod ->
     match doms with
     | Emp -> cod
-    | Ext (x, dom, doms) ->
-        pi (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
+    | Ext (x, implicit, dom, doms) ->
+        pi ~implicit (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
+
+  (* The implicitness of the entries of a telescope, listed last first, as for the entries of a context (see Ctx.lam). *)
+  let implicits : type mode a b ab. (mode, a, b, ab) t -> implicitness list =
+   fun doms ->
+    let rec go : type a b ab. implicitness list -> (mode, a, b, ab) t -> implicitness list =
+     fun acc -> function
+       | Emp -> acc
+       | Ext (_, implicit, _, doms) -> go (implicit :: acc) doms in
+    go [] doms
 
   (* Whether any of the types in a telescope failed to typecheck (see Check.check_tel). *)
   let rec has_failed : type mode a b ab. (mode, a, b, ab) t -> bool = function
     | Emp -> false
-    | Ext (_, Modal (_, _, ty), doms) -> is_failed ty || has_failed doms
+    | Ext (_, _, Modal (_, _, ty), doms) -> is_failed ty || has_failed doms
 end
 
 (* Count the number of zero-dimensional pi-types on the front of a term, i.e. the length of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to determine a datatype constructor's arity from its stored function-type.  We peel only zero-dimensional pis: a dimension-killing modality can have a zero-dimensional domain cube on a positive-dimensional pi, which must not be counted, and the codomain of a higher pi is not a constructor argument. *)

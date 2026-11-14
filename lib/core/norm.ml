@@ -2179,7 +2179,7 @@ let rec eval_append : type mode a b c ac bc.
  fun ctx ac tel ->
   match (ac, tel) with
   | Zero, Emp -> ctx
-  | Suc ac, Ext (x, Modal (modality, al, ty), tel) ->
+  | Suc ac, Ext (x, _, Modal (modality, al, ty), tel) ->
       let lctx = Ctx.lock_to ctx modality al in
       let ty = eval_term (Ctx.env lctx) ty in
       eval_append (Ctx.ext ctx modality x ty) ac tel

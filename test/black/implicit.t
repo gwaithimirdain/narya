@@ -414,3 +414,67 @@ With implicit arguments hidden, a hidden cube of them is displayed as a dot, so 
   g b
     : B a
   
+
+Parameters of definitions and axioms in braces make the corresponding arguments of the constant implicit.
+
+  $ narya -spatial - <<EOF
+  > axiom A : Type
+  > axiom B : A → Type
+  > axiom a : A
+  > axiom b : B a
+  > def id {X : Type} (x : X) : X ≔ x
+  > echo id b
+  > synth id
+  > about id
+  > axiom f {x : A} (y : B x) : B x
+  > echo f b
+  > def g {x y : A} (z : B y) : B y ≔ z
+  > synth g
+  > def s {X : Type} ≔ (x : X) ↦ x
+  > synth s
+  > def h {x :♭| A} : A ≔ a
+  > synth h
+  > def List {A : Type} : Type ≔ data [ nil. | cons. (_ : A) (_ : List {A}) ]
+  > def len {X : Type} : List {X} → Type ≔ [ nil. ↦ A | cons. _ xs ↦ len xs ]
+  > def l : List {A} ≔ cons. a nil.
+  > echo len l
+  > EOF
+  b
+    : B a
+  
+  id
+    : {X : Type} (x : X) → X
+  
+  {X} x ↦ x
+    : {X : Type} (x : X) → X
+  
+  f b
+    : B a
+  
+  g
+    : {x : A} {y : A} (z : B y) → B y
+  
+  s
+    : {X : Type} (x : X) → X
+  
+  h
+    : {x :♭| A} → A
+  
+  A
+    : Type
+  
+
+Braces in parameters are preserved by reformatting.
+
+  $ cat >rf.ny <<EOF
+  > axiom A : Type
+  > def id   {X:Type} (x : X) : X ≔ x
+  > axiom f {x y : A} (z :  A) : A
+  > EOF
+  $ narya rf.ny
+  $ cat rf.ny
+  axiom A : Type
+  
+  def id {X : Type} (x : X) : X ≔ x
+  
+  axiom f {x y : A} (z : A) : A

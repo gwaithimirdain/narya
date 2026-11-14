@@ -349,16 +349,19 @@ let rec process_tel : type n. (string option, n) Bwv.t -> Parameter.t list -> n 
  fun ctx parameters ->
   match parameters with
   | [] -> Processed_tel (Emp, ctx, [])
-  | { names; modality; ty; _ } :: parameters ->
+  | { names; implicit; modality; ty; _ } :: parameters ->
       process_vars ctx names
-        (Some (locate_modality (List.map (fun x -> locate_opt x.loc (fst x.value)) modality), ty))
+        (Some
+           ( implicit,
+             locate_modality (List.map (fun x -> locate_opt x.loc (fst x.value)) modality),
+             ty ))
         parameters
 
 and process_vars : type n.
     (string option, n) Bwv.t ->
     (string option * Whitespace.t list) list ->
-    (* We only carry the modality and type if we are at the first variable in the list. *)
-    (string located list located * wrapped_parse) option ->
+    (* We only carry the implicitness, modality, and type if we are at the first variable in the list. *)
+    ([ `Explicit | `Implicit ] * string located list located * wrapped_parse) option ->
     Parameter.t list ->
     n processed_tel =
  fun ctx names argty parameters ->
@@ -366,12 +369,12 @@ and process_vars : type n.
   | [] -> process_tel ctx parameters
   | (name, w) :: names -> (
       match argty with
-      | Some (modality, Wrap ty) ->
+      | Some (implicit, modality, Wrap ty) ->
           (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
           let pty = process ctx ty in
           let (Processed_tel (tel, ctx, ws)) =
             process_vars (Bwv.snoc ctx name) names None parameters in
-          Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
+          Processed_tel (Ext (name, implicit, modality, pty, tel), ctx, w :: ws)
       | None ->
           (* The remaining variables that share the type of the previous one. *)
           let (Processed_tel (tel, ctx, ws)) =

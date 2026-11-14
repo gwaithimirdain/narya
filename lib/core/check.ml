@@ -334,7 +334,8 @@ type (_, _, _, _, _) checked_tel =
 (* The previous entry of a telescope being checked, for the following entries that share its type (see Raw.Same): its modality, its checked type in the context locked by that modality, and that type evaluated.  If it failed to typecheck, the checked type is Failed and the evaluated one is a failed type. *)
 type (_, _) tel_prev =
   | Tel_prev :
-      ('dom, 'modality, 'mode) Modality.t
+      implicitness
+      * ('dom, 'modality, 'mode) Modality.t
       * ('b, 'mode, 'modality, 'dom, 'bm) plus_lock
       * ('dom, 'bm, kinetic) term
       * ('dom, kinetic) value
@@ -1624,7 +1625,7 @@ and make_letrec_metas : type mode a b c ac v.
    fun actx tel vtms ->
     match (tel, vtms) with
     | Emp, [] -> []
-    | Ext (x, modality, rty, tel), _ :: vtms -> (
+    | Ext (x, _, modality, rty, tel), _ :: vtms -> (
         (* A let-rec is NOT allowed to be modal.  I had technical problems with context manipulation in trying to figure out how to check a modal letrec, plus I'm not even sure what that would mean semantically. *)
         match Modality.of_name_tgt mode modality.value with
         | Error e -> modality_fatal "checking let-rec" (e :> modality_error)
@@ -3369,8 +3370,8 @@ and check_record : type mode a f1 f2 f af d acd b n.
              fibrancy = Some fibrancy;
              is_glue = None;
            })
-  | Ext (None, _, _, _) | Same (None, _) -> fatal (Anomaly "unnamed field in check_record")
-  | Ext (Some name, modality, rty, raw_fields) ->
+  | Ext (None, _, _, _, _) | Same (None, _) -> fatal (Anomaly "unnamed field in check_record")
+  | Ext (Some name, _, modality, rty, raw_fields) ->
       check_record_field status dim ctx opacity hints tyargs vars ctx_fields fplus af checked_fields
         fibrancy name
         (fun newctx ->
@@ -4360,7 +4361,7 @@ and synth : type mode a b s.
                 let (Entry (x, edom, domloc, rest)) : _ S.entry =
                   match tele with
                   | Emp -> fatal (Not_enough_domains k)
-                  | Ext (x, _, dom, rest) ->
+                  | Ext (x, _, _, dom, rest) ->
                       (* We check the domains against universe 0, since they should be fully instantiated. *)
                       let cdom = check Kinetic xctx dom (universe (Modality.src modality) D.zero) in
                       Entry (x, eval_term (Ctx.env xctx) cdom, dom.loc, rest)
@@ -4428,7 +4429,7 @@ and synth : type mode a b s.
                 Build.build_left k { build } (State { xctx = lctx; plus = Zero; tele = doms; prev })
               in
               match rest with
-              | Ext (_, _, { loc; _ }, _) ->
+              | Ext (_, _, _, { loc; _ }, _) ->
                   fatal ?loc (Invalid_higher_function "too many domains for the dimension")
               | Same _ -> fatal (Invalid_higher_function "too many domains for the dimension")
               | Emp -> (
@@ -5541,7 +5542,7 @@ and check_tel : type mode a b c ac.
  fun ctx ?prev tel ->
   match tel with
   | Emp -> Checked_tel (Emp, ctx)
-  | Ext (x, modality, ty, tys) -> (
+  | Ext (x, implicit, modality, ty, tys) -> (
       match Modality.of_name_tgt (Ctx.mode ctx) modality.value with
       | Error e -> modality_fatal "checking a telescope" (e :> modality_error)
       | Ok (Wrap modality) ->
@@ -5554,7 +5555,7 @@ and check_tel : type mode a b c ac.
             @@ fun () ->
             let cty = check Kinetic lctx ty (universe (Modality.src modality) D.zero) in
             (cty, eval_term (Ctx.env lctx) cty) in
-          check_tel_ext ctx (Tel_prev (modality, plus, cty, ety)) x tys)
+          check_tel_ext ctx (Tel_prev (implicit, modality, plus, cty, ety)) x tys)
   | Same (x, tys) -> (
       match prev with
       | Some prev -> check_tel_ext ctx prev x tys
@@ -5567,7 +5568,7 @@ and check_tel_ext : type mode a b c ac.
     string option ->
     (a N.suc, c, ac) Raw.tel ->
     (mode, a, b, c Fwn.suc, ac) checked_tel =
- fun ctx (Tel_prev (modality, plus, cty, ety)) x tys ->
+ fun ctx (Tel_prev (implicit, modality, plus, cty, ety)) x tys ->
   let _, newnfs = dom_vars ctx modality (CubeOf.singleton ety) in
   let newctx = Ctx.cube_vis ctx (Modality.filter_zero modality) x newnfs in
   let next =
@@ -5576,10 +5577,10 @@ and check_tel_ext : type mode a b c ac.
         let (Locked (newplus, _)) = Ctx.lock newctx modality in
         let plus_tgt =
           plus_with_locks_of_dim_plus_lock D.zero (Modality.filter_zero modality) newplus in
-        Some (Tel_prev (modality, newplus, weaken_gen plus cty plus_tgt, ety))
+        Some (Tel_prev (implicit, modality, newplus, weaken_gen plus cty plus_tgt, ety))
     | _ -> None in
   let (Checked_tel (ctys, ctx)) = check_tel newctx ?prev:next tys in
-  Checked_tel (Ext (x, Modal (modality, plus, cty), ctys), ctx)
+  Checked_tel (Ext (x, implicit, Modal (modality, plus, cty), ctys), ctx)
 
 (* We also need to be able to synthesize a mode for a definition.  In theory we could incorporate this into 'synth' to avoid multiple traversals, but the attempt proved very complicated, and not much of the term should need to be traversed to find its mode.  You might think we should do this in a "context" of raw variables with possibly-known modes so we can look up the modes of variables, but in practice that's not useful: whenever a variable is introduced, if we *know* its mode, then we can immediately deduce the mode of the whole term anyway. *)
 let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
@@ -5702,7 +5703,7 @@ let rec synth_mode : type a. a check located -> Modal.Mode.wrapped option =
 and synth_mode_tel : type a b ab. (a, b, ab) Raw.tel -> Modal.Mode.wrapped option = function
   | Emp -> None
   | Same (_, tel) -> synth_mode_tel tel
-  | Ext (_, modality, ty, tel) -> (
+  | Ext (_, _, modality, ty, tel) -> (
       match synth_mode ty with
       | Some (Wrap dmode) -> (
           match Modality.of_name_src modality.value dmode with

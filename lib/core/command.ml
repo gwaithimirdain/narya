@@ -63,10 +63,15 @@ let check_term (def : defined_const) : checked_term =
       (* It's essential that we evaluate the type at this point, rather than sooner, so that the evaluation uses the *definitions* of previous constants in the mutual block and not just their types.  For the same reason, we need to re-evaluate the telescope of parameters.  If one of them failed, its variable has a failed type, but the term can still be checked. *)
       let ctx = eval_append (Ctx.empty mode) bplus params in
       let ety = eval_term (Ctx.env ctx) ty in
+      (* The abstractions over the parameters, and their application to the constant, are implicit where the parameters are. *)
+      let implicits = Telescope.implicits params in
       let tm =
-        Ctx.lam ctx
+        Ctx.lam ~implicits ctx
           (check
-             (Potential (Constant (const, Ctx.mode ctx, D.zero), Ctx.apps ctx, Ctx.lam ctx))
+             (Potential
+                ( Constant (const, Ctx.mode ctx, D.zero),
+                  Ctx.apps ~implicits ctx,
+                  Ctx.lam ~implicits ctx ))
              ctx (Lazy.force tm) ety) in
       Global.set const mode ~parametric:`Maybe_parametric tm;
       Checked (const, mode, tm)
@@ -81,16 +86,20 @@ let check_term (def : defined_const) : checked_term =
             | None -> fatal (Non_mode_synthesizing "synthesizing def")) in
       (* If some of the parameters fail to typecheck, we go on to check the others, and then the term, in a context where the failed ones are variables of failed type.  As for a checking constant, they are then Failed in the type of the constant.  If the term fails to synthesize, it has no type, so both it and its type (after the parameters) are Failed, so that an application of the constant can still check its arguments. *)
       let (Checked_tel (cparams, ctx)) = check_tel (Ctx.empty mode) params in
+      let implicits = Telescope.implicits cparams in
       let ctm, cty =
         Reporter.mortalize ~fallback:(fun () -> (Term.Failed Potential, Term.Failed Kinetic))
         @@ fun () ->
         let ctm, ety =
           synth
-            (Potential (Constant (const, Ctx.mode ctx, D.zero), Ctx.apps ctx, Ctx.lam ctx))
+            (Potential
+               ( Constant (const, Ctx.mode ctx, D.zero),
+                 Ctx.apps ~implicits ctx,
+                 Ctx.lam ~implicits ctx ))
             ctx tm in
         (ctm, readback_val ctx ety) in
       let ty = Telescope.pis cparams cty in
-      let tm = Ctx.lam ctx ctm in
+      let tm = Ctx.lam ~implicits ctx ctm in
       Global.add const (Definition { mode; ty; tm = `Defined tm; parametric = `Maybe_parametric });
       Checked (const, mode, tm)
 

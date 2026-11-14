@@ -512,7 +512,7 @@ let rec process_letrec_terms : type c a.
       let ty = process ctx ty in
       let (Letrec_terms (tel, Suc cb, terms, body)) =
         process_letrec_terms (Snoc (ctx, x)) rest (Snoc (terms, Wrap tm)) (N.suc c) in
-      Letrec_terms (Ext (x, locate_opt None [], ty, tel), cb, terms, body)
+      Letrec_terms (Ext (x, `Explicit, locate_opt None [], ty, tel), cb, terms, body)
   | [ Token (In, _); Term body ] ->
       let (Fplus cb) = Fwn.fplus c in
       let body = process ctx body in
@@ -1223,11 +1223,12 @@ let rec process_higher_dom_group : type n.
       | `Explicit ->
           (* The primary domain ends the group, so any other variables sharing its type become further pi-types with only a primary domain. *)
           let (Some_vars (names, newctx)) = some_vars (Bwv.snoc ctx x.value) xs in
-          Higher_dom_group (Ext (x.value, modality, cdom, Emp), names, newctx, rest, loc)
+          Higher_dom_group (Ext (x.value, `Explicit, modality, cdom, Emp), names, newctx, rest, loc)
       | `Implicit ->
           let (Higher_dom_group (tele, names, newctx, rest2, loc2)) =
             process_higher_dom_same (Bwv.snoc ctx x.value) xs rest loc in
-          Higher_dom_group (Ext (x.value, modality, cdom, tele), names, newctx, rest2, loc2))
+          Higher_dom_group
+            (Ext (x.value, `Implicit, modality, cdom, tele), names, newctx, rest2, loc2))
   | _ -> invalid "higher pi"
 
 and process_higher_dom_same : type n.
@@ -3033,7 +3034,7 @@ let rec process_tel : type a.
           (* The type is shared by all the fields in the group, so we process it only once, in the scope outside all of them. *)
           let ty = process ctx ty in
           let (Any_tel tel) = process_tel_same (Bwv.snoc ctx (Some name)) seen names obs in
-          Any_tel (Ext (Some name, locate_opt None [], ty, tel))
+          Any_tel (Ext (Some name, `Explicit, locate_opt None [], ty, tel))
       | _ -> fatal ?loc:tm.loc (Parse_error "invalid record field name"))
   | _ -> invalid "record"
 
@@ -3303,7 +3304,7 @@ and process_dataconstr_vars : type n.
           let arg = process ctx argty in
           let (Dataconstr (args, body)) =
             process_dataconstr_vars (Bwv.snoc ctx x) xs None tel_args ty in
-          Dataconstr (Ext (x, modality, arg, args), body)
+          Dataconstr (Ext (x, `Explicit, modality, arg, args), body)
       | None ->
           (* The remaining variables that share the type of the previous one. *)
           let (Dataconstr (args, body)) =
