@@ -18,7 +18,7 @@ let () =
            fixity = Infix No.zero;
            pattern = Var (("x", `Nobreak, []), Var_nil ((Op "&", `Break, []), ("y", [])));
            key = `Constant foo;
-           val_vars = [ Some "y"; Some "x" ];
+           val_vars = [ (Some "y", `Explicit); (Some "x", `Explicit) ];
          }) in
   assume "a" "A";
   assume "b" "A";

@@ -676,3 +676,48 @@ Placeholders in the definition of a notation are preserved by reformatting.
   axiom plus (X : Type) (x y : X) : X
   
   notation(0) x "+" y ≔ plus _ x y
+
+The definition of a notation can also give implicit arguments of its head explicitly, in braces, which are displayed with the notation as ordinary operands.  A notation that omits an implicit argument isn't used when implicit arguments are displayed.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom plus {X : Type} (x y : X) : X
+  > axiom a : A
+  > notation(0) x "+" y "@" B ≔ plus {B} x y
+  > echo a + a @ A
+  > echo plus a a
+  > notation(1) x "++" y ≔ plus x y
+  > echo plus a a
+  > display implicits ≔ on
+  > echo plus a a
+  > EOF
+  a + a @ A
+    : A
+  
+  a + a @ A
+    : A
+  
+   ￫ warning[E2209]
+   ￮ replacing printing notation for plus (previous notation will still be parseable)
+  
+  a ++ a
+    : A
+  
+  plus {A} a a
+    : A
+  
+
+Braces in the definition of a notation are preserved by reformatting.
+
+  $ cat >rf3.ny <<EOF
+  > axiom A : Type
+  > axiom plus {X : Type} (x y : X) : X
+  > notation(0) x "+" y "@" B ≔ plus   {B} x y
+  > EOF
+  $ narya rf3.ny
+  $ cat rf3.ny
+  axiom A : Type
+  
+  axiom plus {X : Type} (x y : X) : X
+  
+  notation(0) x "+" y "@" B ≔ plus {B} x y

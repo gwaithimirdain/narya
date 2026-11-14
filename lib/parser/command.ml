@@ -81,7 +81,7 @@ module Command = struct
         head : [ `Constr of string | `Constant of Trie.path ];
         wshead : Whitespace.t list;
         (* The arguments of the head, each a variable of the pattern, or a placeholder "_". *)
-        args : (string option * Whitespace.t list) list;
+        args : ((string option * [ `Explicit | `Implicit ]) * Whitespace.t list) list;
       }
         -> t
     | Import of {
@@ -449,7 +449,7 @@ module Parse = struct
         | _ -> None)
 
   (* An argument of the head of a notation: a variable of its pattern, or a placeholder. *)
-  let notation_var =
+  let notation_var_name =
     (let* loc, (x, ws) = located ident in
      match x with
      | [ x ] when Lexer.valid_var x -> return (Some x, ws)
@@ -458,6 +458,15 @@ module Parse = struct
         match tok with
         | Underscore -> Some ((None, ws), state)
         | _ -> None)
+
+  (* An argument in braces is an implicit argument of the head. *)
+  let notation_var =
+    (let* x, ws = notation_var_name in
+     return ((x, `Explicit), ws))
+    </> let* _ = token LBrace in
+        let* x, _ = notation_var_name in
+        let* ws = token RBrace in
+        return ((x, `Implicit), ws)
 
   let notation =
     let* wsnotation = token Notation in
@@ -1129,14 +1138,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | None -> fatal (Invalid_notation_head (String.concat "." c))) in
       (* Find the "unbound" variables, if any, in the notation definition. *)
       let rec unbounds : type left right.
-          (string option * Whitespace.t list) list ->
+          ((string option * [ `Explicit | `Implicit ]) * Whitespace.t list) list ->
           string list ->
           (left, right) User.Pattern.t ->
-          (string option * Whitespace.t list) list =
+          ((string option * [ `Explicit | `Implicit ]) * Whitespace.t list) list =
        fun args seen pat ->
         let check_var x =
           if List.mem x seen then fatal (Duplicate_notation_variable x);
-          let found, rest = List.partition (fun (y, _) -> Some x = y) args in
+          let found, rest = List.partition (fun ((y, _), _) -> Some x = y) args in
           match found with
           | [ _ ] -> rest
           | [] -> fatal (Unused_notation_variable x)
@@ -1149,9 +1158,15 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
         | Op_nil _ -> args
         | Var_nil (_, (x, _)) -> check_var x in
       (* Placeholders in the definition are not variables. *)
-      (match unbounds (List.filter (fun (x, _) -> Option.is_some x) args) [] pattern with
+      (match unbounds (List.filter (fun ((x, _), _) -> Option.is_some x) args) [] pattern with
       | [] -> ()
-      | _ :: _ as unbound -> fatal (Unbound_variable_in_notation (List.filter_map fst unbound)));
+      | _ :: _ as unbound ->
+          fatal (Unbound_variable_in_notation (List.filter_map (fun ((x, _), _) -> x) unbound)));
+      (* Constructors have no implicit arguments. *)
+      (match key with
+      | `Constr _ when List.exists (fun ((_, i), _) -> i = `Implicit) args ->
+          fatal (Unimplemented "implicit constructor arguments")
+      | _ -> ());
       let user =
         User { id = User.Id.make (); name; fixity; pattern; key; val_vars = List.map fst args }
       in
@@ -1498,6 +1513,12 @@ let tightness_of_fixity : type left tight right. (left, tight, right) fixity -> 
   | Postfixl tight -> Some (No.to_string tight)
   | Outfix -> None
 
+(* An argument of the head of a notation, in braces if it is implicit. *)
+let pp_notation_var ((x, implicit) : string option * [ `Explicit | `Implicit ]) : PPrint.document =
+  match implicit with
+  | `Explicit -> pp_var x
+  | `Implicit -> PPrint.(Token.pp LBrace ^^ pp_var x ^^ Token.pp RBrace)
+
 let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document * Whitespace.t list
     =
  fun prews params ->
@@ -1660,9 +1681,10 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
               let pargs, wargs =
                 List.fold_left
                   (fun (acc, prews) (arg, wsarg) ->
-                    (acc ^^ group (pp_ws `Break prews ^^ pp_var arg), wsarg))
+                    (acc ^^ group (pp_ws `Break prews ^^ pp_notation_var arg), wsarg))
                   (empty, wshead) args in
-              (pargs ^^ group (pp_ws `Break wargs ^^ pp_var last) ^^ pp_ws `None wslast, rest) in
+              ( pargs ^^ group (pp_ws `Break wargs ^^ pp_notation_var last) ^^ pp_ws `None wslast,
+                rest ) in
         let ppat, wpat = User.pp_pattern pattern in
         let notn_tight, ws =
           match tightness_of_fixity fixity with

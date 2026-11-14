@@ -54,8 +54,8 @@ let get_notation : type mode n s. [> `Term of (mode, n, s) term | `Constr of Con
     match (labels, elts) with
     | [], _ -> return (acc, elts)
     | _ :: _, [] -> None
-    | Some k :: labels, x :: elts -> take_labeled labels elts (acc |> StringMap.add k x)
-    | None :: labels, _ :: elts -> take_labeled labels elts acc in
+    | (Some k, _) :: labels, x :: elts -> take_labeled labels elts (acc |> StringMap.add k x)
+    | (None, _) :: labels, _ :: elts -> take_labeled labels elts acc in
   let* first, rest = take_labeled val_vars (Bwd.to_list args) StringMap.empty in
   let first =
     List.map (fun k -> StringMap.find_opt k first <|> Anomaly "not found in get_notation") pat_vars
@@ -482,6 +482,36 @@ let drop_inserted : type a s. dots_at_end:bool -> (a, s) spine_arg Bwd.t -> (a, 
     | Bwd.Snoc (args, (Spine_arg (_, _, `Implicit) as arg)) -> go false (arg :: acc) args in
   Bwd.of_list (go (not dots_at_end) [] args)
 
+(* If the head of an application spine is a constant with an associated notation, match the arguments of the head in the definition of the notation against the arguments in the spine, according to their implicitness, and return the notation, the arguments for its pattern variables in their order, the symbols to intersperse with them, and the remaining arguments.  An explicit argument of the notation matches the next explicit argument, skipping any hidden implicit ones before it, which would be inserted; and an implicit one matches the next implicit argument, hidden or not.  If an implicit argument that is being displayed would be skipped, we don't use the notation, since the notation can't display it. *)
+let notation_of_spine : type mode a s.
+    (mode, a, s) term ->
+    (a, kinetic) spine_arg Bwd.t ->
+    (User.notation * (a, kinetic) spine_arg list * (a, kinetic) spine_arg Bwd.t) option =
+ fun head args ->
+  let open Monad.Ops (Monad.Maybe) in
+  let* ({ pat_vars; val_vars; _ } as notn : User.notation) =
+    match head with
+    | Const c -> Scope.Situation.unparse (`Constant c)
+    | _ -> None in
+  let rec take slots elts acc =
+    match (slots, elts) with
+    | [], _ -> return (acc, elts)
+    | _ :: _, [] -> None
+    | (_, `Explicit) :: _, Spine_arg (_, _, `Hidden) :: elts -> take slots elts acc
+    | (_, `Explicit) :: _, Spine_arg (_, _, `Implicit) :: _ -> None
+    | (_, `Implicit) :: _, Spine_arg (_, _, `Explicit) :: _ -> None
+    | (k, _) :: slots, x :: elts ->
+        take slots elts
+          (match k with
+          | Some k -> acc |> StringMap.add k x
+          | None -> acc) in
+  let* first, rest = take val_vars (Bwd.to_list args) StringMap.empty in
+  let first =
+    List.map
+      (fun k -> StringMap.find_opt k first <|> Anomaly "not found in notation_of_spine")
+      pat_vars in
+  return (notn, first, Bwd.of_list rest)
+
 (* Build a field projection "x .fld" as a parse tree, for use as the "self" pattern in unparsing codatatypes and records.  It is built in the "entire" tightness interval and packed existentially into an observation at the call site. *)
 let unparse_field_app (x : string) (fld : string) (pbij : string list) :
     (No.minus_omega, No.nonstrict, No.minus_omega, No.nonstrict) parse located =
@@ -695,11 +725,27 @@ let rec unparse : type mode n lt ls rt rs s.
       unparse_pis arr notn vars Emp tm li ri
   | App _ -> (
       match get_spine tm with
-      | `App (fn, args) ->
-          let args = drop_inserted ~dots_at_end args in
-          (* A notation is applied to explicit arguments, so if implicit arguments are being displayed (which they are only if requested, or as dots), we display the application as a spine instead. *)
-          let notation = not (Bwd.exists (fun (Spine_arg (_, _, i)) -> i <> `Explicit) args) in
-          unparse_spine ~notation vars (`Term fn) (Bwd.map (make_unparser_implicit vars) args) li ri
+      | `App (fn, args) -> (
+          (* The arguments of a notation are displayed as ordinary terms, even if they are implicit arguments of its head. *)
+          let operand (Spine_arg (plus, x, _)) =
+            make_unparser_implicit vars (Spine_arg (plus, x, `Explicit)) in
+          match notation_of_spine fn args with
+          | Some ({ notn = Wrap notn; inner_symbols; _ }, first, rest) -> (
+              let first = List.map operand first in
+              let rest = drop_inserted ~dots_at_end rest in
+              match rest with
+              | Emp -> unparse_notation notn first inner_symbols li ri
+              | Snoc _ ->
+                  unparse_spine ~notation:false vars
+                    (`Unparser
+                       { unparse = (fun li ri -> unparse_notation notn first inner_symbols li ri) })
+                    (Bwd.map (make_unparser_implicit vars) rest)
+                    li ri)
+          | None ->
+              let args = drop_inserted ~dots_at_end args in
+              unparse_spine ~notation:false vars (`Term fn)
+                (Bwd.map (make_unparser_implicit vars) args)
+                li ri)
       | `Field (head, fld, ins, args) ->
           unparse_spine vars
             (`Field (head, fld, ins))
