@@ -274,7 +274,8 @@ let rec pattern_args : type dom window mode m a.
   match ty with
   | Pi { x = _; filter; implicit; doms = Modal (annotation, _, _); cods } -> (
       match D.compare_zero (CodCube.dim cods) with
-      | Pos _ -> []
+      (* Only the readback of a higher-dimensionally degenerated datatype, which is for display, stores a higher-dimensional function-type as the type of a constructor. *)
+      | Pos _ -> fatal (Anomaly "higher-dimensional function-type of a constructor in a match")
       | Zero ->
           let Eq = Modality.filter_uniq filter (Modality.filter_zero annotation) in
           let (Cod (cfilter, cod)) = CodCube.find_top cods in
@@ -283,7 +284,7 @@ let rec pattern_args : type dom window mode m a.
           let modality = Modality.comp_out window wx in
           let (Has_filter f) = Modality.filter modality m in
           let faces = ref 0 in
-          let _ = CubeOf.build (Modality.filtered m f) { build = (fun _ -> incr faces) } in
+          CubeOf.iter_faces (Modality.filtered m f) { it = (fun _ -> incr faces) };
           (implicit, !faces) :: pattern_args window m cod)
   | _ -> []
 
