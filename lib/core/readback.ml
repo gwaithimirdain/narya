@@ -1976,12 +1976,12 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
               fields in
           let vis = Vis (kind, { dim; plusdim; vars; hasfields; fields; fplus }) in
           Ext (rest, { plus_lock; bindings; filter; vis }, af, comp)
-      | Invis ->
+      | Invis name ->
           (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type we just skip the hints (though internal errors are still reported). *)
           let hints =
             Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
             View.hints_of_ty (Lazy.force top.ty) in
-          Ext (rest, { plus_lock; bindings; filter; vis = Invis { hints } }, af, comp))
+          Ext (rest, { plus_lock; bindings; filter; vis = Invis { hints; name } }, af, comp))
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
 

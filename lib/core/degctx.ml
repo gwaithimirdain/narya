@@ -173,9 +173,9 @@ module Ordered = struct
                     Snoc
                       (newctx', { bindings; filter = filter_kmn; vis = Vis (Alias, data) }, ax, Zero),
                     env ))
-        | Invis -> (
+        | Invis name -> (
             match ext with
-            | Ext_dim -> ext_dim (degenerated ()) Invis))
+            | Ext_dim -> ext_dim (degenerated ()) (Invis name)))
     | Weaken (ctx, code) ->
         let (Degctx (kb, newctx, env)) = degenerate ctx l in
         Degctx (kb, Weaken (newctx, code), env)

@@ -214,18 +214,18 @@ In a match, an implicit argument of a constructor can be omitted from a pattern,
     : (f : A → A) (n : ℕ) (v : Vec n) → Vec n
   
 
-An omitted implicit argument is still in the context of a hole, but it is invisible, so it has no name.
+An omitted implicit argument is still in the context of a hole, and other entries can mention it, so it is displayed there, but marked as not in scope, since the user can't refer to it.
 
   $ narya vec.ny -v -e 'def f (n : ℕ) (v : Vec n) : ℕ ≔ match v [ nil. ↦ zero. | cons. x xs ↦ ? ]' 2>&1 | grep -A8 'hole ?0'
    ￮ hole ?0:
      
-     n ≔ suc. 𝑥 : ℕ
+     n′ : ℕ (not in scope)
+     n ≔ suc. n′ : ℕ
      x : A
-     xs : Vec 𝑥
-     v ≔ cons. x xs : Vec (suc. 𝑥)
+     xs : Vec n′
+     v ≔ cons. x xs : Vec (suc. n′)
      ----------------------------------------------------------------------
      ℕ
-  
 
 Errors in patterns.
 
@@ -287,21 +287,24 @@ In a higher-dimensional match with the cube abstraction ⤇, a braced implicit a
    ￮ constant h' defined, containing 1 hole
    ￫ info[I3003]
    ￮ hole ?0:
-     n0 ≔ suc. 𝑥.0 : ℕ
-     n1 ≔ suc. 𝑥.1 : ℕ
-     n2 ≔ suc. 𝑥.2 : ℕ⁽ᵉ⁾ (suc. 𝑥.0) (suc. 𝑥.1)
+     n.0 : ℕ (not in scope)
+     n.1 : ℕ (not in scope)
+     n.2 : ℕ⁽ᵉ⁾ n.0 n.1 (not in scope)
+     n0 ≔ suc. n.0 : ℕ
+     n1 ≔ suc. n.1 : ℕ
+     n2 ≔ suc. n.2 : ℕ⁽ᵉ⁾ (suc. n.0) (suc. n.1)
      x.0 : A
      x.1 : A
      x.2 : Id A x.0 x.1
-     xs.0 : Vec 𝑥.0
-     xs.1 : Vec 𝑥.1
-     xs.2 : Vec⁽ᵉ⁾ 𝑥.2 xs.0 xs.1
-     v0 ≔ cons. x.0 xs.0 : Vec (suc. 𝑥.0)
-     v1 ≔ cons. x.1 xs.1 : Vec (suc. 𝑥.1)
+     xs.0 : Vec n.0
+     xs.1 : Vec n.1
+     xs.2 : Vec⁽ᵉ⁾ n.2 xs.0 xs.1
+     v0 ≔ cons. x.0 xs.0 : Vec (suc. n.0)
+     v1 ≔ cons. x.1 xs.1 : Vec (suc. n.1)
      v2 ≔ cons. x.2 xs.2
-       : Vec⁽ᵉ⁾ {suc. 𝑥.0} {suc. 𝑥.1} (suc. 𝑥.2) (cons. x.0 xs.0) (cons. x.1 xs.1)
+       : Vec⁽ᵉ⁾ {suc. n.0} {suc. n.1} (suc. n.2) (cons. x.0 xs.0) (cons. x.1 xs.1)
      ----------------------------------------------------------------------
-     ℕ⁽ᵉ⁾ (suc. 𝑥.0) (suc. 𝑥.1)
+     ℕ⁽ᵉ⁾ (suc. n.0) (suc. n.1)
    ￫ error[E3002]
    ￮ command-line exec string contains open holes
 

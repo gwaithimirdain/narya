@@ -158,7 +158,7 @@ let rec ext_pi : type dom window mode a b c ac e n.
                 | Cube x -> Ctx.cube_vis ctx filter_k_k x newnfs
                 | Implicit (x, _) -> Ctx.cube_vis ctx filter_k_k x newnfs
                 (* An omitted implicit argument is bound by an invisible variable. *)
-                | Hidden _ -> Ctx.invis ctx filter_k_k newnfs
+                | Hidden x -> Ctx.invis ?name:x ctx filter_k_k newnfs
                 (* Explicit boundary variables must be exactly one for each face of the cube, the last of them being the top face. *)
                 | Boundary (_, ns) ->
                     let k = CubeOf.dim newnfs in

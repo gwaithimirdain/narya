@@ -333,6 +333,8 @@ module rec Term : sig
         -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn, 'b2) visibility
     | Invis : {
         hints : hints;
+        (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
+        name : string option;
       }
         -> ( 'dom,
              'modality,
@@ -740,6 +742,8 @@ end = struct
         -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn, 'b2) visibility
     | Invis : {
         hints : hints;
+        (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
+        name : string option;
       }
         -> ( 'dom,
              'modality,

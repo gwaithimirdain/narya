@@ -2154,7 +2154,7 @@ let eval_entry : type dom modality mode a b bb f n bm b2.
   let bindings = eval_bindings (ext_kind e comp) ctx filter plus_lock bindings in
   match vis with
   | Vis (kind, v) -> { filter; bindings; vis = Vis (kind, v) }
-  | Invis _ -> { filter; bindings; vis = Invis }
+  | Invis { name; _ } -> { filter; bindings; vis = Invis name }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function

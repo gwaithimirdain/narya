@@ -1034,7 +1034,8 @@ and unparse_letonly_clauses_pending : type mode n i k b.
       let name =
         match vis with
         | Vis (_, { vars = xs; _ }) -> NICubeOf.find_top xs
-        | Invis { hints } -> `Anon hints in
+        | Invis { hints; name = None } -> `Anon hints
+        | Invis { hints = _; name = Some x } -> Variables.binder_name_of_option (Some x) in
       let x, names = Names.add_cube n names name in
       let ty =
         unparse (Names.add_lock names plus_lock) (uninst_letonly_type n top.ty) No.Interval.entire
@@ -2350,7 +2351,36 @@ let rec unparse_ctx : type dom modality mode a b.
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
       match (ext_kind e comp, vis) with
-      | Ext_dim, Invis { hints; _ } ->
+      | Ext_dim, Invis { hints = _; name = Some x } ->
+          (* An invisible entry with a name is bound by a match pattern that omits an implicit argument of a constructor.  The user can't refer to it, but other entries can mention it, so we display it, marked as not in scope. *)
+          let Variables (_, _, xs), names =
+            Names.add names
+              (singleton_variables (CubeOf.dim bindings) (binder_name_of_option (Some x))) in
+          let x = NICubeOf.find_top xs in
+          let modality = Modality.name (plus_lock_modality plus_lock) in
+          let xnames = Names.add_lock names plus_lock in
+          let lock = Modality.name lock in
+          let result = ref result in
+          CubeOf.miter
+            {
+              it =
+                (fun fa [ (b : (edom, bm) binding) ] ->
+                  let ty = Wrap (unparse xnames b.ty No.Interval.entire No.Interval.entire) in
+                  let tm =
+                    Option.map
+                      (fun t -> Wrap (unparse xnames t No.Interval.entire No.Interval.entire))
+                      b.tm in
+                  (* It is a single cube variable, so its faces are named with suffixes, unless it is zero-dimensional. *)
+                  let var =
+                    match D.compare_zero (CubeOf.dim bindings) with
+                    | Zero -> x
+                    | Pos _ -> x ^ "." ^ string_of_sface fa in
+                  result :=
+                    Snoc (!result, { var; modality; renamed = true; hidden = false; lock; tm; ty }));
+            }
+            [ bindings ];
+          (names, !result)
+      | Ext_dim, Invis { hints; name = None } ->
           (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device: the self-variable of a datatype's constructors, or a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
           let _, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           (names, result)

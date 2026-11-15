@@ -286,7 +286,8 @@ module Ordered = struct
           bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings
           (* A variable that has views of its fields can't be bound. *)
       | Vis _ -> bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings
-      | Invis -> bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings in
+      | Invis _ -> bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings
+    in
     return ({ bindings; filter; vis } : _ Ctx_entry.entry)
 
   (* This seems an appropriate place to comment about the "insert" and "bplus_permute" data being returned from (go_)go_bind_some.  The issue is that in addition to a permuted context, we need to compute the permutation relating it to the original context.  In fact we need *two* permutations, one for the raw indices and one for the checked indices.
@@ -310,7 +311,7 @@ module Ordered = struct
    fun e fc ->
     match (e.vis, fc) with
     | Vis (Vars, _), Suc (_, Zero) -> Inserted (Now (Ctx.dim_entry e, Ctx.filter_entry e))
-    | Invis, Suc (_, Zero) -> Inserted (Now (Ctx.dim_entry e, Ctx.filter_entry e))
+    | Invis _, Suc (_, Zero) -> Inserted (Now (Ctx.dim_entry e, Ctx.filter_entry e))
     | Vis (Alias, _), Zero -> Not_inserted
 
   (* The insertion of an entry found later in a telescope, after an entry that is skipped over and stays before it. *)
@@ -325,10 +326,10 @@ module Ordered = struct
     | Vis (Alias, _), Zero, Zero, _ -> ins
     | Vis (Vars, _), Suc (_, Zero), Suc (_, Zero), Inserted ins ->
         Inserted (Later (Ctx.modality_entry e, ins))
-    | Invis, Suc (_, Zero), Suc (_, Zero), Inserted ins ->
+    | Invis _, Suc (_, Zero), Suc (_, Zero), Inserted ins ->
         Inserted (Later (Ctx.modality_entry e, ins))
     | Vis (Vars, _), Suc (_, Zero), Suc (_, Zero), Not_inserted -> Not_inserted
-    | Invis, Suc (_, Zero), Suc (_, Zero), Not_inserted -> Not_inserted
+    | Invis _, Suc (_, Zero), Suc (_, Zero), Not_inserted -> Not_inserted
 
   (* An entry inserted into the checked permutation is a cube of variables, whose extension of the checked context has the modality and dimension of the insertion. *)
   let inserted_cube : type dom modality mode f n x k.
@@ -337,7 +338,7 @@ module Ordered = struct
    fun e ->
     match e.vis with
     | Vis (Vars, _) -> Eq
-    | Invis -> Eq
+    | Invis _ -> Eq
 
   type (_, _, _, _, _) go_go_bind_some =
     | Found : {

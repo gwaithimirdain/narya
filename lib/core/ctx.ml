@@ -42,7 +42,7 @@ include Value.Ctx_entry
 let raw_entry : type dom modality mode f n b2. (dom, modality, mode, f, n, b2) entry -> f N.t =
   function
   | { vis = Vis (_, { vars; fplus; _ }); _ } -> N.plus_out (NICubeOf.out N.zero vars) fplus
-  | { vis = Invis; _ } -> N.zero
+  | { vis = Invis _; _ } -> N.zero
 
 let modality_entry : type dom modality mode f n b2.
     (dom, modality, mode, f, n, b2) entry -> (dom, modality, mode) Modality.t = function
@@ -64,7 +64,7 @@ let bindings_entry : type dom modality mode f n b2.
 let variables_entry : type dom modality mode f n b2.
     (dom, modality, mode, f, n, b2) entry -> n variables = function
   | { vis = Vis (_, { dim; plusdim; vars; _ }); _ } -> Variables (dim, plusdim, vars)
-  | { vis = Invis; bindings; _ } ->
+  | { vis = Invis _; bindings; _ } ->
       (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
       let hints =
         Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
@@ -184,12 +184,13 @@ module Ordered = struct
         dim_comp filter bindings )
 
   let invis : type dom modality mode a b n.
+      ?name:string ->
       (mode, a, b) t ->
       (dom, modality, mode, n, n) Modality.filter_dim ->
       (n, dom Binding.t) CubeOf.t ->
       (mode, a, (b, (modality, n) dim_entry) snoc) t =
-   fun ctx filter bindings ->
-    Snoc (ctx, { bindings; filter; vis = Invis }, Zero, dim_comp filter bindings)
+   fun ?name ctx filter bindings ->
+    Snoc (ctx, { bindings; filter; vis = Invis name }, Zero, dim_comp filter bindings)
 
   let rec raw_length : type mode a b. (mode, a, b) t -> a N.t = function
     | Emp _ -> N.zero
@@ -326,10 +327,10 @@ module Ordered = struct
     match (vis, comp, found) with
     | Vis (Alias, _), Zero, _ -> found
     | Vis (Vars, _), Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
-    | Invis, Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
+    | Invis _, Suc (Zero, Dim _), Found v -> Found (pop_lookup modality n filter v)
     | Vis (Vars, _), Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
         Aliased (Alias_lookup { v with plus = plus_with_locks_dim v.plus n filter })
-    | Invis, Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
+    | Invis _, Suc (Zero, Dim _), Aliased (Alias_lookup v) ->
         Aliased (Alias_lookup { v with plus = plus_with_locks_dim v.plus n filter })
 
   let lock_looked_up : type dom modality mode b field.
@@ -480,7 +481,7 @@ module Ordered = struct
                            plus = plus_with_no_locks (Modality.tgt modality);
                          }))))
     (* By definition, an invisible entry can't be looked up into, and doesn't increment the raw indices. *)
-    | Invis, Suc (Zero, Dim _) ->
+    | Invis _, Suc (Zero, Dim _) ->
         let Zero = pf in
         pop_looked_up e comp (lookup ctx k)
 
@@ -616,7 +617,8 @@ module Ordered = struct
         let implicits, implicit = pop_implicit implicits in
         lam ~implicits ctx
           (Lam (Variables (dim, plusdim, vars), D.plus_out dim plusdim, filter, implicit, tree))
-    | Snoc (ctx, { bindings; filter; vis = Invis }, _, Suc (Zero, Dim _)) when all_free bindings ->
+    | Snoc (ctx, { bindings; filter; vis = Invis _ }, _, Suc (Zero, Dim _)) when all_free bindings
+      ->
         (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
         let hints =
           Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
@@ -814,8 +816,8 @@ let vis_fields (Permute { perm; level; ctx }) xs vars fields fplus af =
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
 
-let invis (Permute { perm; level; ctx }) filter vars =
-  Permute { perm; level = level + 1; ctx = Ordered.invis ctx filter vars }
+let invis ?name (Permute { perm; level; ctx }) filter vars =
+  Permute { perm; level = level + 1; ctx = Ordered.invis ?name ctx filter vars }
 
 type (_, _, _, _, _) locked =
   | Locked :

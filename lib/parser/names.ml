@@ -417,12 +417,17 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
             (Field.to_string f, x))
           (Bwv.to_bwd fields) in
       { ctx = Snoc (ctx, Variables (dim, plusdim, vars), fields); used = !used; hidden; aliases }
-  | Snoc (ctx, { bindings; vis = Invis; _ }, _, Suc (Zero, Dim _)) ->
-      (* Invisible variables are anonymous, but we can still give them hints from their types.  Since this is only for display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
-      let hints =
-        Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
-        View.hints_of_ty (Lazy.force (Ctx.Binding.value (CubeOf.find_top bindings)).ty) in
-      snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) (`Anon hints))
+  | Snoc (ctx, { bindings; vis = Invis name; _ }, _, Suc (Zero, Dim _)) ->
+      (* Invisible variables are anonymous, unless they have a name for display, but we can still give them hints from their types.  Since this is only for display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
+      let name =
+        match name with
+        | Some x -> Variables.binder_name_of_option (Some x)
+        | None ->
+            `Anon
+              ( Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
+                View.hints_of_ty (Lazy.force (Ctx.Binding.value (CubeOf.find_top bindings)).ty) )
+      in
+      snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) name)
   | Lock (ctx, _) ->
       let { ctx; used; hidden; aliases } = of_ordered_ctx ctx in
       { ctx = Lock ctx; used; hidden; aliases }

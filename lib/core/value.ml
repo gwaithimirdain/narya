@@ -85,13 +85,15 @@ module rec Value : sig
           * ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
           -> ('dom, 'modality, 'mode, 'f, 'mn, 'b2) visibility
       | Invis :
-          ( 'dom,
-            'modality,
-            'mode,
-            N.zero,
-            'n,
-            ('mode id, ('modality, 'n) dim_entry) snoc )
-          visibility
+          (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
+          string option
+          -> ( 'dom,
+               'modality,
+               'mode,
+               N.zero,
+               'n,
+               ('mode id, ('modality, 'n) dim_entry) snoc )
+             visibility
   end
 
   module Ordered_ctx : sig
@@ -405,13 +407,15 @@ end = struct
           * ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
           -> ('dom, 'modality, 'mode, 'f, 'mn, 'b2) visibility
       | Invis :
-          ( 'dom,
-            'modality,
-            'mode,
-            N.zero,
-            'n,
-            ('mode id, ('modality, 'n) dim_entry) snoc )
-          visibility
+          (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
+          string option
+          -> ( 'dom,
+               'modality,
+               'mode,
+               N.zero,
+               'n,
+               ('mode id, ('modality, 'n) dim_entry) snoc )
+             visibility
   end
 
   (* An ordered context: a context without a permutation of its raw indices.  See Ctx for more explanation.  We define this in a submodule so that it can be included later in Ctx.Ordered. *)
@@ -739,7 +743,7 @@ module Ordered_ctx = struct
    fun { vis; _ } comp ->
     match (vis, comp) with
     | Vis (Vars, _), Suc (Zero, Dim _) -> Ext_dim
-    | Invis, Suc (Zero, Dim _) -> Ext_dim
+    | Invis _, Suc (Zero, Dim _) -> Ext_dim
     | Vis (Alias, _), Zero -> Ext_alias
 
   (* The extension contributed by an entry can be added to any checked context. *)
