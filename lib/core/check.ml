@@ -347,9 +347,12 @@ let rec group_patternvars : type a ab.
         | None -> `Anonymous in
       cons (Implicit (x.value, named)) (group_patternvars ~faces args items)
   | (`Implicit, _) :: args, _ -> cons (Hidden None) (group_patternvars ~faces args items)
-  | (`Explicit, _) :: args, _ -> (
+  | (`Explicit, n) :: args, _ -> (
       match take_pattern_boundary items with
       | None -> Error (`Count (-(1 + List.length (List.filter (fun (i, _) -> i = `Explicit) args))))
+      (* In a higher-dimensional match with ↦, an explicit argument whose cube has only one face (because it is modally filtered down to dimension zero) is named face by face by a single variable. *)
+      | Some (Pattern_boundary ([ x ], items)) when faces && n = 1 ->
+          cons (Boundary (`Explicit, [ x ])) (group_patternvars ~faces args items)
       | Some (Pattern_boundary ([ x ], items)) ->
           cons (Cube x.value) (group_patternvars ~faces args items)
       | Some (Pattern_boundary ((_ :: _ :: _ as ns), items)) ->

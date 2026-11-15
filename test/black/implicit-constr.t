@@ -349,6 +349,13 @@ In a higher-dimensional match with the non-cube abstraction ↦, every visible v
       → ℕ⁽ᵉ⁾ n0 n1
   
 
+An explicit argument that is modally filtered down to dimension zero has only one face, so in a higher-dimensional match with ↦ it is named by a single variable; and an implicit argument before it can be omitted.
+
+  $ narya -parametric -discrete-coreflector -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]' -e 'def D : Type ≔ data [ c. {n : ℕ} (x :♭| ℕ) (y : ℕ) ]' -e 'def h (d0 d1 : D) (d2 : Id D d0 d1) : ℕ ≔ match d2 [ c. x {y0} {y1} y2 ↦ x ]' -e 'about h'
+  d0 d1 d2 ↦ match d2 [ c. x {y0} {y1} y2 ↦ x ]
+    : (d0 : D) (d1 : D) (d2 : D⁽ᵉ⁾ d0 d1) → ℕ
+  
+
 A dot can skip an implicit argument in any match, and is displayed where it is needed.
 
   $ narya vec.ny -e 'def T : Type ≔ data [ t. {m n : ℕ} (x : A) ]' -e 'def f (v : T) : ℕ ≔ match v [ t. . {k} x ↦ k ]' -e 'def g (v : T) : ℕ ≔ match v [ t. . . x ↦ zero. ]' -e 'about f' -e 'about g'
