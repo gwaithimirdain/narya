@@ -44,6 +44,13 @@ type extern_error = ..
 
 (* In addition, in Asai messages are emitted by performing an effect or raising an exception that carries with it the data of a function of type "formatter -> unit", which is then called by the handler Reporter.run to format the message text as part of a larger display formatting.  This causes problems if we define our printing functions naively, since it means that any effects performed by the formatting function (such as looking up names in a Yuujinchou Scope) will take place in the context of the handler, not that where the message was invoked, and hence in the wrong scope.  To deal with this, we ensure that the printable values are converted to PPrint documents directly in "default_text", before they are passed to Asai. *)
 
+(* Printing the terms in an error message can take a noticeable amount of time, and the errors of an attempt that is going to be abandoned are never displayed.  So inside "quietly", which is called by "attempt" below, the text of an error is not computed at all.  (Bugs are still displayed, as are emitted diagnostics that aren't errors, since those of an attempt that succeeds are passed on.) *)
+let quiet = ref 0
+
+let quietly f =
+  incr quiet;
+  Fun.protect ~finally:(fun () -> decr quiet) f
+
 let printer : (printable -> PPrint.document) ref =
   ref (fun _ -> raise (Failure "print not set (hint: Parser.Unparse must be loaded)"))
 
@@ -1302,6 +1309,11 @@ module Code = struct
           textf
             "@[<v 0>%t@;@;(displaying this error encountered one or more terms that are unprintable,@ probably due to previous errors.@ If there are no other errors, this is probably a bug; please report it.)@]"
             msg
+
+  (* Inside "quietly", we don't compute the text of an error at all. *)
+  let default_text (err : t) : text =
+    if !quiet > 0 && default_severity err = Error then text "error in an abandoned attempt"
+    else default_text err
 end
 
 module Delegate = Asai.StructuredReporter.Make (Code)
@@ -1581,6 +1593,14 @@ let capture (f : unit -> 'a) : ('a, pending Bwd.t) Result.t =
       release ps;
       Ok x
   | Error ps -> Error ps
+
+(* [attempt] is for trying something that will be done some other way if it fails, when the errors from the failure are not wanted.  It returns None as soon as the first error is reported, rather than continuing on to collect more of them, and the texts of the errors are never computed (see [quietly]).  In case of success, it releases the emitted diagnostics immediately, like [capture].  Bugs are passed through.  A caller that turns out to want the errors after all, such as when every alternative has failed, can get them by running the same callback over again with [capture]. *)
+let attempt (f : unit -> 'a) : 'a option =
+  match quietly (fun () -> collect ~passthrough:is_bug ~emits_only:true f) with
+  | Ok x, ps ->
+      release ps;
+      Some x
+  | Error _, _ -> None
 
 (* Report errors captured by [capture] or [speculate], and then fail silently since they were collectively fatal.  Note that this should only be passed a list containing at least one mortal error, such as [capture] and [speculate] return when they fail. *)
 let replay (ps : pending Bwd.t) : 'a =

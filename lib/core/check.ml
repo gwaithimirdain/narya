@@ -4535,14 +4535,18 @@ and synth : type mode a b s.
                             (* A step marked as reversed is checked only in the reversed orientation. *)
                             | `Reversed -> reversed ()
                             | `Plain -> (
-                                match Control.capture forward with
-                                | Ok result -> result
+                                (* A step that has to be reversed fails forwards in ordinary use, so we try it with [attempt], which doesn't spend time on the error messages. *)
+                                match Control.attempt forward with
+                                | Some result -> result
                                 (* If that didn't work, we backtrack and try reversing the equality and checking that instead. *)
-                                | Error errs -> (
-                                    match Control.capture reversed with
-                                    | Ok result -> result
-                                    (* But if that also fails, we report only the errors from the forwards direction (unless the reversed check hit a bug, which [capture] passes through). *)
-                                    | Error _ -> Reporter.replay errs)))
+                                | None -> (
+                                    match Control.attempt reversed with
+                                    | Some result -> result
+                                    (* But if that also fails, we report only the errors from the forwards direction (unless one of the checks hit a bug, which [attempt] passes through).  To get them, we check that direction over again. *)
+                                    | None -> (
+                                        match Control.capture forward with
+                                        | Ok result -> result
+                                        | Error errs -> Reporter.replay errs))))
                         | None -> (
                             with_loc z.loc @@ fun () ->
                             match equal_at ctx ny.tm ez ty with

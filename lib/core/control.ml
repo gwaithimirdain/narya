@@ -14,6 +14,14 @@ exception Backtrack = Reporter.Backtrack
 let capture (f : unit -> 'a) : ('a, Reporter.pending Bwd.t) Result.t =
   Origin.speculate (fun () -> Reporter.capture f)
 
+(* Like [capture], but the errors of a failure are discarded without their texts ever being computed (see Reporter.attempt).  This is much faster when an attempt is expected to fail in ordinary use.  If the errors turn out to be wanted after all, the caller can run the same callback again with [capture]: since a failed attempt is backtracked, that produces the errors the first try would have. *)
+let attempt (f : unit -> 'a) : 'a option =
+  Result.to_option
+    (Origin.speculate (fun () ->
+         match Reporter.attempt f with
+         | Some x -> Ok x
+         | None -> Error ()))
+
 (* Like [capture], but in the case of success the emitted diagnostics are returned to the caller rather than released (see Reporter.speculate). *)
 let speculate (f : unit -> 'a) : ('a * Reporter.pending Bwd.t, Reporter.pending Bwd.t) Result.t =
   Origin.speculate (fun () -> Reporter.speculate f)
