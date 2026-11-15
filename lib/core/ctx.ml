@@ -251,18 +251,15 @@ module Ordered = struct
         -> ('mode, 'anm, 'field) lookup
 
   (* A raw variable can also be an alias, which has no checked variable but only a value.  In this case we return its value, which lives in the context 'b at the position of the alias locked by its modality, and all the context entries and locks to its right. *)
-  type (_, _) alias_lookup =
-    | Alias_lookup : {
+  type (_, _, _) looked_up =
+    | Found : ('mode, 'b, 'field) lookup -> ('mode, 'b, 'field) looked_up
+    | Aliased : {
         value : 'dom normal;
         dirt : Positivity.recursion;
         modality : ('dom, 'modality, 'cod) Modality.t;
         plus : ('b, 'cod, 'm, 'mode, 'bm) plus_with_locks;
       }
-        -> ('mode, 'bm) alias_lookup
-
-  type (_, _, _) looked_up =
-    | Found : ('mode, 'b, 'field) lookup -> ('mode, 'b, 'field) looked_up
-    | Aliased : ('mode, 'b) alias_lookup -> ('mode, 'b, 'field) looked_up
+        -> ('mode, 'bm, 'field) looked_up
 
   let pop_lookup : type dom modality mode b n field.
       (dom, modality, mode) Modality.t ->
@@ -295,8 +292,7 @@ module Ordered = struct
     match (vars, found) with
     | Alias, _ -> found
     | Vars, Found v -> Found (pop_lookup modality n filter v)
-    | Vars, Aliased (Alias_lookup v) ->
-        Aliased (Alias_lookup { v with plus = plus_with_locks_dim v.plus n filter })
+    | Vars, Aliased v -> Aliased { v with plus = plus_with_locks_dim v.plus n filter }
 
   let lock_looked_up : type dom modality mode b field.
       (dom, modality, mode) Modality.gen ->
@@ -304,8 +300,7 @@ module Ordered = struct
       (dom, (b, modality lock_entry) snoc, field) looked_up =
    fun mu -> function
     | Found v -> Found (lock_lookup mu v)
-    | Aliased (Alias_lookup v) ->
-        Aliased (Alias_lookup { v with plus = plus_with_locks_lock v.plus mu })
+    | Aliased v -> Aliased { v with plus = plus_with_locks_lock v.plus mu }
 
   (* Find the face of a cube of visible variables named by a raw index, if it is in that cube, or else the remaining raw index. *)
   type (_, _) find_in_cube =
@@ -433,13 +428,12 @@ module Ordered = struct
                 (* The variables of an alias have only values. *)
                 | Alias ->
                     Aliased
-                      (Alias_lookup
-                         {
-                           value = Binding.value x;
-                           dirt = Binding.dirt x;
-                           modality;
-                           plus = plus_with_no_locks (Modality.tgt modality);
-                         }))))
+                      {
+                        value = Binding.value x;
+                        dirt = Binding.dirt x;
+                        modality;
+                        plus = plus_with_no_locks (Modality.tgt modality);
+                      })))
     (* By definition, an invisible entry can't be looked up into, and doesn't increment the raw indices. *)
     | Invis ->
         let Zero = pf in

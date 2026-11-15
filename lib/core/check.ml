@@ -3663,7 +3663,7 @@ and synth : type mode a b s.
     | Var i, _ -> (
         (* We look up the raw variable index in the context.  This returns its De Bruijn level (which we don't need), its value, its annotating modality, and the information that goes into its De Bruijn index (insertion and plus_with_locks). *)
         match Ctx.lookup ctx i with
-        | Aliased (Alias_lookup { value; dirt; modality; plus = plus_tgt }) -> (
+        | Aliased { value; dirt; modality; plus = plus_tgt } -> (
             Positivity.record dirt;
             (* Since an alias has no corresponding variable, we have to read its value back into the current context to get a term. *)
             let (Plus_with_locks (_, locks)) = plus_tgt in
