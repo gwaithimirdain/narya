@@ -615,6 +615,13 @@ Boundary patterns must be followed by the pattern they belong to.
   
   [1]
 
+An argument of a constructor that is modally filtered down to dimension zero has only one face, so in a higher-dimensional match with ↦ it is named by a single variable, which is not a cube variable.
+
+  $ narya -parametric -discrete-coreflector -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]' -e 'def D : Type ≔ data [ c. (x :♭| ℕ) (y : ℕ) ]' -e 'def h (d0 d1 : D) (d2 : Id D d0 d1) : ℕ ≔ match d2 [ c. x {y0} {y1} y2 ↦ x ]' -e 'about h'
+  d0 d1 d2 ↦ match d2 [ c. x {y0} {y1} y2 ↦ x ]
+    : (d0 : D) (d1 : D) (d2 : D⁽ᵉ⁾ d0 d1) → ℕ
+  
+
 Boundary patterns are patterns, so they have the same restrictions on variable names as other patterns.
 
   $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m} {m} _ ↦ 0 ]'
