@@ -346,8 +346,25 @@ let find_data trie x =
     (fun (path, ((data, _), _)) -> if data = x then Some path else None)
     (Trie.to_seq trie)
 
+(* Since this requires traversing the whole trie, when printing many constants (as in a large term) we don't want to do it over again for each one.  So we make a table of the names of all the constants in a trie, and remember the last such table we made along with the trie it was made from.  If a constant has more than one name, we use the first one that appears in the trie, as ordered by Trie.to_seq. *)
+let names_cache : (trie * (Constant.t, Trie.path) Hashtbl.t) option ref = ref None
+
+let names_in trie =
+  match !names_cache with
+  | Some (trie', names) when trie' == trie -> names
+  | _ ->
+      let names = Hashtbl.create 100 in
+      Seq.iter
+        (fun (path, ((data, _), _)) ->
+          match data with
+          | `Constant c -> if not (Hashtbl.mem names c) then Hashtbl.add names c path
+          | `Notation _ -> ())
+        (Trie.to_seq trie);
+      names_cache := Some (trie, names);
+      names
+
 let name_of c =
-  match find_data (get_visible ()) (`Constant c) with
+  match Hashtbl.find_opt (names_in (get_visible ())) c with
   | Some name -> name
   (* TODO: Better to munge the original name. *)
   | None -> "_OUT_OF_SCOPE" :: Option.value ~default:[] (Hashtbl.find_opt original_names c)
