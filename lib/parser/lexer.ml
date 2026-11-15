@@ -200,15 +200,28 @@ module Specials = struct
   let digit_vars () = (read ()).digit_vars
 end
 
-let onechar_uchars () = Array.map (fun c -> Uchar.of_int (fst c)) (Specials.onechar_ops ())
-let onechar_tokens () = Array.map snd (Specials.onechar_ops ())
+(* The following arrays are computed from the current special-character data, and are consulted for every character lexed.  So we remember the last one computed, along with the data it was computed from, and recompute it only when that data changes. *)
+let memo : (Specials.Data.t -> 'a) -> unit -> 'a =
+ fun f ->
+  let cache = ref None in
+  fun () ->
+    let data = Specials.read () in
+    match !cache with
+    | Some (data', value) when data' == data -> value
+    | _ ->
+        let value = f data in
+        cache := Some (data, value);
+        value
+
+let onechar_uchars = memo (fun data -> Array.map (fun c -> Uchar.of_int (fst c)) data.onechar_ops)
+let onechar_tokens = memo (fun data -> Array.map snd data.onechar_ops)
 
 let onechar_op : Token.t t =
   let* c = ucharp (fun c -> Array.mem c (onechar_uchars ())) "one-character operator" in
   let i = Option.get (Array.find_index (fun x -> x = c) (onechar_uchars ())) in
   return (onechar_tokens ()).(i)
 
-let ascii_symbol_uchars () = Array.map Uchar.of_char (Specials.ascii_symbols ())
+let ascii_symbol_uchars = memo (fun data -> Array.map Uchar.of_char data.ascii_symbols)
 let is_ascii_symbol c = Array.mem c (Specials.ascii_symbols ())
 
 let ascii_op : Token.t t =
@@ -264,7 +277,8 @@ let caret_superscript =
 let superscript = utf8_superscript </> caret_superscript
 
 (* For other identifiers, we consume (utf-8) characters until we reach whitespace or a special symbol.  Here's the set of specials. *)
-let specials () =
+let specials =
+  memo @@ fun _ ->
   Array.concat
     [
       ascii_symbol_uchars ();
