@@ -488,13 +488,14 @@ let drop_inserted : type a s. dots_at_end:bool -> (a, s) spine_arg Bwd.t -> (a, 
     | Bwd.Snoc (args, (Spine_arg (_, _, `Implicit) as arg)) -> go false (arg :: acc) args in
   Bwd.of_list (go (not dots_at_end) [] args)
 
-(* Match the arguments of the head in the definition of a notation against the arguments in a spine, according to their implicitness, and return the notation, the arguments for its pattern variables in their order, the symbols to intersperse with them, and the remaining arguments.  An explicit argument of the notation matches the next explicit argument, skipping any hidden implicit ones before it, which would be inserted; and an implicit one matches the next implicit argument, hidden or not.  If an implicit argument that is being displayed would be skipped, we don't use the notation, since the notation can't display it. *)
+(* Match the arguments of the head in the definition of a notation against the arguments in a spine (or the variables in a pattern), according to their implicitness, and return the notation, the arguments for its pattern variables in their order, the symbols to intersperse with them, and the remaining arguments.  An explicit argument of the notation matches the next explicit argument, skipping any hidden implicit ones before it, which would be inserted; and an implicit one matches the next implicit argument, hidden or not.  If an implicit argument that is being displayed would be skipped, or omitted by a placeholder in the notation, we don't use the notation, since the notation can't display it. *)
 let match_notation : type x.
+    ?droppable:(x -> bool) ->
     (x -> [ `Implicit | `Explicit | `Hidden ]) ->
     User.notation ->
     x Bwd.t ->
     (User.notation * x list * x Bwd.t) option =
- fun kind ({ pat_vars; val_vars; _ } as notn) args ->
+ fun ?(droppable = fun _ -> true) kind ({ pat_vars; val_vars; _ } as notn) args ->
   let open Monad.Ops (Monad.Maybe) in
   let rec take slots elts acc =
     match (slots, elts) with
@@ -505,6 +506,8 @@ let match_notation : type x.
         | `Explicit, `Hidden -> take slots elts' acc
         | `Explicit, `Implicit -> None
         | `Implicit, `Explicit -> None
+        (* A placeholder in the definition of the notation omits the argument it matches, which must therefore be one that we can omit. *)
+        | _ when k = None && not (droppable x) -> None
         | _ ->
             take slots' elts'
               (match k with
@@ -530,15 +533,16 @@ let notation_of_spine : type mode a s.
     match head with
     | Const c -> Scope.Situation.unparse (`Constant c)
     | _ -> None in
-  match_notation spine_arg_kind notn args
+  match_notation ~droppable:(fun x -> spine_arg_kind x <> `Implicit) spine_arg_kind notn args
 
 (* A notation for a constructor is associated to the number of arguments in its definition, which may or may not include its implicit ones, so we try all the numbers that it could be, starting with the smallest, so as to prefer a notation that doesn't display hidden implicit arguments.  Since a constructor is always fully applied, the notation must use all the arguments, apart from hidden implicit ones that would be inserted. *)
 let notation_of_constr : type x.
+    ?droppable:(x -> bool) ->
     (x -> [ `Implicit | `Explicit | `Hidden ]) ->
     Constr.t ->
     x Bwd.t ->
     (User.notation * x list) option =
- fun kind c args ->
+ fun ?droppable kind c args ->
   let explicit = Bwd.fold_left (fun n x -> if kind x = `Explicit then n + 1 else n) 0 args in
   let rec go k =
     if k > Bwd.length args then None
@@ -546,7 +550,7 @@ let notation_of_constr : type x.
       match
         Option.bind
           (Scope.Situation.unparse (`Constr (c, k)))
-          (fun notn -> match_notation kind notn args)
+          (fun notn -> match_notation ?droppable kind notn args)
       with
       | Some (notn, first, rest) when Bwd.for_all (fun x -> kind x = `Hidden) rest ->
           Some (notn, first)
@@ -966,7 +970,11 @@ let rec unparse : type mode n lt ls rt rs s.
           (* The arguments of a notation are displayed as ordinary terms, even if they are implicit arguments of the constructor. *)
           let operand (Spine_arg (plus, x, _)) =
             make_unparser_implicit vars (Spine_arg (plus, x, `Explicit)) in
-          match notation_of_constr spine_arg_kind c args with
+          match
+            notation_of_constr
+              ~droppable:(fun x -> spine_arg_kind x <> `Implicit)
+              spine_arg_kind c args
+          with
           | Some ({ notn = Wrap notn; inner_symbols; _ }, first) ->
               unparse_notation notn (List.map operand first) inner_symbols li ri
           | None ->
@@ -1414,7 +1422,8 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
             let args = List.fold_left (unparse_pattern_var ~shown) Emp xs in
             (* A notation for the constructor matches the pattern variables according to their implicitness, as for a term, and displays them without braces. *)
             let pat =
-              match notation_of_constr snd c args with
+              (* A pattern variable can be omitted by a placeholder in the notation only if it is hidden, since it might be used in the body. *)
+              match notation_of_constr ~droppable:(fun (_, i) -> i = `Hidden) snd c args with
               | Some ({ notn = Wrap notn; inner_symbols; _ }, first) ->
                   unparse_notation notn (List.map fst first) inner_symbols No.Interval.entire
                     No.Interval.entire
