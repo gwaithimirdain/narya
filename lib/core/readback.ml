@@ -155,52 +155,48 @@ let rec is_identity_ordered_env : type mode a b c d.
             | Some Eq -> Some Eq
             | None -> None
           else None)
-  | Snoc (ctx, entry, _), Ext (envctx, tentry, _) -> (
-      match (entry.vars, tentry.vars) with
-      | Alias, _ | _, Alias -> None
-      | Vars, Vars -> (
-          let modality = Ctx.modality_entry entry in
-          let bindings = Ctx.bindings_entry entry in
-          let k = CubeOf.dim bindings in
-          match
-            (Modality.compare modality (modality_entry tentry), D.compare k (dim_entry tentry))
-          with
-          | Eq, Eq -> (
-              let exception Not_identity in
-              try
-                (* If the environment's top entry is itself physically equal to this entry of the context, there is nothing to look up. *)
-                (if is_top_bindings env modality bindings then ()
-                 else if Option.is_none (Binding.value_opt (CubeOf.find_top bindings)) then
-                   (* If the entry is not yet determined (as while reading back its own bindings in readback_entry), it can't match, so we don't bother looking anything up. *)
-                   raise_notrace Not_identity
-                 else
-                   (* Otherwise we look up the top entry in the environment and check whether it is "the same as" the one in the context in a weaker sense. *)
-                   let (Looked_up { act; op; entry = xs; pre }) =
-                     lookup_cube env (D.zero_plus k) modality modality Now (id_opt_op k) in
-                   (* For free variables, we check that they have the same level and identity degeneracies and keys; for let-bound variables we check that their defined values are physically equal (skipping a costly semantic-equality check).  Neither of these can succeed if the looked up value has a nonidentity operation or key on it, since the act functions only return physically equal values if they short-circuit; so we wait to force the value with "act" until checking those.  (We do still need to call "act" even though the actions are identities, because lookup_cube returns an abstract type that we have to force into a value.) *)
-                   match (is_id_opt_op op, Modalcell.is_id pre) with
-                   | Some Eq, true ->
-                       let s = id_deg k in
-                       CubeOf.miter2
-                         {
-                           it2 =
-                             (fun _ x b ->
-                               if
-                                 not
-                                   (match (Binding.level b, Binding.value_opt b) with
-                                   | Some level, _ -> is_plain_var level (act x s pre)
-                                   | None, Some v -> v.tm == act x s pre
-                                   | None, None -> false)
-                               then raise_notrace Not_identity);
-                         }
-                         xs bindings
-                   | _ -> raise_notrace Not_identity);
-                (* If we get here, the top environment entry succeded in matching the context entry, so we recurse. *)
-                match is_identity_ordered_env ctx (remove_top env) envctx with
-                | Some Eq -> Some Eq
-                | None -> None
-              with Not_identity -> None)
-          | _ -> None))
+  | Snoc (ctx, ({ vars = Vars; _ } as entry), _), Ext (envctx, ({ vars = Vars; _ } as tentry), _)
+    -> (
+      let modality = Ctx.modality_entry entry in
+      let bindings = Ctx.bindings_entry entry in
+      let k = CubeOf.dim bindings in
+      match (Modality.compare modality (modality_entry tentry), D.compare k (dim_entry tentry)) with
+      | Eq, Eq -> (
+          let exception Not_identity in
+          try
+            (* If the environment's top entry is itself physically equal to this entry of the context, there is nothing to look up. *)
+            (if is_top_bindings env modality bindings then ()
+             else if Option.is_none (Binding.value_opt (CubeOf.find_top bindings)) then
+               (* If the entry is not yet determined (as while reading back its own bindings in readback_entry), it can't match, so we don't bother looking anything up. *)
+               raise_notrace Not_identity
+             else
+               (* Otherwise we look up the top entry in the environment and check whether it is "the same as" the one in the context in a weaker sense. *)
+               let (Looked_up { act; op; entry = xs; pre }) =
+                 lookup_cube env (D.zero_plus k) modality modality Now (id_opt_op k) in
+               (* For free variables, we check that they have the same level and identity degeneracies and keys; for let-bound variables we check that their defined values are physically equal (skipping a costly semantic-equality check).  Neither of these can succeed if the looked up value has a nonidentity operation or key on it, since the act functions only return physically equal values if they short-circuit; so we wait to force the value with "act" until checking those.  (We do still need to call "act" even though the actions are identities, because lookup_cube returns an abstract type that we have to force into a value.) *)
+               match (is_id_opt_op op, Modalcell.is_id pre) with
+               | Some Eq, true ->
+                   let s = id_deg k in
+                   CubeOf.miter2
+                     {
+                       it2 =
+                         (fun _ x b ->
+                           if
+                             not
+                               (match (Binding.level b, Binding.value_opt b) with
+                               | Some level, _ -> is_plain_var level (act x s pre)
+                               | None, Some v -> v.tm == act x s pre
+                               | None, None -> false)
+                           then raise_notrace Not_identity);
+                     }
+                     xs bindings
+               | _ -> raise_notrace Not_identity);
+            (* If we get here, the top environment entry succeded in matching the context entry, so we recurse. *)
+            match is_identity_ordered_env ctx (remove_top env) envctx with
+            | Some Eq -> Some Eq
+            | None -> None
+          with Not_identity -> None)
+      | _ -> None)
   | _ -> None
 
 (* The ways we can read back a metavariable whose environment is the identity, possibly weakened. *)
