@@ -263,7 +263,9 @@ let make_user : prenotation -> notation =
                   match k with
                   | None -> Var { value = None; loc }
                   | Some k -> StringMap.find k args in
-                { braced = implicit = `Implicit; pat } in
+                match implicit with
+                | `Implicit -> Braced pat
+                | `Explicit -> Plain pat in
               let (Wrap args) = Vec.of_list_map arg val_vars in
               Matchpattern.Constr ({ value = c; loc }, args)
           | _ -> fatal (Anomaly "make_user"));

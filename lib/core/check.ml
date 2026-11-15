@@ -287,7 +287,7 @@ let rec pattern_args : type dom window mode m a.
           (implicit, !faces) :: pattern_args window m cod)
   | _ -> []
 
-(* Group the pattern variables of a branch, as written by the user, into the pattern variables of the arguments of the constructor.  An explicit argument takes the next variable that isn't in braces, along with any in braces before it, which name the faces of its boundary.  An implicit argument can be bound by a single cube variable in braces, or omitted, in which case it is bound invisibly.  But in a higher-dimensional match with the non-cube abstraction ↦, every variable has to be named face by face, so an implicit argument takes a variable in braces for each face of its cube; it can't be omitted, which is reported later as for any cube variable there.  If the number of variables is wrong, we return the number of extra ones (positive) or missing explicit ones (negative). *)
+(* Group the pattern variables of a branch, as written by the user, into the pattern variables of the arguments of the constructor, as for the arguments of a function application.  An explicit argument takes the next variable that isn't in braces, along with any in braces before it, which name the faces of its boundary.  An implicit argument can be bound by a single cube variable in braces, or skipped by a dot or omitted (if the next variable isn't in braces), in which case it is bound invisibly.  But in a higher-dimensional match with the non-cube abstraction ↦, every visible variable is named face by face, so if an implicit argument isn't skipped or omitted, it takes a variable in braces for each face of its cube.  If the number of variables is wrong, we return the number of extra ones (positive) or missing explicit ones (negative); and we also report a dot that doesn't skip an implicit argument. *)
 type (_, _) grouped_patternvars =
   | Grouped : ('a, 'c, 'ab) Patternvars.t -> ('a, 'ab) grouped_patternvars
 
@@ -299,7 +299,7 @@ type (_, _) pattern_boundary =
 (* Some variables in braces followed by one that isn't, if there is one. *)
 let rec take_pattern_boundary : type a ab. (a, ab) Patternitems.t -> (a, ab) pattern_boundary option
     = function
-  | [] -> None
+  | [] | Dot _ -> None
   | (`Plain, x) :: rest -> Some (Pattern_boundary ([ x ], rest))
   | (`Braced, x) :: rest -> (
       match take_pattern_boundary rest with
@@ -320,17 +320,21 @@ let rec take_braced : type a ab. int -> (a, ab) Patternitems.t -> (a, ab) patter
 let rec count_patternitems : type a ab. (a, ab) Patternitems.t -> int = function
   | [] -> 0
   | _ :: xs -> 1 + count_patternitems xs
+  | Dot (_, xs) -> 1 + count_patternitems xs
 
 let rec group_patternvars : type a ab.
     faces:bool ->
     (implicitness * int) list ->
     (a, ab) Patternitems.t ->
-    ((a, ab) grouped_patternvars, int) Result.t =
+    ((a, ab) grouped_patternvars, [ `Count of int | `Dot of Asai.Range.t option ]) Result.t =
  fun ~faces args items ->
   let cons x = Result.map (fun (Grouped xs) -> Grouped (x :: xs)) in
   match (args, items) with
   | [], [] -> Ok (Grouped [])
-  | [], _ :: _ -> Error (count_patternitems items)
+  | [], _ -> Error (`Count (count_patternitems items))
+  | (`Implicit, _) :: args, Dot (_, items) ->
+      cons (Hidden None) (group_patternvars ~faces args items)
+  | (`Explicit, _) :: _, Dot (loc, _) -> Error (`Dot loc)
   | (`Implicit, n) :: args, (`Braced, _) :: _ when faces -> (
       match take_braced n items with
       | Some (Pattern_boundary (ns, items)) ->
@@ -345,7 +349,7 @@ let rec group_patternvars : type a ab.
   | (`Implicit, _) :: args, _ -> cons (Hidden None) (group_patternvars ~faces args items)
   | (`Explicit, _) :: args, _ -> (
       match take_pattern_boundary items with
-      | None -> Error (-(1 + List.length (List.filter (fun (i, _) -> i = `Explicit) args)))
+      | None -> Error (`Count (-(1 + List.length (List.filter (fun (i, _) -> i = `Explicit) args))))
       | Some (Pattern_boundary ([ x ], items)) ->
           cons (Cube x.value) (group_patternvars ~faces args items)
       | Some (Pattern_boundary ((_ :: _ :: _ as ns), items)) ->
@@ -358,6 +362,9 @@ let rec ungrouped_patternvars : type a ab. (a, ab) Patternitems.t -> (a, ab) gro
   | (_, x) :: xs ->
       let (Grouped xs) = ungrouped_patternvars xs in
       Grouped (Cube x.value :: xs)
+  | Dot (_, xs) ->
+      let (Grouped xs) = ungrouped_patternvars xs in
+      Grouped (Hidden None :: xs)
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype.  Curiously, the only mode parameter that appears here is the *source* of the window modality, i.e. the mode at which the datatype and discriminee live. *)
 let merge_branches : type hmode dom window mode a m.
@@ -396,8 +403,11 @@ let merge_branches : type hmode dom window mode a m.
               let Grouped xs, ty, grouped =
                 match grouped with
                 | Ok xs -> (xs, ty, true)
-                | Error n ->
+                | Error (`Count n) ->
                     mortal ?loc (Wrong_number_of_arguments_to_pattern (constr, n));
+                    (ungrouped_patternvars items, Term.Failed Kinetic, false)
+                | Error (`Dot dotloc) ->
+                    mortal ?loc:dotloc Invalid_dot_pattern;
                     (ungrouped_patternvars items, Term.Failed Kinetic, false) in
               (* Check that the abstraction symbol matches the dimension of the discriminee.  A non-cube abstraction ↦ is allowed in a higher-dimensional match as long as none of the pattern variables it binds is a cube variable, i.e. all of them come with explicit boundaries.  If it is wrong, the branch can still be checked, since the variables it binds are determined by the constructor. *)
               (match (cube, D.compare_zero (dim_env env)) with

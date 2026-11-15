@@ -112,11 +112,13 @@ module Namevec (I : Indices) = struct
     | x :: xs -> x.value :: to_list xs
 end
 
-(* The pattern variables of one branch of a match, as written by the user: a list of them, each either plain or in braces, with the locations of the patterns that they come from (for error reporting).  The index is the raw context extended by all of them.  The parser doesn't know which arguments of the constructor are implicit, so it can't tell what a pattern variable in braces means (see below); this is decided by the typechecker, which groups them into Patternvars. *)
+(* The pattern variables of one branch of a match, as written by the user: a list of them, each either plain or in braces (along with dots, which bind nothing), with the locations of the patterns that they come from (for error reporting).  The index is the raw context extended by all of them.  The parser doesn't know which arguments of the constructor are implicit, so it can't tell what a pattern variable in braces means (see below); this is decided by the typechecker, which groups them into Patternvars. *)
 module Patternitems (I : Indices) = struct
   type (_, _) t =
     | [] : ('a, 'a) t
     | ( :: ) : ([ `Plain | `Braced ] * I.name located) * ('a I.suc, 'ab) t -> ('a, 'ab) t
+    (* A dot, which skips an implicit argument, binding no variable. *)
+    | Dot : Asai.Range.t option * ('a, 'ab) t -> ('a, 'ab) t
 end
 
 (* The pattern variables of one branch of a match: one entry for each argument of the constructor, which is either a single variable (which for a higher-dimensional match is a cube variable, with its boundary accessed by face suffixes), or an explicit list of variables naming all the faces of its boundary, the last of which is the top face, along with the locations of the patterns that they come from (for error reporting).  An implicit argument is either a single (cube) variable, written in braces (where we remember whether the user named it, since when we supply a name for display it is no longer None), or omitted, in which case it is bound by an invisible variable that the user can't refer to (and we record the name of the argument of the constructor, for display).  The middle index counts the *arguments*, hence is the arity of the constructor, while the last index is the raw context extended by all the variables actually bound. *)
@@ -162,9 +164,9 @@ module Patternvars (I : Indices) = struct
   (* Whether every argument has its boundary given explicitly, so that no cube variables are bound.  (Vacuously true for a constructor with no arguments.) *)
   let rec all_boundary : type a b ab. (a, b, ab) t -> bool = function
     | [] -> true
-    (* An invisible variable is a cube variable too. *)
-    | (Cube _ | Implicit _ | Hidden _) :: _ -> false
-    | Boundary _ :: xs -> all_boundary xs
+    (* An invisible variable is never referred to, so it doesn't matter that it is a cube variable. *)
+    | (Cube _ | Implicit _) :: _ -> false
+    | (Boundary _ | Hidden _) :: xs -> all_boundary xs
 end
 
 module IndexedNamevec = Namevec (DeBruijnIndices)

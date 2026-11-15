@@ -190,10 +190,10 @@ type wrapped_identity = Wrap : ('left, 'tight, 'right) identity -> wrapped_ident
 module Matchpattern = struct
   type t = Var : string option located -> t | Constr : Constr.t located * (arg, 'n) Vec.t -> t
 
-  (* An argument of a constructor pattern, which may be in braces: then it is either an implicit argument or a face of the boundary of a higher-dimensional one, which the typechecker decides according to which arguments of the constructor are implicit. *)
-  and arg = { braced : bool; pat : t }
+  (* An argument of a constructor pattern, which may be in braces: then it is either an implicit argument or a face of the boundary of a higher-dimensional one, which the typechecker decides according to which arguments of the constructor are implicit.  It can also be a dot, which skips an implicit argument, binding no variable. *)
+  and arg = Plain of t | Braced of t | Dot of Asai.Range.t option
 
-  let explicit (pat : t) : arg = { braced = false; pat }
+  let explicit (pat : t) : arg = Plain pat
 end
 
 (* The definition of a notation *)

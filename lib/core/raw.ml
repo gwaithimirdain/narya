@@ -675,6 +675,9 @@ module Resolve (R : Resolver) = struct
         let x2 = locate_opt x.loc (R.rename ctx x.value) in
         let (Resolve_pv (xs2, ctx2)) = patternvars (R.snoc ctx x.value) xs in
         Resolve_pv ((b, x2) :: xs2, ctx2)
+    | Dot (loc, xs) ->
+        let (Resolve_pv (xs2, ctx2)) = patternvars ctx xs in
+        Resolve_pv (Dot (loc, xs2), ctx2)
 
   and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 R.T1.dataconstr -> a2 R.T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->

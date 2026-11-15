@@ -257,6 +257,7 @@ module Code = struct
     | Matching_datatype_has_degeneracy : printable -> t
     | Wrong_number_of_arguments_to_pattern : Constr.t * int -> t
     | Wrong_boundary_of_pattern_variable : int -> t
+    | Invalid_dot_pattern : t
     | Wrong_number_of_arguments_to_motive : int -> t
     | No_such_constructor_in_match : printable * Constr.t -> t
     | Duplicate_constructor_in_match : Constr.t -> t
@@ -477,6 +478,7 @@ module Code = struct
     | Matching_datatype_has_degeneracy _ -> Error
     | Wrong_number_of_arguments_to_pattern _ -> Error
     | Wrong_boundary_of_pattern_variable _ -> Error
+    | Invalid_dot_pattern -> Error
     | Wrong_number_of_arguments_to_motive _ -> Error
     | No_such_constructor_in_match _ -> Error
     | Duplicate_constructor_in_match _ -> Error
@@ -706,6 +708,7 @@ module Code = struct
     | Duplicate_constructor_in_match _ -> "E1302"
     | Wrong_number_of_arguments_to_pattern _ -> "E1303"
     | Wrong_boundary_of_pattern_variable _ -> "E1310"
+    | Invalid_dot_pattern -> "E1311"
     | Duplicate_pattern_variable _ -> "E1304"
     | Wrong_number_of_patterns -> "E1305"
     | Inconsistent_patterns -> "E1306"
@@ -1112,6 +1115,8 @@ module Code = struct
           else
             textf "not enough arguments to constructor %s in match pattern (need %d more)"
               (Constr.to_string c) (abs n)
+      | Invalid_dot_pattern ->
+          text "a dot in a match pattern can only skip an implicit argument of the constructor"
       | Wrong_boundary_of_pattern_variable n ->
           if n > 0 then
             textf "too many boundary arguments for higher-dimensional pattern variable (%d extra)" n

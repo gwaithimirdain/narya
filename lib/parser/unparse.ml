@@ -1429,20 +1429,28 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
                   unparse_notation notn (List.map fst first) inner_symbols No.Interval.entire
                     No.Interval.entire
               | None ->
-                  let args =
-                    Bwd.filter_map
-                      (fun (x, i) ->
+                  (* A hidden implicit argument is omitted, unless the next argument that isn't hidden is in braces, in which case it has to be skipped explicitly with a dot so that re-parsing doesn't give that argument to it. *)
+                  let dot =
+                    {
+                      unparse =
+                        (fun li ri -> unparse_notation Postprocess.dot [] (`Single Dot) li ri);
+                    } in
+                  let args, _ =
+                    Bwd.fold_right
+                      (fun (x, i) (acc, next_braced) ->
                         match i with
-                        | `Explicit -> Some x
+                        | `Explicit -> (x :: acc, false)
                         | `Implicit ->
-                            Some
-                              {
+                            ( {
                                 unparse =
                                   (fun _ _ ->
                                     braceize (x.unparse No.Interval.entire No.Interval.entire));
                               }
-                        | `Hidden -> None)
-                      args in
+                              :: acc,
+                              true )
+                        | `Hidden -> if next_braced then (dot :: acc, true) else (acc, false))
+                      args ([], false) in
+                  let args = Bwd.of_list args in
                   unparse_spine ~notation:false vars (`Constr c) args No.Interval.entire
                     No.Interval.entire in
             let is_cube = function

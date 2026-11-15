@@ -462,7 +462,8 @@ module F = struct
       | [ (`Plain, x) ] -> strvar x.value
       | [ (`Braced, x) ] -> "{" ^ strvar x.value ^ "}"
       | (`Plain, x) :: xs -> strvar x.value ^ " " ^ strvars xs
-      | (`Braced, x) :: xs -> "{" ^ strvar x.value ^ "} " ^ strvars xs in
+      | (`Braced, x) :: xs -> "{" ^ strvar x.value ^ "} " ^ strvars xs
+      | Dot (_, xs) -> ". " ^ strvars xs in
     let mapsto =
       match cube with
       | `Normal _ -> "↦"

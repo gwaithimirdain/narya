@@ -1953,28 +1953,56 @@ let pattern_loc : pattern -> Asai.Range.t option = function
   | Var name -> name.loc
   | Constr (c, _) -> c.loc
 
-(* Assemble the pattern variables bound by the arguments of a constructor pattern, one for each argument, remembering which are in braces.  The typechecker groups them into the arguments of the constructor (see Check.group_patternvars). *)
-let rec patternitems_of_args : type a m am.
-    (a, m, am) Raw.Indexed.bplus ->
-    (Matchpattern.arg, m) Vec.t ->
-    (a, am) Raw.Indexed.Patternitems.t =
+(* The pattern of an argument of a constructor pattern, unless it is a dot, which binds no variable. *)
+let arg_pattern : Matchpattern.arg -> pattern option = function
+  | Plain pat | Braced pat -> Some pat
+  | Dot _ -> None
+
+let arg_shape : Matchpattern.arg -> [ `Plain | `Braced | `Dot ] = function
+  | Plain _ -> `Plain
+  | Braced _ -> `Braced
+  | Dot _ -> `Dot
+
+(* Assemble the pattern variables bound by the arguments of a constructor pattern, one for each argument other than a dot, remembering which are in braces, along with the dots.  The typechecker groups them into the arguments of the constructor (see Check.group_patternvars). *)
+let rec patternitems_of_args : type a b ab.
+    (a, b, ab) Raw.Indexed.bplus -> Matchpattern.arg list -> (a, ab) Raw.Indexed.Patternitems.t =
  fun ab args ->
   match (ab, args) with
+  | _, Dot loc :: args -> Dot (loc, patternitems_of_args ab args)
   | Zero, [] -> []
-  | Suc ab, { braced; pat } :: args ->
-      ((if braced then `Braced else `Plain), locate_opt (pattern_loc pat) (name_of_pattern pat))
+  | Suc ab, ((Plain pat | Braced pat) as arg) :: args ->
+      ( (match arg with
+        | Braced _ -> `Braced
+        | _ -> `Plain),
+        locate_opt (pattern_loc pat) (name_of_pattern pat) )
       :: patternitems_of_args ab args
+  | _ -> fatal (Anomaly "wrong number of pattern variables")
 
-(* The patterns to be matched against the variables bound by the arguments of a constructor pattern, in each of the branches for that constructor.  All the branches for a single constructor must put the same arguments in braces, since the typechecker groups them into the arguments of the constructor in the same way. *)
-let flatten_args : type m k.
-    (bool, m) Vec.t -> ((Matchpattern.arg, m) Vec.t, k) Vec.t -> ((pattern, m) Vec.t, k) Vec.t =
- fun braces argss ->
+(* The patterns to be matched against the variables bound by the arguments of a constructor pattern, in each of the branches for that constructor.  All the branches for a single constructor must put the same arguments in braces, and the dots in the same places, since the typechecker groups them into the arguments of the constructor in the same way. *)
+let flatten_args : type m b k.
+    b Fwn.t ->
+    Matchpattern.arg list ->
+    ((Matchpattern.arg, m) Vec.t, k) Vec.t ->
+    ((pattern, b) Vec.t, k) Vec.t =
+ fun b shape argss ->
+  let shape = List.map arg_shape shape in
   Vec.map
     (fun args ->
-      Vec.mmap
-        (fun [ b; ({ braced; pat } : Matchpattern.arg) ] ->
-          if b = braced then pat else fatal ?loc:(pattern_loc pat) Inconsistent_patterns)
-        [ braces; args ])
+      let args = Vec.to_list args in
+      List.iter2
+        (fun s arg ->
+          if s <> arg_shape arg then
+            fatal
+              ?loc:
+                (match arg with
+                | Plain pat | Braced pat -> pattern_loc pat
+                | Dot loc -> loc)
+              Inconsistent_patterns)
+        shape args;
+      let (Wrap pats) = Vec.of_list (List.filter_map arg_pattern args) in
+      match Fwn.compare (Vec.length pats) b with
+      | Eq -> (pats : (pattern, b) Vec.t)
+      | Neq -> fatal Inconsistent_patterns)
     argss
 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
@@ -2094,13 +2122,14 @@ let rec process_branches : type a n.
             | [] -> fatal (Anomaly "empty list of branches for constructor")
             | (_, pats, _, cube, _) :: _ as brs ->
                 (* The pattern variables of this constructor, for all of its direct arguments, including explicit boundaries if any (grouped with their primary argument).  This doesn't incorporate yet which of these arguments may be further deep patterns, those are just marked here as unnamed.  The names, if any, are taken from the first branch for this constructor; the other branches must bind the same number of variables with the same explicitness of boundaries, but can name them differently in their own scopes.  Every variable, including each face of an explicit boundary, is a new discriminee to be matched against the corresponding pattern; so like an ordinary discriminee it is added to the scope anonymously, and named by process_branches if its pattern is a variable. *)
-                let (Bplus ab) = Raw.Indexed.bplus (Vec.length pats) in
+                let pats = Vec.to_list pats in
+                let (Wrap vars) = Vec.of_list (List.filter_map arg_pattern pats) in
+                let (Bplus ab) = Raw.Indexed.bplus (Vec.length vars) in
                 let names = patternitems_of_args ab pats in
                 let (Wrap brs) = Vec.of_list brs in
                 (* Now we pass through all the branches and extract their patterns, one for each pattern variable. *)
                 let newpats =
-                  flatten_args
-                    (Vec.map (fun ({ braced; _ } : Matchpattern.arg) -> braced) pats)
+                  flatten_args (Vec.length vars) pats
                     (Vec.map (fun (_, cpats, _, _, _) -> cpats) brs) in
                 let (Plus bn) = Fwn.plus (Raw.Indexed.bplus_right ab) in
                 (* We add all the variables to the ambient scope (the one used for the discriminees) as unnamed.  This is fine because none of the names bound by the patterns are visible to the discriminees. *)

@@ -308,7 +308,7 @@ In a higher-dimensional match with the cube abstraction ⤇, a braced implicit a
    ￫ error[E3002]
    ￮ command-line exec string contains open holes
 
-In a higher-dimensional match with the non-cube abstraction ↦, every variable is named face by face, so an implicit argument must have all its faces in braces, and can't be omitted.
+In a higher-dimensional match with the non-cube abstraction ↦, every visible variable is named face by face, so an implicit argument must have all its faces in braces, unless it is skipped with a dot, or omitted before a variable that isn't in braces.  As in an application, braced variables are given to the implicit argument first, so a dot is needed to skip it before giving the boundary of the next explicit argument.
 
   $ narya vec.ny -e "def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ↦ refl zero. | cons. {k0} {k1} {k2} {x0} {x1} x2 {xs0} {xs1} xs2 ↦ suc. k2 ]" -e 'about h'
   n0 n1 n2 v0 v1 v2 ↦
@@ -338,6 +338,40 @@ In a higher-dimensional match with the non-cube abstraction ↦, every variable 
    ￭ command-line exec string
    1 | def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ↦ refl zero. | cons. {k} {x0} {x1} x2 {xs0} {xs1} xs2 ↦ n2 ]
      ^ e-dimensional match requires cube abstraction
+  
+  [1]
+
+  $ narya vec.ny -e "def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ↦ refl zero. | cons. . {x0} {x1} x2 {xs0} {xs1} xs2 ↦ n2 ]" -e 'about h'
+  n0 n1 n2 v0 v1 v2 ↦
+  match v2 [ cons. . {x0} {x1} x2 {xs0} {xs1} xs2 ↦ n2 | nil. ↦ refl 0 ]
+    : (n0 : ℕ) (n1 : ℕ) (n2 : ℕ⁽ᵉ⁾ n0 n1) (v0 : Vec n0) (v1 : Vec n1)
+      (v2 : Vec⁽ᵉ⁾ n2 v0 v1)
+      → ℕ⁽ᵉ⁾ n0 n1
+  
+
+A dot can skip an implicit argument in any match, and is displayed where it is needed.
+
+  $ narya vec.ny -e 'def T : Type ≔ data [ t. {m n : ℕ} (x : A) ]' -e 'def f (v : T) : ℕ ≔ match v [ t. . {k} x ↦ k ]' -e 'def g (v : T) : ℕ ≔ match v [ t. . . x ↦ zero. ]' -e 'about f' -e 'about g'
+  v ↦ match v [ t. . {k} x ↦ k ]
+    : (v : T) → ℕ
+  
+  v ↦ match v [ t. x ↦ 0 ]
+    : (v : T) → ℕ
+  
+
+  $ narya vec.ny -e 'def e (n : ℕ) (v : Vec n) : ℕ ≔ match v [ nil. ↦ zero. | cons. x . xs ↦ zero. ]'
+   ￫ error[E1311]
+   ￭ command-line exec string
+   1 | def e (n : ℕ) (v : Vec n) : ℕ ≔ match v [ nil. ↦ zero. | cons. x . xs ↦ zero. ]
+     ^ a dot in a match pattern can only skip an implicit argument of the constructor
+  
+  [1]
+
+  $ narya vec.ny -e 'def e (n : ℕ) (v : Vec n) : ℕ ≔ match v [ nil. ↦ zero. | cons. . x xs ↦ zero. | cons. {k} x xs ↦ k ]'
+   ￫ error[E1306]
+   ￭ command-line exec string
+   1 | def e (n : ℕ) (v : Vec n) : ℕ ≔ match v [ nil. ↦ zero. | cons. . x xs ↦ zero. | cons. {k} x xs ↦ k ]
+     ^ inconsistent patterns in match
   
   [1]
 

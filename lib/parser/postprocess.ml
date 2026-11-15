@@ -438,14 +438,18 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
         | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern placeholder"))
     | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
     | App { fn; arg; _ } -> (
-        (* An argument of a constructor pattern that's enclosed in braces is an implicit argument, or a pattern for a face of the boundary of a following higher-dimensional argument: the typechecker decides which. *)
+        (* An argument of a constructor pattern that's enclosed in braces is an implicit argument, or a pattern for a face of the boundary of a following higher-dimensional argument: the typechecker decides which.  A dot skips an implicit argument. *)
         match arg.value with
+        | Notn ((Dot, _), _) ->
+            go fn
+              (locate_opt pats.loc
+                 (Dot arg.loc :: pats.value : (Matchpattern.arg, n Fwn.suc) Vec.t))
         | Notn ((Braces, _), n) -> (
             match args n with
             | [ Token (LBrace, _); Term inner; Token (RBrace, _) ] ->
                 go fn
                   (locate_opt pats.loc
-                     ({ braced = true; pat = go inner (locate_opt inner.loc Vec.[]) } :: pats.value
+                     (Braced (go inner (locate_opt inner.loc Vec.[])) :: pats.value
                        : (Matchpattern.arg, n Fwn.suc) Vec.t))
             | _ -> fatal (Anomaly "invalid notation arguments for braces"))
         | _ ->
