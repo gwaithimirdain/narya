@@ -177,9 +177,8 @@ module Specials = struct
     }
   end
 
-  module R = Algaeff.Reader.Make (Data)
-
-  let () = R.register_printer (function `Read -> Some "unhandled Lexer.Specials read effect")
+  (* The current data is read several times for every character lexed, so we store it in a plain reference rather than using a Reader effect.  Performing an effect costs time proportional to the number of handlers installed between the "perform" and its handler, and since "run" is called outside everything else, that includes all the handlers installed by every enclosing "import" of a file being loaded from source. *)
+  let current : Data.t option ref = ref None
 
   let run ?(onechar_ops = Array.of_list []) ?(ascii_symbols = Array.of_list []) ?(digit_vars = true)
       f =
@@ -187,11 +186,18 @@ module Specials = struct
        (e.g. a caller reclaiming ⇒ as a plain identifier rather than the built-in DblArrow). *)
     let onechar_ops = Array.append onechar_ops default_onechar_ops in
     let ascii_symbols = Array.append default_ascii_symbols ascii_symbols in
-    R.run ~env:{ onechar_ops; ascii_symbols; digit_vars } f
+    let old = !current in
+    current := Some { onechar_ops; ascii_symbols; digit_vars };
+    Fun.protect ~finally:(fun () -> current := old) f
 
-  let onechar_ops () = (R.read ()).onechar_ops
-  let ascii_symbols () = (R.read ()).ascii_symbols
-  let digit_vars () = (R.read ()).digit_vars
+  let read () =
+    match !current with
+    | Some data -> data
+    | None -> failwith "Lexer.Specials.run not called"
+
+  let onechar_ops () = (read ()).onechar_ops
+  let ascii_symbols () = (read ()).ascii_symbols
+  let digit_vars () = (read ()).digit_vars
 end
 
 let onechar_uchars () = Array.map (fun c -> Uchar.of_int (fst c)) (Specials.onechar_ops ())
