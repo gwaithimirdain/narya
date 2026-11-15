@@ -17,6 +17,8 @@ val permute : ('a, 'b) permute -> 'b t -> 'a t
 type pattern_var =
   | Cube_var : string -> pattern_var
   | Boundary_var : ('n, string) gvariables -> pattern_var
+  | Implicit_var : string -> pattern_var
+  | Hidden_var : string -> pattern_var
 
 val add_match_vars :
   'a t ->

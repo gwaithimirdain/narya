@@ -25,6 +25,7 @@ type 'c constr_arg = [ `Arg of 'c | `Face of string Asai.Range.located * 'c | `D
 module rec Make : functor (I : Indices) -> sig
   module Namevec : module type of Namevec (I)
   module Patternvars : module type of Patternvars (I)
+  module Patternitems : module type of Patternitems (I)
   include module type of Namevec.P
 
   type 'a index = 'a I.index * any_sface option
@@ -138,7 +139,7 @@ module rec Make : functor (I : Indices) -> sig
 
   and _ branch =
     | Branch :
-        ('a, 'b, 'ab) Patternvars.t located
+        ('a, 'ab) Patternitems.t located
         * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
         * 'ab check located
         -> 'a branch
@@ -193,6 +194,7 @@ functor
   struct
     module Namevec = Namevec (I)
     module Patternvars = Patternvars (I)
+    module Patternitems = Patternitems (I)
     include Namevec.P
 
     (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
@@ -346,7 +348,7 @@ functor
     (* The location of the pattern variables is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
     and _ branch =
       | Branch :
-          ('a, 'b, 'ab) Patternvars.t located
+          ('a, 'ab) Patternitems.t located
           (* The ref argument to `Cube records whether any of the matches in this ⤇ group are *actually* higher-dimensional, so we can raise an error if they're not. *)
           * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
           * 'ab check located
@@ -470,10 +472,8 @@ module Resolve (R : Resolver) = struct
      because module aliases are not preserved by functors: F(I1) will not be equal to F(R.I1). *)
 
   (* The result of renaming the pattern variables of a match branch: the renamed variables, in the target index type, along with the scope extended by them. *)
-  type (_, _, _) resolve_pv =
-    | Resolve_pv :
-        ('a2, 'b, 'ab2) R.T2.Patternvars.t * ('ab1, 'ab2) R.scope
-        -> ('a2, 'b, 'ab1) resolve_pv
+  type (_, _) resolve_pv =
+    | Resolve_pv : ('a2, 'ab2) R.T2.Patternitems.t * ('ab1, 'ab2) R.scope -> ('a2, 'ab1) resolve_pv
 
   (* The result of resolving the clauses of a let-only, along with the scope of its body. *)
   type (_, _) resolve_letonly =
@@ -665,21 +665,16 @@ module Resolve (R : Resolver) = struct
     let (Resolve_pv (xs2, ctx2)) = patternvars ctx xs.value in
     Branch (locate_opt xs.loc xs2, cube, check ctx2 body)
 
-  (* Renaming the pattern variables of a match branch, unlike a Namevec, doesn't have a bplus supplied by the caller, since the extended context depends on how many of the arguments have explicit boundaries.  So we compute the renamed pattern variables and the extended scope together, with the extended index existential. *)
-  and patternvars : type a1 a2 b ab1.
-      (a1, a2) R.scope -> (a1, b, ab1) R.T1.Patternvars.t -> (a2, b, ab1) resolve_pv =
+  (* Renaming the pattern variables of a match branch, unlike a Namevec, doesn't have a bplus supplied by the caller, so we compute the renamed pattern variables and the extended scope together, with the extended index existential. *)
+  and patternvars : type a1 a2 ab1.
+      (a1, a2) R.scope -> (a1, ab1) R.T1.Patternitems.t -> (a2, ab1) resolve_pv =
    fun ctx xs ->
     match xs with
     | [] -> Resolve_pv ([], ctx)
-    | Cube x :: xs ->
-        let x2 = R.rename ctx x in
-        let (Resolve_pv (xs2, ctx2)) = patternvars (R.snoc ctx x) xs in
-        Resolve_pv (Cube x2 :: xs2, ctx2)
-    | Boundary ns :: xs ->
-        let (Bplus ac) = R.T2.bplus (R.T1.Namevec.length ns) in
-        let ns2 = renames ctx ns ac in
-        let (Resolve_pv (xs2, ctx2)) = patternvars (append ctx ns ac) xs in
-        Resolve_pv (Boundary ns2 :: xs2, ctx2)
+    | (b, x) :: xs ->
+        let x2 = locate_opt x.loc (R.rename ctx x.value) in
+        let (Resolve_pv (xs2, ctx2)) = patternvars (R.snoc ctx x.value) xs in
+        Resolve_pv ((b, x2) :: xs2, ctx2)
 
   and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 R.T1.dataconstr -> a2 R.T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->

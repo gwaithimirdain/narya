@@ -267,6 +267,54 @@ type (_, _, _) synthable_branch =
     }
       -> ('mode, 'a, 'm) synthable_branch
 
+(* Group the pattern variables of a branch, as written by the user, into the pattern variables of the arguments of the constructor, given whether each of them is implicit.  An implicit argument takes the next variable if it is in braces, as a cube variable, and is otherwise bound invisibly.  An explicit argument takes the next variable that isn't in braces, along with any in braces before it, which name the faces of its boundary.  If the number of variables is wrong, we return the number of extra ones (positive) or missing explicit ones (negative). *)
+type (_, _) grouped_patternvars =
+  | Grouped : ('a, 'c, 'ab) Patternvars.t -> ('a, 'ab) grouped_patternvars
+
+type (_, _) pattern_boundary =
+  | Pattern_boundary :
+      ('a, 'c Fwn.suc, 'ac) Namevec.t * ('ac, 'ab) Patternitems.t
+      -> ('a, 'ab) pattern_boundary
+
+let rec take_pattern_boundary : type a ab. (a, ab) Patternitems.t -> (a, ab) pattern_boundary option
+    = function
+  | [] -> None
+  | (`Plain, x) :: rest -> Some (Pattern_boundary ([ x ], rest))
+  | (`Braced, x) :: rest -> (
+      match take_pattern_boundary rest with
+      | Some (Pattern_boundary (ns, rest)) -> Some (Pattern_boundary (x :: ns, rest))
+      | None -> None)
+
+let rec count_patternitems : type a ab. (a, ab) Patternitems.t -> int = function
+  | [] -> 0
+  | _ :: xs -> 1 + count_patternitems xs
+
+let rec group_patternvars : type a ab.
+    implicitness list -> (a, ab) Patternitems.t -> ((a, ab) grouped_patternvars, int) Result.t =
+ fun implicits items ->
+  let cons x = Result.map (fun (Grouped xs) -> Grouped (x :: xs)) in
+  match (implicits, items) with
+  | [], [] -> Ok (Grouped [])
+  | [], _ :: _ -> Error (count_patternitems items)
+  | `Implicit :: implicits, (`Braced, x) :: items ->
+      cons (Implicit x.value) (group_patternvars implicits items)
+  | `Implicit :: implicits, _ -> cons (Hidden None) (group_patternvars implicits items)
+  | `Explicit :: implicits, _ -> (
+      match take_pattern_boundary items with
+      | None -> Error (-(1 + List.length (List.filter (fun i -> i = `Explicit) implicits)))
+      | Some (Pattern_boundary ([ x ], items)) ->
+          cons (Cube x.value) (group_patternvars implicits items)
+      | Some (Pattern_boundary ((_ :: _ :: _ as ns), items)) ->
+          cons (Boundary ns) (group_patternvars implicits items))
+
+(* If the constructor failed, we treat all the pattern variables as ordinary arguments, since the branch will fail dependently anyway. *)
+let rec ungrouped_patternvars : type a ab. (a, ab) Patternitems.t -> (a, ab) grouped_patternvars =
+  function
+  | [] -> Grouped []
+  | (_, x) :: xs ->
+      let (Grouped xs) = ungrouped_patternvars xs in
+      Grouped (Cube x.value :: xs)
+
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype.  Curiously, the only mode parameter that appears here is the *source* of the window modality, i.e. the mode at which the datatype and discriminee live. *)
 let merge_branches : type hmode dom a m.
     hmode head ->
@@ -279,7 +327,7 @@ let merge_branches : type hmode dom a m.
       (fun ((userbrs, databrs) :
              (Constr.t, (dom, a, m) checkable_branch) Abwd.t
              * (Constr.t, (dom, m) Value.dataconstr) Abwd.t)
-           (constr, Branch ({ value = xs; loc }, cube, body)) ->
+           (constr, Branch ({ value = items; loc }, cube, body)) ->
         (* We check at the preprocessing stage that there are no duplicate constructors in the match.  A duplicate branch, or one for a constructor that the datatype doesn't have, is reported and ignored, so that the other branches can still be checked. *)
         if Abwd.mem constr userbrs then (
           mortal ?loc (Duplicate_constructor_in_match constr);
@@ -290,30 +338,28 @@ let merge_branches : type hmode dom a m.
           | None ->
               mortal ?loc (No_such_constructor_in_match (phead head, constr));
               (userbrs, databrs)
-          | Some (Value.Dataconstr { env; ty; fnty = _ }) -> (
+          | Some (Value.Dataconstr { env; ty; fnty = _ }) ->
+              (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor, which is the constructor's arity (the pi-depth of its stored function-type), grouping them according to which arguments are implicit.  But if the constructor failed to typecheck, it has no known arity, and the branch will fail dependently when it is checked.  If the number is wrong, we report it and treat the branch like one for a constructor that failed, so that it fails dependently too. *)
+              let grouped =
+                if is_failed ty then Ok (ungrouped_patternvars items)
+                else group_patternvars (pi_implicits ty) items in
+              let Grouped xs, ty, grouped =
+                match grouped with
+                | Ok xs -> (xs, ty, true)
+                | Error n ->
+                    mortal ?loc (Wrong_number_of_arguments_to_pattern (constr, n));
+                    (ungrouped_patternvars items, Term.Failed Kinetic, false) in
               (* Check that the abstraction symbol matches the dimension of the discriminee.  A non-cube abstraction ↦ is allowed in a higher-dimensional match as long as none of the pattern variables it binds is a cube variable, i.e. all of them come with explicit boundaries.  If it is wrong, the branch can still be checked, since the variables it binds are determined by the constructor. *)
               (match (cube, D.compare_zero (dim_env env)) with
               | `Normal loc, Pos _ ->
-                  if not (Patternvars.all_boundary xs) then
+                  if grouped && not (Patternvars.all_boundary xs) then
                     mortal ?loc (Noncube_abstraction_in_higher_dimensional_match (dim_env env))
               | `Normal _, Zero -> ()
               (* Cube abstractions ⤇ can be used with 0-dimensional discriminees if they're generated as part of a multiple/deep match clause that also includes some higher discriminess.  We check for errors in that when the outer match finishes. *)
               | `Cube _, Zero -> ()
               | `Cube bs, Pos _ -> List.iter (fun b -> b.value := true) bs);
-              (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor, which is the constructor's arity (the pi-depth of its stored function-type).  But if the constructor failed to typecheck, it has no known arity, and the branch will fail dependently when it is checked.  If the number is wrong, we report it and treat the branch like one for a constructor that failed, so that it fails dependently too. *)
-              let (Wrap arity) =
-                if is_failed ty then Fwn.Wrap (Patternvars.length xs) else pi_arity ty in
-              match Fwn.compare (Patternvars.length xs) arity with
-              | Neq ->
-                  mortal ?loc
-                    (Wrong_number_of_arguments_to_pattern
-                       (constr, Fwn.to_int (Patternvars.length xs) - Fwn.to_int arity));
-                  let br =
-                    Checkable_branch { xs; body = Some body; env; ty = Term.Failed Kinetic } in
-                  (Snoc (userbrs, (constr, br)), databrs)
-              | Eq ->
-                  let br = Checkable_branch { xs; body = Some body; env; ty } in
-                  (Snoc (userbrs, (constr, br)), databrs)))
+              let br = Checkable_branch { xs; body = Some body; env; ty } in
+              (Snoc (userbrs, (constr, br)), databrs))
       (Bwd.Emp, data_constrs) user_branches in
   (* If there are any constructors in the datatype left over that the user didn't supply branches for, we add them to the list at the end.  They will be tested for refutability. *)
   Bwd.prepend user_branches

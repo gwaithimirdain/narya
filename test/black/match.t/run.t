@@ -620,10 +620,10 @@ In particular, a zero-dimensional match has no boundary variables to name.
 Boundary patterns must be followed by the pattern they belong to.
 
   $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} ↦ 0 ]'
-   ￫ error[E0200]
+   ￫ error[E1303]
    ￭ command-line exec string
    1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} ↦ 0 ]
-     ^ parse error: boundary pattern must be followed by the pattern it belongs to
+     ^ not enough arguments to constructor suc in match pattern (need 1 more)
   
   [1]
 

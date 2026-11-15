@@ -257,12 +257,14 @@ let make_user : prenotation -> notation =
                  obs) in
           match key with
           | `Constr (c, _) ->
-              (* A user notation's pattern variables are always ordinary (cube) ones; there is no way to give explicit boundaries for them. *)
-              (* A placeholder in the definition of the notation becomes a wildcard. *)
-              let explicit = function
-                | None, _ -> Matchpattern.explicit (Var { value = None; loc })
-                | Some k, _ -> Matchpattern.explicit (StringMap.find k args) in
-              let (Wrap args) = Vec.of_list_map explicit val_vars in
+              (* A user notation's pattern variables are always ordinary (cube) ones; there is no way to give explicit boundaries for them.  An implicit argument in the definition of the notation is a pattern in braces, and a placeholder becomes a wildcard. *)
+              let arg (k, implicit) : Matchpattern.arg =
+                let pat : Matchpattern.t =
+                  match k with
+                  | None -> Var { value = None; loc }
+                  | Some k -> StringMap.find k args in
+                { braced = implicit = `Implicit; pat } in
+              let (Wrap args) = Vec.of_list_map arg val_vars in
               Matchpattern.Constr ({ value = c; loc }, args)
           | _ -> fatal (Anomaly "make_user"));
       (* We define this function inline here so that it can match against the constructor New.User that was generated above by the inline Make functor application.  The only way I can think of to factor this function out (and, for instance, put it in user.ml instead of this file) would be to pass it a first-class module as an argument.  At the moment, that seems like unnecessary complication. *)

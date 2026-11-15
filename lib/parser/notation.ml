@@ -186,12 +186,14 @@ and ('left, 'tight, 'right) notation =
 
 type wrapped_identity = Wrap : ('left, 'tight, 'right) identity -> wrapped_identity
 
-(* A match pattern is either a variable name or a constructor with some number of pattern arguments.  Each argument of a constructor can also be preceded by explicit patterns, in braces, for the faces of the boundary of a higher-dimensional pattern variable; the argument pattern itself is then the top face. *)
+(* A match pattern is either a variable name or a constructor with some number of pattern arguments, some of which may be in braces. *)
 module Matchpattern = struct
   type t = Var : string option located -> t | Constr : Constr.t located * (arg, 'n) Vec.t -> t
-  and arg = { boundary : t list; pat : t }
 
-  let explicit (pat : t) : arg = { boundary = []; pat }
+  (* An argument of a constructor pattern, which may be in braces: then it is either an implicit argument or a face of the boundary of a higher-dimensional one, which the typechecker decides according to which arguments of the constructor are implicit. *)
+  and arg = { braced : bool; pat : t }
+
+  let explicit (pat : t) : arg = { braced = false; pat }
 end
 
 (* The definition of a notation *)

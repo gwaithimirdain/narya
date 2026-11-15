@@ -261,6 +261,9 @@ let add_boundary : type m n b a c ac.
 type pattern_var =
   | Cube_var : string -> pattern_var
   | Boundary_var : ('n, string) gvariables -> pattern_var
+  (* An implicit argument bound by a (cube) variable in braces, or omitted, so that its variable is invisible to the user, though it still has a name. *)
+  | Implicit_var : string -> pattern_var
+  | Hidden_var : string -> pattern_var
 
 (* Extend a name-context by the pattern variables of a match branch, using the names stored in the branch's "annotate" witness (one per argument of the constructor) and the dimensions stored in its "comp" witness.  Returns the extended name-context (for the branch's pre-permutation context) together with the variables in order, for displaying the constructor pattern.  Mirrors Norm.take_args, which does the same for the value environment. *)
 let rec add_match_vars : type n mode annotations a b ab.
@@ -279,6 +282,14 @@ let rec add_match_vars : type n mode annotations a b ab.
       let x, names = add_boundary m names bdry in
       let names, xs = add_match_vars names annotate comp in
       (names, Boundary_var x :: xs)
+  | Suc (Annotate (Implicit name, _), annotate), Suc (Dim (m, _), comp) ->
+      let x, names = add_cube m names (Variables.binder_name_of_option name) in
+      let names, xs = add_match_vars names annotate comp in
+      (names, Implicit_var x :: xs)
+  | Suc (Annotate (Hidden name, _), annotate), Suc (Dim (m, _), comp) ->
+      let x, names = add_cube m names (Variables.binder_name_of_option name) in
+      let names, xs = add_match_vars names annotate comp in
+      (names, Hidden_var x :: xs)
 
 (* Add a single (cube) self-variable for a record type, with its fields exposed as named variables (mirroring Ctx.vis_fields and of_ordered_ctx).  The self-variable itself is anonymous: its fields are exposed so that field-projections of the self read back as field variables.  Unlike other bound variables, the field variables are NOT uniquified: their names are exactly the record's field names, which cannot be renamed without changing the meaning.  Hence if any field name clashes with a name already in scope (so that displaying it as a field variable would shadow that name), we return None, and the caller falls back to self-variable syntax.  On success, returns the field variable names (= the field names, in order) for use as the field patterns. *)
 let add_fields : type b n m.

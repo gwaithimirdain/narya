@@ -1949,94 +1949,33 @@ let name_of_pattern : pattern -> string option = function
   | Var name -> name.value
   | Constr _ -> None
 
-type (_, _) has_patternvars =
-  | Patternvars : ('a, 'm, 'am) Raw.Indexed.Patternvars.t -> ('a, 'm) has_patternvars
-
 let pattern_loc : pattern -> Asai.Range.t option = function
   | Var name -> name.loc
   | Constr (c, _) -> c.loc
 
-(* Assemble the pattern variables bound by the arguments of a constructor pattern.  An argument with no explicit boundary binds a single (cube) variable, while one with an explicit boundary binds one variable for each face, the last being the top face, which is the argument pattern itself. *)
-let rec patternvars_of_args : type a m. (Matchpattern.arg, m) Vec.t -> (a, m) has_patternvars =
- fun args ->
-  match args with
-  | [] -> Patternvars []
-  | { boundary = []; pat } :: args ->
-      let (Patternvars xs) = patternvars_of_args args in
-      Patternvars (Cube (name_of_pattern pat) :: xs)
-  | { boundary = _ :: _ as boundary; pat } :: args ->
-      let (Wrap pats) = Vec.of_list (boundary @ [ pat ]) in
-      let (Bplus ac) = Raw.Indexed.bplus (Vec.length pats) in
-      let (Patternvars xs) = patternvars_of_args args in
-      Patternvars
-        (Boundary
-           (Indexed.Namevec.of_vec ac
-              (Vec.map (fun p -> locate_opt (pattern_loc p) (name_of_pattern p)) pats))
-        :: xs)
+(* Assemble the pattern variables bound by the arguments of a constructor pattern, one for each argument, remembering which are in braces.  The typechecker groups them into the arguments of the constructor (see Check.group_patternvars). *)
+let rec patternitems_of_args : type a m am.
+    (a, m, am) Raw.Indexed.bplus ->
+    (Matchpattern.arg, m) Vec.t ->
+    (a, am) Raw.Indexed.Patternitems.t =
+ fun ab args ->
+  match (ab, args) with
+  | Zero, [] -> []
+  | Suc ab, { braced; pat } :: args ->
+      ((if braced then `Braced else `Plain), locate_opt (pattern_loc pat) (name_of_pattern pat))
+      :: patternitems_of_args ab args
 
-(* The patterns to be matched against the variables bound by the arguments of a constructor pattern, in each of 'k branches for that constructor: one for each variable, i.e. a single pattern for a cube variable, and one for each face of an explicit boundary.  Thus they all have the same length, namely the number of variables bound, which is recorded by the bplus.  The shape of the variables is given by a Patternvars (computed from the first branch), and a branch whose boundaries don't match that shape is an error, since all the branches for a single constructor must extend the scope by the same number of variables. *)
-type (_, _, _) flat_patterns =
-  | Flat :
-      ('a, 'b, 'am) Raw.Indexed.bplus * ((pattern, 'b) Vec.t, 'k) Vec.t
-      -> ('a, 'am, 'k) flat_patterns
-
-(* Prepend the patterns for the faces of one explicit boundary, given in each branch as a list of boundary patterns followed by the top one, to the flattened patterns of the remaining arguments. *)
-let rec flatten_boundary : type a c ac b am k.
-    (a, c, ac) Raw.Indexed.Namevec.t ->
-    (pattern list * pattern, k) Vec.t ->
-    (ac, b, am) Raw.Indexed.bplus ->
-    ((pattern, b) Vec.t, k) Vec.t ->
-    (a, am, k) flat_patterns =
- fun ns heads ab rest ->
-  match ns with
-  | [] -> fatal (Anomaly "empty boundary of match pattern variable")
-  | [ _ ] ->
-      Flat
-        ( Suc ab,
-          Vec.mmap
-            (fun [ p; ps ] ->
-              match p with
-              | [], pat -> Vec.cons pat ps
-              | x :: _, _ -> fatal ?loc:(pattern_loc x) Inconsistent_patterns)
-            [ heads; rest ] )
-  | _ :: (_ :: _ as ns) ->
-      let [ fsts; snds ] =
-        Vec.pmap
-          (fun [ hd ] ->
-            match hd with
-            | [], pat -> fatal ?loc:(pattern_loc pat) Inconsistent_patterns
-            | x :: bdry, pat -> [ x; (bdry, pat) ])
-          [ heads ] (Cons (Cons Nil)) in
-      let (Flat (ab, rest)) = flatten_boundary ns snds ab rest in
-      Flat (Suc ab, Vec.mmap (fun [ p; ps ] -> Vec.cons p ps) [ fsts; rest ])
-
-let rec flatten_args : type a m am k.
-    (a, m, am) Raw.Indexed.Patternvars.t ->
-    ((Matchpattern.arg, m) Vec.t, k) Vec.t ->
-    (a, am, k) flat_patterns =
- fun xs argss ->
-  match xs with
-  | [] -> Flat (Zero, Vec.map (fun _ -> Vec.[]) argss)
-  | Cube _ :: xs ->
-      let [ heads; tails ] =
-        Vec.pmap
-          (fun [ (args : (Matchpattern.arg, m) Vec.t) ] ->
-            match args with
-            | { boundary = []; pat } :: tail -> [ pat; tail ]
-            | { boundary = x :: _; pat = _ } :: _ ->
-                fatal ?loc:(pattern_loc x) Inconsistent_patterns)
-          [ argss ] (Cons (Cons Nil)) in
-      let (Flat (ab, rest)) = flatten_args xs tails in
-      Flat (Suc ab, Vec.mmap (fun [ p; ps ] -> Vec.cons p ps) [ heads; rest ])
-  | Boundary ns :: xs ->
-      let [ heads; tails ] =
-        Vec.pmap
-          (fun [ (args : (Matchpattern.arg, m) Vec.t) ] ->
-            let (({ boundary; pat } : Matchpattern.arg) :: tail) = args in
-            [ (boundary, pat); tail ])
-          [ argss ] (Cons (Cons Nil)) in
-      let (Flat (ab, rest)) = flatten_args xs tails in
-      flatten_boundary ns heads ab rest
+(* The patterns to be matched against the variables bound by the arguments of a constructor pattern, in each of the branches for that constructor.  All the branches for a single constructor must put the same arguments in braces, since the typechecker groups them into the arguments of the constructor in the same way. *)
+let flatten_args : type m k.
+    (bool, m) Vec.t -> ((Matchpattern.arg, m) Vec.t, k) Vec.t -> ((pattern, m) Vec.t, k) Vec.t =
+ fun braces argss ->
+  Vec.map
+    (fun args ->
+      Vec.mmap
+        (fun [ b; ({ braced; pat } : Matchpattern.arg) ] ->
+          if b = braced then pat else fatal ?loc:(pattern_loc pat) Inconsistent_patterns)
+        [ braces; args ])
+    argss
 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.
@@ -2155,11 +2094,14 @@ let rec process_branches : type a n.
             | [] -> fatal (Anomaly "empty list of branches for constructor")
             | (_, pats, _, cube, _) :: _ as brs ->
                 (* The pattern variables of this constructor, for all of its direct arguments, including explicit boundaries if any (grouped with their primary argument).  This doesn't incorporate yet which of these arguments may be further deep patterns, those are just marked here as unnamed.  The names, if any, are taken from the first branch for this constructor; the other branches must bind the same number of variables with the same explicitness of boundaries, but can name them differently in their own scopes.  Every variable, including each face of an explicit boundary, is a new discriminee to be matched against the corresponding pattern; so like an ordinary discriminee it is added to the scope anonymously, and named by process_branches if its pattern is a variable. *)
-                let (Patternvars names) = patternvars_of_args pats in
+                let (Bplus ab) = Raw.Indexed.bplus (Vec.length pats) in
+                let names = patternitems_of_args ab pats in
                 let (Wrap brs) = Vec.of_list brs in
-                (* Now we pass through all the branches and flatten their patterns into a list of patterns, one for each pattern variable, with explicit boundaries interspersed with primary arguments.  Which of them are primary or boundaries is remembered by "names". *)
-                let (Flat (ab, newpats)) =
-                  flatten_args names (Vec.map (fun (_, cpats, _, _, _) -> cpats) brs) in
+                (* Now we pass through all the branches and extract their patterns, one for each pattern variable. *)
+                let newpats =
+                  flatten_args
+                    (Vec.map (fun ({ braced; _ } : Matchpattern.arg) -> braced) pats)
+                    (Vec.map (fun (_, cpats, _, _, _) -> cpats) brs) in
                 let (Plus bn) = Fwn.plus (Raw.Indexed.bplus_right ab) in
                 (* We add all the variables to the ambient scope (the one used for the discriminees) as unnamed.  This is fine because none of the names bound by the patterns are visible to the discriminees. *)
                 let newxctx, newnums = Matchscope.exts ab xctx in

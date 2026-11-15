@@ -457,17 +457,12 @@ module F = struct
     let strvar : string option -> string = function
       | Some x -> x
       | None -> "_" in
-    let rec strnames : type a b ab. (a, b, ab) Namevec.t -> string = function
+    let rec strvars : type a ab. (a, ab) Patternitems.t -> string = function
       | [] -> ""
-      | [ x ] -> strvar x.value
-      | x :: xs -> "{" ^ strvar x.value ^ "} " ^ strnames xs in
-    let rec strvars : type a b ab. (a, b, ab) Patternvars.t -> string = function
-      | [] -> ""
-      | [ Cube x ] -> strvar x
-      | Cube x :: xs -> strvar x ^ " " ^ strvars xs
-      (* The last of the boundary names is the top face, which is displayed without braces. *)
-      | [ Boundary ns ] -> strnames ns
-      | Boundary ns :: xs -> strnames ns ^ " " ^ strvars xs in
+      | [ (`Plain, x) ] -> strvar x.value
+      | [ (`Braced, x) ] -> "{" ^ strvar x.value ^ "}"
+      | (`Plain, x) :: xs -> strvar x.value ^ " " ^ strvars xs
+      | (`Braced, x) :: xs -> "{" ^ strvar x.value ^ "} " ^ strvars xs in
     let mapsto =
       match cube with
       | `Normal _ -> "↦"

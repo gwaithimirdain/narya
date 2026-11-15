@@ -438,21 +438,15 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
         | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern placeholder"))
     | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
     | App { fn; arg; _ } -> (
-        (* Since we accumulate the arguments from right to left, a boundary pattern is prepended to the boundary of the argument we've already seen. *)
+        (* An argument of a constructor pattern that's enclosed in braces is an implicit argument, or a pattern for a face of the boundary of a following higher-dimensional argument: the typechecker decides which. *)
         match arg.value with
-        (* An argument of a constructor pattern that's enclosed in braces is an explicit pattern for a face of the boundary of the following higher-dimensional pattern variable. *)
         | Notn ((Braces, _), n) -> (
             match args n with
-            | [ Token (LBrace, _); Term bdry; Token (RBrace, _) ] -> (
-                match pats.value with
-                | [] ->
-                    fatal ?loc:arg.loc
-                      (Parse_error "boundary pattern must be followed by the pattern it belongs to")
-                | { boundary; pat } :: rest ->
-                    let boundary = go bdry (locate_opt bdry.loc Vec.[]) :: boundary in
-                    go fn
-                      (locate_opt pats.loc
-                         ({ boundary; pat } :: rest : (Matchpattern.arg, n) Vec.t)))
+            | [ Token (LBrace, _); Term inner; Token (RBrace, _) ] ->
+                go fn
+                  (locate_opt pats.loc
+                     ({ braced = true; pat = go inner (locate_opt inner.loc Vec.[]) } :: pats.value
+                       : (Matchpattern.arg, n Fwn.suc) Vec.t))
             | _ -> fatal (Anomaly "invalid notation arguments for braces"))
         | _ ->
             go fn

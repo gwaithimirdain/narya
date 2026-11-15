@@ -489,30 +489,35 @@ let drop_inserted : type a s. dots_at_end:bool -> (a, s) spine_arg Bwd.t -> (a, 
   Bwd.of_list (go (not dots_at_end) [] args)
 
 (* Match the arguments of the head in the definition of a notation against the arguments in a spine, according to their implicitness, and return the notation, the arguments for its pattern variables in their order, the symbols to intersperse with them, and the remaining arguments.  An explicit argument of the notation matches the next explicit argument, skipping any hidden implicit ones before it, which would be inserted; and an implicit one matches the next implicit argument, hidden or not.  If an implicit argument that is being displayed would be skipped, we don't use the notation, since the notation can't display it. *)
-let match_notation : type a.
+let match_notation : type x.
+    (x -> [ `Implicit | `Explicit | `Hidden ]) ->
     User.notation ->
-    (a, kinetic) spine_arg Bwd.t ->
-    (User.notation * (a, kinetic) spine_arg list * (a, kinetic) spine_arg Bwd.t) option =
- fun ({ pat_vars; val_vars; _ } as notn) args ->
+    x Bwd.t ->
+    (User.notation * x list * x Bwd.t) option =
+ fun kind ({ pat_vars; val_vars; _ } as notn) args ->
   let open Monad.Ops (Monad.Maybe) in
   let rec take slots elts acc =
     match (slots, elts) with
     | [], _ -> return (acc, elts)
     | _ :: _, [] -> None
-    | (_, `Explicit) :: _, Spine_arg (_, _, `Hidden) :: elts -> take slots elts acc
-    | (_, `Explicit) :: _, Spine_arg (_, _, `Implicit) :: _ -> None
-    | (_, `Implicit) :: _, Spine_arg (_, _, `Explicit) :: _ -> None
-    | (k, _) :: slots, x :: elts ->
-        take slots elts
-          (match k with
-          | Some k -> acc |> StringMap.add k x
-          | None -> acc) in
+    | (k, i) :: slots', x :: elts' -> (
+        match (i, kind x) with
+        | `Explicit, `Hidden -> take slots elts' acc
+        | `Explicit, `Implicit -> None
+        | `Implicit, `Explicit -> None
+        | _ ->
+            take slots' elts'
+              (match k with
+              | Some k -> acc |> StringMap.add k x
+              | None -> acc)) in
   let* first, rest = take val_vars (Bwd.to_list args) StringMap.empty in
   let first =
     List.map
       (fun k -> StringMap.find_opt k first <|> Anomaly "not found in match_notation")
       pat_vars in
   return (notn, first, Bwd.of_list rest)
+
+let spine_arg_kind (Spine_arg (_, _, i)) = i
 
 (* If the head of an application spine is a constant with an associated notation, match its arguments against the spine. *)
 let notation_of_spine : type mode a s.
@@ -525,27 +530,28 @@ let notation_of_spine : type mode a s.
     match head with
     | Const c -> Scope.Situation.unparse (`Constant c)
     | _ -> None in
-  match_notation notn args
+  match_notation spine_arg_kind notn args
 
-(* A notation for a constructor is associated to the number of arguments in its definition, which may or may not include its implicit ones, so we try all the numbers that it could be.  Since a constructor is always fully applied, the notation must use all the arguments, apart from hidden implicit ones that would be inserted. *)
-let notation_of_constr : type a.
-    Constr.t -> (a, kinetic) spine_arg Bwd.t -> (User.notation * (a, kinetic) spine_arg list) option
-    =
- fun c args ->
-  let explicit =
-    Bwd.fold_left (fun n (Spine_arg (_, _, i)) -> if i = `Explicit then n + 1 else n) 0 args in
+(* A notation for a constructor is associated to the number of arguments in its definition, which may or may not include its implicit ones, so we try all the numbers that it could be, starting with the smallest, so as to prefer a notation that doesn't display hidden implicit arguments.  Since a constructor is always fully applied, the notation must use all the arguments, apart from hidden implicit ones that would be inserted. *)
+let notation_of_constr : type x.
+    (x -> [ `Implicit | `Explicit | `Hidden ]) ->
+    Constr.t ->
+    x Bwd.t ->
+    (User.notation * x list) option =
+ fun kind c args ->
+  let explicit = Bwd.fold_left (fun n x -> if kind x = `Explicit then n + 1 else n) 0 args in
   let rec go k =
-    if k < explicit then None
+    if k > Bwd.length args then None
     else
       match
         Option.bind
           (Scope.Situation.unparse (`Constr (c, k)))
-          (fun notn -> match_notation notn args)
+          (fun notn -> match_notation kind notn args)
       with
-      | Some (notn, first, rest) when Bwd.for_all (fun (Spine_arg (_, _, i)) -> i = `Hidden) rest ->
+      | Some (notn, first, rest) when Bwd.for_all (fun x -> kind x = `Hidden) rest ->
           Some (notn, first)
-      | _ -> go (k - 1) in
-  go (Bwd.length args)
+      | _ -> go (k + 1) in
+  go explicit
 
 (* Build a field projection "x .fld" as a parse tree, for use as the "self" pattern in unparsing codatatypes and records.  It is built in the "entire" tightness interval and packed existentially into an observation at the call site. *)
 let unparse_field_app (x : string) (fld : string) (pbij : string list) :
@@ -652,6 +658,9 @@ let constant_name : type n. n Names.t -> string list -> string list =
       else name
   | None -> name
 
+(* The variable of an implicit argument of a constructor that is omitted from a match pattern is invisible to the user, so it is displayed in the pattern (in braces) only if it is mentioned in the body of the branch, or if the user has asked to display implicit arguments.  To notice whether it is mentioned, while displaying the body we record the names of such variables in this table, with a flag that is set when the variable is displayed.  The names of variables in scope are distinct, so the name identifies the variable. *)
+let hidden_pattern_vars : (string, bool ref) Hashtbl.t = Hashtbl.create 10
+
 (* A composite of adjacent locks in a let-only, with the given source mode. *)
 type _ letonly_lock =
   | No_letonly_lock : 'mode letonly_lock
@@ -720,7 +729,12 @@ let rec unparse : type mode n lt ls rt rs s.
     (lt, ls, rt, rs) parse located =
  fun ?(dots_at_end = true) vars tm li ri ->
   match tm with
-  | Var x -> unlocated (Ident (Names.lookup vars x, []))
+  | Var x ->
+      let name = Names.lookup vars x in
+      (match name with
+      | x :: _ -> Option.iter (fun r -> r := true) (Hashtbl.find_opt hidden_pattern_vars x)
+      | [] -> ());
+      unlocated (Ident (name, []))
   | Const c -> (
       match Scope.Situation.unparse (`Constant c) with
       | Some { keys = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
@@ -952,7 +966,7 @@ let rec unparse : type mode n lt ls rt rs s.
           (* The arguments of a notation are displayed as ordinary terms, even if they are implicit arguments of the constructor. *)
           let operand (Spine_arg (plus, x, _)) =
             make_unparser_implicit vars (Spine_arg (plus, x, `Explicit)) in
-          match notation_of_constr c args with
+          match notation_of_constr spine_arg_kind c args with
           | Some ({ notn = Wrap notn; inner_symbols; _ }, first) ->
               unparse_notation notn (List.map operand first) inner_symbols li ri
           | None ->
@@ -1375,13 +1389,60 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
             (* Extend the name context by the branch's pattern variables (named via the stored "annotate" witness), then permute it to the body's context. *)
             let abvars, xs = Names.add_match_vars vars annotate comp in
             let bodyvars = Names.permute perm abvars in
-            let args = List.fold_left unparse_pattern_var Emp xs in
-            let pat = unparse_spine vars (`Constr c) args No.Interval.entire No.Interval.entire in
-            let ubody = unparse bodyvars body No.Interval.entire No.Interval.entire in
+            (* We display the body first, watching for mentions of the variables of omitted implicit arguments. *)
+            let watched =
+              match Display.implicits () with
+              | `Show -> []
+              | `Hide ->
+                  List.filter_map
+                    (function
+                      | Names.Hidden_var x ->
+                          let r = ref false in
+                          Hashtbl.add hidden_pattern_vars x r;
+                          Some (x, r)
+                      | _ -> None)
+                    xs in
+            let ubody =
+              Fun.protect
+                ~finally:(fun () ->
+                  List.iter (fun (x, _) -> Hashtbl.remove hidden_pattern_vars x) watched)
+                (fun () -> unparse bodyvars body No.Interval.entire No.Interval.entire) in
+            let shown x =
+              match List.assoc_opt x watched with
+              | Some r -> !r
+              | None -> true in
+            let args = List.fold_left (unparse_pattern_var ~shown) Emp xs in
+            (* A notation for the constructor matches the pattern variables according to their implicitness, as for a term, and displays them without braces. *)
+            let pat =
+              match notation_of_constr snd c args with
+              | Some ({ notn = Wrap notn; inner_symbols; _ }, first) ->
+                  unparse_notation notn (List.map fst first) inner_symbols No.Interval.entire
+                    No.Interval.entire
+              | None ->
+                  let args =
+                    Bwd.filter_map
+                      (fun (x, i) ->
+                        match i with
+                        | `Explicit -> Some x
+                        | `Implicit ->
+                            Some
+                              {
+                                unparse =
+                                  (fun _ _ ->
+                                    braceize (x.unparse No.Interval.entire No.Interval.entire));
+                              }
+                        | `Hidden -> None)
+                      args in
+                  unparse_spine ~notation:false vars (`Constr c) args No.Interval.entire
+                    No.Interval.entire in
             let is_cube = function
-              | Names.Cube_var _ -> true
+              | Names.Cube_var _ | Names.Implicit_var _ -> true
+              | Names.Hidden_var x -> shown x
               | Names.Boundary_var _ -> false in
-            acc <: (pat, ubody, List.exists is_cube xs, List.exists (fun x -> not (is_cube x)) xs)
+            let is_boundary = function
+              | Names.Boundary_var _ -> true
+              | _ -> false in
+            acc <: (pat, ubody, List.exists is_cube xs, List.exists is_boundary xs)
         (* A failed branch can only be displayed in an error message of the command whose checking failed.  We don't have names for its pattern variables, so we just omit it. *)
         | Term.Failed_branch -> acc)
       branches Emp in
@@ -1402,24 +1463,33 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
       start ubranches in
   unlocated (outfix ~notn ~inner:(Multiple (wstok Match, inner, wstok RBracket)))
 
-(* Add the pattern variables bound by one argument of a constructor in a match branch to the argument spine of the pattern.  A cube variable is a single explicit argument, while an explicit boundary is one argument for each face, with the strict faces in braces and the top face explicit, exactly as in a non-cube abstraction. *)
-and unparse_pattern_var : unparser Bwd.t -> Names.pattern_var -> unparser Bwd.t =
- fun args -> function
-  | Cube_var x -> Snoc (args, { unparse = (fun _ _ -> unparse_var x) })
+(* Add the pattern variables bound by one argument of a constructor in a match branch to the argument spine of the pattern.  A cube variable is a single explicit argument, while an explicit boundary is one argument for each face, with the strict faces in braces and the top face explicit, exactly as in a non-cube abstraction.  The variable of an implicit argument is in braces, and is omitted if it is hidden and not shown. *)
+and unparse_pattern_var :
+    shown:(string -> bool) ->
+    (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t ->
+    Names.pattern_var ->
+    (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t =
+ fun ~shown args -> function
+  | Cube_var x -> Snoc (args, ({ unparse = (fun _ _ -> unparse_var x) }, `Explicit))
+  (* An implicit argument is a cube variable in braces, or omitted if it is hidden. *)
+  | Implicit_var x -> Snoc (args, ({ unparse = (fun _ _ -> unparse_var x) }, `Implicit))
+  | Hidden_var x ->
+      Snoc (args, ({ unparse = (fun _ _ -> unparse_var x) }, if shown x then `Implicit else `Hidden))
   | Boundary_var (Variables (_, _, xs)) ->
       let module Fold = NICubeOf.Traverse (struct
-        type 'acc t = unparser Bwd.t
+        type 'acc t = (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t
       end) in
       let folder : type left k m.
           (k, m) sface ->
-          unparser Bwd.t ->
+          (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t ->
           (left, k, string) NFamOf.t ->
-          (left, k, unit) NFamOf.t * unparser Bwd.t =
+          (left, k, unit) NFamOf.t * (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t =
        fun s acc (NFamOf x) ->
         let arg =
-          match is_id_sface s with
-          | Some _ -> { unparse = (fun _ _ -> unparse_var x) }
-          | None -> { unparse = (fun _ _ -> braceize (unparse_var x)) } in
+          ( { unparse = (fun _ _ -> unparse_var x) },
+            match is_id_sface s with
+            | Some _ -> `Explicit
+            | None -> `Implicit ) in
         (NFamOf (), Snoc (acc, arg)) in
       snd (Fold.fold_map_left { foldmap = (fun s acc x -> folder s acc x) } args xs)
 

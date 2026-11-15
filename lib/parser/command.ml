@@ -1162,11 +1162,6 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | [] -> ()
       | _ :: _ as unbound ->
           fatal (Unbound_variable_in_notation (List.filter_map (fun ((x, _), _) -> x) unbound)));
-      (* Constructors have no implicit arguments. *)
-      (match key with
-      | `Constr _ when List.exists (fun ((_, i), _) -> i = `Implicit) args ->
-          fatal (Unimplemented "implicit constructor arguments")
-      | _ -> ());
       let user =
         User { id = User.Id.make (); name; fixity; pattern; key; val_vars = List.map fst args }
       in
@@ -1339,7 +1334,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                     locate_opt None @@ outfix ~notn:Builtins.comatch ~inner)
             | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { ty; _ })); _ }, _, _)
               ->
-                let nargs = List.length (Term.pi_names ty) in
+                (* The implicit arguments of the constructor are inserted automatically. *)
+                let nargs =
+                  List.length (List.filter (fun i -> i = `Explicit) (Term.pi_implicits ty)) in
                 unparse_spine names (`Constr constr)
                   (Bwd.init nargs (fun _ -> { unparse = (fun li ri -> hole li ri) }))
                   No.Interval.entire No.Interval.entire
@@ -1371,24 +1368,28 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 k D.t ->
                 Variables.hints list ->
                 ?acc:unparser Bwd.t ->
-                string option list ->
+                (string option * Term.implicitness) list ->
                 unparser Bwd.t * Names.wrapped =
              fun names dim hints ?(acc = Emp) -> function
                | [] -> (acc, Wrap names)
-               | x :: args ->
+               | (x, implicit) :: args -> (
                    (* If the argument is anonymous, use any display hints from its type. *)
                    let hint, hints =
                      match hints with
                      | [] -> (Variables.no_hints, [])
                      | h :: hs -> (h, hs) in
-                   let name =
-                     match x with
-                     | Some x -> `Named x
-                     | None -> `Anon hint in
-                   let x, names = Names.add_cube dim names name in
-                   constr_args names dim hints
-                     ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
-                     args in
+                   match implicit with
+                   (* An implicit argument is omitted from the pattern, so that it is bound invisibly. *)
+                   | `Implicit -> constr_args names dim hints ~acc args
+                   | `Explicit ->
+                       let name =
+                         match x with
+                         | Some x -> `Named x
+                         | None -> `Anon hint in
+                       let x, names = Names.add_cube dim names name in
+                       constr_args names dim hints
+                         ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
+                         args) in
             let rec go = function
               | [] ->
                   let* higher = NameBranches.stateless (Branches.lift HigherBranch.get) in
@@ -1412,7 +1413,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             Reporter.discard_errors ~fallback:(fun () -> Emp) @@ fun () ->
                             Domvars.constr_arg_hints ctx env ty in
                           let cargs, newnames =
-                            constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in
+                            constr_args names dim (Bwd.to_list arg_hints)
+                              (List.combine (Term.pi_names ty) (Term.pi_implicits ty)) in
                           let* () = NameBranches.put newnames in
                           let first =
                             Term

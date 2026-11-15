@@ -144,15 +144,20 @@ let rec ext_pi : type dom window mode a b c ac e n.
           | Eq ->
               let newvars, newnfs = dom_vars ctx modality doms in
               let filter_k_k = Modality.filter_idempotent filter_k_m in
-              (* If a single cube variable is anonymous, we fall back on the name of the constructor's argument. *)
+              (* If a single cube variable is anonymous, or an implicit argument is omitted, we fall back on the name of the constructor's argument. *)
               let x : (a, a1) Raw.Patternvars.arg =
                 match x with
                 | Cube None -> IndexedPatternvars.Cube (option_of_binder_name (top_variable pix))
+                | Implicit None -> Implicit (option_of_binder_name (top_variable pix))
+                | Hidden None -> Hidden (option_of_binder_name (top_variable pix))
                 | _ -> x in
               let newctx : (mode, a1, (e, (_, _) dim_entry) Tbwd.snoc) Ctx.t =
                 match x with
                 (* A single variable becomes a cube variable, whose boundary is accessed with face suffixes. *)
                 | Cube x -> Ctx.cube_vis ctx filter_k_k x newnfs
+                | Implicit x -> Ctx.cube_vis ctx filter_k_k x newnfs
+                (* An omitted implicit argument is bound by an invisible variable. *)
+                | Hidden _ -> Ctx.invis ctx filter_k_k newnfs
                 (* Explicit boundary variables must be exactly one for each face of the cube, the last of them being the top face. *)
                 | Boundary ns ->
                     let k = CubeOf.dim newnfs in
