@@ -14,6 +14,13 @@ open Top
 
 type arity = [ `One of string | `Any | `None ]
 
+(* Typechecking allocates a great many short-lived values, and with OCaml's default minor heap of 256k words too many of them survive long enough to be promoted to the major heap; a larger one makes checking a large library noticeably faster.  The best size depends on the processor's cache rather than on the amount of memory available, so we fix it.  We don't go beyond 1M words (8MB), because the runtime reserves address space for the minor heap of every domain that could exist, 128 by default, and reserving too much makes the program fail to start under a limit on virtual memory.  If the user has already chosen a size with OCAMLRUNPARAM, we leave it alone. *)
+let () =
+  let default_minor_heap_size = 262144 in
+  let minor_heap_size = 1048576 in
+  if (Gc.get ()).minor_heap_size = default_minor_heap_size then
+    Gc.set { (Gc.get ()) with minor_heap_size }
+
 let usage_msg = "narya [options] <file1> [<file2> ...]"
 let interactive = ref false
 let proofgeneral = ref false
