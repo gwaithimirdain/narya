@@ -119,7 +119,7 @@ module Patternitems (I : Indices) = struct
     | ( :: ) : ([ `Plain | `Braced ] * I.name located) * ('a I.suc, 'ab) t -> ('a, 'ab) t
 end
 
-(* The pattern variables of one branch of a match: one entry for each argument of the constructor, which is either a single variable (which for a higher-dimensional match is a cube variable, with its boundary accessed by face suffixes), or an explicit list of variables naming all the faces of its boundary, the last of which is the top face, along with the locations of the patterns that they come from (for error reporting).  An implicit argument is either a single (cube) variable, written in braces, or omitted, in which case it is bound by an invisible variable that the user can't refer to (and we record the name of the argument of the constructor, for display).  The middle index counts the *arguments*, hence is the arity of the constructor, while the last index is the raw context extended by all the variables actually bound. *)
+(* The pattern variables of one branch of a match: one entry for each argument of the constructor, which is either a single variable (which for a higher-dimensional match is a cube variable, with its boundary accessed by face suffixes), or an explicit list of variables naming all the faces of its boundary, the last of which is the top face, along with the locations of the patterns that they come from (for error reporting).  An implicit argument is either a single (cube) variable, written in braces (where we remember whether the user named it, since when we supply a name for display it is no longer None), or omitted, in which case it is bound by an invisible variable that the user can't refer to (and we record the name of the argument of the constructor, for display).  The middle index counts the *arguments*, hence is the arity of the constructor, while the last index is the raw context extended by all the variables actually bound. *)
 module Patternvars (I : Indices) = struct
   module Namevec = Namevec (I)
   open Namevec.P
@@ -127,8 +127,8 @@ module Patternvars (I : Indices) = struct
   (* The pattern variables of a single argument, forgetting how many arguments remain. *)
   type (_, _) arg =
     | Cube : I.name -> ('a, 'a I.suc) arg
-    | Boundary : ('a, 'c, 'ac) Namevec.t -> ('a, 'ac) arg
-    | Implicit : I.name -> ('a, 'a I.suc) arg
+    | Boundary : [ `Explicit | `Implicit ] * ('a, 'c, 'ac) Namevec.t -> ('a, 'ac) arg
+    | Implicit : I.name * [ `Named | `Anonymous ] -> ('a, 'a I.suc) arg
     | Hidden : I.name -> ('a, 'a) arg
 
   type (_, _, _) t =
@@ -148,7 +148,7 @@ module Patternvars (I : Indices) = struct
     | Implicit _ :: xs ->
         let (Bplus_to ab) = bplus xs in
         Bplus_to (Suc ab)
-    | Boundary ns :: xs -> prepend_bplus (Namevec.bplus ns) (bplus xs)
+    | Boundary (_, ns) :: xs -> prepend_bplus (Namevec.bplus ns) (bplus xs)
     | Hidden _ :: xs -> bplus xs
 
   let rec none : type a b ab. (a, b, ab) bplus -> (a, b, ab) t =
@@ -162,8 +162,9 @@ module Patternvars (I : Indices) = struct
   (* Whether every argument has its boundary given explicitly, so that no cube variables are bound.  (Vacuously true for a constructor with no arguments.) *)
   let rec all_boundary : type a b ab. (a, b, ab) t -> bool = function
     | [] -> true
-    | (Cube _ | Implicit _) :: _ -> false
-    | (Boundary _ | Hidden _) :: xs -> all_boundary xs
+    (* An invisible variable is a cube variable too. *)
+    | (Cube _ | Implicit _ | Hidden _) :: _ -> false
+    | Boundary _ :: xs -> all_boundary xs
 end
 
 module IndexedNamevec = Namevec (DeBruijnIndices)

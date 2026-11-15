@@ -260,7 +260,7 @@ let add_boundary : type m n b a c ac.
 (* The variables bound by one argument of a constructor in a match branch, as they are to be displayed: either a single (cube) variable, or a cube of variables naming all the faces of its boundary. *)
 type pattern_var =
   | Cube_var : string -> pattern_var
-  | Boundary_var : ('n, string) gvariables -> pattern_var
+  | Boundary_var : [ `Explicit | `Implicit ] * ('n, string) gvariables -> pattern_var
   (* An implicit argument bound by a (cube) variable in braces, or omitted, so that its variable is invisible to the user, though it still has a name. *)
   | Implicit_var : string -> pattern_var
   | Hidden_var : string -> pattern_var
@@ -278,14 +278,19 @@ let rec add_match_vars : type n mode annotations a b ab.
       let x, names = add_cube m names (Variables.binder_name_of_option name) in
       let names, xs = add_match_vars names annotate comp in
       (names, Cube_var x :: xs)
-  | Suc (Annotate (Boundary bdry, _), annotate), Suc (Dim (m, _), comp) ->
+  | Suc (Annotate (Boundary (implicit, bdry), _), annotate), Suc (Dim (m, _), comp) ->
       let x, names = add_boundary m names bdry in
       let names, xs = add_match_vars names annotate comp in
-      (names, Boundary_var x :: xs)
-  | Suc (Annotate (Implicit name, _), annotate), Suc (Dim (m, _), comp) ->
+      (names, Boundary_var (implicit, x) :: xs)
+  | Suc (Annotate (Implicit (name, named), _), annotate), Suc (Dim (m, _), comp) ->
       let x, names = add_cube m names (Variables.binder_name_of_option name) in
       let names, xs = add_match_vars names annotate comp in
-      (names, Implicit_var x :: xs)
+      (* An anonymous variable in braces is displayed like an omitted one. *)
+      ( names,
+        (match named with
+        | `Named -> Implicit_var x
+        | `Anonymous -> Hidden_var x)
+        :: xs )
   | Suc (Annotate (Hidden name, _), annotate), Suc (Dim (m, _), comp) ->
       let x, names = add_cube m names (Variables.binder_name_of_option name) in
       let names, xs = add_match_vars names annotate comp in

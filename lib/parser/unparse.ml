@@ -1472,7 +1472,7 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
       start ubranches in
   unlocated (outfix ~notn ~inner:(Multiple (wstok Match, inner, wstok RBracket)))
 
-(* Add the pattern variables bound by one argument of a constructor in a match branch to the argument spine of the pattern.  A cube variable is a single explicit argument, while an explicit boundary is one argument for each face, with the strict faces in braces and the top face explicit, exactly as in a non-cube abstraction.  The variable of an implicit argument is in braces, and is omitted if it is hidden and not shown. *)
+(* Add the pattern variables bound by one argument of a constructor in a match branch to the argument spine of the pattern.  A cube variable is a single explicit argument, while an explicit boundary is one argument for each face, with the strict faces in braces and the top face explicit (or also in braces, if the argument is implicit), exactly as in a non-cube abstraction.  The variable of an implicit argument is in braces, and is omitted if it is hidden and not shown. *)
 and unparse_pattern_var :
     shown:(string -> bool) ->
     (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t ->
@@ -1484,7 +1484,7 @@ and unparse_pattern_var :
   | Implicit_var x -> Snoc (args, ({ unparse = (fun _ _ -> unparse_var x) }, `Implicit))
   | Hidden_var x ->
       Snoc (args, ({ unparse = (fun _ _ -> unparse_var x) }, if shown x then `Implicit else `Hidden))
-  | Boundary_var (Variables (_, _, xs)) ->
+  | Boundary_var (implicit, Variables (_, _, xs)) ->
       let module Fold = NICubeOf.Traverse (struct
         type 'acc t = (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t
       end) in
@@ -1496,9 +1496,9 @@ and unparse_pattern_var :
        fun s acc (NFamOf x) ->
         let arg =
           ( { unparse = (fun _ _ -> unparse_var x) },
-            match is_id_sface s with
-            | Some _ -> `Explicit
-            | None -> `Implicit ) in
+            match (is_id_sface s, implicit) with
+            | Some _, `Explicit -> `Explicit
+            | _ -> `Implicit ) in
         (NFamOf (), Snoc (acc, arg)) in
       snd (Fold.fold_map_left { foldmap = (fun s acc x -> folder s acc x) } args xs)
 

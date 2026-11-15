@@ -148,18 +148,19 @@ let rec ext_pi : type dom window mode a b c ac e n.
               let x : (a, a1) Raw.Patternvars.arg =
                 match x with
                 | Cube None -> IndexedPatternvars.Cube (option_of_binder_name (top_variable pix))
-                | Implicit None -> Implicit (option_of_binder_name (top_variable pix))
+                | Implicit (None, named) ->
+                    Implicit (option_of_binder_name (top_variable pix), named)
                 | Hidden None -> Hidden (option_of_binder_name (top_variable pix))
                 | _ -> x in
               let newctx : (mode, a1, (e, (_, _) dim_entry) Tbwd.snoc) Ctx.t =
                 match x with
                 (* A single variable becomes a cube variable, whose boundary is accessed with face suffixes. *)
                 | Cube x -> Ctx.cube_vis ctx filter_k_k x newnfs
-                | Implicit x -> Ctx.cube_vis ctx filter_k_k x newnfs
+                | Implicit (x, _) -> Ctx.cube_vis ctx filter_k_k x newnfs
                 (* An omitted implicit argument is bound by an invisible variable. *)
                 | Hidden _ -> Ctx.invis ctx filter_k_k newnfs
                 (* Explicit boundary variables must be exactly one for each face of the cube, the last of them being the top face. *)
-                | Boundary ns ->
+                | Boundary (_, ns) ->
                     let k = CubeOf.dim newnfs in
                     let (Vars (af, names)) =
                       vars_of_names (fun j -> Wrong_boundary_of_pattern_variable j) None k ns in

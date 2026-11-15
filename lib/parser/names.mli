@@ -16,7 +16,7 @@ val permute : ('a, 'b) permute -> 'b t -> 'a t
 (* The variables bound by one argument of a constructor in a match branch, as they are to be displayed: either a single (cube) variable, or a cube of variables naming all the faces of its boundary. *)
 type pattern_var =
   | Cube_var : string -> pattern_var
-  | Boundary_var : ('n, string) gvariables -> pattern_var
+  | Boundary_var : [ `Explicit | `Implicit ] * ('n, string) gvariables -> pattern_var
   | Implicit_var : string -> pattern_var
   | Hidden_var : string -> pattern_var
 

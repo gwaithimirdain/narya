@@ -267,7 +267,27 @@ type (_, _, _) synthable_branch =
     }
       -> ('mode, 'a, 'm) synthable_branch
 
-(* Group the pattern variables of a branch, as written by the user, into the pattern variables of the arguments of the constructor, given whether each of them is implicit.  An implicit argument takes the next variable if it is in braces, as a cube variable, and is otherwise bound invisibly.  An explicit argument takes the next variable that isn't in braces, along with any in braces before it, which name the faces of its boundary.  If the number of variables is wrong, we return the number of extra ones (positive) or missing explicit ones (negative). *)
+(* Each argument of a constructor binds a cube of variables in a match, whose dimension is that of the match filtered by the composite of the window modality and the modality of the argument (as in Domvars.ext_pi).  We record the number of faces of that cube, along with whether the argument is implicit, reading them off the constructor's stored function-type. *)
+let rec pattern_args : type dom window mode m a.
+    (dom, window, mode) Modality.t -> m D.t -> (dom, a, kinetic) term -> (implicitness * int) list =
+ fun window m ty ->
+  match ty with
+  | Pi { x = _; filter; implicit; doms = Modal (annotation, _, _); cods } -> (
+      match D.compare_zero (CodCube.dim cods) with
+      | Pos _ -> []
+      | Zero ->
+          let Eq = Modality.filter_uniq filter (Modality.filter_zero annotation) in
+          let (Cod (cfilter, cod)) = CodCube.find_top cods in
+          let Eq = Modality.filter_uniq cfilter (Modality.filter_zero annotation) in
+          let (Comp wx) = Modality.comp annotation in
+          let modality = Modality.comp_out window wx in
+          let (Has_filter f) = Modality.filter modality m in
+          let faces = ref 0 in
+          let _ = CubeOf.build (Modality.filtered m f) { build = (fun _ -> incr faces) } in
+          (implicit, !faces) :: pattern_args window m cod)
+  | _ -> []
+
+(* Group the pattern variables of a branch, as written by the user, into the pattern variables of the arguments of the constructor.  An explicit argument takes the next variable that isn't in braces, along with any in braces before it, which name the faces of its boundary.  An implicit argument can be bound by a single cube variable in braces, or omitted, in which case it is bound invisibly.  But in a higher-dimensional match with the non-cube abstraction ↦, every variable has to be named face by face, so an implicit argument takes a variable in braces for each face of its cube; it can't be omitted, which is reported later as for any cube variable there.  If the number of variables is wrong, we return the number of extra ones (positive) or missing explicit ones (negative). *)
 type (_, _) grouped_patternvars =
   | Grouped : ('a, 'c, 'ab) Patternvars.t -> ('a, 'ab) grouped_patternvars
 
@@ -276,6 +296,7 @@ type (_, _) pattern_boundary =
       ('a, 'c Fwn.suc, 'ac) Namevec.t * ('ac, 'ab) Patternitems.t
       -> ('a, 'ab) pattern_boundary
 
+(* Some variables in braces followed by one that isn't, if there is one. *)
 let rec take_pattern_boundary : type a ab. (a, ab) Patternitems.t -> (a, ab) pattern_boundary option
     = function
   | [] -> None
@@ -285,27 +306,50 @@ let rec take_pattern_boundary : type a ab. (a, ab) Patternitems.t -> (a, ab) pat
       | Some (Pattern_boundary (ns, rest)) -> Some (Pattern_boundary (x :: ns, rest))
       | None -> None)
 
+(* The first variable in braces, followed by up to n-1 more of them. *)
+let rec take_braced : type a ab. int -> (a, ab) Patternitems.t -> (a, ab) pattern_boundary option =
+ fun n items ->
+  match items with
+  | (`Braced, x) :: rest when n > 1 -> (
+      match take_braced (n - 1) rest with
+      | Some (Pattern_boundary (ns, rest)) -> Some (Pattern_boundary (x :: ns, rest))
+      | None -> Some (Pattern_boundary ([ x ], rest)))
+  | (`Braced, x) :: rest -> Some (Pattern_boundary ([ x ], rest))
+  | _ -> None
+
 let rec count_patternitems : type a ab. (a, ab) Patternitems.t -> int = function
   | [] -> 0
   | _ :: xs -> 1 + count_patternitems xs
 
 let rec group_patternvars : type a ab.
-    implicitness list -> (a, ab) Patternitems.t -> ((a, ab) grouped_patternvars, int) Result.t =
- fun implicits items ->
+    faces:bool ->
+    (implicitness * int) list ->
+    (a, ab) Patternitems.t ->
+    ((a, ab) grouped_patternvars, int) Result.t =
+ fun ~faces args items ->
   let cons x = Result.map (fun (Grouped xs) -> Grouped (x :: xs)) in
-  match (implicits, items) with
+  match (args, items) with
   | [], [] -> Ok (Grouped [])
   | [], _ :: _ -> Error (count_patternitems items)
-  | `Implicit :: implicits, (`Braced, x) :: items ->
-      cons (Implicit x.value) (group_patternvars implicits items)
-  | `Implicit :: implicits, _ -> cons (Hidden None) (group_patternvars implicits items)
-  | `Explicit :: implicits, _ -> (
+  | (`Implicit, n) :: args, (`Braced, _) :: _ when faces -> (
+      match take_braced n items with
+      | Some (Pattern_boundary (ns, items)) ->
+          cons (Boundary (`Implicit, ns)) (group_patternvars ~faces args items)
+      | None -> fatal (Anomaly "no braced variable"))
+  | (`Implicit, _) :: args, (`Braced, x) :: items ->
+      let named =
+        match x.value with
+        | Some _ -> `Named
+        | None -> `Anonymous in
+      cons (Implicit (x.value, named)) (group_patternvars ~faces args items)
+  | (`Implicit, _) :: args, _ -> cons (Hidden None) (group_patternvars ~faces args items)
+  | (`Explicit, _) :: args, _ -> (
       match take_pattern_boundary items with
-      | None -> Error (-(1 + List.length (List.filter (fun i -> i = `Explicit) implicits)))
+      | None -> Error (-(1 + List.length (List.filter (fun (i, _) -> i = `Explicit) args)))
       | Some (Pattern_boundary ([ x ], items)) ->
-          cons (Cube x.value) (group_patternvars implicits items)
+          cons (Cube x.value) (group_patternvars ~faces args items)
       | Some (Pattern_boundary ((_ :: _ :: _ as ns), items)) ->
-          cons (Boundary ns) (group_patternvars implicits items))
+          cons (Boundary (`Explicit, ns)) (group_patternvars ~faces args items))
 
 (* If the constructor failed, we treat all the pattern variables as ordinary arguments, since the branch will fail dependently anyway. *)
 let rec ungrouped_patternvars : type a ab. (a, ab) Patternitems.t -> (a, ab) grouped_patternvars =
@@ -316,12 +360,13 @@ let rec ungrouped_patternvars : type a ab. (a, ab) Patternitems.t -> (a, ab) gro
       Grouped (Cube x.value :: xs)
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype.  Curiously, the only mode parameter that appears here is the *source* of the window modality, i.e. the mode at which the datatype and discriminee live. *)
-let merge_branches : type hmode dom a m.
+let merge_branches : type hmode dom window mode a m.
     hmode head ->
+    (dom, window, mode) Modality.t ->
     (Constr.t, a branch) Abwd.t ->
     (Constr.t, (dom, m) Value.dataconstr) Abwd.t ->
     (Constr.t * (dom, a, m) checkable_branch) list =
- fun head user_branches data_constrs ->
+ fun head window user_branches data_constrs ->
   let user_branches, leftovers =
     Bwd.fold_left
       (fun ((userbrs, databrs) :
@@ -342,7 +387,12 @@ let merge_branches : type hmode dom a m.
               (* We also check during preprocessing that the user has supplied the right number of pattern variable arguments to the constructor, which is the constructor's arity (the pi-depth of its stored function-type), grouping them according to which arguments are implicit.  But if the constructor failed to typecheck, it has no known arity, and the branch will fail dependently when it is checked.  If the number is wrong, we report it and treat the branch like one for a constructor that failed, so that it fails dependently too. *)
               let grouped =
                 if is_failed ty then Ok (ungrouped_patternvars items)
-                else group_patternvars (pi_implicits ty) items in
+                else
+                  let faces =
+                    match (cube, D.compare_zero (dim_env env)) with
+                    | `Normal _, Pos _ -> true
+                    | _ -> false in
+                  group_patternvars ~faces (pattern_args window (dim_env env) ty) items in
               let Grouped xs, ty, grouped =
                 match grouped with
                 | Ok xs -> (xs, ty, true)
@@ -2035,7 +2085,7 @@ and check_match_branches : type dom window mode a b bm.
           if value <> needed then fatal ?loc (Wrong_number_of_arguments_to_motive needed)
       | None -> ());
       (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
-      let user_branches = merge_branches name brs data_constrs in
+      let user_branches = merge_branches name window brs data_constrs in
       (* We use the callback to get the motive and other data.  This might typecheck some of the branches, if it is a synthesizing match. *)
       let motive, branches, check_branches = callbacks.get dim user_branches tyfam in
       (* If the match is synthesizing, at this point we can already compute what its output type will be.  We do it now so that the computation has any desired side effects, notably (in the dependent case) passing it to the ?synthed callback before any matches are checked. *)
@@ -2458,7 +2508,7 @@ and check_var_match : type dom modality mode a b bm.
               Global.postpone ~blockers ~attempt ~report);
           let constr_vars = TubeOf.plus_cube inst_vars (CubeOf.singleton level) in
           (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
-          let user_branches = merge_branches name brs data_constrs in
+          let user_branches = merge_branches name window brs data_constrs in
           (* We now iterate through the constructors, typechecking the corresponding branches and inserting them in the match tree. *)
           let branches =
             List.fold_left

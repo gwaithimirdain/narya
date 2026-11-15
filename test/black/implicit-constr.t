@@ -151,7 +151,7 @@ Braces in constructor declarations are preserved by reformatting.
   
   def T : Type ≔ data [ t. {x : A} (y : A) | u. : {x : A} → A → T ]
 
-In a match, an implicit argument of a constructor can be omitted from a pattern, in which case it is bound by a variable that the user can't refer to, or bound by a variable in braces.  Braced patterns fill the implicit arguments from the left, so "{_}" skips one, and they can be deep patterns.  When displayed, an omitted implicit argument appears in braces only if the body of the branch mentions it, or if displaying implicits.
+In a match, an implicit argument of a constructor can be omitted from a pattern, in which case it is bound by a variable that the user can't refer to, or bound by a variable in braces.  Braced patterns fill the implicit arguments from the left, so "{_}" skips one, and they can be deep patterns.  When displayed, an omitted implicit argument, or one bound by "{_}", appears in braces only if the body of the branch mentions it, or if displaying implicits.
 
   $ narya - <<EOF
   > import "vec"
@@ -181,7 +181,7 @@ In a match, an implicit argument of a constructor can be omitted from a pattern,
   n v ↦ match v [ cons. {k} x xs ↦ suc. k | nil. ↦ 0 ]
     : (n : ℕ) (v : Vec n) → ℕ
   
-  n v ↦ match v [ cons. {n′} x xs ↦ 0 | nil. ↦ 0 ]
+  n v ↦ match v [ cons. x xs ↦ 0 | nil. ↦ 0 ]
     : (n : ℕ) (v : Vec n) → ℕ
   
   n v ↦
@@ -268,7 +268,7 @@ All the branches for one constructor must put the same arguments in braces.
   
   [1]
 
-In a higher-dimensional match, a braced implicit argument is a cube variable, and an omitted one is bound invisibly.
+In a higher-dimensional match with the cube abstraction ⤇, a braced implicit argument is a cube variable, and an omitted one is bound invisibly.
 
   $ narya vec.ny -v -e "def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ⤇ refl zero. | cons. {k} x xs ⤇ suc. k.2 ]" -e 'about h' -e "def h' (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ⤇ refl zero. | cons. x xs ⤇ ? ]" 2>&1 | grep -v 'I0001\|assumed\|^ *$'
    ￫ info[I0000]
@@ -304,6 +304,78 @@ In a higher-dimensional match, a braced implicit argument is a cube variable, an
      ℕ⁽ᵉ⁾ (suc. 𝑥.0) (suc. 𝑥.1)
    ￫ error[E3002]
    ￮ command-line exec string contains open holes
+
+In a higher-dimensional match with the non-cube abstraction ↦, every variable is named face by face, so an implicit argument must have all its faces in braces, and can't be omitted.
+
+  $ narya vec.ny -e "def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ↦ refl zero. | cons. {k0} {k1} {k2} {x0} {x1} x2 {xs0} {xs1} xs2 ↦ suc. k2 ]" -e 'about h'
+  n0 n1 n2 v0 v1 v2 ↦
+  match v2 [
+  | cons. {k0} {k1} {k2} {x0} {x1} x2 {xs0} {xs1} xs2 ↦ suc. k2
+  | nil. ↦ refl 0]
+    : (n0 : ℕ) (n1 : ℕ) (n2 : ℕ⁽ᵉ⁾ n0 n1) (v0 : Vec n0) (v1 : Vec n1)
+      (v2 : Vec⁽ᵉ⁾ n2 v0 v1)
+      → ℕ⁽ᵉ⁾ n0 n1
+  
+
+  $ narya vec.ny -e "def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ↦ refl zero. | cons. {x0} {x1} x2 {xs0} {xs1} xs2 ↦ n2 ]"
+   ￫ error[E0510]
+   ￭ command-line exec string
+   1 | def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ↦ refl zero. | cons. {x0} {x1} x2 {xs0} {xs1} xs2 ↦ n2 ]
+     ^ e-dimensional match requires cube abstraction
+  
+   ￫ error[E1310]
+   ￭ command-line exec string
+   1 | def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ↦ refl zero. | cons. {x0} {x1} x2 {xs0} {xs1} xs2 ↦ n2 ]
+     ^ not enough boundary arguments for higher-dimensional pattern variable (need 1 more)
+  
+  [1]
+
+  $ narya vec.ny -e "def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ↦ refl zero. | cons. {k} {x0} {x1} x2 {xs0} {xs1} xs2 ↦ n2 ]"
+   ￫ error[E0510]
+   ￭ command-line exec string
+   1 | def h (n0 n1 : ℕ) (n2 : Id ℕ n0 n1) (v0 : Vec n0) (v1 : Vec n1) (v2 : Vec⁽ᵉ⁾ n2 v0 v1) : Id ℕ n0 n1 ≔ match v2 [ nil. ↦ refl zero. | cons. {k} {x0} {x1} x2 {xs0} {xs1} xs2 ↦ n2 ]
+     ^ e-dimensional match requires cube abstraction
+  
+  [1]
+
+A placeholder in braces in the definition of a notation for a constructor only matches an implicit argument, so it applies only to a constructor that has one there, in terms, patterns, and display.  In display, it can only omit an argument that isn't being displayed.
+
+  $ narya - <<EOF
+  > import "vec"
+  > def L : Type ≔ data [ nil. | cons. (x : A) (xs : L) ]
+  > notation(5) x "∷" xs ≔ cons. {_} x xs
+  > def v : Vec 1 ≔ a ∷ nil.
+  > echo v
+  > echo (cons. a nil. : L)
+  > def f (n : ℕ) (v : Vec n) : A ≔ match v [ nil. ↦ a | x ∷ xs ↦ x ]
+  > def g (n : ℕ) (v : Vec n) : ℕ ≔ match v [ nil. ↦ zero. | cons. {k} x xs ↦ k ]
+  > about f
+  > about g
+  > display implicits ≔ on
+  > echo v
+  > def l : L ≔ a ∷ nil.
+  > EOF
+  a ∷ nil.
+    : Vec 1
+  
+  cons. a nil.
+    : L
+  
+  n v ↦ match v [ x ∷ xs ↦ x | nil. ↦ a ]
+    : (n : ℕ) (v : Vec n) → A
+  
+  n v ↦ match v [ cons. {k} x xs ↦ k | nil. ↦ 0 ]
+    : (n : ℕ) (v : Vec n) → ℕ
+  
+  cons. {0} a nil.
+    : Vec 1
+  
+   ￫ error[E0702]
+   ￭ stdin
+   13 | def l : L ≔ a ∷ nil.
+      ^ unexpected implicit argument: expecting explicit primary argument of constructor cons
+  
+  [1]
 
 Notations for constructors can mention implicit arguments, which match implicit arguments in display.
 
