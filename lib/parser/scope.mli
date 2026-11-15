@@ -82,6 +82,7 @@ val count_sections : unit -> int
 val lookup : Trie.path -> Constant.t option
 val find_data : ('a * 'c, 'b) Trie.t -> 'a -> Trie.path option
 val name_of : Constant.t -> Trie.path
+val defined_name_of : Constant.t -> Trie.path
 val define : ?loc:Asai.Range.t -> Trie.path -> Constant.t
 val define_notation : User.prenotation -> ?loc:Asai.Range.t -> Trie.path -> User.key list
 val check_name : Trie.path -> Asai.Range.t option -> unit

@@ -2174,6 +2174,7 @@ let () =
                   No.Interval.entire))
             `None
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
+      | PDefined name -> utf8string (String.concat "." (Scope.defined_name_of name))
       | PMeta v -> utf8string (meta_name v)
       | PHole (origin, vars, termctx, ty) ->
           (* The context and type of a hole are stored as terms, read back (not for display) at the moment the hole was created.  Since then, other holes appearing in them may have been solved, and constants that were being defined may have acquired definitions.  Thus, before displaying a hole we re-evaluate its context and type in the current global state and read them back again for display, so that the user sees an up-to-date goal.  (This is also what happens when the hole is actually solved: "solve" evaluates the stored context and type in the current state, so the type displayed here is the one that a solution will be checked against.)  This must happen before we rewind to the hole's origin below, since that would undo later solutions and definitions.  If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type (except that internal errors are still reported). *)

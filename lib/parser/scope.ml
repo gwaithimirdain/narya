@@ -372,6 +372,12 @@ let name_of c =
   (* TODO: Better to munge the original name. *)
   | None -> "_OUT_OF_SCOPE" :: Option.value ~default:[] (Hashtbl.find_opt original_names c)
 
+(* The name that a constant was defined with.  Right after it is defined, this is the name it has in the current scope, and unlike name_of it doesn't require searching for it there. *)
+let defined_name_of c =
+  match Hashtbl.find_opt original_names c with
+  | Some name -> name
+  | None -> name_of c
+
 (* Check whether a new name will shadow something else in the export namespace, and warn if so. *)
 let check_name name loc =
   match resolve_export name with

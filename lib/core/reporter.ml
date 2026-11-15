@@ -17,6 +17,9 @@ type printable +=
   | PInt : int -> printable
   | PString : string -> printable
   | PConstant of Constant.t
+  | (* A constant that was just defined, to be printed with the name it was defined with rather than by looking for a name that it has in the current scope. *)
+      PDefined of
+      Constant.t
   | PMeta : ('mode, 'x, 'b, 's) Meta.t -> printable
   | PField : 'i Field.t -> printable
   | PModality : ('dom, 'mode, 'cod) Modality.t -> printable

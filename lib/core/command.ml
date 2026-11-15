@@ -111,7 +111,7 @@ let check_terms (defs : defined_const list) : printable list * bool =
         ( Bwd_extra.to_list_map
             (fun (Checked (c, mode, def)) ->
               Global.set c mode ~parametric def;
-              PConstant c)
+              PDefined c)
             defineds,
           p = `Parametric )
     | d :: defs ->
@@ -203,7 +203,7 @@ let execute : t -> int option * (int -> Reporter.Code.t option) = function
         let p = (Global.get_parametric () :> [ `Parametric | `Nonparametric | `Maybe_parametric ]) in
         Global.add name
           (Definition { mode; ty = Telescope.pis params ty; tm = `Axiom; parametric = p }) );
-      (None, fun holes -> Some (Constant_assumed { name = PConstant name; parametric; holes }))
+      (None, fun holes -> Some (Constant_assumed { name = PDefined name; parametric; holes }))
   | Def defs ->
       Global.set_maybe_parametric ();
       let names, parametric = check_defs defs in
