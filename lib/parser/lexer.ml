@@ -23,6 +23,8 @@ end
 module Basic = Ucharacter.Make_utf8 (LexerState) (Located_token) (Unit)
 open Basic
 
+(* Fmlib's "uchar" builds its error message, with sprintf, every time the character it's looking for isn't there.  We look for several particular characters at the start of every token, and we never display those messages, so we replace it by a version that doesn't do that. *)
+let uchar (expected : Uchar.t) : Uchar.t t = ucharp (Uchar.equal expected) "particular character"
 let backquote = Uchar.of_char '`'
 let newline = Uchar.of_char '\n'
 let lbrace = Uchar.of_char '{'
@@ -276,27 +278,32 @@ let caret_superscript =
 
 let superscript = utf8_superscript </> caret_superscript
 
-(* For other identifiers, we consume (utf-8) characters until we reach whitespace or a special symbol.  Here's the set of specials. *)
+(* For other identifiers, we consume (utf-8) characters until we reach whitespace or a special symbol.  Here's the set of specials., as a hashtable since we test every character of every identifier for membership in it. *)
+module Uchars = Hashtbl.Make (Uchar)
+
 let specials =
   memo @@ fun _ ->
-  Array.concat
-    [
-      ascii_symbol_uchars ();
-      onechar_uchars ();
-      (* We also have to stop when we meet a line comment started by a backquote.  We don't have to worry about block comments, since their opening brace is a onechar op and hence also stops an identifier. *)
-      Array.map Uchar.of_char [| ' '; '\t'; '\n'; '\r'; '`' |];
-      (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
-      [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
-      (* Hole symbols also stop us *)
-      [| query; dblquery; invquery; gelded_query |];
-      (* Unicode tag characters are special *)
-      Array.init (16 * 6) (fun i -> Uchar.of_int (0xE0020 + i));
-      (* Finally, we exclude dots, because they are treated specially as separating pieces of an identifier *)
-      [| Uchar.of_char '.' |];
-    ]
+  let specials = Uchars.create 300 in
+  Array.iter (fun c -> Uchars.replace specials c ())
+  @@ Array.concat
+       [
+         ascii_symbol_uchars ();
+         onechar_uchars ();
+         (* We also have to stop when we meet a line comment started by a backquote.  We don't have to worry about block comments, since their opening brace is a onechar op and hence also stops an identifier. *)
+         Array.map Uchar.of_char [| ' '; '\t'; '\n'; '\r'; '`' |];
+         (* We only include the superscript parentheses: other superscript characters without parentheses are allowed in identifiers. *)
+         [| Token.super_lparen_uchar; Token.super_rparen_uchar |];
+         (* Hole symbols also stop us *)
+         [| query; dblquery; invquery; gelded_query |];
+         (* Unicode tag characters are special *)
+         Array.init (16 * 6) (fun i -> Uchar.of_int (0xE0020 + i));
+         (* Finally, we exclude dots, because they are treated specially as separating pieces of an identifier *)
+         [| Uchar.of_char '.' |];
+       ];
+  specials
 
 let other_char : string t =
-  let* c = ucharp (fun x -> not (Array.mem x (specials ()))) "alphanumeric or unicode" in
+  let* c = ucharp (fun x -> not (Uchars.mem (specials ()) x)) "alphanumeric or unicode" in
   return (Utf8.Encoder.to_internal c)
 
 let all_digits = String.for_all is_digit
