@@ -19,6 +19,9 @@ type 'c app_arg =
   | `Ellipsis
   | `More_ellipsis of [ `Insert | `Instantiate ] ]
 
+(* An argument of a constructor: a term; a term labelled by the face of the cube of arguments that it supplies, which is always implicit; or a dot ".", which ends a cube of implicit arguments, leaving its remaining faces as placeholders. *)
+type 'c constr_arg = [ `Arg of 'c | `Face of string Asai.Range.located * 'c | `Dot ]
+
 module rec Make : functor (I : Indices) -> sig
   module Namevec : module type of Namevec (I)
   module Patternvars : module type of Patternvars (I)
@@ -103,7 +106,7 @@ module rec Make : functor (I : Indices) -> sig
         * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
         -> 'a check
     | Constr :
-        Constr.t located * ('a check located * [ `Implicit | `Explicit ] located) list
+        Constr.t located * ('a check constr_arg located * [ `Implicit | `Explicit ] located) list
         -> 'a check
     | Numeral : Q.t -> 'a check
     | Empty_co_match : 'a check
@@ -298,7 +301,7 @@ functor
           -> 'a check
       (* The arguments of a constructor application.  In the higher-dimensional case the user may optionally supply the redundant boundary arguments of each argument's cube, as implicit arguments preceding the explicit top-dimensional one; they are then checked against the boundary extracted from the type being checked against. *)
       | Constr :
-          Constr.t located * ('a check located * [ `Implicit | `Explicit ] located) list
+          Constr.t located * ('a check constr_arg located * [ `Implicit | `Explicit ] located) list
           -> 'a check
       | Numeral : Q.t -> 'a check
       (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
@@ -601,7 +604,17 @@ module Resolve (R : Resolver) = struct
             }
       | Struct (eta, fields) ->
           Struct (eta, Abwd.map (fun (cube, tm) -> (cube, check ctx tm)) fields)
-      | Constr (c, args) -> Constr (c, List.map (fun (tm, i) -> (check ctx tm, i)) args)
+      | Constr (c, args) ->
+          let arg (a : _ constr_arg located) =
+            match a.value with
+            | `Arg x ->
+                let x = check ctx (locate_opt a.loc x) in
+                locate_opt x.loc (`Arg x.value)
+            | `Face (label, x) ->
+                let x = check ctx (locate_opt a.loc x) in
+                locate_opt a.loc (`Face (label, x.value))
+            | `Dot -> locate_opt a.loc `Dot in
+          Constr (c, List.map (fun (a, i) -> (arg a, i)) args)
       | Numeral x -> Numeral x
       | Empty_co_match -> Empty_co_match
       | Data (constrs, hints) -> Data (Abwd.map (locate_map (dataconstr ctx)) constrs, hints)

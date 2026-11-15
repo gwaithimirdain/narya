@@ -223,7 +223,10 @@ let rec get_list : type mode n.
  fun tm elts ->
   match tm with
   | Term.Constr (c, _, []) when c = Constr.intern "nil" -> Some elts
-  | Constr (c, _, [ Modal (carmod, carplus, car); Modal (cdrmod, cdrplus, cdr) ])
+  | Constr
+      ( c,
+        _,
+        [ (Modal (carmod, carplus, car), `Explicit); (Modal (cdrmod, cdrplus, cdr), `Explicit) ] )
     when c = Constr.intern "cons" -> (
       (* Currently, only "cons" constructors with non-modal arguments can be printed using list syntax.  *)
       match
@@ -242,7 +245,10 @@ let rec get_bwd : type mode n.
  fun tm elts ->
   match tm with
   | Term.Constr (c, _, []) when c = Constr.intern "emp" -> Some (Bwd.of_list elts)
-  | Constr (c, _, [ Modal (rdcmod, rdcplus, rdc); Modal (racmod, racplus, rac) ])
+  | Constr
+      ( c,
+        _,
+        [ (Modal (rdcmod, rdcplus, rdc), `Explicit); (Modal (racmod, racplus, rac), `Explicit) ] )
     when c = Constr.intern "snoc" -> (
       (* Currently, only "snoc" constructors with non-modal arguments can be printed using bwd syntax.  *)
       match
@@ -482,17 +488,13 @@ let drop_inserted : type a s. dots_at_end:bool -> (a, s) spine_arg Bwd.t -> (a, 
     | Bwd.Snoc (args, (Spine_arg (_, _, `Implicit) as arg)) -> go false (arg :: acc) args in
   Bwd.of_list (go (not dots_at_end) [] args)
 
-(* If the head of an application spine is a constant with an associated notation, match the arguments of the head in the definition of the notation against the arguments in the spine, according to their implicitness, and return the notation, the arguments for its pattern variables in their order, the symbols to intersperse with them, and the remaining arguments.  An explicit argument of the notation matches the next explicit argument, skipping any hidden implicit ones before it, which would be inserted; and an implicit one matches the next implicit argument, hidden or not.  If an implicit argument that is being displayed would be skipped, we don't use the notation, since the notation can't display it. *)
-let notation_of_spine : type mode a s.
-    (mode, a, s) term ->
+(* Match the arguments of the head in the definition of a notation against the arguments in a spine, according to their implicitness, and return the notation, the arguments for its pattern variables in their order, the symbols to intersperse with them, and the remaining arguments.  An explicit argument of the notation matches the next explicit argument, skipping any hidden implicit ones before it, which would be inserted; and an implicit one matches the next implicit argument, hidden or not.  If an implicit argument that is being displayed would be skipped, we don't use the notation, since the notation can't display it. *)
+let match_notation : type a.
+    User.notation ->
     (a, kinetic) spine_arg Bwd.t ->
     (User.notation * (a, kinetic) spine_arg list * (a, kinetic) spine_arg Bwd.t) option =
- fun head args ->
+ fun ({ pat_vars; val_vars; _ } as notn) args ->
   let open Monad.Ops (Monad.Maybe) in
-  let* ({ pat_vars; val_vars; _ } as notn : User.notation) =
-    match head with
-    | Const c -> Scope.Situation.unparse (`Constant c)
-    | _ -> None in
   let rec take slots elts acc =
     match (slots, elts) with
     | [], _ -> return (acc, elts)
@@ -508,9 +510,42 @@ let notation_of_spine : type mode a s.
   let* first, rest = take val_vars (Bwd.to_list args) StringMap.empty in
   let first =
     List.map
-      (fun k -> StringMap.find_opt k first <|> Anomaly "not found in notation_of_spine")
+      (fun k -> StringMap.find_opt k first <|> Anomaly "not found in match_notation")
       pat_vars in
   return (notn, first, Bwd.of_list rest)
+
+(* If the head of an application spine is a constant with an associated notation, match its arguments against the spine. *)
+let notation_of_spine : type mode a s.
+    (mode, a, s) term ->
+    (a, kinetic) spine_arg Bwd.t ->
+    (User.notation * (a, kinetic) spine_arg list * (a, kinetic) spine_arg Bwd.t) option =
+ fun head args ->
+  let open Monad.Ops (Monad.Maybe) in
+  let* notn =
+    match head with
+    | Const c -> Scope.Situation.unparse (`Constant c)
+    | _ -> None in
+  match_notation notn args
+
+(* A notation for a constructor is associated to the number of arguments in its definition, which may or may not include its implicit ones, so we try all the numbers that it could be.  Since a constructor is always fully applied, the notation must use all the arguments, apart from hidden implicit ones that would be inserted. *)
+let notation_of_constr : type a.
+    Constr.t -> (a, kinetic) spine_arg Bwd.t -> (User.notation * (a, kinetic) spine_arg list) option
+    =
+ fun c args ->
+  let explicit =
+    Bwd.fold_left (fun n (Spine_arg (_, _, i)) -> if i = `Explicit then n + 1 else n) 0 args in
+  let rec go k =
+    if k < explicit then None
+    else
+      match
+        Option.bind
+          (Scope.Situation.unparse (`Constr (c, k)))
+          (fun notn -> match_notation notn args)
+      with
+      | Some (notn, first, rest) when Bwd.for_all (fun (Spine_arg (_, _, i)) -> i = `Hidden) rest ->
+          Some (notn, first)
+      | _ -> go (k - 1) in
+  go (Bwd.length args)
 
 (* Build a field projection "x .fld" as a parse tree, for use as the "self" pattern in unparsing codatatypes and records.  It is built in the "entire" tightness interval and packed existentially into an observation at the call site. *)
 let unparse_field_app (x : string) (fld : string) (pbij : string list) :
@@ -894,34 +929,38 @@ let rec unparse : type mode n lt ls rt rs s.
       (* TODO: This doesn't print the dimension.  This is correct since constructors don't have to (and in fact *can't* be) written with their dimension, but it could also be somewhat confusing, e.g. printing "refl (0:N)" yields just "0", and similarly "refl (nil. : List N)" yields "nil.". *)
       match unparse_numeral vars tm li ri with
       | Some res -> res
-      | None ->
+      | None -> (
+          (* The modality isn't printed for constructor applications.  An implicit argument is hidden unless the user has asked to display implicit arguments, in which case we print its whole cube in braces.  Similarly, the boundary of an explicit argument is hidden, or printed in braces. *)
           let args =
-            match Display.implicits () with
-            (* The modality isn't printed for constructor applications. *)
-            | `Hide ->
-                of_list_map
-                  (fun (Modal (_modality, plus, x)) ->
-                    make_unparser (Names.add_lock vars plus) (CubeOf.find_top x))
-                  args
-            (* When displaying implicits, we print the whole boundary of each argument, with the strict faces in braces. *)
-            | `Show ->
-                List.fold_left
-                  (fun s (Modal (_modality, plus, x)) ->
-                    let s = ref s in
-                    CubeOf.miter
-                      {
-                        it =
-                          (fun fa [ x ] ->
-                            let i =
-                              match is_id_sface fa with
-                              | Some _ -> `Explicit
-                              | None -> `Implicit in
-                            s := Snoc (!s, make_unparser_implicit vars (Spine_arg (Left plus, x, i))));
-                      }
-                      [ x ];
-                    !s)
-                  Emp args in
-          unparse_spine vars (`Constr c) args li ri)
+            List.fold_left
+              (fun s (Modal (_modality, plus, x), implicit) ->
+                let s = ref s in
+                CubeOf.miter
+                  {
+                    it =
+                      (fun fa [ x ] ->
+                        let arg i = s := Snoc (!s, Spine_arg (Left plus, x, i)) in
+                        match (implicit, Display.implicits (), is_id_sface fa) with
+                        | `Implicit, `Hide, Some _ -> arg `Hidden
+                        | _, `Hide, None -> ()
+                        | `Implicit, `Show, _ | `Explicit, `Show, None -> arg `Implicit
+                        | `Explicit, _, Some _ -> arg `Explicit);
+                  }
+                  [ x ];
+                !s)
+              Emp args in
+          (* The arguments of a notation are displayed as ordinary terms, even if they are implicit arguments of the constructor. *)
+          let operand (Spine_arg (plus, x, _)) =
+            make_unparser_implicit vars (Spine_arg (plus, x, `Explicit)) in
+          match notation_of_constr c args with
+          | Some ({ notn = Wrap notn; inner_symbols; _ }, first) ->
+              unparse_notation notn (List.map operand first) inner_symbols li ri
+          | None ->
+              (* Since a constructor is always fully applied, its hidden implicit arguments are always inserted when re-parsing, so they can be omitted entirely. *)
+              let args = Bwd.filter (fun (Spine_arg (_, _, i)) -> i <> `Hidden) args in
+              unparse_spine ~notation:false vars (`Constr c)
+                (Bwd.map (make_unparser_implicit vars) args)
+                li ri))
   | Realize tm -> unparse vars tm li ri
   | Canonical c -> unparse_canonical vars c li ri
   | Struct { eta = Noeta; dim; fields; energy = _ } -> unparse_comatch vars dim fields li ri
@@ -1271,7 +1310,7 @@ and unparse_dataconstr : type mode a lt ls rt rs.
       b Names.t -> unparser Bwd.t -> (mode, b, kinetic) term -> (lt, ls, rt, rs) parse located =
    fun vars accum tm ->
     match tm with
-    | Pi { x; filter; implicit = _; doms = Modal (modality, plus, doms); cods } -> (
+    | Pi { x; filter; implicit; doms = Modal (modality, plus, doms); cods } -> (
         match D.compare_zero (CodCube.dim cods) with
         | Pos _ -> output vars accum tm
         | Zero ->
@@ -1286,7 +1325,8 @@ and unparse_dataconstr : type mode a lt ls rt rs.
                    {
                      unparse =
                        (fun _ _ ->
-                         unparse_pi_dom (NICubeOf.find_top xs) (Modality.name modality)
+                         unparse_pi_dom ~implicit:(implicit = `Implicit) (NICubeOf.find_top xs)
+                           (Modality.name modality)
                            (unparse (Names.add_lock vars plus) (CubeOf.find_top doms)
                               No.Interval.entire No.Interval.entire));
                    } ))
@@ -1766,7 +1806,7 @@ and unparse_numeral : type mode n lt ls rt rs.
     match tm with
     | Term.Constr (c, dim, []) when c = zero -> make_numeral dim k
     | Term.Constr (c, dim, []) when c = one -> make_numeral dim (k + 1)
-    | Term.Constr (c, _, [ Modal (filter, plus, arg) ]) when c = suc -> (
+    | Term.Constr (c, _, [ (Modal (filter, plus, arg), `Explicit) ]) when c = suc -> (
         (* Currently, only "suc" constructors with non-modal argument can be displayed as (generalized) numerals. *)
         match Modality.compare_id (Modality.filter_modality filter) with
         | Eq -> getsucs (Names.add_lock vars plus) (CubeOf.find_top arg) (k + 1)

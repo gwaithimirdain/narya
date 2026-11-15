@@ -134,6 +134,7 @@ type expansion =
   | Abs : string option * bool * implicitness -> expansion
   | Tuple : string list * string -> expansion
   | Perm : ('m, 'n) deg -> expansion
+  (* A constructor, with the number of its explicit arguments; its implicit ones are inserted when it is checked. *)
   | Constructor : Constr.t * int -> expansion
 
 type expander = {
@@ -275,7 +276,7 @@ let try_expand : type mode a b.
 (* A constructor can only check at a higher-dimensional datatype if its boundary consists of instances of the same constructor.  So if a term in that boundary is a unification metavariable, then it must be solved by that constructor applied to some arguments, which we fill in with new metavariables.  This doesn't affect whether solutions are most general, as long as its environment and arguments are a renaming, since then substituting into a term can't turn something else into a constructor.  If it isn't, or the metavariable can't be solved here, we do nothing, and it will be reported as not being a constructor. *)
 let refine_to_constr : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) value -> Constr.t -> int -> unit =
- fun ctx u constr arity ->
+ fun ctx u constr explicit_arity ->
   match view_term u with
   | Neu { head = Live (Meta { meta; kind = Unif_meta unif as kind; env; ins }); args; _ } as u -> (
       match arg_spine args with
@@ -290,7 +291,7 @@ let refine_to_constr : type mode a b.
             | Some _ -> (
                 match
                   Option.bind (expansion_start mctx meta kind env ins) (fun (head, start) ->
-                      expansion_shape head start args (Some (Constructor (constr, arity))))
+                      expansion_shape head start args (Some (Constructor (constr, explicit_arity))))
                 with
                 | None -> ()
                 | Some shape ->

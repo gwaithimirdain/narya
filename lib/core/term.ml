@@ -148,7 +148,7 @@ module rec Term : sig
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, 's) term
     | Constr :
-        Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
+        Constr.t * 'n D.t * (('n, 'mode, 'a, kinetic) any_modal_term_cube * implicitness) list
         -> ('mode, 'a, kinetic) term
     | Act :
         's energy
@@ -517,7 +517,7 @@ end = struct
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, 's) term
     | Constr :
-        Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
+        Constr.t * 'n D.t * (('n, 'mode, 'a, kinetic) any_modal_term_cube * implicitness) list
         -> ('mode, 'a, kinetic) term
     | Act :
         's energy
@@ -985,6 +985,18 @@ let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = functio
   (* A constructor that failed to typecheck has no known arity, so anything that needs it fails dependently. *)
   | tm when is_failed tm -> Reporter.fatal (Dependent "arity of failed constructor")
   | _ -> Wrap Zero
+
+(* Collect the implicitness of the zero-dimensional pi-types on the front of a term, in order, such as the arguments of a constructor whose function-type this is. *)
+let rec pi_implicits : type mode a. (mode, a, kinetic) term -> implicitness list = function
+  | Pi { x = _; filter; implicit; doms = Modal (modality, _, _); cods } -> (
+      match D.compare_zero (CodCube.dim cods) with
+      | Pos _ -> []
+      | Zero ->
+          let Eq = Modality.filter_uniq filter (Modality.filter_zero modality) in
+          let (Cod (cfilter, cod)) = CodCube.find_top cods in
+          let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
+          implicit :: pi_implicits cod)
+  | _ -> []
 
 (* Collect the binder names of the zero-dimensional pi-types on the front of a term, in order, as a plain list — the names of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to name the pattern variables when displaying a "split". *)
 let rec pi_names : type mode a. (mode, a, kinetic) term -> string option list = function

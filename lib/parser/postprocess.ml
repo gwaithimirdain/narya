@@ -241,7 +241,7 @@ and process_apps_head : type n lt ls rt rs.
   | `Constr c ->
       let c = { value = c; loc = tm.loc } in
       let loc = ref None in
-      (* A constructor argument in braces is an implicit boundary argument of a higher-dimensional constructor, supplied redundantly as documentation; see Raw.Constr. *)
+      (* A constructor argument in braces is an implicit argument, or a boundary argument of a higher-dimensional one supplied redundantly as documentation, and it can be labelled by the face it supplies, as in "{0 ≔ a}"; a dot ends a cube of implicit arguments.  See Check.check_at_pi. *)
       let cargs =
         List.map
           (fun (Wrap x, l) ->
@@ -249,10 +249,28 @@ and process_apps_head : type n lt ls rt rs.
             match x.value with
             | Notn ((Braces, _), n) -> (
                 match notation_args n with
+                | [
+                 Token (LBrace, _); Term { value = Notn ((Coloneq, _), m); _ }; Token (RBrace, _);
+                ] -> (
+                    match notation_args m with
+                    | [
+                     Term { value = Ident ([ label ], _); loc = labelloc };
+                     Token (Coloneq, _);
+                     Term arg;
+                    ] ->
+                        let arg = process ctx arg in
+                        ( locate_opt arg.loc (`Face (locate_opt labelloc label, arg.value)),
+                          locate_opt x.loc `Implicit )
+                    | Term { loc; _ } :: _ -> fatal ?loc (Parse_error "invalid face label")
+                    | _ -> fatal (Anomaly "invalid notation arguments for colon-equals"))
                 | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
-                    (process ctx arg, locate_opt x.loc `Implicit)
+                    let arg = process ctx arg in
+                    (locate_opt arg.loc (`Arg arg.value), locate_opt x.loc `Implicit)
                 | _ -> fatal (Anomaly "invalid notation arguments for braces"))
-            | _ -> (process ctx x, locate_opt x.loc `Explicit))
+            | Notn ((Dot, _), _) -> (locate_opt x.loc `Dot, locate_opt x.loc `Explicit)
+            | _ ->
+                let arg = process ctx x in
+                (locate_opt arg.loc (`Arg arg.value), locate_opt x.loc `Explicit))
           args in
       { value = Raw.Constr (c, cargs); loc = !loc }
   | `Fn fn -> process_apply ctx fn args

@@ -43,8 +43,8 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
         ( c,
           n,
           List.map
-            (fun (Term.Modal (filter, al, arg)) ->
-              Modal (filter, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ arg ]))
+            (fun (Term.Modal (filter, al, arg), implicit) ->
+              (Modal (filter, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ arg ]), implicit))
             args )
   | Act (e, tm, s, sort) -> Act (e, term f tm, s, sort)
   | Key v -> Key { v with tm = term f v.tm }

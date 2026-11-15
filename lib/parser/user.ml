@@ -233,16 +233,15 @@ let make_user : prenotation -> notation =
             | `Constr (c, _) ->
                 let args =
                   List.map
-                    (function
-                      | None, _ -> ({ value = Raw.Unif None; loc } : _ Raw.check Asai.Range.located)
-                      | Some k, _ -> StringMap.find k args)
+                    (fun (k, implicit) ->
+                      let (arg : _ Raw.check Asai.Range.located) =
+                        match k with
+                        | None -> { value = Raw.Unif None; loc }
+                        | Some k -> StringMap.find k args in
+                      ( Asai.Range.locate_opt arg.loc (`Arg arg.value),
+                        Asai.Range.locate_opt arg.loc implicit ))
                     val_vars in
-                Raw.Constr
-                  ( { value = c; loc },
-                    List.map
-                      (fun (arg : _ Raw.check Asai.Range.located) ->
-                        (arg, Asai.Range.locate_opt arg.loc `Explicit))
-                      args ) in
+                Raw.Constr ({ value = c; loc }, args) in
           { value; loc });
       pattern =
         (fun obs loc ->

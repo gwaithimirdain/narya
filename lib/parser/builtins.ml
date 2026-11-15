@@ -3179,35 +3179,46 @@ let rec data_constrs bar_ok =
              ]);
     }
 
-(* Extract all the typed arguments of a constructor given before its colon. *)
+(* Extract all the typed arguments of a constructor given before its colon, with their implicitness: an argument set in braces is implicit. *)
 let rec constr_tel :
     observation ->
-    (string option list * string located list located * wrapped_parse) list ->
-    Constr.t located * (string option list * string located list located * wrapped_parse) list =
+    (string option list * [ `Explicit | `Implicit ] * string located list located * wrapped_parse)
+    list ->
+    Constr.t located
+    * (string option list * [ `Explicit | `Implicit ] * string located list located * wrapped_parse)
+      list =
  fun tel accum ->
   match tel with
   (* Found all the arguments and reached the constructor. *)
   | Term { value = Constr (c, _); loc } -> ({ value = Constr.intern c; loc }, accum)
-  (* Each argument set is given with its type in parentheses. *)
+  (* Each argument set is given with its type in parentheses, or in braces if it is implicit. *)
   | Term { value = App { fn; arg = { value = Notn ((AscVar, _), n); loc = _ }; _ }; loc = _ } -> (
+      let implicit_of (ldelim : Token.t) (rdelim : Token.t) =
+        match (ldelim, rdelim) with
+        | LParen, RParen -> `Explicit
+        | LBrace, RBrace -> `Implicit
+        | _ -> fatal (Parse_error "invalid braces") in
       match args n with
-      | [ Token (LParen, _); Term xs; Token (Colon, _); Term ty; Token (RParen, _) ] -> (
+      | [ Token (ldelim, _); Term xs; Token (Colon, _); Term ty; Token (rdelim, _) ] -> (
+          let implicit = implicit_of ldelim rdelim in
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((var_names vars, locate_opt None [], Wrap ty) :: accum)
+              constr_tel (Term fn) ((var_names vars, implicit, locate_opt None [], Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | [
-       Token (LParen, _);
+       Token (ldelim, _);
        Term xs;
        Token (Colon, _);
        Term modality;
        Token (Op "|", _);
        Term ty;
-       Token (RParen, _);
+       Token (rdelim, _);
       ] -> (
+          let implicit = implicit_of ldelim rdelim in
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((var_names vars, get_modality fst modality, Wrap ty) :: accum)
+              constr_tel (Term fn)
+                ((var_names vars, implicit, get_modality fst modality, Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | _ -> invalid "tel")
   | Term { loc; _ } -> fatal ?loc (Parse_error "invalid constructor")
@@ -3215,13 +3226,14 @@ let rec constr_tel :
 
 let rec process_dataconstr : type n.
     (string option, n) Bwv.t ->
-    (string option list * string located list located * wrapped_parse) list ->
+    (string option list * [ `Explicit | `Implicit ] * string located list located * wrapped_parse)
+    list ->
     wrapped_parse option ->
     n Raw.dataconstr =
  fun ctx tel_args ty ->
   match (tel_args, ty) with
-  | (vars, modality, argty) :: tel_args, _ ->
-      process_dataconstr_vars ctx vars (Some (modality, argty)) tel_args ty
+  | (vars, implicit, modality, argty) :: tel_args, _ ->
+      process_dataconstr_vars ctx vars (Some (implicit, modality, argty)) tel_args ty
   | [], Some (Wrap ty) -> (
       (* A constructor whose type is an ordinary pi-type takes the domains of that pi-type as its arguments.  We find them in the parse tree, rather than processing the pi-type and taking it apart, so that a group of variables sharing a type, such as "(x y : A) → B", becomes the same telescope as the arguments "(x y : A)" would. *)
       match ty.value with
@@ -3239,11 +3251,9 @@ let rec process_dataconstr : type n.
               List.filter_map
                 (function
                   | Dep { vars = []; _ } -> None
-                  | Dep { vars; modality; ty; implicit = `Explicit; _ } ->
-                      Some (var_names vars, modality, ty)
-                  | Dep { implicit = `Implicit; _ } ->
-                      fatal (Unimplemented "implicit constructor arguments")
-                  | Nondep { ty; _ } -> Some ([ None ], locate_opt None [], ty))
+                  | Dep { vars; modality; ty; implicit; _ } ->
+                      Some (var_names vars, implicit, modality, ty)
+                  | Nondep { ty; _ } -> Some ([ None ], `Explicit, locate_opt None [], ty))
                 doms in
             process_dataconstr ctx tel_args (Some cod)
           else
@@ -3255,9 +3265,10 @@ let rec process_dataconstr : type n.
 and process_dataconstr_vars : type n.
     (string option, n) Bwv.t ->
     string option list ->
-    (* We only carry the modality and type if we are at the first variable in the list. *)
-    (string located list located * wrapped_parse) option ->
-    (string option list * string located list located * wrapped_parse) list ->
+    (* We only carry the implicitness, modality, and type if we are at the first variable in the list. *)
+    ([ `Explicit | `Implicit ] * string located list located * wrapped_parse) option ->
+    (string option list * [ `Explicit | `Implicit ] * string located list located * wrapped_parse)
+    list ->
     wrapped_parse option ->
     n Raw.dataconstr =
  fun ctx vars argty tel_args ty ->
@@ -3265,12 +3276,12 @@ and process_dataconstr_vars : type n.
   | [] -> process_dataconstr ctx tel_args ty
   | x :: xs -> (
       match argty with
-      | Some (modality, Wrap argty) ->
+      | Some (implicit, modality, Wrap argty) ->
           (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
           let arg = process ctx argty in
           let (Dataconstr (args, body)) =
             process_dataconstr_vars (Bwv.snoc ctx x) xs None tel_args ty in
-          Dataconstr (Ext (x, `Explicit, modality, arg, args), body)
+          Dataconstr (Ext (x, implicit, modality, arg, args), body)
       | None ->
           (* The remaining variables that share the type of the previous one. *)
           let (Dataconstr (args, body)) =

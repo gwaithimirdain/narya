@@ -1791,13 +1791,13 @@ and readback_at_pi : type mode n c b z.
     (mode, kinetic) value Lazy.t ->
     ((n, mode, kinetic) modal_value_cube, b) Vec.t ->
     ((D.zero, n, n, (mode, kinetic) modal_value) TubeOf.t, b) Vec.t ->
-    (n, mode, c, kinetic) any_modal_term_cube list =
+    ((n, mode, c, kinetic) any_modal_term_cube * implicitness) list =
  fun ctx n fnty xs tyargs ->
   match (xs, tyargs) with
   | [], [] -> []
   | Modal (xfilter, x) :: xs, tyargs :: tyargs_rest -> (
       (* The constructor's function-type value must be a pi-type; we read back the argument at its domain (instantiated at the corresponding arguments of the lower-dimensional constructors, which are also read back to form the boundary of the argument cube) and continue with the codomain applied to the argument cube. *)
-      let (Viewed_pi { x = _; filter; implicit = _; doms; cods }) =
+      let (Viewed_pi { x = _; filter; implicit; doms; cods }) =
         view_pi "readback_at_pi" n (Lazy.force fnty) in
       let pimod = Modality.filter_modality filter in
       let xmodality = Modality.filter_modality xfilter in
@@ -1812,10 +1812,11 @@ and readback_at_pi : type mode n c b z.
           let ity = inst (CubeOf.find_top doms) tyarg in
           let argcube = TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x) in
           let (BindFam b) = BindCube.find_top cods in
-          Modal
-            ( xfilter,
-              cplus,
-              TubeOf.plus_cube tms (CubeOf.singleton (readback_at Kinetic lctx x ity)) )
+          ( Modal
+              ( xfilter,
+                cplus,
+                TubeOf.plus_cube tms (CubeOf.singleton (readback_at Kinetic lctx x ity)) ),
+            implicit )
           :: readback_at_pi ctx n (lazy (apply_binder_term b filter argcube)) xs tyargs_rest)
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
@@ -2057,7 +2058,7 @@ and readback_constr_function : type mode lev e n.
     (mode, lev, e) Ctx.t ->
     n D.t ->
     Constr.t ->
-    (n, mode, kinetic) modal_value_cube Bwd.t ->
+    ((n, mode, kinetic) modal_value_cube * implicitness) Bwd.t ->
     (mode, kinetic) value ->
     (mode, e, kinetic) term =
  fun ctx n c args ft ->
@@ -2075,17 +2076,22 @@ and readback_constr_function : type mode lev e n.
             Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
           let output = tyof_app cods tyargs filter newargs in
           let body =
-            readback_constr_function newctx n c (Snoc (args, Modal (filter, newargs))) output in
+            readback_constr_function newctx n c
+              (Snoc (args, (Modal (filter, newargs), implicit)))
+              output in
           Term.Lam (name, n, filter, implicit, body))
   | _ ->
       (* ft is now the datatype instance; the constructor applied to all the abstracted argument variables, read back at this fully-extended context.   We read back the accumulated argument variables at the fully-extended context to form the constructor's argument spine. *)
       let cargs =
         Bwd_extra.to_list_map
-          (fun (arg : (n, mode, kinetic) modal_value_cube) ->
+          (fun ((arg : (n, mode, kinetic) modal_value_cube), implicit) ->
             let (Modal (filter, argcube)) = arg in
             let (Locked (plus, lctx)) = Ctx.lock ctx (Modality.filter_modality filter) in
-            Term.Modal
-              (filter, plus, CubeOf.mmap { map = (fun _ [ v ] -> readback_val lctx v) } [ argcube ]))
+            ( Term.Modal
+                ( filter,
+                  plus,
+                  CubeOf.mmap { map = (fun _ [ v ] -> readback_val lctx v) } [ argcube ] ),
+              implicit ))
           args in
       Term.Constr (c, n, cargs)
 

@@ -43,13 +43,22 @@ They have to match the boundary determined by the type.
   
   [1]
 
-It's all or nothing: either every face of an argument is documented, or none is.
+As for functions, the faces are given in order, so some of them can be documented and not others, either the first ones or by labelling them.
 
-  $ narya boundary.ny -e 'def bad : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {n₀} n₂'
-   ￫ error[E0702]
+  $ narya boundary.ny -e 'def ok : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {n₀} n₂' -e 'def ok2 : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {1 ≔ n₁} n₂'
+
+  $ narya boundary.ny -e 'def bad : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {1 ≔ n₀} n₂'
+   ￫ error[E1004]
    ￭ command-line exec string
-   1 | def bad : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {n₀} n₂
-     ^ unexpected explicit argument: expecting implicit argument of constructor suc
+   1 | def bad : Id ℕ (suc. n₀) (suc. n₁) ≔ suc. {1 ≔ n₀} n₂
+     ^ supplied 1-boundary argument
+         n₀
+       doesn't match the one determined by the type
+         n₁
+       unequal head constants:
+         n₀
+       does not equal
+         n₁
   
   [1]
 

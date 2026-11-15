@@ -438,7 +438,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let mn = D.plus_out m m_n in
       let eargs =
         List.map
-          (fun (Term.Modal (lfilter, al, tm)) ->
+          (fun (Term.Modal (lfilter, al, tm), _) ->
             let modality = Modality.filter_modality lfilter in
             let (Has_filter kfilter) = Modality.filter modality m in
             let k = Modality.filtered m kfilter in
