@@ -346,13 +346,13 @@ let find_data trie x =
     (fun (path, ((data, _), _)) -> if data = x then Some path else None)
     (Trie.to_seq trie)
 
-(* Since this requires traversing the whole trie, when printing many constants (as in a large term) we don't want to do it over again for each one.  So we make a table of the names of all the constants in a trie, and remember the last such table we made along with the trie it was made from.  If a constant has more than one name, we use the first one that appears in the trie, as ordered by Trie.to_seq. *)
-let names_cache : (trie * (Constant.t, Trie.path) Hashtbl.t) option ref = ref None
+(* Since this requires traversing the whole trie, when printing many constants (as in a large term) we don't want to do it over again for each one.  So we make a table of the names of all the constants in a trie, and remember the last such table we made along with the trie it was made from.  If a constant has more than one name, we use the first one that appears in the trie, as ordered by Trie.to_seq.  However, making the table is more work than finding one name, and it's common to look up only one name in a given trie (such as to report that a constant was defined, after which the trie changes).  So we don't make the table until the second time we are asked for a name in the same trie. *)
+let names_cache : (trie * (Constant.t, Trie.path) Hashtbl.t option) option ref = ref None
 
-let names_in trie =
+let name_in trie c =
   match !names_cache with
-  | Some (trie', names) when trie' == trie -> names
-  | _ ->
+  | Some (trie', Some names) when trie' == trie -> Hashtbl.find_opt names c
+  | Some (trie', None) when trie' == trie ->
       let names = Hashtbl.create 100 in
       Seq.iter
         (fun (path, ((data, _), _)) ->
@@ -360,11 +360,14 @@ let names_in trie =
           | `Constant c -> if not (Hashtbl.mem names c) then Hashtbl.add names c path
           | `Notation _ -> ())
         (Trie.to_seq trie);
-      names_cache := Some (trie, names);
-      names
+      names_cache := Some (trie, Some names);
+      Hashtbl.find_opt names c
+  | _ ->
+      names_cache := Some (trie, None);
+      find_data trie (`Constant c)
 
 let name_of c =
-  match Hashtbl.find_opt (names_in (get_visible ())) c with
+  match name_in (get_visible ()) c with
   | Some name -> name
   (* TODO: Better to munge the original name. *)
   | None -> "_OUT_OF_SCOPE" :: Option.value ~default:[] (Hashtbl.find_opt original_names c)
