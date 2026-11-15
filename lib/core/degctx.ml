@@ -60,12 +60,9 @@ module Ordered = struct
                   (opt_op_of_opt_sface
                      (comp_opt_sface (Modality.sface_of_filter l filter) (opt_of_sface fa))) in
               let m = dom_sface fb in
-              match CubeOf.find readbacks fb with
-              | { tm = None; ty = _ }
-                when match vars with
-                     | Alias -> true
-                     | Vars -> false -> fatal (Anomaly "alias without a value")
-              | { tm = None; ty } ->
+              match (CubeOf.find readbacks fb, vars) with
+              | { tm = None; ty = _ }, Alias -> fatal (Anomaly "alias without a value")
+              | { tm = None; ty }, Vars ->
                   let level = (i, !j) in
                   j := !j + 1;
                   let ty = Norm.eval_term alenv ty in
@@ -86,7 +83,7 @@ module Ordered = struct
                   let v = { tm = var modality level ty; ty = Lazy.from_val ty } in
                   Hashtbl.add xstbl (SFace_of fab) v;
                   Binding.make (Some level) v
-              | { tm = Some tm; ty } ->
+              | { tm = Some tm; ty }, _ ->
                   (* Incrementing the level isn't really necessary since we aren't going to use it in this case, but we do it anyway for consistency. *)
                   j := !j + 1;
                   let tm = Norm.eval_term alenv tm in

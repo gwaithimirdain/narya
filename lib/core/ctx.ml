@@ -537,17 +537,15 @@ module Ordered = struct
       (mode, c, b) t -> (a, modality, k, b) insert -> (mode, a) remove_top =
    fun ctx v ->
     match (ctx, v) with
-    | Snoc (ctx, e, ax), _ -> (
-        match (e.vars, v) with
-        | Vars, Now -> Removed ctx
-        | Vars, Later v ->
-            let (Removed ctx) = remove_top ctx v in
-            let (Plus bx) = N.plus (N.plus_right ax) in
-            Removed (Snoc (ctx, { e with vars = Vars }, bx))
-        | Alias, _ ->
-            let (Removed ctx) = remove_top ctx v in
-            let (Plus bx) = N.plus (N.plus_right ax) in
-            Removed (Snoc (ctx, { e with vars = Alias }, bx)))
+    | Snoc (ctx, { vars = Vars; _ }, _), Now -> Removed ctx
+    | Snoc (ctx, ({ vars = Vars; _ } as e), ax), Later v ->
+        let (Removed ctx) = remove_top ctx v in
+        let (Plus bx) = N.plus (N.plus_right ax) in
+        Removed (Snoc (ctx, { e with vars = Vars }, bx))
+    | Snoc (ctx, ({ vars = Alias; _ } as e), ax), _ ->
+        let (Removed ctx) = remove_top ctx v in
+        let (Plus bx) = N.plus (N.plus_right ax) in
+        Removed (Snoc (ctx, { e with vars = Alias }, bx))
     | Weaken (ctx, _), _ ->
         let (Removed ctx) = remove_top ctx v in
         Removed ctx

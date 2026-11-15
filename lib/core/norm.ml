@@ -1663,14 +1663,13 @@ and lookup_cube_ctx : type dom mu munu mode a b k mk nk c.
     (dom, mk) looked_up_cube =
  fun ctx nk mu pretr v op ->
   match (ctx, v) with
-  | Snoc (ctx', { bindings; filter; vars; _ }, _), _ -> (
-      match (vars, v) with
-      | Vars, Later v -> lookup_cube (Ctx ctx') nk mu pretr v op
-      | Vars, Now ->
-          (* TODO: Factor out the Ext/Now case from lookup_cube so we don't have to go through env_ext here? *)
-          lookup_cube (env_ext (Ctx ctx') filter bindings) nk mu pretr Now op
+  | Snoc (ctx', { vars = Vars; _ }, _), Later v -> lookup_cube (Ctx ctx') nk mu pretr v op
+  | Snoc (ctx', { bindings; filter; vars = Vars; _ }, _), Now ->
+      (* TODO: Factor out the Ext/Now case from lookup_cube so we don't have to go through env_ext here? *)
+      lookup_cube (env_ext (Ctx ctx') filter bindings) nk mu pretr Now op
+  | Snoc (ctx', { vars = Alias; _ }, _), _ ->
       (* An alias has no checked variables. *)
-      | Alias, _ -> lookup_cube (Ctx ctx') nk mu pretr v op)
+      lookup_cube (Ctx ctx') nk mu pretr v op
   | Weaken (ctx, _), _ -> lookup_cube (Ctx ctx) nk mu pretr v op
   | Emp _, _ | Lock _, _ -> .
 
@@ -2016,15 +2015,12 @@ let eval_bindings : type dom modality mode a b bb n bm.
             let level = (i, !j) in
             j := !j + 1;
             let lvl, v =
-              match ctm with
-              | None
-                when match vars with
-                     | Alias -> true
-                     | Vars -> false -> fatal (Anomaly "alias without a value")
-              | None ->
+              match (ctm, vars) with
+              | None, Alias -> fatal (Anomaly "alias without a value")
+              | None, Vars ->
                   ( Some level,
                     ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal) )
-              | Some ctm ->
+              | Some ctm, _ ->
                   (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety })
             in
             Hashtbl.add argtbl (SFace_of fa) v;
