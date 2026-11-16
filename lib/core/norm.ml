@@ -1929,8 +1929,13 @@ and norm_of_vals_cube : type mode k.
     (k, (mode, kinetic) value) CubeOf.t ->
     (k, mode normal) CubeOf.t =
  fun tms tys ->
-  let new_tm_tbl = Hashtbl.create 10 in
-  CubeOf.mmap { map = (fun fab [ tm; ty ] -> norm_of_val new_tm_tbl fab tm ty) } [ tms; tys ]
+  match D.compare_zero (CubeOf.dim tms) with
+  | Zero ->
+      (* In dimension zero there is nothing to instantiate the type at, so we don't need the table. *)
+      CubeOf.singleton { tm = CubeOf.find_top tms; ty = Lazy.from_val (CubeOf.find_top tys) }
+  | Pos _ ->
+      let new_tm_tbl = Hashtbl.create 10 in
+      CubeOf.mmap { map = (fun fab [ tm; ty ] -> norm_of_val new_tm_tbl fab tm ty) } [ tms; tys ]
 
 and norm_of_vals_tube : type mode n k nk.
     (n, k, nk, (mode, kinetic) value) TubeOf.t ->
