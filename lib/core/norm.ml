@@ -1322,6 +1322,34 @@ and apply_binder_lazy : type dom modality mode kl mn s.
     (dom, modality, mode, kl, mn) Modality.filter_dim ->
     (kl, (dom, kinetic) lazy_eval) CubeOf.t ->
     (mode, s) evaluation =
+ fun (Value.Bind { env; modality; filter = filter_l_n; ins; body } as binder) filter_kl_mn
+     argstbl ->
+  let m = dim_env env in
+  let n = cod_right_ins ins in
+  match (D.compare_zero m, D.compare_zero n) with
+  | Zero, Zero ->
+      (* By far the most common case is that everything is zero-dimensional.  Then the permutation and degeneracies computed below are all identities, and the cube of arguments is just the one we were given, so we can skip all of that. *)
+      let Eq = eq_of_ins_zero ins in
+      let zero = Modality.filter_zero modality in
+      let Eq = Modality.filter_uniq filter_l_n zero in
+      let Eq = Modality.filter_uniq filter_kl_mn zero in
+      eval
+        (Ext
+           {
+             env;
+             plus = D.plus_zero D.zero;
+             filter = zero;
+             filtered = zero;
+             values = `Lazy argstbl;
+           })
+        body
+  | _ -> apply_binder_lazy_general binder filter_kl_mn argstbl
+
+and apply_binder_lazy_general : type dom modality mode kl mn s.
+    (mode, modality, dom, mn, s) Value.binder ->
+    (dom, modality, mode, kl, mn) Modality.filter_dim ->
+    (kl, (dom, kinetic) lazy_eval) CubeOf.t ->
+    (mode, s) evaluation =
  fun (Value.Bind { env; modality; filter = filter_l_n; ins; body }) filter_kl_mn argstbl ->
   let m = dim_env env in
   let n = cod_right_ins ins in
