@@ -6,7 +6,7 @@
   bwd
   algaeff
   core
-  fmlib_parse
+  fparse
   zarith
   yuujinchou
   fileutils

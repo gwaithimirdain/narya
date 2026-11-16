@@ -1,4 +1,4 @@
-open Fmlib_parse
+open Fparse
 open Parser
 
 (* To test the lexer, we hook it up with a trivial parser that just produces a list of tokens. *)
@@ -13,34 +13,26 @@ module Parse_tokens = struct
 
   let token : Lexer.Token_whitespace.t t = step "token" (fun state _ tok -> Some (tok, state))
 
-  module Parser = struct
-    include Basic.Parser
-
-    let start : t = make () (zero_or_more token)
-  end
+  let start : Token_list.t t =
+    let* toks = zero_or_more token in
+    expect_end toks
 end
 
-module Lex_and_parse =
-  Parse_with_lexer.Make_utf8 (Unit) (Lexer.Token_whitespace) (Token_list) (Unit) (Lexer.Parser)
-    (Parse_tokens.Parser)
-
-open Lex_and_parse
-
-let start : Lex_and_parse.t = make Lexer.Parser.start Parse_tokens.Parser.start
-let trylex str = Parser.Lexer.Specials.run @@ fun () -> run_on_string str start
+let trylex str =
+  Parser.Lexer.Specials.run @@ fun () ->
+  Parse_tokens.Basic.run (Lexer.tokens str) () Parse_tokens.start
 
 let lex str =
-  Parser.Lexer.Specials.run @@ fun () ->
-  let p = trylex str in
-  if has_succeeded p then List.tl (final p) else raise (Failure ("Lexing failed of " ^ str))
+  match trylex str with
+  | Success toks -> List.tl toks
+  | _ -> raise (Failure ("Lexing failed of " ^ str))
 
 let nolex str =
-  Parser.Lexer.Specials.run @@ fun () ->
-  let p = trylex str in
-  if has_failed_syntax p then failed_expectations p
-  else raise (Failure ("Lexing succeeded of " ^ str))
+  match trylex str with
+  | Failed_syntax _ -> ()
+  | _ -> raise (Failure ("Lexing succeeded of " ^ str))
 
 let lexbof str =
-  Parser.Lexer.Specials.run @@ fun () ->
-  let p = trylex str in
-  if has_succeeded p then final p else raise (Failure ("Lexing failed of " ^ str))
+  match trylex str with
+  | Success toks -> toks
+  | _ -> raise (Failure ("Lexing failed of " ^ str))

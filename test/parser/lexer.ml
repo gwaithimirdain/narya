@@ -159,7 +159,7 @@ let () =
     lex "Block comments {` can end the file `}"
     = [ (Ident [ "Block" ], []); (Ident [ "comments" ], [ `Block " can end the file " ]) ]);
 
-  assert (nolex "Unterminated {` block comment" = [ ("any character", None) ]);
+  nolex "Unterminated {` block comment";
 
   assert (
     lex "let x := a in b : coo"

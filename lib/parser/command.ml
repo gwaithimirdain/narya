@@ -791,49 +791,36 @@ module Parse = struct
     | Eof -> return (None, cmd)
     | _ -> return (Some (Range.convert_extent rng), cmd)
 
-  type open_source = Range.Data.t * [ `String of int * string | `File of In_channel.t ]
+  (* The data needed to continue parsing commands from a source: the Range data for its locations, and its token stream. *)
+  type open_source = Range.Data.t * Lexer.Token_whitespace.t Fparse.Tokens.t
 
-  let start_parse ?(or_echo = false) source : C.Lex_and_parse.t * open_source =
-    let (env : Range.Data.t), run =
+  let parse_next ?(or_echo = false) ((env, tokens) : open_source) : C.parsed * open_source =
+    Range.run ~env @@ fun () ->
+    let p =
+      C.ensure_success tokens (C.Basic.run tokens (Origin.current ()) (located_command or_echo))
+    in
+    (p, (env, tokens))
+
+  let start_parse ?or_echo source : C.parsed * open_source =
+    let (env : Range.Data.t), content =
       match source with
       | `String src ->
-          ( { source = `String src; length = Int64.of_int (String.length src.content) },
-            fun p ->
-              let n, p = C.Lex_and_parse.run_on_string_at 0 src.content p in
-              (`String (n, src.content), p) )
+          ({ source = `String src; length = Int64.of_int (String.length src.content) }, src.content)
       | `File name -> (
           try
-            let ic = In_channel.open_text name in
-            ( { source = `File name; length = In_channel.length ic },
-              fun p -> (`File ic, C.Lex_and_parse.run_on_channel ic p) )
+            In_channel.with_open_text name @@ fun ic ->
+            ( ({ source = `File name; length = In_channel.length ic } : Range.Data.t),
+              In_channel.input_all ic )
           with Sys_error _ -> fatal (No_such_file name)) in
-    Range.run ~env @@ fun () ->
-    let p =
-      C.Lex_and_parse.make Lexer.Parser.start
-        (C.Basic.make_partial (Origin.current ()) (located_command or_echo)) in
-    let out, p = run p in
-    (C.ensure_success p, (env, out))
+    parse_next ?or_echo (env, Lexer.tokens content)
 
-  let restart_parse ?(or_echo = false) (p : C.Lex_and_parse.t) ((env, source) : open_source) :
-      C.Lex_and_parse.t * open_source =
-    let run =
-      match source with
-      | `String (n, content) ->
-          fun p ->
-            let n, p = C.Lex_and_parse.run_on_string_at n content p in
-            (`String (n, content), p)
-      | `File ic -> fun p -> (`File ic, C.Lex_and_parse.run_on_channel ic p) in
-    Range.run ~env @@ fun () ->
-    let p =
-      C.Lex_and_parse.make_next p
-        (C.Basic.make_partial (Origin.current ()) (located_command or_echo)) in
-    let out, p = run p in
-    (C.ensure_success p, (env, out))
+  let restart_parse ?or_echo (_ : C.parsed) (src : open_source) : C.parsed * open_source =
+    parse_next ?or_echo src
 
   (* The command that was parsed, and its range (see above).  The range of Bof is empty, and at the first token of the source. *)
-  let final_located p = C.Lex_and_parse.final p
+  let final_located p = C.final p
   let final p = snd (final_located p)
-  let has_consumed_end p = C.Lex_and_parse.has_consumed_end p
+  let has_consumed_end p = C.has_consumed_end p
 end
 
 let parse_single (content : string) : Whitespace.t list * Command.t option =

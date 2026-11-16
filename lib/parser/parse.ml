@@ -1,7 +1,7 @@
 open Util
 open Core.Reporter
 open Core.Origin
-open Fmlib_parse
+open Fparse
 open Notation
 
 (* Sometimes we want to parse only a single term, other times we want to parse and execute a sequence of commands.  Since these two processes return different results, they have to be based on different instances of Token_parser.Make.  But they share all the code of the combinators for parsing terms, so we make those instances of a functor as well. *)
@@ -11,7 +11,7 @@ module ParseTree = struct
   type t = wrapped_parse
 end
 
-(* We misuse Fmlib's "semantic" errors for a special class of errors that are really syntactic, but which we don't detect until after the relevant tokens have already been "successfully" parsed, and for which we want to report more structured error information than just an "expected" string. *)
+(* We use the parser's "semantic" errors for a special class of errors that are really syntactic, but which we don't detect until after the relevant tokens have already been "successfully" parsed, and for which we want to report more structured error information than just an "expected" string. *)
 module SemanticError = struct
   type t =
     (* These strings are the names of notations.  Arguably we should display their *namespaced* names, which would mean calling out to Yuujinchou.  It would also mean some special-casing, because applications are implemented specially in the parser and not as an actual Notation. *)
@@ -20,16 +20,16 @@ module SemanticError = struct
 end
 
 (* The functor that defines all the term-parsing combinators. *)
-module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
-  (* The "state" is an Origin.  Normally the origin is stored globally with a State effect, but we sometimes need to change the origin temporarily during parsing (e.g. to go back in time and parse a term using the notations that were in scope in the past) and doing that with effects doesn't interact well with fmlib's continuation-based parser monad.  So we store the origin used for parsing in fmlib's built-in state parameter instead, and initialize it with the overall current origin when beginning parsing. *)
+module Combinators (Final : Fail.ANY) = struct
+  (* The "state" is an Origin.  Normally the origin is stored globally with a State effect, but we sometimes need to change the origin temporarily during parsing (e.g. to go back in time and parse a term using the notations that were in scope in the past) and doing that with effects doesn't interact well with the parser's backtracking.  So we store the origin used for parsing in the parser's built-in state parameter instead, and initialize it with the overall current origin when beginning parsing. *)
   module Basic = Token_parser.Make (Origin) (Lexer.Token_whitespace) (Final) (SemanticError)
   open Basic
 
-  (* We aren't using Fmlib's error reporting, so there's no point in supplying it nonempty "expect" strings. *)
+  (* The parser doesn't use "expect" strings (they come from fmlib-parse, which reported them in error messages), so we omit them. *)
   let step f = step "" f
   let followed_by f = followed_by f ""
 
-  (* Similarly, we want locations reported using Asai ranges rather than Fmlib ones. *)
+  (* We want locations reported using Asai ranges rather than parser positions. *)
   let located c =
     let* rng, x = located c in
     return (Range.convert rng, x)
@@ -409,24 +409,23 @@ module Combinators (Final : Fmlib_std.Interfaces.ANY) = struct
     | Ok tm -> return (Wrap tm)
     | Error e -> fatal (Anomaly ("Outer term failed: " ^ e))
 
-  module Lex_and_parse =
-    Parse_with_lexer.Make_utf8 (Origin) (Lexer.Token_whitespace) (Final) (SemanticError)
-      (Lexer.Parser)
-      (Basic.Parser)
+  (* The result of a successful parse, together with the token stream it was parsed from, from which later parses (e.g. of later commands) can continue. *)
+  type parsed = { tokens : Lexer.Token_whitespace.t Tokens.t; final : Final.t }
 
-  let ensure_success p =
-    let open Lex_and_parse in
-    (* Fmlib_parse has its own built-in error reporting with locations.  However, we instead use Asai's error reporting, so that we have a common "look" for parse errors and typechecking errors. *)
-    if has_failed_syntax p then
-      (* It should be possible to report more detailed error information from the parser than just the location.  Fmlib supplies "failed_expectations", but I haven't been able to figure out how to make that useful with this parsing algorithm. *)
-      fatal ~loc:(Range.convert (range p)) (Parse_error "invalid syntax")
-    else if has_failed_semantic p then
-      match failed_semantic p with
-      | No_relative_precedence (loc, n1, n2) -> fatal ~loc (No_relative_precedence (n1, n2))
-      | Invalid_degeneracy (rng, str) -> fatal ~loc:(Range.convert rng) (Invalid_degeneracy str)
-    else if has_succeeded p then p
-    else if needs_more p then fatal (Anomaly "parser needs more")
-    else fatal (Anomaly "unknown parser error: possible lexer error")
+  let final (p : parsed) : Final.t = p.final
+  let has_consumed_end (p : parsed) : bool = Tokens.has_consumed_end p.tokens
+
+  let ensure_success tokens (outcome : Final.t Basic.outcome) : parsed =
+    (* We use Asai's error reporting, so that we have a common "look" for parse errors and typechecking errors. *)
+    match outcome with
+    | Success final -> { tokens; final }
+    | Failed_syntax rng ->
+        (* It should be possible to report more detailed error information from the parser than just the location. *)
+        fatal ~loc:(Range.convert rng) (Parse_error "invalid syntax")
+    | Failed_semantic (No_relative_precedence (loc, n1, n2)) ->
+        fatal ~loc (No_relative_precedence (n1, n2))
+    | Failed_semantic (Invalid_degeneracy (rng, str)) ->
+        fatal ~loc:(Range.convert rng) (Invalid_degeneracy str)
 
   (* Strip off the initial Bof token attached to initial comments and whitespace, and return that whitespace. *)
   let bof = step (fun state _ (tok, ws) -> if tok = Bof then Some (ws, state) else None)
@@ -440,23 +439,23 @@ end
 module Term = struct
   module C = Combinators (ParseTree)
 
-  let parse ?li ?ri (source : Asai.Range.source) : C.Lex_and_parse.t =
-    let (env : Range.Data.t), run =
+  let parse ?li ?ri (source : Asai.Range.source) : C.parsed =
+    let (env : Range.Data.t), content =
       match source with
       | `String src ->
-          ( { source = `String src; length = Int64.of_int (String.length src.content) },
-            fun p -> C.Lex_and_parse.run_on_string src.content p )
+          ({ source = `String src; length = Int64.of_int (String.length src.content) }, src.content)
       | `File name ->
-          let ic = In_channel.open_text name in
-          ( { source = `File name; length = In_channel.length ic },
-            fun p -> C.Lex_and_parse.run_on_channel ic p ) in
+          In_channel.with_open_text name @@ fun ic ->
+          ( ({ source = `File name; length = In_channel.length ic } : Range.Data.t),
+            In_channel.input_all ic ) in
     Range.run ~env @@ fun () ->
-    let p =
-      C.Lex_and_parse.make Lexer.Parser.start
-        (C.Basic.make (Origin.current ()) (C.term_only ?li ?ri ())) in
-    let p = run p in
-    C.ensure_success p
+    let tokens = Lexer.tokens content in
+    C.ensure_success tokens
+      (C.Basic.run tokens (Origin.current ())
+         (let open C.Basic in
+          let* tm = C.term_only ?li ?ri () in
+          expect_end tm))
 
-  let final p = C.Lex_and_parse.final p
-  let has_consumed_end p = C.Lex_and_parse.has_consumed_end p
+  let final p = C.final p
+  let has_consumed_end p = C.has_consumed_end p
 end

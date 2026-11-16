@@ -1,8 +1,8 @@
-open Fmlib_parse
+open Fparse
 open Asai.Range
 open Core.Reporter
 
-(* To convert Fmlib positions to Asai ranges, we need to know the string or file they're being run on.  We also store its length so that we can test for EOF. *)
+(* To convert parser positions to Asai ranges, we need to know the string or file they're being run on.  We also store its length so that we can test for EOF. *)
 
 module Data = struct
   type t = { source : source; length : int64 }
@@ -14,17 +14,17 @@ let () = S.register_printer (function `Read -> Some "unhandled Range read effect
 
 let convert_pos (src : source) pos =
   let start_of_line = Position.byte_offset_bol pos in
-  (* It appears that fmlib lines are 0-indexed and Asai lines are 1-indexed *)
+  (* Parser lines are 0-indexed and Asai lines are 1-indexed *)
   let line_num = Position.line pos + 1 in
   let offset = Position.byte_offset pos in
   { source = src; offset; start_of_line; line_num }
 
 let convert (pos1, pos2) =
-  (* In case of a lexing or parsing error at end of input, Fmlib returns a 0-width range, which we convert into Asai's special "eof" position. *)
+  (* In case of a lexing or parsing error at end of input, the parser returns a 0-width range, which we convert into Asai's special "eof" position. *)
   let src = S.read () in
   if pos1 = pos2 then
     if Int64.of_int (Position.byte_offset pos2) = src.length then eof (convert_pos src.source pos1)
-      (* Fmlib also reports a 0-width range in mid-parse if we fail directly (i.e. with "fail" or "unexpected" rather than during a lookahead such as "step").  But our calls to "fail" all include an explicit range, and we never call "unexpected".  Thus I don't think this should happen, so we flag it as an Anomaly.  *)
+      (* The parser also reports a 0-width range in mid-parse if we fail directly (i.e. with "fail" or "unexpected" rather than during a lookahead such as "step").  But our calls to "fail" all include an explicit range, and we never call "unexpected".  Thus I don't think this should happen, so we flag it as an Anomaly.  *)
     else fatal (Anomaly "zero-width range during parse failure before EOF")
   else make (convert_pos src.source pos1, convert_pos src.source pos2)
 

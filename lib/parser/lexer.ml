@@ -1,5 +1,5 @@
 open Bwd
-open Fmlib_parse
+open Fparse
 open Token
 open Core
 open Reporter
@@ -19,26 +19,9 @@ module LexerState = struct
   type t = [ `Linecomment | `None ]
 end
 
-(* We define the lexer using a basic utf-8 character parser from Fmlib. *)
+(* We define the lexer using a basic utf-8 character parser. *)
 module Basic = Ucharacter.Make_utf8 (LexerState) (Located_token) (Unit)
 open Basic
-
-(* Fmlib's "uchar" builds its error message, with sprintf, every time the character it's looking for isn't there.  We look for several particular characters at the start of every token, and we never display those messages, so we replace it by a version that doesn't do that. *)
-let uchar (expected : Uchar.t) : Uchar.t t = ucharp (Uchar.equal expected) "particular character"
-
-(* Fmlib's "char" and "string" are defined in terms of its "uchar", so we have to replace them too. *)
-let char (expected : char) : char t =
-  let* _ = uchar (Uchar.of_char expected) in
-  return expected
-
-let string (str : string) : string t =
-  let len = String.length str in
-  let rec parse i =
-    if i = len then return str
-    else
-      let* _ = char str.[i] in
-      parse (i + 1) in
-  parse 0
 
 let backquote = Uchar.of_char '`'
 let newline = Uchar.of_char '\n'
@@ -507,13 +490,19 @@ let bof : Located_token.t t =
   let* ws = whitespace in
   located (return (Bof, ws))
 
-module Parser = struct
-  include Basic.Parser
-
-  (* This is how we make the lexer to plug into the parser. *)
-  let start : t = make_partial Position.start `None bof
-  let restart (lex : t) : t = make_partial (position lex) `None token |> transfer_lookahead lex
-end
+(* The token stream of a source string, lexed on demand as parsers ask for tokens.  The first token is Bof, holding any initial whitespace; each later token is lexed by "token", starting with a fresh lexer state at the point where the previous one stopped.  The Eof token is not added to the stream: when the lexer consumes the end of input, the stream ends instead. *)
+let tokens (src : string) : Token_whitespace.t Tokens.t =
+  let st = Basic.init src `None in
+  let started = ref false in
+  Tokens.make @@ fun () ->
+  let p =
+    if !started then token
+    else (
+      started := true;
+      bof) in
+  match Basic.run st `None p with
+  | Some tok -> if Basic.has_consumed_end st then End (Basic.current_position st) else Token tok
+  | None -> Failed (Basic.current_position st)
 
 module Single_token = struct
   module Basic = Token_parser.Make (Unit) (Token_whitespace) (Token_whitespace) (Unit)
@@ -521,20 +510,12 @@ module Single_token = struct
 
   let token : Token_whitespace.t t = step "token" (fun state _ tok -> Some (tok, state))
 
-  module Parser = struct
-    include Basic.Parser
-
-    let start : t =
-      make ()
-        ((* bof *)
-         let* _ = token in
-         token)
-  end
+  (* Bof, then one token, then the end. *)
+  let start : Token_whitespace.t t =
+    let* _ = token in
+    let* tok = token in
+    expect_end tok
 end
-
-module Lex_and_parse_single =
-  Parse_with_lexer.Make_utf8 (Unit) (Token_whitespace) (Token_whitespace) (Unit) (Parser)
-    (Single_token.Parser)
 
 let single str =
   (* The lexer performs Range effects, so we have to set up handlers for those. *)
@@ -542,9 +523,6 @@ let single str =
     { source = `String { content = str; title = None }; length = Int64.of_int (String.length str) }
   in
   Range.run ~env @@ fun () ->
-  let open Lex_and_parse_single in
-  let p = run_on_string str (make Parser.start Single_token.Parser.start) in
-  if has_succeeded p then
-    let tok, ws = final p in
-    if ws = [] then Some tok else None
-  else None
+  match Single_token.Basic.run (tokens str) () Single_token.start with
+  | Success (tok, ws) -> if ws = [] then Some tok else None
+  | Failed_syntax _ | Failed_semantic _ -> None
