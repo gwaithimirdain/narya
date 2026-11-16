@@ -663,7 +663,7 @@ let rec unparse : type mode n lt ls rt rs s.
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; _ } when letonly_empty ctx ->
       let _, bodyvars = unparse_letonly_clauses vars ctx tmenv in
       unparse bodyvars body li ri
-  (* A let-only whose body is a metavariable that isn't a bare one arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
+  (* A let-only whose body is a non-bare metavariable (that is, a let-bound or a hole) arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
   | Letonly { env = tmenv; tm = Meta (v, _); _ }
     when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
       let inner =
@@ -678,6 +678,7 @@ let rec unparse : type mode n lt ls rt rs s.
             (unlocated
                (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v)
                   ~right_ok:No.minusomega_lt_minusomegaplusone)))
+  (* Otherwise, we unparse and display all the binding clauses of a let-only. *)
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty } -> (
       (* The bound terms are unparsed in the ambient context, while the types and the body are unparsed in the context of only the bound variables. *)
       let binding, bodyvars = unparse_letonly_clauses vars ctx tmenv in
@@ -813,7 +814,11 @@ and unparse_letonly_clauses : type mode n i k b.
     observation Bwd.t * b Names.t =
  fun vars ctx tmenv ->
   let acc, pending, names = unparse_letonly_clauses_pending vars ctx tmenv in
-  (flush_letonly_lock acc pending, names)
+  let acc =
+    match pending with
+    | None -> acc
+    | Some (Wrap modality) -> letonly_sep acc <: mktok Lock <: unparse_modality_name modality in
+  (acc, names)
 
 (* Adjacent locks are displayed as a single lock clause by their composite modality, so while walking the clauses we keep track of the composite of the locks seen since the last other clause, whose source is the mode at which the walk has arrived. *)
 and unparse_letonly_clauses_pending : type mode n i k b.
@@ -824,7 +829,7 @@ and unparse_letonly_clauses_pending : type mode n i k b.
  fun vars ctx tmenv ->
   match (ctx, tmenv) with
   | Emp _, Emp _ -> (Snoc (Emp, mktok Only), None, Names.empty)
-  (* An alias has no checked variables, so it isn't substituted for. *)
+  (* An alias has no checked variables, so it isn't substituted for.  (It was already substituted at typechecking time.) *)
   | Ext (ctx, { vars = Alias; _ }, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
   | ( Ext (ctx, { bindings; plus_lock; filter = _; vis; vars = Vars }, _),
       Ext { env; values = Modal (modality, plus, tms); _ } ) ->
@@ -869,13 +874,6 @@ and unparse_letonly_clauses_pending : type mode n i k b.
           acc (Modalcell.name cell),
         None,
         names )
-
-and flush_letonly_lock : type mode.
-    observation Bwd.t -> mode Modality.tgt_wrapped option -> observation Bwd.t =
- fun acc pending ->
-  match pending with
-  | None -> acc
-  | Some (Wrap modality) -> letonly_sep acc <: mktok Lock <: unparse_modality_name modality
 
 (* The first clause of a let-only directly follows "only", while the rest are preceded by "and". *)
 and letonly_sep (acc : observation Bwd.t) : observation Bwd.t =
