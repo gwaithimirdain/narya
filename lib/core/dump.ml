@@ -66,7 +66,7 @@ module F = struct
   let rec dvalue : type mode s. int -> formatter -> (mode, s) value -> unit =
    fun depth ppf v ->
     match v with
-    | Neu { head = h; args = a; value = _; ty } ->
+    | Neu { head = h; args = a; value = _; ty; acted = _ } ->
         if depth > 0 then
           fprintf ppf "Neu (%a, %a, %a)" neu_head h apps a (dvalue (depth - 1)) (Lazy.force ty)
         else fprintf ppf "Neu (%a, %a, ?)" neu_head h apps a
