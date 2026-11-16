@@ -20,8 +20,6 @@
     react
     lwt
     lambda-term
-    fmlib
-    fmlib_parse
     fileutils
     pprint
     ppx_blob))
