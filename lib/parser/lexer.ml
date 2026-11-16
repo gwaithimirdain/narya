@@ -421,7 +421,7 @@ let is_single_reserved_word = function
 let rec contains_reserved_word = function
   | [] -> false
   | `Dots _ :: parts -> contains_reserved_word parts
-  | `Atom str :: parts -> Option.is_none (get_reserved_word str) && contains_reserved_word parts
+  | `Atom str :: parts -> Option.is_some (get_reserved_word str) || contains_reserved_word parts
 
 (* An identifier contains strings separated by single dots in the middle.  They can be digit strings because this could be a numeral, and they could also be the suffix of a cube variable. *)
 let rec get_ident = function

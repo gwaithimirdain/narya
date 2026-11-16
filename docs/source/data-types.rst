@@ -278,7 +278,7 @@ Similarly, a naive definition of the Boolean conjunction would be:
 
 .. code-block:: none
 
-   def Bool.and (x y : Bool) : Bool ≔ match x [
+   def Bool.conj (x y : Bool) : Bool ≔ match x [
    | true.  ↦ match y [
      | true.  ↦ true.
      | false. ↦ false.
@@ -289,7 +289,7 @@ but this can be condensed to a "multiple match":
 
 .. code-block:: none
 
-   def Bool.and (x y : Bool) : Bool ≔ match x, y [
+   def Bool.conj (x y : Bool) : Bool ≔ match x, y [
    | true.  , true.  ↦ true.
    | true.  , false. ↦ false.
    | false. , _      ↦ false. ]
@@ -298,7 +298,7 @@ Here the ``_`` indicates that that value can be anything.  It can also be replac
 
 Multiple and deep matches can be combined.  In general, for a multiple match on a comma-separated list of a positive number of discriminees, the left-hand side of each branch must be a comma-separated list of the same number of *patterns*.  Each pattern is either a variable, an underscore, or a constructor applied to some number of other patterns.  Plain variable patterns are equivalent to let-bindings: ``match x [ y ↦ M ]`` is the same as ``let y ≔ x in M``.
 
-Multiple and deep matches are (with one exception, discussed :ref:`below<Empty types and refutation cases>`) a *purely syntactic* abbreviation: the condensed forms are expanded automatically to the nested match forms before even being typechecked.  That is, when you write the second version of ``Bool.and`` above, the typechecker sees the first version.
+Multiple and deep matches are (with one exception, discussed :ref:`below<Empty types and refutation cases>`) a *purely syntactic* abbreviation: the condensed forms are expanded automatically to the nested match forms before even being typechecked.  That is, when you write the second version of ``Bool.conj`` above, the typechecker sees the first version.
 
 If a discriminee after the first in a multiple match is not a simple variable, then the syntactic expansion let-binds it to a variable outside the match.  Thus, for instance, 
 
@@ -321,11 +321,11 @@ expands to
 
 This has two important consequences.  First, the discriminee term (such as ``f x``) is typechecked only once, rather than once in each match (and so in particular any errors in it are only reported once).  Second, that term is typechecked *outside the match*, and therefore it cannot depend for its correctness on the match against a previous variable.  If it does so depend, you have to write the nested match explicitly rather than as a multiple match.
 
-Multiple and deep patterns can also be used in pattern-matching abstractions.  In the case of a multiple match, the number of variables abstracted over is determined by the number of patterns in the branches.  Thus, for instance, ``Bool.and`` can also be defined by:
+Multiple and deep patterns can also be used in pattern-matching abstractions.  In the case of a multiple match, the number of variables abstracted over is determined by the number of patterns in the branches.  Thus, for instance, ``Bool.conj`` can also be defined by:
 
 .. code-block:: none
 
-   def Bool.and : Bool → Bool → Bool ≔ [
+   def Bool.conj : Bool → Bool → Bool ≔ [
    | true.  , true.  ↦ true.
    | true.  , false. ↦ false.
    | false. , _      ↦ false. ]
@@ -353,7 +353,7 @@ Matching always proceeds from left to right, so that the matches corresponding t
 
 .. code-block:: none
 
-   def Bool.and2 (x : prod' Bool Bool) : Bool ≔ match x [
+   def Bool.conj2 (x : prod' Bool Bool) : Bool ≔ match x [
    | pair. true. true.   ↦ true.
    | pair. true. false.  ↦ false.
    | pair. false. true.  ↦ false.
@@ -364,7 +364,7 @@ Here the first argument of ``pair.`` is matched before the second, producing the
 
 .. code-block:: none
 
-   def Bool.and2 (x : prod' Bool Bool) : Bool ≔ match x [
+   def Bool.conj2 (x : prod' Bool Bool) : Bool ≔ match x [
    | pair. a b ↦ match a [
      | true. ↦ match b [
        | true. ↦ true.
@@ -381,7 +381,7 @@ To match on the second argument first, you would have to use a nested match expl
 
 .. code-block:: none
 
-   def Bool.and2' (x : prod' Bool Bool) : Bool ≔ match x [
+   def Bool.conj2' (x : prod' Bool Bool) : Bool ≔ match x [
    | pair. a b ↦ match b, a [
      | true.  , true.  ↦ true.
      | false. , true.  ↦ false.

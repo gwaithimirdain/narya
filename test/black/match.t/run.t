@@ -85,7 +85,7 @@
    ￮ constant ℕ defined
   
    ￫ info[I0000]
-   ￮ constant bool.and defined
+   ￮ constant bool.conj defined
   
   true.
     : bool
@@ -223,10 +223,10 @@
   
 
 
-  $ narya -e 'def bool : Type ≔ data [ true. | false. ]' -e 'def bool.and (x y : bool) : bool ≔ match x,y [ true. , true. ↦ true. | true. , false. ↦ false. | _ , false. ↦ false. ]'
+  $ narya -e 'def bool : Type ≔ data [ true. | false. ]' -e 'def bool.conj (x y : bool) : bool ≔ match x,y [ true. , true. ↦ true. | true. , false. ↦ false. | _ , false. ↦ false. ]'
    ￫ error[E1307]
    ￭ command-line exec string
-   1 | def bool.and (x y : bool) : bool ≔ match x,y [ true. , true. ↦ true. | true. , false. ↦ false. | _ , false. ↦ false. ]
+   1 | def bool.conj (x y : bool) : bool ≔ match x,y [ true. , true. ↦ true. | true. , false. ↦ false. | _ , false. ↦ false. ]
      ^ overlapping patterns in match
   
   [1]
@@ -383,28 +383,28 @@ A refutation only matches against a discriminee whose type is literally an empty
   
   [1]
 
-  $ narya -v -parametric -e 'def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]'
+  $ narya -v -parametric -e 'def bool : Type ≔ data [ true. | false. ] def bool.conj (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]'
    ￫ info[I0000]
    ￮ constant bool defined
   
    ￫ error[E0508]
    ￭ command-line exec string
-   1 | def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.conj (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
      ^ cube abstraction not allowed for zero-dimensional match
   
    ￫ error[E0508]
    ￭ command-line exec string
-   1 | def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.conj (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
      ^ cube abstraction not allowed for zero-dimensional match
   
    ￫ error[E0508]
    ￭ command-line exec string
-   1 | def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.conj (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
      ^ cube abstraction not allowed for zero-dimensional match
   
    ￫ error[E0508]
    ￭ command-line exec string
-   1 | def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.conj (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
      ^ cube abstraction not allowed for zero-dimensional match
   
   [1]

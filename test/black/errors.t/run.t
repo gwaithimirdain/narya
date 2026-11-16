@@ -591,3 +591,24 @@
   
   [1]
 
+  $ narya -e "axiom A : Type" -e "axiom A.and : A"
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | axiom A.and : A
+     ^ parse error: reserved word in identifier
+  
+  [1]
+  $ narya -e "axiom A : Type" -e "axiom foo.let.bar : A"
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | axiom foo.let.bar : A
+     ^ parse error: reserved word in identifier
+  
+  [1]
+  $ narya -e "axiom A : Type" -e "axiom x : A" -e "echo x.match"
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | echo x.match
+     ^ parse error: reserved word in identifier
+  
+  [1]

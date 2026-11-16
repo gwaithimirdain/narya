@@ -1,15 +1,15 @@
 def bool : Type ≔ data [ true. | false. ]
 def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
 
-def bool.and (x y : bool) : bool ≔ match x, y [
+def bool.conj (x y : bool) : bool ≔ match x, y [
 | true., true. ↦ true.
 | true., false. ↦ false.
 | false., true. ↦ false.
 | false., false. ↦ false.]
 
-echo bool.and true. true.
+echo bool.conj true. true.
 
-echo bool.and false. true.
+echo bool.conj false. true.
 
 def plus (m n : ℕ) : ℕ ≔ match n [ zero. ↦ m | suc. n ↦ suc. (plus m n) ]
 
