@@ -54,6 +54,11 @@ type (_, _) looked_up_cube =
       -> ('mode, 'm) looked_up_cube
 
 (* Require that the supplied list contains exactly one argument for each annotated variable being added, and add all of those cubes to the given environment. *)
+(* An accumulated operator for Norm.lookup_fast, with a separate constructor for the identity so that the common case doesn't need to construct or decompose one. *)
+type (_, _) lookup_fast_op =
+  | Id_lookup_op : ('n, 'n) lookup_fast_op
+  | Lookup_op : ('p, 'n) opt_op -> ('p, 'n) lookup_fast_op
+
 let rec take_args : type dom window mode annotations m n k kn a b ab.
     (mode, m, a) env ->
     (k, n, kn) D.plus ->
@@ -1741,34 +1746,59 @@ and lookup_cube_ctx : type dom mu munu mode a b k mk nk c.
   | Weaken (ctx, _), _ -> lookup_cube (Ctx ctx) nk mu pretr v op
   | Emp _, _ | Lock _, _ -> .
 
-(* The overwhelmingly most common case of a variable lookup is a zero-dimensional variable, with no locks to its right, in a zero-dimensional environment in which it and all the variables to its right were bound directly, with no operator actions, shifts, prekeys, or permutations in between.  In that case, all the faces, degeneracies, and cells that the general lookup would compute and act by are identities, so the result is just the value stored at the top of the variable's cube.  This function handles that case, taking as given that the dimensions are zero and there are no locks (the caller checks that), and returning None if it encounters anything else in the environment, so that the general lookup has to be used instead. *)
-and lookup_fast : type dom mu mode n a k b.
+(* The overwhelmingly most common case of a variable lookup is a zero-dimensional variable, with no locks to its right, in an environment in which it and all the variables to its right were bound directly, with no shifts, prekeys, or permutations in between, and at most some faces acting on the environment.  In that case, the degeneracies and cells that the general lookup would compute and act by are identities, so the result is just a value stored in the variable's cube: its top if there are no faces, or the value at the composite of the faces.  This function handles that case, taking as given that the variable is zero-dimensional and there are no locks (the caller checks that), and returning None if it encounters anything else, so that the general lookup has to be used instead.  The accumulated faces are an opt_op, of which we check at the end that it is actually a face. *)
+and lookup_fast : type dom mu mode p n a k b.
     (mode, n, b) env ->
     (dom, mu, mode) Modality.t ->
     (a, mu, k, b) insert ->
+    (p, n) lookup_fast_op ->
     (dom, kinetic) value option =
- fun env mu v ->
+ fun env mu v op ->
   match (env, v) with
-  | Ext { env; _ }, Later v -> lookup_fast env mu v
-  | Ext { filter; values; _ }, Now -> (
-      match Modality.compare (Modality.filter_modality filter) mu with
-      | Eq -> (
-          match values with
-          | `Ok entry -> Some (CubeOf.find_top entry)
-          | `Lazy entry -> Some (force_eval_term (CubeOf.find_top entry)))
-      | Neq -> None)
-  | Ctx (Snoc (ctx, { vars = Vars; _ }, _)), Later v -> lookup_fast (Ctx ctx) mu v
+  | Ext { env; _ }, Later v -> lookup_fast env mu v op
+  | Ext { filter; plus; values; _ }, Now -> (
+      let n = dim_env env in
+      let find : type x. (n, x) CubeOf.t -> x option =
+       fun entry ->
+        match op with
+        | Id_lookup_op -> Some (CubeOf.find_top entry)
+        | Lookup_op op -> (
+            match op_of_opt op with
+            | Some (Op (f, s)) -> (
+                match is_id_deg s with
+                | Some Eq -> Some (CubeOf.find entry f)
+                | None -> None)
+            | None -> None) in
+      match
+        (Modality.compare (Modality.filter_modality filter) mu, D.compare_zero (D.plus_right plus))
+      with
+      | Eq, Zero -> (
+          let Eq = D.plus_uniq plus (D.plus_zero (Modality.filtered n filter)) in
+          (* The variable's cube has the dimension of the environment, filtered by its modality.  If the filter is trivial, the general lookup would act by an identity degeneracy. *)
+          match is_id_deg (Modality.deg_of_filter n filter) with
+          | Some Eq -> (
+              match values with
+              | `Ok entry -> find entry
+              | `Lazy entry -> Option.map force_eval_term (find entry))
+          | None -> None)
+      | _ -> None)
+  | Act (env, op'), _ -> (
+      match op with
+      | Id_lookup_op -> lookup_fast env mu v (Lookup_op op')
+      | Lookup_op op -> lookup_fast env mu v (Lookup_op (comp_opt_op op' op)))
+  | Ctx (Snoc (ctx, { vars = Vars; _ }, _)), Later v -> lookup_fast (Ctx ctx) mu v op
   | Ctx (Snoc (ctx, { bindings; filter; vars = Vars; _ }, _)), Now ->
-      lookup_fast (env_ext (Ctx ctx) filter bindings) mu Now
-  | Ctx (Snoc (ctx, { vars = Alias; _ }, _)), _ -> lookup_fast (Ctx ctx) mu v
-  | Ctx (Weaken (ctx, _)), _ -> lookup_fast (Ctx ctx) mu v
+      lookup_fast (env_ext (Ctx ctx) filter bindings) mu Now op
+  | Ctx (Snoc (ctx, { vars = Alias; _ }, _)), _ -> lookup_fast (Ctx ctx) mu v op
+  | Ctx (Weaken (ctx, _)), _ -> lookup_fast (Ctx ctx) mu v op
   | _ -> None
 
 and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
  fun env (Index (v, fa, _, plus) as ix) ->
   let fast : (mode, kinetic) value option =
-    match (plus, D.compare_zero (cod_sface fa), D.compare_zero (dim_env env)) with
-    | Plus_with_locks (Zero, (Zero _ as locks)), Zero, Zero -> lookup_fast env (Locks.cod locks) v
+    match (plus, D.compare_zero (cod_sface fa)) with
+    | Plus_with_locks (Zero, (Zero _ as locks)), Zero ->
+        lookup_fast env (Locks.cod locks) v Id_lookup_op
     | _ -> None in
   match fast with
   | Some value -> value
