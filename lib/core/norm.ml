@@ -805,7 +805,7 @@ and apply : type dom modality mode n m s.
             (Modality_mismatch
                (`Internal, "applying a lambda", Modality.filter_modality lam_filter, modality)))
   (* If it is a uninstantiated neutral application... *)
-  | Neu { head = Live _ as head; args; value; ty = (lazy ty); acted = _; id = _ } -> (
+  | Neu { head = Live _ as head; args; value; ty = (lazy ty); acted = _; id } -> (
       (* ... we check that its type is fully instantiated... *)
       match view_type ty "apply" with
       | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) -> (
@@ -819,22 +819,17 @@ and apply : type dom modality mode n m s.
           | _, Neq ->
               fatal
                 (Modality_mismatch (`Internal, "applying a neutral function", pi_modality, modality))
-          | Eq, Eq ->
-              (* We annotate the new argument by its type, extracted from the domain type of the function being applied. *)
-              let newarg = norm_of_vals_cube arg doms in
-              (* We compute the output type of the application. *)
-              let newty = lazy (tyof_app cods tyargs filter arg) in
-              (* We add the new argument to the existing application spine. *)
+          | Eq, Eq -> (
+              (* An application is the same as an earlier one of the same function (physically the same head and spine, which we look for under the identity of the neutral being applied) to physically the same arguments (see Value.hashcons).  We look for one before building anything. *)
               let rest = args in
-              let args = Snoc (rest, Arg (filter, newarg, ins_zero m)) in
-              (* We add the argument to the lazy value and return a glued neutral, which is the same as an earlier one if that was the same function (physically the same head and spine) applied to physically the same arguments (see Value.hashcons). *)
-              let value = apply_lazy value m filter newarg in
+              let rmode = Modality.tgt pi_modality in
+              let hkey = hashcons_key id (hashcons_value_key (CubeOf.find_top arg)) in
               let same : (mode, kinetic) value -> bool = function
                 | Neu { head = h; args = Snoc (r, Arg (_, xs, _)); _ } -> (
                     Obj.repr h == Obj.repr head
                     && Obj.repr r == Obj.repr rest
                     &&
-                    match D.compare (CubeOf.dim xs) (CubeOf.dim newarg) with
+                    match D.compare (CubeOf.dim xs) k with
                     | Eq -> (
                         let exception Different in
                         try
@@ -842,19 +837,28 @@ and apply : type dom modality mode n m s.
                             {
                               it =
                                 (fun fa [ x ] ->
-                                  if not (Obj.repr x.tm == Obj.repr (CubeOf.find xs fa).tm) then
+                                  if not (Obj.repr x == Obj.repr (CubeOf.find xs fa).tm) then
                                     raise_notrace Different);
                             }
-                            [ newarg ];
+                            [ arg ];
                           true
                         with Different -> false)
                     | Neq -> false)
                 | _ -> false in
-              Val
-                (hashcons
-                   (Modality.tgt (Modality.filter_modality filter))
-                   (hashcons_neu_hash head args) same
-                   (Neu { head; args; value; ty = newty; acted = []; id = fresh_id () })))
+              match hashcons_find rmode hkey same with
+              | Some v -> Val v
+              | None ->
+                  (* We annotate the new argument by its type, extracted from the domain type of the function being applied. *)
+                  let newarg = norm_of_vals_cube arg doms in
+                  (* We compute the output type of the application. *)
+                  let newty = lazy (tyof_app cods tyargs filter arg) in
+                  (* We add the new argument to the existing application spine. *)
+                  let args = Snoc (rest, Arg (filter, newarg, ins_zero m)) in
+                  (* We add the argument to the lazy value and return a glued neutral. *)
+                  let value = apply_lazy value m filter newarg in
+                  Val
+                    (hashcons_add rmode hkey
+                       (Neu { head; args; value; ty = newty; acted = []; id = fresh_id () }))))
       | _ -> fatal (Anomaly "invalid application by non-function"))
   | _ -> fatal (Anomaly "invalid application of non-function")
 
@@ -946,14 +950,11 @@ and field : type src f mode n k nk s.
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
       match act_value viewed_tm p (Modalcell.id2 src) with
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
-      | Neu { head = Live _ as head; args; value; ty; acted = _; id = _ } ->
-          let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
-          (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
-          let (Has_filter filter) = Modality.filter fm n in
+      | Neu { head = Live _ as head; args; value; ty; acted = _; id } -> (
+          (* A projection is the same as an earlier one of the same field, at the same dimension, from the same neutral (physically the same head and spine; see Value.hashcons).  We look for one before building anything. *)
           let rest = args in
-          let args = Snoc (rest, Field (filter, fld, fldplus, ins_zero n)) in
-          (* We add the projection to the lazy value and return a glued neutral.  At this point we've already pushed the insertion inside by acting on the whole neutral above, so the remaining insertion to project from its value is "the identity" of appropriate dimensions.  It is the same as an earlier one if that was the same projection, at the same dimension, from physically the same head and spine (see Value.hashcons). *)
-          let value = field_lazy fm value fld (ins_of_plus n fldplus) in
+          let rmode = Modality.tgt fm in
+          let hkey = hashcons_key id (Hashtbl.hash (Field.to_string fld)) in
           let same : (mode, kinetic) value -> bool = function
             | Neu { head = h; args = Snoc (r, Field (_, fld', _, ins')); _ } -> (
                 Obj.repr h == Obj.repr head
@@ -963,9 +964,18 @@ and field : type src f mode n k nk s.
                 | Eq, Eq -> true
                 | _ -> false)
             | _ -> false in
-          Val
-            (hashcons (Modality.tgt fm) (hashcons_neu_hash head args) same
-               (Neu { head; args; value; ty = newty; acted = []; id = fresh_id () }))
+          match hashcons_find rmode hkey same with
+          | Some v -> Val v
+          | None ->
+              let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
+              (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
+              let (Has_filter filter) = Modality.filter fm n in
+              let args = Snoc (rest, Field (filter, fld, fldplus, ins_zero n)) in
+              (* We add the projection to the lazy value and return a glued neutral.  At this point we've already pushed the insertion inside by acting on the whole neutral above, so the remaining insertion to project from its value is "the identity" of appropriate dimensions. *)
+              let value = field_lazy fm value fld (ins_of_plus n fldplus) in
+              Val
+                (hashcons_add rmode hkey
+                   (Neu { head; args; value; ty = newty; acted = []; id = fresh_id () })))
       | _ ->
           fatal ~severity:Asai.Diagnostic.Bug
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))

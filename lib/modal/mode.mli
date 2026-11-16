@@ -29,9 +29,10 @@ module WeakSet : sig
   module Make : functor (F : Fam) -> sig
     type t
 
-    val create : max:int -> int -> t
+    val create : int -> t
     val clear : t -> unit
-    val merge : t -> 'g Mode.t -> int -> ('g F.t -> bool) -> 'g F.t -> 'g F.t
+    val find : t -> 'g Mode.t -> int -> ('g F.t -> bool) -> 'g F.t option
+    val add : t -> 'g Mode.t -> int -> 'g F.t -> unit
   end
 end
 

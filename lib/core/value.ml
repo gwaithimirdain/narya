@@ -808,14 +808,14 @@ let apply_lazy : type dom modality mode m n s.
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
 
-(* Hash-consing of neutrals.  Neutrals are constructed over and over again from the same parts: for instance, evaluating the same term in the same environment twice, or two derivations of the same spine, produce structurally equal but physically distinct neutrals.  So the constructions of neutrals that extend a spine, and of variables, look for an existing neutral built from physically the same parts, and return it instead of the new one.  This makes structurally equal neutrals tend to be physically equal, so that they share the work of forcing their (glued) values, and comparing them succeeds by physical equality.
+(* Hash-consing of neutrals.  Neutrals are constructed over and over again from the same parts: for instance, evaluating the same term in the same environment twice, or two derivations of the same spine, produce structurally equal but physically distinct neutrals.  So the constructions of neutrals that extend a spine, and of variables, first look for an existing neutral built from physically the same parts, and return it instead of building a new one.  This makes structurally equal neutrals tend to be physically equal, so that they share the work of forcing their (glued) values, and comparing them succeeds by physical equality.
 
-   The table (see Mode.WeakSet) holds its neutrals weakly, so that it doesn't keep them alive, and a mode supplies the type equality when one is found.  Since a neutral's value depends on the global definitions of constants and metavariables, the table is cleared whenever those change (see Norm).  OCaml can't hash by addresses, so neutrals are hashed by a shallow structural hash, and since neutrals that are structurally equal but not physically (because some part of them isn't hash-consed) all have the same hash, the number of them that are remembered is bounded. *)
+   The table (see Mode.WeakSet) holds its neutrals weakly, and a mode supplies the type equality when one is found.  Since a neutral's value depends on the global definitions of constants and metavariables, the table is cleared whenever those change (see Norm).  OCaml can't hash by addresses, but every neutral has an identity number, so a neutral is looked up by a key computed from the identity numbers of the parts it is built from (see hashcons_key): the function and argument of an application, the record and field of a projection, the level and type of a variable.  The key is thus known before the neutral is built, so that when it is found none of it needs to be. *)
 module Hashcons_set = Mode.WeakSet.Make (struct
   type 'mode t = ('mode, kinetic) value
 end)
 
-let hashcons_table = Hashcons_set.create ~max:8 4096
+let hashcons_table = Hashcons_set.create 16
 
 (* The current generation of remembered degeneracy actions, which ends whenever the hash-consing table is cleared and for the same reason. *)
 let action_generation = ref 0
@@ -853,86 +853,62 @@ let add_action : type mode a b mu1 mu2 cod.
   Acted { deg; cell; result; generation }
   :: List.filter (fun (Acted a) -> a.generation = generation) actions
 
-(* Shallow hashes for hash-consing: the identity of a head (but not of its type), and the head of a value. *)
-let hashcons_head_hash : type mode fail. (mode, fail) neu_head -> int = function
-  | Live (Var { level; _ }) -> Hashtbl.hash (0, level)
-  | Live (Const { name; _ }) -> Hashtbl.hash (1, name)
-  | Live (Meta { meta; _ }) -> Hashtbl.hash (2, Meta.name meta)
-  | Live (UU _) -> 3
-  | Live (Pi _) -> 4
-  | Failed _ -> 5
+(* Combine two numbers into a key for hash-consing.  The table uses the low bits, so we multiply (by odd constants) to spread the inputs over all the bits and then fold the high ones down. *)
+let hashcons_key (a : int) (b : int) : int =
+  let h = (a * 0x1E3779B1) + (b * 0x05EBCA6B) in
+  h lxor (h lsr 15)
 
-(* The hash of a spine, from the hashes of the heads of its arguments, its field names, and its instantiation dimensions. *)
-let rec hashcons_apps_hash : type h mode any fail. (h, mode, any, fail) apps -> int = function
-  | Emp -> 0
-  | Snoc (rest, Arg (_, xs, _)) ->
-      Hashtbl.hash (hashcons_apps_hash rest, hashcons_arg_hash (CubeOf.find_top xs).tm)
-  | Snoc (rest, Field (_, fld, _, _)) -> Hashtbl.hash (hashcons_apps_hash rest, Field.to_string fld)
-  | Snoc (rest, Inst (_, args)) ->
-      Hashtbl.hash (hashcons_apps_hash rest, string_of_dim (TubeOf.inst args))
+(* The part of a key that identifies a value used as an argument or a type.  A neutral has its identity number; other values, which have none, get a number from their outermost structure, so that those with the same structure share a slot of the table (and only the most recent of them is remembered). *)
+let hashcons_value_key : type mode s. (mode, s) value -> int = function
+  | Neu { id; _ } -> id
+  | Lam (_, _, Bind { body; _ }) -> -1 - Hashtbl.hash_param 6 24 body
+  | Struct _ -> -1
+  | Constr (c, _, _) -> -2 - Hashtbl.hash c
+  | Canonical _ -> -3
 
-(* The hash of an argument: the head of a neutral and the length of its spine. *)
-and hashcons_arg_hash : type mode s. (mode, s) value -> int = function
-  | Neu { head; args; _ } -> Hashtbl.hash (hashcons_head_hash head, hashcons_apps_length args)
-  | Lam (_, _, Bind { body; _ }) -> Hashtbl.hash (6, Hashtbl.hash_param 6 24 body)
-  | Struct _ -> 7
-  | Constr (c, _, _) -> Hashtbl.hash (8, c)
-  | Canonical _ -> 9
+(* Look for an existing neutral of the given mode with the given key that satisfies [same]. *)
+let hashcons_find : type mode.
+    mode Mode.t -> int -> ((mode, kinetic) value -> bool) -> (mode, kinetic) value option =
+ fun mode key same -> Hashcons_set.find hashcons_table mode key same
 
-and hashcons_apps_length : type h mode any fail. (h, mode, any, fail) apps -> int = function
-  | Emp -> 0
-  | Snoc (rest, _) -> 1 + hashcons_apps_length rest
-
-(* The hash of a neutral built from a head and a spine. *)
-let hashcons_neu_hash : type h mode any fail. (h, fail) neu_head -> (h, mode, any, fail) apps -> int
-    =
- fun head args -> Hashtbl.hash (hashcons_head_hash head, hashcons_apps_hash args)
-
-let hashcons_value_hash : type mode s. (mode, s) value -> int = function
-  | Neu { head; _ } -> hashcons_head_hash head
-  | Lam (_, _, Bind { body; _ }) -> Hashtbl.hash (6, Hashtbl.hash_param 6 24 body)
-  | Struct _ -> 7
-  | Constr (c, _, _) -> Hashtbl.hash (8, c)
-  | Canonical _ -> 9
-
-(* Return an existing neutral of the given mode and hash satisfying [same] if there is one, or else [v], which is remembered. *)
-let hashcons : type mode.
-    mode Mode.t ->
-    int ->
-    ((mode, kinetic) value -> bool) ->
-    (mode, kinetic) value ->
-    (mode, kinetic) value =
- fun mode h same v -> Hashcons_set.merge hashcons_table mode h same v
+(* Remember a newly built neutral under its key, and return it. *)
+let hashcons_add : type mode. mode Mode.t -> int -> (mode, kinetic) value -> (mode, kinetic) value =
+ fun mode key v ->
+  Hashcons_set.add hashcons_table mode key v;
+  v
 
 (* Given a mode, a De Bruijn level, and a type, build the variable of that mode and level having that type. *)
 let var : type dom modality mode.
     (dom, modality, mode) Modality.t -> level -> (dom, kinetic) value -> (dom, kinetic) value =
  fun modality level ty ->
-  let v =
-    Neu
-      {
-        head = Live (Var { level; deg = id_deg D.zero; key = Modalcell.id modality });
-        args = Emp;
-        value = ready Unrealized;
-        ty = Lazy.from_val ty;
-        acted = [];
-        id = fresh_id ();
-      } in
+  let mode = Modality.src modality in
+  let hkey = hashcons_key (hashcons_key (fst level) (snd level)) (hashcons_value_key ty) in
   (* A variable is the same as an earlier one with the same level, (identity) key, and physically the same type, since the same level in different scopes is a different variable with a different type. *)
-  hashcons (Modality.src modality)
-    (Hashtbl.hash (0, level))
-    (function
-      | Neu { head = Live (Var { level = l; deg; key }); args = Emp; ty = t; _ } -> (
-          l = level
-          && Option.is_some (is_id_deg deg)
-          && Lazy.is_val t
-          && Lazy.force t == ty
-          &&
-          match Modalcell.compare key (Modalcell.id modality) with
-          | Eq -> true
-          | Neq -> false)
-      | _ -> false)
-    v
+  let same : (dom, kinetic) value -> bool = function
+    | Neu { head = Live (Var { level = l; deg; key }); args = Emp; ty = t; _ } -> (
+        fst l = fst level
+        && snd l = snd level
+        && Option.is_some (is_id_deg deg)
+        && Lazy.is_val t
+        && Lazy.force t == ty
+        &&
+        match Modalcell.compare key (Modalcell.id modality) with
+        | Eq -> true
+        | Neq -> false)
+    | _ -> false in
+  match hashcons_find mode hkey same with
+  | Some v -> v
+  | None ->
+      hashcons_add mode hkey
+        (Neu
+           {
+             head = Live (Var { level; deg = id_deg D.zero; key = Modalcell.id modality });
+             args = Emp;
+             value = ready Unrealized;
+             ty = Lazy.from_val ty;
+             acted = [];
+             id = fresh_id ();
+           })
 
 (* Project out a cube or tube of values from a cube or tube of normals *)
 let val_of_norm_cube : type mode n. (n, mode normal) CubeOf.t -> (n, (mode, kinetic) value) CubeOf.t

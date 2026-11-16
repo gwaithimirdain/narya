@@ -59,43 +59,36 @@ module Map = struct
   end
 end
 
-(* Weak hash sets of a mode-indexed family, for hash-consing.  Since every mode is [dummy] here, we can store elements of all modes in one set, and a mode supplies the type equality when an element is returned.  An element is looked up by a hash that it must be given, and a predicate that decides whether an element of the set is the same as it.  Elements are held weakly, so the set doesn't keep them alive.  The elements with any one hash are kept in a single weak array, which grows as needed up to a maximum length: beyond that a new element is not added, since many elements with the same hash that aren't the same make every lookup slow. *)
+(* Weak hash sets of a mode-indexed family, for hash-consing.  Since every mode is [dummy] here, we can store elements of all modes in one set, and a mode supplies the type equality when an element is returned.  An element is looked up by a key that it must be given, which should be nearly unique to it (such as a combination of the identity numbers of its parts), and a predicate that decides whether the element found is the same as it.
+
+   The set is a single weak array indexed by the low bits of the key, so that an element displaces any other with the same index: it is a cache, not a complete record.  Elements are held weakly, so the set doesn't keep them alive past a major collection.  (A weak pointer does keep a young element alive through the next minor collection, which promotes it; that is unavoidable for anything that remembers values across minor collections.)  Each slot is stamped with the generation in which it was filled, so that clearing the set is just starting a new generation. *)
 module WeakSet = struct
   module Make (F : Fam) = struct
-    type t = { buckets : (int, dummy F.t Weak.t) Hashtbl.t; max : int }
+    type t = { table : dummy F.t Weak.t; stamps : int array; mask : int; mutable generation : int }
 
-    let create ~max n = { buckets = Hashtbl.create n; max }
-    let clear s = Hashtbl.reset s.buckets
+    (* A set with 2^bits slots. *)
+    let create bits =
+      let n = 1 lsl bits in
+      { table = Weak.create n; stamps = Array.make n (-1); mask = n - 1; generation = 0 }
 
-    (* Look for an element with the given hash satisfying [same], returning it if there is one.  Otherwise add [v] if there is room, and return it. *)
-    let merge : type g. t -> g Mode.t -> int -> (g F.t -> bool) -> g F.t -> g F.t =
-     fun s (PK _) h same v ->
-      match Hashtbl.find_opt s.buckets h with
-      | None ->
-          let w = Weak.create 1 in
-          Weak.set w 0 (Some v);
-          Hashtbl.replace s.buckets h w;
-          v
-      | Some w -> (
-          let n = Weak.length w in
-          let rec find i empty =
-            if i >= n then `Missing empty
-            else
-              match Weak.get w i with
-              | None -> find (i + 1) (if empty < 0 then i else empty)
-              | Some x -> if same x then `Found x else find (i + 1) empty in
-          match find 0 (-1) with
-          | `Found x -> x
-          | `Missing empty when empty >= 0 ->
-              Weak.set w empty (Some v);
-              v
-          | `Missing _ ->
-              if n < s.max then (
-                let w' = Weak.create (min s.max (2 * n)) in
-                Weak.blit w 0 w' 0 n;
-                Weak.set w' n (Some v);
-                Hashtbl.replace s.buckets h w');
-              v)
+    let clear s = s.generation <- s.generation + 1
+
+    (* The element with the given key, if it is in the set and satisfies [same]. *)
+    let find : type g. t -> g Mode.t -> int -> (g F.t -> bool) -> g F.t option =
+     fun s (PK _) key same ->
+      let i = key land s.mask in
+      if Array.unsafe_get s.stamps i <> s.generation then None
+      else
+        match Weak.get s.table i with
+        | Some x as found when same x -> found
+        | _ -> None
+
+    (* Put an element in the set under the given key, displacing whatever was in its slot. *)
+    let add : type g. t -> g Mode.t -> int -> g F.t -> unit =
+     fun s (PK _) key v ->
+      let i = key land s.mask in
+      Weak.set s.table i (Some v);
+      Array.unsafe_set s.stamps i s.generation
   end
 end
 
