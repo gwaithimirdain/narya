@@ -547,11 +547,6 @@ let constant_name : type n. n Names.t -> string list -> string list =
       else name
   | None -> name
 
-(* A composite of adjacent locks in a let-only, with the given source mode. *)
-type _ letonly_lock =
-  | No_letonly_lock : 'mode letonly_lock
-  | Letonly_lock : ('mode, 'modality, 'tgt) Modality.t -> 'mode letonly_lock
-
 (* The name of a modality, as a spine of identifiers, or a placeholder for the identity. *)
 let unparse_modality_name : type dom modality mode. (dom, modality, mode) Modality.t -> observation
     =
@@ -825,10 +820,10 @@ and unparse_letonly_clauses_pending : type mode n i k b.
     n Names.t ->
     (mode, i, b) ordered_termctx ->
     (mode, n, k, b) env ->
-    observation Bwd.t * mode letonly_lock * b Names.t =
+    observation Bwd.t * mode Modality.tgt_wrapped option * b Names.t =
  fun vars ctx tmenv ->
   match (ctx, tmenv) with
-  | Emp _, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty)
+  | Emp _, Emp _ -> (Snoc (Emp, mktok Only), None, Names.empty)
   (* An alias has no checked variables, so it isn't substituted for. *)
   | Ext (ctx, { vars = Alias; _ }, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
   | ( Ext (ctx, { bindings; plus_lock; filter = _; vis; vars = Vars }, _),
@@ -853,16 +848,16 @@ and unparse_letonly_clauses_pending : type mode n i k b.
         match Modality.compare_id modality with
         | Eq -> acc
         | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
-      (acc <: Term ty <: mktok Coloneq <: Term tm, No_letonly_lock, names)
+      (acc <: Term ty <: mktok Coloneq <: Term tm, None, names)
   (* A weakening entry, which can occur in the context of a metavariable, contributes nothing. *)
   | Weaken (ctx, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
   | Lock (ctx, cgen), Lock { env; gen; plus_tgt = Plus_with_locks (comp, _) } ->
       let Eq = Modality.Gen.tgt_uniq cgen gen in
       let acc, pending, names = unparse_letonly_clauses_pending (Names.split vars comp) ctx env in
-      let pending =
+      let pending : mode Modality.tgt_wrapped option =
         match pending with
-        | No_letonly_lock -> Letonly_lock (Modality.of_gen gen)
-        | Letonly_lock modality -> Letonly_lock (Modality.suc modality gen) in
+        | None -> Some (Wrap (Modality.of_gen gen))
+        | Some (Wrap modality) -> Some (Wrap (Modality.suc modality gen)) in
       (acc, pending, Names.add_gen_lock names)
   | _, Prekey { env; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } ->
       let acc, names =
@@ -872,14 +867,15 @@ and unparse_letonly_clauses_pending : type mode n i k b.
           (fun acc parts ->
             letonly_sep acc <: mktok Keyword_key <: Term (unlocated (Ident (parts, []))))
           acc (Modalcell.name cell),
-        No_letonly_lock,
+        None,
         names )
 
-and flush_letonly_lock : type mode. observation Bwd.t -> mode letonly_lock -> observation Bwd.t =
+and flush_letonly_lock : type mode.
+    observation Bwd.t -> mode Modality.tgt_wrapped option -> observation Bwd.t =
  fun acc pending ->
   match pending with
-  | No_letonly_lock -> acc
-  | Letonly_lock modality -> letonly_sep acc <: mktok Lock <: unparse_modality_name modality
+  | None -> acc
+  | Some (Wrap modality) -> letonly_sep acc <: mktok Lock <: unparse_modality_name modality
 
 (* The first clause of a let-only directly follows "only", while the rest are preceded by "and". *)
 and letonly_sep (acc : observation Bwd.t) : observation Bwd.t =
