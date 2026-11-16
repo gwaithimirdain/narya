@@ -198,8 +198,8 @@ module rec Value : sig
     canonical : ('mode, 'e, 'n) canonical;
     ins : ('mk, 'e, 'n) insertion;
     tyargs : ('m, 'k, 'mk, 'mode normal) TubeOf.t;
-    fields : ('mode * 'mk * potential * no_eta) StructfieldAbwd.t;
-    mutable inst_fields : ('mode * 'm * potential * no_eta) StructfieldAbwd.t option;
+    fields : ('mode * 'mk * potential * no_eta) StructfieldAbwd.t Lazy.t;
+    mutable inst_fields : ('mode * 'm * potential * no_eta) StructfieldAbwd.t Lazy.t option;
   }
 
   and (_, _) evaluation =
@@ -514,8 +514,8 @@ end = struct
     (* Instantiation arguments for that total dimension. *)
     tyargs : ('m, 'k, 'mk, 'mode normal) TubeOf.t;
     (* Original fibrancy fields for the total dimension, and computed fibrancy fields for the remaining uninstantiated dimensions. *)
-    fields : ('mode * 'mk * potential * no_eta) StructfieldAbwd.t;
-    mutable inst_fields : ('mode * 'm * potential * no_eta) StructfieldAbwd.t option;
+    fields : ('mode * 'mk * potential * no_eta) StructfieldAbwd.t Lazy.t;
+    mutable inst_fields : ('mode * 'm * potential * no_eta) StructfieldAbwd.t Lazy.t option;
   }
 
   (* This is the result of evaluating a term with a given kind of energy.  Evaluating a kinetic term just produces a (kinetic) value, whereas evaluating a potential term might be a potential value (either a lambda waiting for more arguments, a struct waiting for more fields, or a canonical type partially or fully instantiated), or else the information that the case tree has reached a leaf and the resulting kinetic value, or else the information that the case tree is permanently stuck.  *)
@@ -903,8 +903,9 @@ let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
   | None ->
       let fields =
         match Lazy.force (Fibrancy.universe mode) with
-        | None -> Bwd.Emp
-        | Some fields -> eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields in
+        | None -> Lazy.from_val Bwd.Emp
+        | Some fields -> lazy (eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields)
+      in
       let value =
         ready
           (Val
@@ -941,8 +942,9 @@ and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
           } in
       let fields =
         match Lazy.force (Fibrancy.universe mode) with
-        | None -> Bwd.Emp
-        | Some fields -> eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields in
+        | None -> Lazy.from_val Bwd.Emp
+        | Some fields -> lazy (eval_structfield_abwd (Emp (mode, n)) n (D.plus_zero n) n fields)
+      in
       let value =
         ready
           (Val

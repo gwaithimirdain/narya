@@ -222,8 +222,10 @@ module Act = struct
     let fb = deg_plus fa (TubeOf.plus tyargs) (TubeOf.plus new_tyargs) in
     let (Insfact_comp (fc, new_ins)) = insfact_comp ins fb in
     let new_c = act_canonical canonical fc cell in
-    let new_fields = act_structfield_abwd fb cell fields in
-    let new_inst_fields = Option.map (act_structfield_abwd fa cell) inst_fields in
+    let new_fields = lazy (act_structfield_abwd fb cell (Lazy.force fields)) in
+    let new_inst_fields =
+      Option.map (fun fields -> lazy (act_structfield_abwd fa cell (Lazy.force fields))) inst_fields
+    in
     Act_inst_canonical
       {
         mode;
@@ -469,7 +471,7 @@ module Act = struct
                          canonical = new_c;
                          tyargs = new_ctyargs;
                          ins = new_ins;
-                         fields = Emp;
+                         fields = Lazy.from_val Bwd.Emp;
                          inst_fields = None;
                        })
               | Pos _ -> fatal (Anomaly "non fully instantiated type in act_ty"))

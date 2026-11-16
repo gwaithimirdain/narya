@@ -459,36 +459,38 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
         let subx = plus_variables (dom_sface fa') ab (sub_variables fb' x) in
         let head : mode head = Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods } in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
-        let fields : (mode * u * potential * no_eta) Value.StructfieldAbwd.t =
+        (* The fibrancy fields of a pi-type are rarely used, and pi-types are evaluated very often (such as whenever a function is applied, to find the type of the result), so we compute them lazily. *)
+        let fields : (mode * u * potential * no_eta) Value.StructfieldAbwd.t Lazy.t =
           match (is_id_sface fab, Fibrancy.PiValuesMap.find_opt modality !Fibrancy.pi) with
-          | None, _ | _, None -> Bwd.Emp
+          | None, _ | _, None -> Lazy.from_val Bwd.Emp
           | Some Eq, Some fields ->
-              (* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
-              let values =
-                let build : type ij. (ij, mn) sface -> (mode, kinetic) value =
-                 fun fa ->
-                  let (BindFam b) = BindCube.find cods fa in
-                  let (Filter_sface (fa', filter')) = Modality.filter_sface filter fa in
-                  Lam (sub_variables fa' (plus_variables k k_l x), filter', b) in
-                `Ok (CubeOf.build (BindCube.dim cods) { build }) in
-              let pi_env =
-                Ext
-                  {
-                    env =
-                      Ext
-                        {
-                          env = Emp (codmode, mn);
-                          plus = D.plus_zero (D.plus_out k k_l);
-                          filter;
-                          filtered = Modality.filter_zero modality;
-                          values = `Ok doms;
-                        };
-                    plus = D.plus_zero mn;
-                    filter = Modality.filter_id codmode mn;
-                    filtered = Modality.filter_zero (Modality.id codmode);
-                    values;
-                  } in
-              eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields in
+              lazy
+                ((* For the top face, we compute its fibrancy fields by evaluating the generic "fibrancy fields of a pi" at the evaluated domains and codomains.  *)
+                 let values =
+                   let build : type ij. (ij, mn) sface -> (mode, kinetic) value =
+                    fun fa ->
+                     let (BindFam b) = BindCube.find cods fa in
+                     let (Filter_sface (fa', filter')) = Modality.filter_sface filter fa in
+                     Lam (sub_variables fa' (plus_variables k k_l x), filter', b) in
+                   `Ok (CubeOf.build (BindCube.dim cods) { build }) in
+                 let pi_env =
+                   Ext
+                     {
+                       env =
+                         Ext
+                           {
+                             env = Emp (codmode, mn);
+                             plus = D.plus_zero (D.plus_out k k_l);
+                             filter;
+                             filtered = Modality.filter_zero modality;
+                             values = `Ok doms;
+                           };
+                       plus = D.plus_zero mn;
+                       filter = Modality.filter_id codmode mn;
+                       filtered = Modality.filter_zero (Modality.id codmode);
+                       values;
+                     } in
+                 eval_structfield_abwd pi_env mn (D.plus_zero mn) mn fields) in
         let value =
           ready
             (Val
@@ -642,7 +644,7 @@ and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     hints ->
     k D.t ->
     (mk, m, D.zero) insertion ->
-    (mode * mk * potential * no_eta) StructfieldAbwd.t ->
+    (mode * mk * potential * no_eta) StructfieldAbwd.t Lazy.t ->
     (dom, modl, mode) Modality.t ->
     (an, dom normal) CubeOf.t ->
     (mode, potential) evaluation =
@@ -659,8 +661,8 @@ and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
   | Eq, Zero, Eq ->
       let indices = Fillvec.snoc indices xs in
       let fields =
-        match fields with
-        | Emp -> Bwd.Emp
+        match Lazy.force fields with
+        | Emp -> Lazy.from_val Bwd.Emp
         | Snoc _ -> fatal (Unimplemented "fibrancy of indexed datatypes") in
       Val
         (Value.Canonical
@@ -1372,7 +1374,7 @@ and eval_canonical : type mode m a.
       let tyargs = TubeOf.empty (dim_env env) in
       let fields =
         match Lazy.force Fibrancy.data with
-        | None -> Bwd.Emp
+        | None -> Lazy.from_val Bwd.Emp
         | Some () -> fatal (Unimplemented "fibrancy of datatypes") in
       Val
         (Canonical
@@ -1404,7 +1406,7 @@ and eval_codata : type mode m a n et.
   let ins = id_ins m m_n in
   let canonical = Codata { eta; opacity; hints; env; fields } in
   let tyargs = TubeOf.empty mn in
-  let fields = eval_structfield_abwd env m m_n mn fibrancy_fields in
+  let fields = lazy (eval_structfield_abwd env m m_n mn fibrancy_fields) in
   Val (Canonical { mode = mode_env env; canonical; tyargs; ins; fields; inst_fields = Some fields })
 
 and eval_term : type mode m b. (mode, m, b) env -> (mode, b, kinetic) term -> (mode, kinetic) value
@@ -1824,11 +1826,11 @@ and get_fibrancy_fields : type mode m k mk e n.
     =
  fun c ->
   match c.inst_fields with
-  | Some f -> f
+  | Some f -> Lazy.force f
   | None -> (
-      match inst_fibrancy_fields c.mode c.fields c.tyargs with
+      match inst_fibrancy_fields c.mode (Lazy.force c.fields) c.tyargs with
       | Some f ->
-          c.inst_fields <- Some f;
+          c.inst_fields <- Some (Lazy.from_val f);
           f
       | None -> Emp)
 
