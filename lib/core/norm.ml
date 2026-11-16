@@ -399,7 +399,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       Val (Constr (constr, mn, eargs))
   | Pi
       (type l n dom modality)
-      ({ x; filter = lfilter; doms; cods } : (l, n, dom, modality, mode, b) Term.pi_args) ->
+      ({ x; filter = lfilter; doms; cods } : (l, n, dom, modality, mode, b) Term.pi_args) -> (
       let (Term.Modal (modality, al, doms)) = doms in
       (* We are starting with an n-dimensional pi-type and evaluating it in an m-dimensional environment, producing an (m+n)-dimensional result.  The domains of the given pi-type filter the dimension n to l. *)
       let l, n = (CubeOf.dim doms, CodCube.dim cods) in
@@ -440,9 +440,10 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                 BindFam (eval_binder (act_env env (opt_op_of_sface fa)) i_j modality jfilter1 x));
           } in
       (* However, because the result will be a Neu, we need to know its type as well.  The starting n-dimensional pi-type (which is itself uninstantiated) lies in a full instantiation of the n-dimensional universe at lower-dimensional pi-types formed from subcubes of its domains and codomains.  Accordingly, the resulting (m+n)-dimensional pi-type will like in a full instantiation of the (m+n)-dimensional universe at lower-dimensional pi-types obtained by evaluating these at appropriately split faces.  Since each of them *also* belongs to a universe instantiated similarly, and needs to know its type not just because it is an uninst but because it is a normal, we build the whole cube at once and then take its top. *)
-      let pitbl = Hashtbl.create 10 in
+      (* A zero-dimensional pi-type has only one face, so in that case we never need the table. *)
+      let pitbl = lazy (Hashtbl.create 10) in
       (* Since we only care about the hashtbl and the top, and we can get that from the hashtbl at the end anyway, we don't bother actually putting the normals into a meaningful cube. *)
-      let it : type u. (u, mn) sface -> unit =
+      let make : type u. (u, mn) sface -> mode normal =
        fun fab ->
         let kl = dom_sface fab in
         let codmode = mode_env env in
@@ -451,7 +452,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
             (TubeOf.build D.zero (D.zero_plus kl)
                {
                  build =
-                   (fun fc -> Hashtbl.find pitbl (SFace_of (comp_sface fab (sface_of_tface fc))));
+                   (fun fc ->
+                     Hashtbl.find (Lazy.force pitbl) (SFace_of (comp_sface fab (sface_of_tface fc))));
                }) in
         let (Filter_sface (fab', ufilter)) = Modality.filter_sface filter fab in
         let (SFace_of_plus (ab, fa', fb')) = sface_of_plus k_l fab' in
@@ -504,9 +506,14 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     inst_fields = Some fields;
                   })) in
         let tm = Neu { head = Live head; args = Emp; value; ty = Lazy.from_val ty } in
-        Hashtbl.add pitbl (SFace_of fab) { tm; ty = Lazy.from_val ty } in
-      CubeOf.iter_faces mn { it };
-      Val (Hashtbl.find pitbl (SFace_of (id_sface mn))).tm
+        { tm; ty = Lazy.from_val ty } in
+      match D.compare_zero mn with
+      | Zero -> Val (make (id_sface mn)).tm
+      | Pos _ ->
+          let it : type u. (u, mn) sface -> unit =
+           fun fab -> Hashtbl.add (Lazy.force pitbl) (SFace_of fab) (make fab) in
+          CubeOf.iter_faces mn { it };
+          Val (Hashtbl.find (Lazy.force pitbl) (SFace_of (id_sface mn))).tm)
   | Let (_, Modal (modality, al, v), body) ->
       (* We evaluate let-bindings lazily, on the chance they aren't actually used. *)
       let m = dim_env env in
@@ -758,7 +765,8 @@ and tyof_app_lazy : type dom modality mode k n.
     (k, (dom, kinetic) lazy_eval) CubeOf.t ->
     (mode, kinetic) value =
  fun cods fns filter args ->
-  let out_arg_tbl = Hashtbl.create 10 in
+  (* A zero-dimensional pi-type has no boundary, so in that case we never need the table. *)
+  let out_arg_tbl = lazy (Hashtbl.create 10) in
   let out_args =
     TubeOf.mmap
       {
@@ -779,10 +787,11 @@ and tyof_app_lazy : type dom modality mode k n.
                    {
                      build =
                        (fun fc ->
-                         Hashtbl.find out_arg_tbl (SFace_of (comp_sface fa (sface_of_tface fc))));
+                         Hashtbl.find (Lazy.force out_arg_tbl)
+                           (SFace_of (comp_sface fa (sface_of_tface fc))));
                    }) in
             let out_tm = { tm; ty = Lazy.from_val ty } in
-            Hashtbl.add out_arg_tbl (SFace_of fa) out_tm;
+            Hashtbl.add (Lazy.force out_arg_tbl) (SFace_of fa) out_tm;
             out_tm);
       }
       [ fns ] in
