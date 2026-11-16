@@ -428,7 +428,7 @@ module Combinators (Final : Fail.ANY) = struct
         fatal ~loc:(Range.convert rng) (Invalid_degeneracy str)
 
   (* Strip off the initial Bof token attached to initial comments and whitespace, and return that whitespace. *)
-  let bof = step (fun state _ (tok, ws) -> if tok = Bof then Some (ws, state) else None)
+  let bof = step (fun state _ (tok, ws) -> if Token.equal tok Bof then Some (ws, state) else None)
 
   (* TODO: Save the whitespace! *)
   let term_only ?li ?ri () =

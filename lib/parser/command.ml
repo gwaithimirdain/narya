@@ -163,7 +163,8 @@ module Parse = struct
 
   open C.Basic
 
-  let token x = step "" (fun state _ (tok, w) -> if tok = x then Some (w, state) else None)
+  let token x =
+    step "" (fun state _ (tok, w) -> if Token.equal tok x then Some (w, state) else None)
 
   let ident =
     step "" (fun state _ (tok, w) ->

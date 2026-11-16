@@ -71,7 +71,104 @@ type t =
   | Bof
   | Eof
 
-let compare : t -> t -> int = compare
+(* Tokens are compared often, as keys of the maps in notation trees, so we compare them by hand rather than with the polymorphic "compare".  The order is exactly that of the polymorphic "compare" (constant constructors in order of declaration, then non-constant ones in order of declaration, each compared by its arguments), since some code depends on the order of map traversals. *)
+let rank : t -> int = function
+  | LParen -> 0
+  | RParen -> 1
+  | LBracket -> 2
+  | RBracket -> 3
+  | LBrace -> 4
+  | RBrace -> 5
+  | GeldedQuery -> 6
+  | DblQuery -> 7
+  | Arrow -> 8
+  | DblArrow -> 9
+  | Mapsto -> 10
+  | DblMapsto -> 11
+  | Colon -> 12
+  | Coloneq -> 13
+  | DblColoneq -> 14
+  | Pluseq -> 15
+  | Dot -> 16
+  | Ellipsis -> 17
+  | Underscore -> 18
+  | And -> 19
+  | Axiom -> 20
+  | Codata -> 21
+  | Data -> 22
+  | About -> 23
+  | Def -> 24
+  | Display -> 25
+  | Echo -> 26
+  | End -> 27
+  | Export -> 28
+  | Import -> 29
+  | Chdir -> 30
+  | In -> 31
+  | Let -> 32
+  | Match -> 33
+  | Notation -> 34
+  | Option -> 35
+  | Quit -> 36
+  | Rec -> 37
+  | Only -> 38
+  | Lock -> 39
+  | Keyword_key -> 40
+  | Return -> 41
+  | Section -> 42
+  | Fmt -> 43
+  | Show -> 44
+  | Sig -> 45
+  | Solve -> 46
+  | Split -> 47
+  | Synth -> 48
+  | Undo -> 49
+  | Bof -> 50
+  | Eof -> 51
+  | Field _ -> 1000
+  | Key _ -> 1001
+  | Constr _ -> 1002
+  | Hole _ -> 1003
+  | String _ -> 1004
+  | Op _ -> 1005
+  | Ident _ -> 1006
+  | Superscript _ -> 1007
+  | Invalid_superscript _ -> 1008
+
+let rec compare_strings (xs : string list) (ys : string list) : int =
+  match (xs, ys) with
+  | [], [] -> 0
+  | [], _ :: _ -> -1
+  | _ :: _, [] -> 1
+  | x :: xs, y :: ys ->
+      let c = String.compare x y in
+      if c <> 0 then c else compare_strings xs ys
+
+let compare_option (x : string option) (y : string option) : int =
+  match (x, y) with
+  | None, None -> 0
+  | None, Some _ -> -1
+  | Some _, None -> 1
+  | Some x, Some y -> String.compare x y
+
+let compare (a : t) (b : t) : int =
+  if a == b then 0
+  else
+    match (a, b) with
+    | Field (x, xs), Field (y, ys) | Constr (x, xs), Constr (y, ys) ->
+        let c = String.compare x y in
+        if c <> 0 then c else compare_strings xs ys
+    | Key xs, Key ys | Ident xs, Ident ys -> compare_strings xs ys
+    | Hole h, Hole k ->
+        let c = compare_option h.number k.number in
+        if c <> 0 then c else compare_option h.contents k.contents
+    | String x, String y
+    | Op x, Op y
+    | Superscript x, Superscript y
+    | Invalid_superscript x, Invalid_superscript y -> String.compare x y
+    | _ -> Int.compare (rank a) (rank b)
+
+let equal (a : t) (b : t) : bool = a == b || compare a b = 0
 
 (* All (or at least most) of the Unicode superscript characters, their code points, and the corresponding ASCII characters.  This is digits, lowercase Roman letters, parentheses, and plus, minus, and equals signs. *)
 let supers =

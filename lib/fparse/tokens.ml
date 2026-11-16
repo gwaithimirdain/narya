@@ -54,7 +54,7 @@ let fill (ts : 'tok t) : bool =
 
 (* Forget the tokens before [index], which no later run can see. *)
 let compact (ts : 'tok t) : unit =
-  let k = min ts.index ts.ntoks in
+  let k = if ts.index < ts.ntoks then ts.index else ts.ntoks in
   if k > 0 then (
     Array.blit ts.toks k ts.toks 0 (ts.ntoks - k);
     (* Don't keep the forgotten tokens alive. *)

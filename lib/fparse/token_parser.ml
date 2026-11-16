@@ -7,16 +7,33 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
     tokens : Token.t Tokens.t;
     (* Index of the next token in tokens.toks; tokens.ntoks + 1 once the end has been consumed. *)
     mutable index : int;
+    (* The index at which this run started. *)
+    start : int;
     mutable user : User.t;
-    (* Location tracking for "located", as in fmlib: the start of the first token and the end of the last token consumed since the innermost "located" began, and whether any were. *)
-    mutable pos1 : Position.t;
-    mutable pos2 : Position.t;
+    (* Location tracking for "located", as in fmlib, which keeps the start of the first token consumed since the innermost "located" began ("pos1"), whether there was one ("consumed"), and the end of the last token consumed ("pos2").  Here pos2 is not stored, since it is determined by the index (see "pos2"), and pos1 is stored as an int (see "decode") so that saving and restoring it costs nothing. *)
+    mutable pos1 : int;
     mutable consumed : bool;
     (* The semantic error of the most recent failure, if it was semantic. *)
     mutable semantic : Semantic.t option;
   }
 
   type 'a t = state -> 'a
+
+  let[@inline] imin (a : int) (b : int) : int = if a < b then a else b
+
+  (* The end of the last token consumed, or Position.start if none has been in this run.  Tokens are consumed only by "step", which advances the index past the token, and by "expect_end", which advances the index past the end without changing pos2; backtracking restores the index. *)
+  let pos2_after (st : state) (k : int) : Position.t =
+    if k > st.start then snd (fst (Array.unsafe_get st.tokens.toks (k - 1))) else Position.start
+
+  let pos2 (st : state) : Position.t = pos2_after st (imin st.index st.tokens.ntoks)
+
+  (* pos1 is either the index i >= 0 of a token, meaning its start, or -1 - k for k >= 0, meaning pos2 at a moment when min index ntoks was k. *)
+  let encode_pos2 (st : state) : int = -1 - imin st.index st.tokens.ntoks
+
+  let decode (st : state) (p : int) : Position.t =
+    if p >= 0 then fst (fst (Array.unsafe_get st.tokens.toks p)) else pos2_after st (-1 - p)
+
+  let[@inline] set_user (st : state) (u : User.t) : unit = if st.user != u then st.user <- u
 
   type 'a outcome =
     | Success of 'a
@@ -41,9 +58,9 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
       {
         tokens;
         index = tokens.index;
+        start = tokens.index;
         user;
-        pos1 = Position.start;
-        pos2 = Position.start;
+        pos1 = -1 - imin tokens.index tokens.ntoks;
         consumed = false;
         semantic = None;
       } in
@@ -89,36 +106,34 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
     match p st with
     | a ->
         if st.index = i0 then (
-          st.user <- u0;
+          set_user st u0;
           st.pos1 <- p10;
           st.consumed <- c0);
         a
     | exception Fail when st.index = i0 ->
-        st.user <- u0;
+        set_user st u0;
         st.pos1 <- p10;
         st.consumed <- c0;
         q st
 
   let backtrack (p : 'a t) (_ : string) : 'a t =
    fun st ->
-    let i0 = st.index and u0 = st.user and p10 = st.pos1 and p20 = st.pos2 and c0 = st.consumed in
+    let i0 = st.index and u0 = st.user and p10 = st.pos1 and c0 = st.consumed in
     try p st
     with Fail ->
       st.index <- i0;
-      st.user <- u0;
+      set_user st u0;
       st.pos1 <- p10;
-      st.pos2 <- p20;
       st.consumed <- c0;
       syntax_fail st
 
   let followed_by (p : 'a t) (_ : string) : 'a t =
    fun st ->
-    let i0 = st.index and u0 = st.user and p10 = st.pos1 and p20 = st.pos2 and c0 = st.consumed in
+    let i0 = st.index and u0 = st.user and p10 = st.pos1 and c0 = st.consumed in
     let restore () =
       st.index <- i0;
-      st.user <- u0;
+      set_user st u0;
       st.pos1 <- p10;
-      st.pos2 <- p20;
       st.consumed <- c0 in
     match p st with
     | a ->
@@ -134,12 +149,12 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
     match p st with
     | a ->
         if st.index = i0 then (
-          st.user <- u0;
+          set_user st u0;
           st.pos1 <- p10;
           st.consumed <- c0);
         Some a
     | exception Fail when st.index = i0 ->
-        st.user <- u0;
+        set_user st u0;
         st.pos1 <- p10;
         st.consumed <- c0;
         None
@@ -151,7 +166,7 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
       match f r (p st) st with
       | r -> loop r
       | exception Fail when st.index = i0 ->
-          st.user <- u0;
+          set_user st u0;
           st.pos1 <- p10;
           st.consumed <- c0;
           r in
@@ -164,7 +179,7 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
       match p st with
       | a -> loop (a :: acc)
       | exception Fail when st.index = i0 ->
-          st.user <- u0;
+          set_user st u0;
           st.pos1 <- p10;
           st.consumed <- c0;
           List.rev acc in
@@ -203,14 +218,13 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
       let ts = st.tokens in
       let i = st.index in
       if i < ts.ntoks then
-        let ((p1, p2) as rng), tok = Array.unsafe_get ts.toks i in
+        let rng, tok = Array.unsafe_get ts.toks i in
         match f st.user rng tok with
         | Some (a, user) ->
-            st.user <- user;
+            set_user st user;
             if not st.consumed then (
-              st.pos1 <- p1;
+              st.pos1 <- i;
               st.consumed <- true);
-            st.pos2 <- p2;
             st.index <- i + 1;
             a
         | None -> syntax_fail st
@@ -231,10 +245,10 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
   let located (p : 'a t) : (Position.range * 'a) t =
    fun st ->
     let c0 = st.consumed and p10 = st.pos1 in
-    st.pos1 <- st.pos2;
+    st.pos1 <- encode_pos2 st;
     st.consumed <- false;
     let a = p st in
-    let rng = (st.pos1, st.pos2) in
+    let rng = (decode st st.pos1, pos2 st) in
     if c0 then st.pos1 <- p10;
     (rng, a)
 end
