@@ -322,10 +322,10 @@ type (_, _) letrec_meta =
       -> ('mode, 'b) letrec_meta
 
 (* The context in which the body of a let-rec is checked, with its variables let-bound to their metavariables, and a function wrapping a term in that context in the corresponding let-bindings. *)
-type (_, _, _, _) letrec_body =
-  | Letrec_body :
+type (_, _, _, _) letrec_body_ctx =
+  | Letrec_body_ctx :
       ('mode, 'ac, 'bc) Ctx.t * (('mode, 'bc, 's) term -> ('mode, 'b, 's) term)
-      -> ('mode, 'ac, 'b, 's) letrec_body
+      -> ('mode, 'ac, 'b, 's) letrec_body_ctx
 
 (* In HOTT mode, the user isn't allowed to define gel-types, so we bail out at typechecking time if we detect one.  But in parametricity mode, and when bootstrapping the definition of glue, we set this flag to true. *)
 let gel_ok = ref false
@@ -1352,10 +1352,10 @@ and synth_or_check_letrec : type mode a b c ac s p.
   let metas = make_letrec_metas (Meta.new_letrec_block ()) ctx rvtys vtms in
   (* Now we check the bound terms. *)
   let ac = Raw.bplus_of_tel rvtys in
-  let () = check_letrec_bindings ctx ac metas vtms in
+  check_letrec_bindings ctx ac metas vtms;
   (* The body is checked in a context where the variables are let-bound to their metavariables, as with a sequence of ordinary let-bindings. *)
-  let (Letrec_body (newctx, wrap) : (mode, ac, b, s) letrec_body) =
-    letrec_body (Ctx.env ctx) ctx ac (plus_with_no_locks (Ctx.mode ctx)) metas in
+  let (Letrec_body_ctx (newctx, wrap) : (mode, ac, b, s) letrec_body_ctx) =
+    letrec_body_ctx (Ctx.env ctx) ctx ac (plus_with_no_locks (Ctx.mode ctx)) metas in
   (* Now we update the status of the original constant being checked *)
   let status : (mode, _, s) status =
     match status with
@@ -1382,41 +1382,36 @@ and make_letrec_metas : type mode a b c ac v.
     ((mode, b) letrec_meta, c) Vec.t =
  fun block ctx tel vtms ->
   let mode = Ctx.mode ctx in
-  let rec go : type ai ci.
-      (mode, ai, b) Ctx.t ->
-      (ai, ci, ac) Raw.tel ->
-      (v located, ci) Vec.t ->
-      ((mode, b) letrec_meta, ci) Vec.t =
-   fun actx tel vtms ->
-    match (tel, vtms) with
-    | Emp, [] -> []
-    | Ext (x, modality, rty, tel), _ :: vtms -> (
-        (* A let-rec is NOT allowed to be modal.  I had technical problems with context manipulation in trying to figure out how to check a modal letrec, plus I'm not even sure what that would mean semantically. *)
-        match Modality.of_name_tgt mode modality.value with
-        | Error e -> modality_fatal "checking let-rec" (e :> modality_error)
-        | Ok (Wrap modality) -> (
-            match Modality.compare_id modality with
-            | Neq -> fatal (Unimplemented "modal let-rec variables")
-            | Eq ->
-                (* The type is recorded as Failed if it fails to typecheck, or if it typechecks with a failed part that evaluating it needs to inspect right away. *)
-                let cty, ety =
-                  Reporter.mortalize ~fallback:(fun () -> (Term.Failed Kinetic, failed_type mode))
-                  @@ fun () ->
-                  let cty = check Kinetic actx rty (universe mode D.zero) in
-                  (cty, eval_term (Ctx.env actx) cty) in
-                let local = Meta.local_name x in
-                let meta =
-                  Meta.make_def (`Letrec block) mode (Ctx.raw_length actx) (Ctx.tctx actx) Potential
-                in
-                Global.add_meta ?local meta ~termctx:(readback_ctx actx) ~tm:`Axiom ~ty:cty
-                  ~energy:Potential;
-                let tm = eval_term (Ctx.env actx) (Meta (meta, Kinetic)) in
-                let actx =
-                  Ctx.ext_alias ~dirt:(dirt_of_meta meta) actx (Modality.id mode) x
-                    { tm; ty = Lazy.from_val ety } in
-                Letrec_meta { name = x; meta; ty = cty } :: go actx tel vtms))
-    | Same _, _ -> fatal (Anomaly "shared types in let-rec") in
-  go ctx tel vtms
+  match (tel, vtms) with
+  | Emp, [] -> []
+  | Ext (x, modality, rty, tel), _ :: vtms -> (
+      (* A let-rec is NOT allowed to be modal.  I had technical problems with context manipulation in trying to figure out how to check a modal letrec, plus I'm not even sure what that would mean semantically. *)
+      match Modality.of_name_tgt mode modality.value with
+      | Error e -> modality_fatal "checking let-rec" (e :> modality_error)
+      | Ok (Wrap modality) -> (
+          match Modality.compare_id modality with
+          | Neq -> fatal (Unimplemented "modal let-rec variables")
+          | Eq ->
+              (* The type is recorded as Failed if it fails to typecheck, or if it typechecks with a failed part that evaluating it needs to inspect right away. *)
+              let cty, ety =
+                Reporter.mortalize ~fallback:(fun () -> (Term.Failed Kinetic, failed_type mode))
+                @@ fun () ->
+                let cty = check Kinetic ctx rty (universe mode D.zero) in
+                (cty, eval_term (Ctx.env ctx) cty) in
+              (* We create the metavariable and define it temporarily as an axiom with this type. *)
+              let local = Meta.local_name x in
+              let meta =
+                Meta.make_def (`Letrec block) mode (Ctx.raw_length ctx) (Ctx.tctx ctx) Potential
+              in
+              Global.add_meta ?local meta ~termctx:(readback_ctx ctx) ~tm:`Axiom ~ty:cty
+                ~energy:Potential;
+              (* Then we extend the context by an alias for that metavariable, and continue to the next one. *)
+              let tm = eval_term (Ctx.env ctx) (Meta (meta, Kinetic)) in
+              let actx =
+                Ctx.ext_alias ~dirt:(dirt_of_meta meta) ctx (Modality.id mode) x
+                  { tm; ty = Lazy.from_val ety } in
+              Letrec_meta { name = x; meta; ty = cty } :: make_letrec_metas block actx tel vtms))
+  | Same _, _ -> fatal (Anomaly "shared types in let-rec")
 
 (* Check the bound terms of a let-rec.  Since they all depend on each other mutually, each is checked in the context of the let-rec extended by aliases for all of the variables, which refer directly to their metavariables, so that its checked term lives in the context of the metavariables and can be its definition directly. *)
 and check_letrec_bindings : type mode a b c ac.
@@ -1443,48 +1438,48 @@ and check_letrec_bindings : type mode a b c ac.
           (Ctx.ext_alias ~dirt:(dirt_of_meta meta) actx (Modality.id mode) name
              { tm; ty = Lazy.from_val ty })
           ac metas in
+  (* We have to use a local recursive function here becuase we rebuild the *entire* context in each case using the original [ac], but the values of [a] and [c] change through the recursion. *)
   let rec go : type ci. ((mode, b) letrec_meta, ci) Vec.t -> (ac check located, ci) Vec.t -> unit =
    fun these vs ->
     match (these, vs) with
     | [], [] -> ()
     | Letrec_meta { meta; ty; _ } :: these, v :: vs ->
+        (* Note that this is the same function call each time through, with arguments that don't change; it just produces different results because each case ends with a [Global.set_meta]. *)
         let tmctx = aliases ctx ac metas in
         let ty = eval_term (Ctx.env ctx) ty in
         let tmstatus = Potential (Meta (meta, Ctx.env ctx), Emp, fun tm -> tm) in
         (* The bound value is checked in an occurrence-analysis scope, and the verdict is recorded on the metavariable, whence dirt_of_meta reads it as the "dirt" of the corresponding alias or variable. *)
         let cv, recursion =
           Positivity.scope @@ fun () ->
-          Reporter.mortalize ~fallback:(fun () -> None) @@ fun () ->
-          Some (check tmstatus tmctx v ty) in
-        (* If the value fails to typecheck, we define the metavariable to be a failed term, so that the other values and the body can still use its type, but anything that needs its value fails silently.  (If the type of this variable failed, then so does checking its value against it, unless the value synthesizes, in which case we can still report errors in it.) *)
-        (match cv with
-        | Some cv -> Global.set_meta meta ~recursion cv
-        | None -> Global.set_meta meta ~recursion (Term.Failed Potential));
+          (* If the value fails to typecheck, we define the metavariable to be a failed term, so that the other values and the body can still use its type, but anything that needs its value fails silently.  (If the type of this variable failed, then so does checking its value against it, unless the value synthesizes, in which case we can still report errors in it.) *)
+          Reporter.mortalize ~fallback:(fun () -> Term.Failed Potential) @@ fun () ->
+          check tmstatus tmctx v ty in
+        Global.set_meta meta ~recursion cv;
         go these vs in
   go metas vs
 
 (* Extend a context by variables let-bound to the metavariables of a let-rec, in which to check its body, returning also the corresponding wrapping of the checked body in let-bindings.  Since the metavariables live in the context of the let-rec, in each binding we weaken the metavariable to the current context. *)
-and letrec_body : type mode a b c ac b' s.
+and letrec_body_ctx : type mode a b c ac b' s.
     (mode, D.zero, b) env ->
     (mode, a, b') Ctx.t ->
     (a, c, ac) Fwn.bplus ->
     (b, mode, mode Modality.id, mode, b') plus_with_locks ->
     ((mode, b) letrec_meta, c) Vec.t ->
-    (mode, ac, b', s) letrec_body =
+    (mode, ac, b', s) letrec_body_ctx =
  fun env ctx ac plus metas ->
   let mode = Ctx.mode ctx in
+  let modality = Modality.id mode in
   match (ac, metas) with
-  | Zero, [] -> Letrec_body (ctx, fun tm -> tm)
+  | Zero, [] -> Letrec_body_ctx (ctx, fun tm -> tm)
   | Suc ac, Letrec_meta { name; meta; ty } :: metas ->
-      let modality = Modality.id mode in
       let tm = eval_term env (Meta (meta, Kinetic)) in
       let ty = eval_term env ty in
       let newctx =
         Ctx.ext_let ~dirt:(dirt_of_meta meta) ctx modality name { tm; ty = Lazy.from_val ty } in
       let newplus = plus_with_locks_dim plus D.zero (Modality.filter_zero modality) in
-      let (Letrec_body (bodyctx, wrap)) = letrec_body env newctx ac newplus metas in
+      let (Letrec_body_ctx (bodyctx, wrap)) = letrec_body_ctx env newctx ac newplus metas in
       let v = weaken_gen (plus_no_lock mode) (Meta (meta, Kinetic)) plus in
-      Letrec_body
+      Letrec_body_ctx
         (bodyctx, fun body -> Let (name, Modal (modality, plus_no_lock mode, v), wrap body))
 
 (* A let-only is checked with all its parts kinetic: the bound terms, and the body, which must synthesize.  We check its clauses to get an environment of their values in the ambient context, of the dimension k given by the user, and a context of free variables for the body, which doesn't extend the ambient one.  The type of the body is then transported to the ambient context by reading it back and evaluating it, at that dimension, in that environment. *)
