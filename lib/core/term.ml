@@ -1042,42 +1042,6 @@ module Termctx = struct
        Permute (Insert (p, Top), ctx) *)
 end
 
-(* Merge the binder names stored in a cube of visible variables in a termctx with raw names, as in ordered_hole_vars. *)
-let hole_vars_vis : type n f1 f2 f.
-    (N.zero, n, binder_name, f1) NICubeOf.t ->
-    (f1, f2, f) N.plus ->
-    (string option, f) Bwv.t ->
-    (binder_name, f) Bwv.t =
- fun cube fplus xs ->
-  let xs, fs = Bwv.unappend fplus xs in
-  (* First merge the raw names into the cube of binder names, consuming the Bwv from the right so that its indices match the cube's. *)
-  let module TR = NICubeOf.Traverse (struct
-    type 'a t = (string option, 'a) Bwv.t
-  end) in
-  let merge : type left m n.
-      (m, n) sface ->
-      (left, m, binder_name) NFamOf.t ->
-      (string option, left N.suc) Bwv.t ->
-      (string option, left) Bwv.t * (left, m, binder_name) NFamOf.t =
-   fun _ (NFamOf y) (Snoc (xs, x)) ->
-    match x with
-    | Some x -> (xs, NFamOf (`Named x))
-    | None -> (
-        match y with
-        | `Anon _ -> (xs, NFamOf y)
-        | `Named _ -> (xs, NFamOf (`Anon no_hints))) in
-  let _, merged = TR.fold_map_right { foldmap = (fun fb y xs -> merge fb y xs) } cube xs in
-  (* Then convert the merged cube of binder names back into a Bwv. *)
-  let module TL = NICubeOf.Traverse (struct
-    type 'a t = (binder_name, 'a) Bwv.t
-  end) in
-  let _, xs =
-    TL.fold_map_left { foldmap = (fun _ acc (NFamOf y) -> (NFamOf y, Snoc (acc, y))) } Emp merged
-  in
-  (* Field variables have no hints. *)
-  let fs = Bwv.map binder_name_of_option fs in
-  Bwv.bappend fplus xs fs
-
 (* Merge the binder names stored in a termctx, which carry display hints for anonymous variables, into a flat scope of raw variable names such as is stored for a hole.  Raw names that are present take precedence; absent ones pick up the hints (if any) from the corresponding termctx binder.  This is used when generating display names for the context of a hole. *)
 let rec ordered_hole_vars : type mode a b.
     (mode, a, b) ordered_termctx -> (string option, a) Bwv.t -> (binder_name, a) Bwv.t =
@@ -1098,7 +1062,36 @@ let rec ordered_hole_vars : type mode a b.
       | Invis _ ->
           let Zero = af in
           rest
-      | Vis { names = cube; fplus; _ } -> Bwv.bappend af rest (hole_vars_vis cube fplus xs))
+      | Vis { names = cube; fplus; _ } ->
+          let xs, fs = Bwv.unappend fplus xs in
+          (* First merge the raw names into the cube of binder names, consuming the Bwv from the right so that its indices match the cube's. *)
+          let module TR = NICubeOf.Traverse (struct
+            type 'a t = (string option, 'a) Bwv.t
+          end) in
+          let merge : type left m n.
+              (m, n) sface ->
+              (left, m, binder_name) NFamOf.t ->
+              (string option, left N.suc) Bwv.t ->
+              (string option, left) Bwv.t * (left, m, binder_name) NFamOf.t =
+           fun _ (NFamOf y) (Snoc (xs, x)) ->
+            match x with
+            | Some x -> (xs, NFamOf (`Named x))
+            | None -> (
+                match y with
+                | `Anon _ -> (xs, NFamOf y)
+                | `Named _ -> (xs, NFamOf (`Anon no_hints))) in
+          let _, merged = TR.fold_map_right { foldmap = (fun fb y xs -> merge fb y xs) } cube xs in
+          (* Then convert the merged cube of binder names back into a Bwv. *)
+          let module TL = NICubeOf.Traverse (struct
+            type 'a t = (binder_name, 'a) Bwv.t
+          end) in
+          let _, xs =
+            TL.fold_map_left
+              { foldmap = (fun _ acc (NFamOf y) -> (NFamOf y, Snoc (acc, y))) }
+              Emp merged in
+          (* Field variables have no hints. *)
+          let fs = Bwv.map binder_name_of_option fs in
+          Bwv.bappend af rest (Bwv.bappend fplus xs fs))
 
 let hole_vars : type mode a b.
     (mode, a, b) termctx -> (string option, a) Bwv.t -> (binder_name, a) Bwv.t =
