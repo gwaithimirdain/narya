@@ -1675,7 +1675,40 @@ and lookup_cube_ctx : type dom mu munu mode a b k mk nk c.
   | Weaken (ctx, _), _ -> lookup_cube (Ctx ctx) nk mu pretr v op
   | Emp _, _ | Lock _, _ -> .
 
+(* The overwhelmingly most common case of a variable lookup is a zero-dimensional variable, with no locks to its right, in a zero-dimensional environment in which it and all the variables to its right were bound directly, with no operator actions, shifts, prekeys, or permutations in between.  In that case, all the faces, degeneracies, and cells that the general lookup would compute and act by are identities, so the result is just the value stored at the top of the variable's cube.  This function handles that case, taking as given that the dimensions are zero and there are no locks (the caller checks that), and returning None if it encounters anything else in the environment, so that the general lookup has to be used instead. *)
+and lookup_fast : type dom mu mode n a k b.
+    (mode, n, b) env ->
+    (dom, mu, mode) Modality.t ->
+    (a, mu, k, b) insert ->
+    (dom, kinetic) value option =
+ fun env mu v ->
+  match (env, v) with
+  | Ext { env; _ }, Later v -> lookup_fast env mu v
+  | Ext { filter; values; _ }, Now -> (
+      match Modality.compare (Modality.filter_modality filter) mu with
+      | Eq -> (
+          match values with
+          | `Ok entry -> Some (CubeOf.find_top entry)
+          | `Lazy entry -> Some (force_eval_term (CubeOf.find_top entry)))
+      | Neq -> None)
+  | Ctx (Snoc (ctx, { vars = Vars; _ }, _)), Later v -> lookup_fast (Ctx ctx) mu v
+  | Ctx (Snoc (ctx, { bindings; filter; vars = Vars; _ }, _)), Now ->
+      lookup_fast (env_ext (Ctx ctx) filter bindings) mu Now
+  | Ctx (Snoc (ctx, { vars = Alias; _ }, _)), _ -> lookup_fast (Ctx ctx) mu v
+  | Ctx (Weaken (ctx, _)), _ -> lookup_fast (Ctx ctx) mu v
+  | _ -> None
+
 and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
+ fun env (Index (v, fa, _, plus) as ix) ->
+  let fast : (mode, kinetic) value option =
+    match (plus, D.compare_zero (cod_sface fa), D.compare_zero (dim_env env)) with
+    | Plus_with_locks (Zero, (Zero _ as locks)), Zero, Zero -> lookup_fast env (Locks.cod locks) v
+    | _ -> None in
+  match fast with
+  | Some value -> value
+  | None -> lookup_slow env ix
+
+and lookup_slow : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
  fun env (Index (v, fa, _, (Plus_with_locks (_, locks) as plus))) ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
