@@ -11,7 +11,9 @@ type data = {
   refl_string : string;
   refl_names : string list;
   internal : bool;
-  hott : bool;
+  (* Whether the arity is one, and whether it is two with HOTT enabled, are asked very often, so we compute the answers once, when the data is set. *)
+  is_unary : N.one len option;
+  is_hott : N.two len option;
 }
 
 let data : data option ref = ref None
@@ -21,26 +23,24 @@ let read () =
   | Some d -> d
   | None -> failwith "Endpoints.data not set"
 
-let hott : unit -> N.two len option =
- fun () ->
-  if (read ()).hott then
-    let (Wrap arity) = (read ()).arity in
-    match N.compare arity N.two with
-    | Eq -> Some N.two
-    | Neq -> None
-  else None
-
-let unary : unit -> N.one len option =
- fun () ->
-  let (Wrap arity) = (read ()).arity in
-  match N.compare arity N.one with
-  | Eq -> Some N.one
-  | Neq -> None
+let hott : unit -> N.two len option = fun () -> (read ()).is_hott
+let unary : unit -> N.one len option = fun () -> (read ()).is_unary
 
 let set ~arity ~refl_char ~refl_names ~internal ~hott =
   let (Plus_something arity) = N.plus_of_int arity in
   let refl_string = String.make 1 refl_char in
-  data := Some { arity = Wrap (Nat arity); refl_string; refl_names; internal; hott }
+  let arity = N.Nat arity in
+  let is_unary : N.one len option =
+    match N.compare arity N.one with
+    | Eq -> Some N.one
+    | Neq -> None in
+  let is_hott : N.two len option =
+    if hott then
+      match N.compare arity N.two with
+      | Eq -> Some N.two
+      | Neq -> None
+    else None in
+  data := Some { arity = Wrap arity; refl_string; refl_names; internal; is_unary; is_hott }
 
 let wrapped () = (read ()).arity
 let refl_string () = (read ()).refl_string
