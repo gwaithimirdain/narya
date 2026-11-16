@@ -32,7 +32,7 @@ module Make_utf8 (User : ANY) (Final : ANY) (Semantic : ANY) = struct
       cor = 0;
       user;
       semantic = None;
-      dec = [| 0; 0 |];
+      dec = [| 0; 0; 0 |];
     }
 
   let current_position (st : state) : Position.t =
@@ -51,6 +51,61 @@ module Make_utf8 (User : ANY) (Final : ANY) (Semantic : ANY) = struct
   let syntax_fail (st : state) : 'a =
     st.semantic <- None;
     raise_notrace Fail
+
+  let[@inline] advance (st : state) (scalar : int) (bytes : int) (byte_width : int) : unit =
+    st.i <- st.i + bytes;
+    if scalar = 0x0A then (
+      st.line <- st.line + 1;
+      st.bol <- st.bol + st.bcol + byte_width;
+      st.bcol <- 0;
+      st.cor <- 0)
+    else (
+      st.bcol <- st.bcol + byte_width;
+      st.cor <- st.cor + Utf8.width scalar - byte_width)
+
+  (* Direct-style primitives.  A lexer can be written as ordinary functions on the state that look at the next character with "peek", consume it with "junk", fail with "syntax_fail", and extract the text consumed with "text".  These agree exactly with the combinators below (which are built from them). *)
+
+  (* The next character as a scalar (U+FFFD for invalid UTF-8), or -1 at the end of the input. *)
+  let[@inline] peek (st : state) : int =
+    let i = st.i in
+    if i >= st.len then -1
+    else
+      let c = Char.code (String.unsafe_get st.src i) in
+      if c < 0x80 then c else Utf8.decode st.src i st.dec
+
+  (* Consume the character just returned by "peek", whose scalar is v. *)
+  let[@inline] junk (st : state) (v : int) : unit =
+    if Char.code (String.unsafe_get st.src st.i) < 0x80 then advance st v 1 1
+    else advance st v st.dec.(0) st.dec.(1)
+
+  (* The text of the characters consumed between byte indices start and stop, as fmlib's character parsers would build it from the decoded characters: the same bytes for valid UTF-8. *)
+  let text (st : state) (start : int) (stop : int) : string =
+    let src = st.src in
+    let rec canonical j =
+      j >= stop
+      ||
+      let c = Char.code (String.unsafe_get src j) in
+      if c < 0x80 then canonical (j + 1)
+      else
+        let _ = Utf8.decode src j st.dec in
+        st.dec.(2) = 1 && canonical (j + st.dec.(0)) in
+    if canonical start then String.sub src start (stop - start)
+    else
+      let buf = Buffer.create (stop - start + 8) in
+      let rec go j =
+        if j < stop then (
+          let c = Char.code (String.unsafe_get src j) in
+          if c < 0x80 then (
+            Buffer.add_char buf (Char.unsafe_chr c);
+            go (j + 1))
+          else
+            let v = Utf8.decode src j st.dec in
+            Utf8.Encoder.add_scalar buf v;
+            go (j + st.dec.(0))) in
+      go start;
+      Buffer.contents buf
+
+  let index (st : state) : int = st.i
 
   (* Monad *)
 
@@ -191,17 +246,6 @@ module Make_utf8 (User : ANY) (Final : ANY) (Semantic : ANY) = struct
     else syntax_fail st
 
   (* Characters *)
-
-  let[@inline] advance (st : state) (scalar : int) (bytes : int) (byte_width : int) : unit =
-    st.i <- st.i + bytes;
-    if scalar = 0x0A then (
-      st.line <- st.line + 1;
-      st.bol <- st.bol + st.bcol + byte_width;
-      st.bcol <- 0;
-      st.cor <- 0)
-    else (
-      st.bcol <- st.bcol + byte_width;
-      st.cor <- st.cor + Utf8.width scalar - byte_width)
 
   let ucharp (f : Uchar.t -> bool) (_ : string) : Uchar.t t =
    fun st ->

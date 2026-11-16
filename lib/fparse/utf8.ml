@@ -25,6 +25,26 @@ module Encoder = struct
       Bytes.unsafe_set b 3 (Char.unsafe_chr (0x80 lor (scalar land 0x3F)));
       Bytes.unsafe_to_string b
 
+  (* Append the encoding of a scalar to a buffer, the same bytes as to_string. *)
+  let add_scalar (buf : Buffer.t) (scalar : int) : unit =
+    if scalar < 0x8F then Buffer.add_char buf (Char.unsafe_chr scalar)
+    else if scalar lsr 11 = 0 then (
+      Buffer.add_char buf (Char.unsafe_chr (0xC0 lor (scalar lsr 6)));
+      Buffer.add_char buf (Char.unsafe_chr (0x80 lor (scalar land 0x3F))))
+    else if scalar lsr 16 = 0 then (
+      Buffer.add_char buf (Char.unsafe_chr (0xE0 lor (scalar lsr 12)));
+      Buffer.add_char buf (Char.unsafe_chr (0x80 lor ((scalar lsr 6) land 0x3F)));
+      Buffer.add_char buf (Char.unsafe_chr (0x80 lor (scalar land 0x3F))))
+    else (
+      Buffer.add_char buf (Char.unsafe_chr (0xF0 lor (scalar lsr 18)));
+      Buffer.add_char buf (Char.unsafe_chr (0x80 lor ((scalar lsr 12) land 0x3F)));
+      Buffer.add_char buf (Char.unsafe_chr (0x80 lor ((scalar lsr 6) land 0x3F)));
+      Buffer.add_char buf (Char.unsafe_chr (0x80 lor (scalar land 0x3F))))
+
+  (* The length of to_string scalar. *)
+  let length (scalar : int) : int =
+    if scalar < 0x8F then 1 else if scalar lsr 11 = 0 then 2 else if scalar lsr 16 = 0 then 3 else 4
+
   let to_internal (uc : t) : string = to_string (Uchar.to_int uc)
   let to_external = to_internal
 end
@@ -41,7 +61,7 @@ let width (scalar : int) : int =
 let rep = Uchar.to_int Uchar.rep
 let valid v = if Uchar.is_valid v then v else rep
 
-(* Decode the character starting at byte [i < String.length s], which is not ASCII.  Returns the scalar (U+FFFD for errors), and writes into [out] the number of bytes of [s] it occupies ([out.(0)]) and the byte width by which fmlib advances the position ([out.(1)]).  These differ in one case: when a multibyte sequence is interrupted by a byte that is not a continuation byte, fmlib's decoder swallows that byte and reports a byte width of one more than the declared length of the sequence.  An incomplete sequence at the end of the input is delivered with the partial value it has accumulated. *)
+(* Decode the character starting at byte [i < String.length s], which is not ASCII.  Returns the scalar (U+FFFD for errors), and writes into [out] the number of bytes of [s] it occupies ([out.(0)]), the byte width by which fmlib advances the position ([out.(1)]), and whether those bytes are exactly the encoding of the scalar ([out.(2)] = 1 or 0), in which case re-encoding the scalar reproduces them.  These differ in one case: when a multibyte sequence is interrupted by a byte that is not a continuation byte, fmlib's decoder swallows that byte and reports a byte width of one more than the declared length of the sequence.  An incomplete sequence at the end of the input is delivered with the partial value it has accumulated. *)
 let decode (s : string) (i : int) (out : int array) : int =
   let len = String.length s in
   let c = Char.code (String.unsafe_get s i) in
@@ -53,6 +73,7 @@ let decode (s : string) (i : int) (out : int array) : int =
   if missing < 0 then (
     out.(0) <- 1;
     out.(1) <- 1;
+    out.(2) <- 0;
     rep)
   else
     let length = missing + 1 in
@@ -60,10 +81,12 @@ let decode (s : string) (i : int) (out : int array) : int =
       if missing = 0 then (
         out.(0) <- length;
         out.(1) <- length;
+        out.(2) <- (if Uchar.is_valid v && Encoder.length v = length then 1 else 0);
         valid v)
       else if j >= len then (
         out.(0) <- j - i;
         out.(1) <- j - i;
+        out.(2) <- 0;
         valid v)
       else
         let d = Char.code (String.unsafe_get s j) in
@@ -71,5 +94,6 @@ let decode (s : string) (i : int) (out : int array) : int =
         else (
           out.(0) <- j - i + 1;
           out.(1) <- length + 1;
+          out.(2) <- 0;
           rep) in
     go (i + 1) v missing
