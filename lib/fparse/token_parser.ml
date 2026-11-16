@@ -1,4 +1,4 @@
-(* Token parsers over a Tokens.t stream, with the semantics of fmlib-parse's Token_parser.Make (see README.md).  A parser is a function on a mutable state that either returns a value or raises Fail.Fail. *)
+(* Token parsers over a Tokens.t stream (see README.md).  A parser is a function on a mutable state that either returns a value or raises Fail.Fail. *)
 
 open Fail
 
@@ -10,9 +10,6 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
     (* The index at which this run started. *)
     start : int;
     mutable user : User.t;
-    (* Location tracking for "located", as in fmlib, which keeps the start of the first token consumed since the innermost "located" began ("pos1"), whether there was one ("consumed"), and the end of the last token consumed ("pos2").  Here pos2 is not stored, since it is determined by the index (see "pos2"), and pos1 is stored as an int (see "decode") so that saving and restoring it costs nothing. *)
-    mutable pos1 : int;
-    mutable consumed : bool;
     (* The semantic error of the most recent failure, if it was semantic. *)
     mutable semantic : Semantic.t option;
   }
@@ -21,17 +18,9 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
 
   let[@inline] imin (a : int) (b : int) : int = if a < b then a else b
 
-  (* The end of the last token consumed, or Position.start if none has been in this run.  Tokens are consumed only by "step", which advances the index past the token, and by "expect_end", which advances the index past the end without changing pos2; backtracking restores the index. *)
+  (* The end of the last token among the first k of the stream, or Position.start if none of them belong to this run. *)
   let pos2_after (st : state) (k : int) : Position.t =
     if k > st.start then snd (fst (Array.unsafe_get st.tokens.toks (k - 1))) else Position.start
-
-  let pos2 (st : state) : Position.t = pos2_after st (imin st.index st.tokens.ntoks)
-
-  (* pos1 is either the index i >= 0 of a token, meaning its start, or -1 - k for k >= 0, meaning pos2 at a moment when min index ntoks was k. *)
-  let encode_pos2 (st : state) : int = -1 - imin st.index st.tokens.ntoks
-
-  let decode (st : state) (p : int) : Position.t =
-    if p >= 0 then fst (fst (Array.unsafe_get st.tokens.toks p)) else pos2_after st (-1 - p)
 
   let[@inline] set_user (st : state) (u : User.t) : unit = if st.user != u then st.user <- u
 
@@ -51,19 +40,10 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
         | Open | Lexer_failed _ -> failwith "Fparse: token stream neither ended nor failed")
     | exception Tokens.Lex_failure pos -> (pos, pos)
 
-  (* Run a parser on a token stream, starting where the previous run on it stopped, with a fresh state.  This is fmlib's "make_partial"; for "make", end the parser with "expect_end". *)
+  (* Run a parser on a token stream, starting where the previous run on it stopped, with a fresh state.  To require the parser to reach the end of the input, end it with "expect_end". *)
   let run (tokens : Token.t Tokens.t) (user : User.t) (p : 'a t) : 'a outcome =
     Tokens.compact tokens;
-    let st =
-      {
-        tokens;
-        index = tokens.index;
-        start = tokens.index;
-        user;
-        pos1 = -1 - imin tokens.index tokens.ntoks;
-        consumed = false;
-        semantic = None;
-      } in
+    let st = { tokens; index = tokens.index; start = tokens.index; user; semantic = None } in
     match p st with
     | a ->
         tokens.index <- st.index;
@@ -99,42 +79,31 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
 
   (* Alternatives and backtracking *)
 
-  (* Try p; if it fails without consuming, try q.  If p does not consume, its changes to the state (the user state and the location tracking) are undone, even if it succeeds. *)
+  (* Try p; if it fails without consuming, undo its changes to the user state and try q. *)
   let ( </> ) (p : 'a t) (q : 'a t) : 'a t =
    fun st ->
-    let i0 = st.index and u0 = st.user and p10 = st.pos1 and c0 = st.consumed in
+    let i0 = st.index and u0 = st.user in
     match p st with
-    | a ->
-        if st.index = i0 then (
-          set_user st u0;
-          st.pos1 <- p10;
-          st.consumed <- c0);
-        a
+    | a -> a
     | exception Fail when st.index = i0 ->
         set_user st u0;
-        st.pos1 <- p10;
-        st.consumed <- c0;
         q st
 
   let backtrack (p : 'a t) (_ : string) : 'a t =
    fun st ->
-    let i0 = st.index and u0 = st.user and p10 = st.pos1 and c0 = st.consumed in
+    let i0 = st.index and u0 = st.user in
     try p st
     with Fail ->
       st.index <- i0;
       set_user st u0;
-      st.pos1 <- p10;
-      st.consumed <- c0;
       syntax_fail st
 
   let followed_by (p : 'a t) (_ : string) : 'a t =
    fun st ->
-    let i0 = st.index and u0 = st.user and p10 = st.pos1 and c0 = st.consumed in
+    let i0 = st.index and u0 = st.user in
     let restore () =
       st.index <- i0;
-      set_user st u0;
-      st.pos1 <- p10;
-      st.consumed <- c0 in
+      set_user st u0 in
     match p st with
     | a ->
         restore ();
@@ -145,43 +114,32 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
 
   let optional (p : 'a t) : 'a option t =
    fun st ->
-    let i0 = st.index and u0 = st.user and p10 = st.pos1 and c0 = st.consumed in
+    let i0 = st.index and u0 = st.user in
     match p st with
-    | a ->
-        if st.index = i0 then (
-          set_user st u0;
-          st.pos1 <- p10;
-          st.consumed <- c0);
-        Some a
+    | a -> Some a
     | exception Fail when st.index = i0 ->
         set_user st u0;
-        st.pos1 <- p10;
-        st.consumed <- c0;
         None
 
   let zero_or_more_fold_left (start : 'r) (f : 'r -> 'a -> 'r t) (p : 'a t) : 'r t =
    fun st ->
     let rec loop r =
-      let i0 = st.index and u0 = st.user and p10 = st.pos1 and c0 = st.consumed in
+      let i0 = st.index and u0 = st.user in
       match f r (p st) st with
       | r -> loop r
       | exception Fail when st.index = i0 ->
           set_user st u0;
-          st.pos1 <- p10;
-          st.consumed <- c0;
           r in
     loop start
 
   let zero_or_more (p : 'a t) : 'a list t =
    fun st ->
     let rec loop acc =
-      let i0 = st.index and u0 = st.user and p10 = st.pos1 and c0 = st.consumed in
+      let i0 = st.index and u0 = st.user in
       match p st with
       | a -> loop (a :: acc)
       | exception Fail when st.index = i0 ->
           set_user st u0;
-          st.pos1 <- p10;
-          st.consumed <- c0;
           List.rev acc in
     loop []
 
@@ -222,9 +180,6 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
         match f st.user rng tok with
         | Some (a, user) ->
             set_user st user;
-            if not st.consumed then (
-              st.pos1 <- i;
-              st.consumed <- true);
             st.index <- i + 1;
             a
         | None -> syntax_fail st
@@ -232,7 +187,7 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
       else syntax_fail st in
     go
 
-  (* Consume the end of input.  Like fmlib, this does not count as consuming a token for "located". *)
+  (* Consume the end of input.  This does not count as consuming a token for "located". *)
   let expect_end (a : 'a) : 'a t =
    fun st ->
     let ts = st.tokens in
@@ -241,14 +196,14 @@ module Make (User : ANY) (Token : ANY) (Final : ANY) (Semantic : ANY) = struct
       st.index <- ts.ntoks + 1;
       a)
 
-  (* The range of the tokens consumed by p, with fmlib's conventions (see README.md). *)
+  (* The range from the start of the first token consumed by p to the end of the last.  If p consumes no tokens, it is the zero-width range at the end of the last token consumed before it (or at Position.start, if there is none in this run). *)
   let located (p : 'a t) : (Position.range * 'a) t =
    fun st ->
-    let c0 = st.consumed and p10 = st.pos1 in
-    st.pos1 <- encode_pos2 st;
-    st.consumed <- false;
+    let i0 = st.index in
     let a = p st in
-    let rng = (decode st st.pos1, pos2 st) in
-    if c0 then st.pos1 <- p10;
-    (rng, a)
+    let k = imin st.index st.tokens.ntoks in
+    if k > i0 then ((fst (fst (Array.unsafe_get st.tokens.toks i0)), pos2_after st k), a)
+    else
+      let p = pos2_after st k in
+      ((p, p), a)
 end

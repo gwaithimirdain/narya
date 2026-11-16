@@ -11,8 +11,8 @@ module Located_token = struct
   type t = Position.range * Token_whitespace.t
 end
 
-(* The lexer is written in direct style, as functions on the state of a basic utf-8 character parser: "peek" looks at the next character (as a scalar, or -1 at the end of input), "junk" consumes the character just peeked at, and "fail" fails.  A failure after consuming characters is a lexing error; a failure without consuming means that this kind of token doesn't start here.  The character parser has no user state; we track what little state we need locally. *)
-module Basic = Ucharacter.Make_utf8 (Unit) (Located_token) (Unit)
+(* The lexer is written in direct style, as functions on the state of a basic utf-8 character parser: "peek" looks at the next character (as a scalar, or -1 at the end of input), "junk" consumes the character just peeked at, and "fail" fails.  A failure after consuming characters is a lexing error; a failure without consuming means that this kind of token doesn't start here. *)
+module Basic = Ucharacter
 
 let fail = Basic.syntax_fail
 let peek = Basic.peek
@@ -24,7 +24,7 @@ let add_scalar = Utf8.Encoder.add_scalar
 
 (* Run a lexer that may fail without consuming, restoring the state if it fails. *)
 let attempt (p : Basic.state -> 'a) (st : Basic.state) : 'a option =
-  match Basic.backtrack p "" st with
+  match Basic.backtrack p st with
   | x -> Some x
   | exception Fparse.Fail.Fail -> None
 
@@ -614,9 +614,13 @@ let token_body st v : Token.t =
           | None ->
               if is_ascii_symbol_scalar v then ascii_op st
               else if v = dot || at_word_start v then other st
-              else fail st)
+              else
+                (* No token can start with this character (e.g. a Unicode tag character). *)
+                fatal
+                  ~loc:(Range.convert (Basic.peeked_range st))
+                  (Parse_error (Printf.sprintf "invalid character U+%04X" v)))
 
-(* Unlike fmlib's built-in 'lexer' function, we include whitespace *after* the token, so that we can save comments occurring after any code.  At the end of input, we produce Eof (and consume the end). *)
+(* We include whitespace *after* the token, so that we can save comments occurring after any code.  At the end of input, we produce Eof (and consume the end). *)
 let token st : Located_token.t =
   let v = peek st in
   let p1 = position st in
@@ -635,7 +639,7 @@ let bof st : Located_token.t =
 
 (* The token stream of a source string, lexed on demand as parsers ask for tokens.  The first token is Bof, holding any initial whitespace; each later token is lexed by "token", starting with a fresh lexer state at the point where the previous one stopped.  The Eof token is not added to the stream: when the lexer consumes the end of input, the stream ends instead. *)
 let tokens (src : string) : Token_whitespace.t Tokens.t =
-  let st = Basic.init src () in
+  let st = Basic.init src in
   let started = ref false in
   Tokens.make @@ fun () ->
   let p =
@@ -643,9 +647,10 @@ let tokens (src : string) : Token_whitespace.t Tokens.t =
     else (
       started := true;
       bof) in
-  match Basic.run st () p with
+  match Basic.run st p with
   | Some tok -> if Basic.has_consumed_end st then End (Basic.current_position st) else Token tok
   | None -> Failed (Basic.current_position st)
+  | exception Basic.Invalid_utf8 rng -> fatal ~loc:(Range.convert rng) (Parse_error "invalid UTF-8")
 
 module Single_token = struct
   module Basic = Token_parser.Make (Unit) (Token_whitespace) (Token_whitespace) (Unit)
