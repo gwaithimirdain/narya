@@ -1,7 +1,7 @@
 # fparse: a direct-style replacement for fmlib-parse
 
-This directory will hold a small parsing library replacing the parts of
-fmlib-parse 0.6.2 that Narya uses.  Fmlib is an incremental *push* parser: a
+This is a small parsing library replacing the parts of fmlib-parse 0.6.2
+that Narya used.  Fmlib is an incremental *push* parser: a
 continuation-passing state monad over an immutable buffer record that is copied
 at every step, with expectation tracking for error messages.  Narya never feeds
 input incrementally and never displays expectations, and parsing costs ~27% of
@@ -9,6 +9,11 @@ run time and ~45% of allocation on large developments.  This library instead
 represents a parser as a function `state -> 'a` over a mutable state that fails
 by raising a private exception, and pulls tokens from a lazily-filled token
 array.
+
+The modules are `Position` and `Utf8` (same values as fmlib's, quirks
+included), `Ucharacter.Make_utf8` (character layer), `Tokens` (the on-demand
+token stream), and `Token_parser.Make` (token layer, with the driver `run`).
+`Lexer.tokens` in lib/parser builds a token stream from a source string.
 
 This file records the exact behaviour of fmlib (read from
 `~/.opam/default/.opam-switch/sources/fmlib_parse.0.6.2/src/parse/`) that Narya
@@ -228,3 +233,14 @@ column, column correction).
 - Since monadic and direct-style parsers then have the same type, Narya's
   code can later be converted file by file (`let* x = p in e` becomes `let x =
   p st in e`).
+
+## Known differences from fmlib
+
+- If a token parser fails without ever having looked at the token at the
+  current index (possible only through `fail`/`unexpected`, which Narya does not
+  use that way), the reported range is that of the next token, lexed for the
+  purpose; fmlib reported the lexer's position part-way into it.
+- Consuming the end of input inside `backtrack` or `followed_by` and then
+  failing was an assertion failure in fmlib; here it is unconsumed.
+- Parsers run on the OCaml stack: deeply nested input nests calls, where
+  fmlib's continuations lived on the heap.
