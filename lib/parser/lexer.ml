@@ -25,6 +25,21 @@ open Basic
 
 (* Fmlib's "uchar" builds its error message, with sprintf, every time the character it's looking for isn't there.  We look for several particular characters at the start of every token, and we never display those messages, so we replace it by a version that doesn't do that. *)
 let uchar (expected : Uchar.t) : Uchar.t t = ucharp (Uchar.equal expected) "particular character"
+
+(* Fmlib's "char" and "string" are defined in terms of its "uchar", so we have to replace them too. *)
+let char (expected : char) : char t =
+  let* _ = uchar (Uchar.of_char expected) in
+  return expected
+
+let string (str : string) : string t =
+  let len = String.length str in
+  let rec parse i =
+    if i = len then return str
+    else
+      let* _ = char str.[i] in
+      parse (i + 1) in
+  parse 0
+
 let backquote = Uchar.of_char '`'
 let newline = Uchar.of_char '\n'
 let lbrace = Uchar.of_char '{'
