@@ -53,8 +53,8 @@ module Extended_identity = struct
       | _ -> Neq
 end
 
-(* Finally, a metavariable as stored elsewhere in the code also knows its origin.  We don't store origins as part of the extended identity because the metavariable tables that look things up by extended identity are versioned, so origins are stored as part of the versioning process. *)
-type ('mode, 'a, 'b, 's) t = Origin.t * ('mode, 'a, 'b, 's) Extended_identity.t
+(* Finally, a metavariable as stored elsewhere in the code also knows its origin, which can be updated in place by linking (see Origin.make_canonical).  We don't store origins as part of the extended identity because the metavariable tables that look things up by extended identity are versioned, so origins are stored as part of the versioning process. *)
+type ('mode, 'a, 'b, 's) t = ('mode, 'a, 'b, 's) Extended_identity.t Origin.origined
 
 (* Make metavariables of each class. *)
 
@@ -117,7 +117,7 @@ let make_def : type mode a b s.
   let number = Versioned.get def_counters in
   Versioned.set def_counters (number + 1);
   let identity = `Def (number, sort) in
-  (origin, { identity; mode; raw; len; energy })
+  { origin; value = { identity; mode; raw; len; energy } }
 
 (* We just use one global hole counter, so that a hole can be represented by a single number to communicate with the user and ProofGeneral.  But to make up for that, we have to remember the origin of each hole as a function of its global number.  Note that this dynarray never shrinks, so old holes that have gone away are still here.  There wouldn't be any easy way to do that, since solving an old hole can create new holes that have to be at the end of the array, so the origins don't appear here in order. *)
 let hole_origins : Origin.t Dynarray.t = Dynarray.create ()
@@ -136,18 +136,14 @@ let make_hole : type mode a b s.
   done;
   Dynarray.set hole_origins number origin;
   let identity = `Hole number in
-  (origin, { identity; mode; raw; len; energy })
+  { origin; value = { identity; mode; raw; len; energy } }
 
-(* Re-make (link) a metavariable when loading a compiled version from disk. *)
-let remake : type mode a b s. (File.t -> File.t) -> (mode, a, b, s) t -> (mode, a, b, s) t =
- fun f (origin, m) ->
-  match origin with
-  | Top -> raise (Failure "can't remake built-in metavariable")
-  | File file -> (File (f file), m)
-  | Instant _ -> raise (Failure "can't remake interactive metavariable")
+(* Link a metavariable in place when loading a compiled version from disk. *)
+let relink : type mode a b s. (File.t -> File.t) -> (mode, a, b, s) t -> unit =
+ fun f m -> Origin.make_canonical f m
 
 (* Printable names. *)
-let mode : type mode a b s. (mode, a, b, s) t -> mode Mode.t = fun (_, m) -> m.mode
+let mode : type mode a b s. (mode, a, b, s) t -> mode Mode.t = fun m -> m.value.mode
 
 (* A defined metavariable bound to a named variable is named like "foo.bar._baz", where "foo.bar" is the name of its owner, as computed by the supplied function, and "baz" its local name.  If it has no owner, or the function isn't supplied, then the owner is replaced by its origin and autonumber, as in "F3.17._baz".  A defined metavariable not bound to a named variable, such as one inserted automatically to hold a bare case tree construct, is named like "foo.bar.__match.F3.17", with its sort, origin, and autonumber.  The owner and local name are stored in the definition of the metavariable, so they have to be supplied (see Global.meta_name). *)
 let name : type mode a b s.
@@ -156,7 +152,7 @@ let name : type mode a b s.
     ?local:string ->
     (mode, a, b, s) t ->
     string =
- fun ?owner_name ?owner ?local (origin, x) ->
+ fun ?owner_name ?owner ?local { origin; value = x } ->
   match x.identity with
   | `Hole number ->
       (* We don't need to include the origin here, since holes are sequentially numbered globally rather than by origin. *)
@@ -175,14 +171,14 @@ let name : type mode a b s.
 
 (* The sort of a defined metavariable, if it is one. *)
 let sort_of : type mode a b s. (mode, a, b, s) t -> sort option =
- fun (_, x) ->
+ fun { value = x; _ } ->
   match x.identity with
   | `Def (_, sort) -> Some sort
   | `Hole _ -> None
 
 (* Whether a metavariable was inserted automatically to hold a bare case tree construct. *)
 let is_bare : type mode a b s. (mode, a, b, s) t -> bool =
- fun (_, x) ->
+ fun { value = x; _ } ->
   match x.identity with
   | `Def (_, `Bare _) -> true
   | `Def (_, (`Let | `Letrec _)) | `Hole _ -> false
@@ -190,19 +186,19 @@ let is_bare : type mode a b s. (mode, a, b, s) t -> bool =
 (* Whether two metavariables were bound by the same "let rec" block. *)
 let letrec_siblings : type m1 a1 b1 s1 m2 a2 b2 s2. (m1, a1, b1, s1) t -> (m2, a2, b2, s2) t -> bool
     =
- fun (origin1, x1) (origin2, x2) ->
+ fun { origin = origin1; value = x1 } { origin = origin2; value = x2 } ->
   origin1 = origin2
   &&
   match (x1.identity, x2.identity) with
   | `Def (_, `Letrec block1), `Def (_, `Letrec block2) -> block1 = block2
   | _ -> false
 
-let origin : type mode a b s. (mode, a, b, s) t -> Origin.t = fun (origin, _) -> origin
+let origin : type mode a b s. (mode, a, b, s) t -> Origin.t = fun m -> m.origin
 
 (* Compare two metavariables for equality, returning equality of their lengths and energies. *)
 let compare : type m1 m2 a1 b1 s1 a2 b2 s2.
     (m1, a1, b1, s1) t -> (m2, a2, b2, s2) t -> (m1 * a1 * b1 * s1, m2 * a2 * b2 * s2) Eq.compare =
- fun (x_origin, x) (y_origin, y) ->
+ fun { origin = x_origin; value = x } { origin = y_origin; value = y } ->
   match (x_origin = y_origin, Extended_identity.compare x y) with
   | true, Eq -> Eq
   | _ -> Neq
@@ -213,7 +209,7 @@ module Wrapped = struct
   type t = wrapped
 
   let compare : t -> t -> int =
-   fun (Wrap (_, x)) (Wrap (_, y)) -> Identity.compare x.identity y.identity
+   fun (Wrap { value = x; _ }) (Wrap { value = y; _ }) -> Identity.compare x.identity y.identity
 end
 
 module WrapSet = Set.Make (Wrapped)
@@ -221,7 +217,7 @@ module WrapMap = Map.Make (Wrapped)
 
 (* Representation of holes for interacting with ProofGeneral. *)
 let hole_number : type mode a b s. (mode, a, b, s) t -> int =
- fun (_, m) ->
+ fun { value = m; _ } ->
   match m.identity with
   | `Hole number -> number
   | _ -> raise (Failure "not an interactive hole")
@@ -242,7 +238,7 @@ module Table = struct
     let make () = Versioned.make ~default:(fun () -> IdMap.empty) ~inherit_values:false
 
     let find_opt : type mode x a b s. (mode, a, b, s) key -> x t -> (x, mode, a, b, s) F.t option =
-     fun (origin, key) m ->
+     fun { origin; value = key } m ->
       (* Apparently we can't use Monad.Ops(Monad.Maybe) here because the type doesn't get sufficiently refined. *)
       match Versioned.get_at m origin with
       | Some m -> (
@@ -263,12 +259,12 @@ module Table = struct
         match Versioned.get_at m c with
         | Some m ->
             Option.bind (IdMap.find_opt (`Hole i) m) @@ fun (Entry (m, v)) ->
-            Some (Hole ((c, m), v))
+            Some (Hole ({ origin = c; value = m }, v))
         | None -> None
       with Invalid_argument _ -> None
 
     let add : type x mode a b s. (mode, a, b, s) key -> (x, mode, a, b, s) F.t -> x t -> unit =
-     fun (origin, key) value m ->
+     fun { origin; value = key } value m ->
       if origin = Origin.current () then
         let a = Option.value ~default:IdMap.empty (Versioned.get_at m origin) in
         let newa = IdMap.add key.identity (Entry (key, value)) a in
@@ -282,13 +278,16 @@ module Table = struct
     let fold : type x acc. (x, acc) folder -> x t -> acc -> acc =
      fun f m acc ->
       let go acc origin m =
-        IdMap.fold (fun _ (Entry (key, value)) acc -> f.fold (origin, key) value acc) m acc in
+        IdMap.fold
+          (fun _ (Entry (key, value)) acc -> f.fold { origin; value = key } value acc)
+          m acc in
       Versioned.foldi m go acc
 
     let fold_current : type x acc. (x, acc) folder -> x t -> acc -> acc =
      fun f m acc ->
       IdMap.fold
-        (fun _ (Entry (key, value)) acc -> f.fold (Origin.current (), key) value acc)
+        (fun _ (Entry (key, value)) acc ->
+          f.fold { origin = Origin.current (); value = key } value acc)
         (Versioned.get m) acc
 
     type 'x origin_entry = 'x entry IdMap.t option
@@ -315,7 +314,9 @@ module Table = struct
       match (Istream.unmarshal chan : x origin_entry) with
       | Some n ->
           let fn =
-            IdMap.map (fun (Entry (key, value)) -> Entry (key, f.map (origin, key) value)) n in
+            IdMap.map
+              (fun (Entry (key, value)) -> Entry (key, f.map { origin; value = key } value))
+              n in
           Option.bind (Versioned.set_at m origin fn) @@ fun () -> Some fn
       | None -> None
   end

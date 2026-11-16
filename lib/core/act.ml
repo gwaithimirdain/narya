@@ -185,7 +185,7 @@ module Act = struct
    fun v s c ->
     match v with
     (* A neutral remembers the actions performed on it, so that acting on the same neutral in the same way produces physically the same result, sharing the work of forcing its value and type, and preserving physical equality between structurally equal neutrals (see Value.hashcons). *)
-    | Neu ({ head; args; value; ty; acted } as neu) -> (
+    | Neu ({ head; args; value; ty; acted; id = _ } as neu) -> (
         match find_action acted s c with
         | Some result -> result
         | None ->
@@ -196,7 +196,7 @@ module Act = struct
             let value = act_lazy_eval value s c in
             (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine.  We are careful not to force the original type until the acted type is itself demanded, since computing types of acted terms can cascade (the type's own spine contains normals whose types are acted in turn) and the acted type is frequently never inspected. *)
             let ty = lazy (act_ty v (Lazy.force ty) s c) in
-            let result = Neu { head; args; value; ty; acted = [] } in
+            let result = Neu { head; args; value; ty; acted = []; id = fresh_id () } in
             neu.acted <- add_action acted s c result;
             result)
     | Lam (x, filter, body) ->
@@ -439,7 +439,7 @@ module Act = struct
     (* If the type is failed, so is the type of the acted term. *)
     | Neu { head = Failed mode; args = Emp; _ } -> failed_type mode
     (* The type must be UU 0, since this IS a TYPE (that has elements).  But we don't bother checking that it is. *)
-    | Neu { head = Live head; args; value; ty; acted = _ } ->
+    | Neu { head = Live head; args; value; ty; acted = _; id = _ } ->
         (* Pull off the instantiation, perhaps empty, from the end of the arguments. *)
         let base_args, Full_tube inst_args =
           match args with
@@ -493,7 +493,7 @@ module Act = struct
                        })
               | Pos _ -> fatal (Anomaly "non fully instantiated type in act_ty"))
           | Val _ -> fatal (Anomaly "non-canonical potential value in act_ty") in
-        Neu { head = Live head; args; value; ty; acted = [] }
+        Neu { head = Live head; args; value; ty; acted = []; id = fresh_id () }
 
   (* Subroutine of gact_ty that acts on the instantiation arguments of a type, keeping them a full tube. *)
   and gact_ty_instargs : type mode mu1 mu2 cod a b n.

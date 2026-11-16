@@ -22,6 +22,13 @@ type level = int * int
 (* Internal values, the result of evaluation, with closures for abstractions.  Use De Bruijn *levels*, so that weakening is implicit.  Fully internal unbiased syntax lives here: in addition to higher-dimensional applications and abstractions, we also have higher-dimensional pi-types, higher-dimensional universes, and instantiations of higher-dimensional types.  Separated into neutrals and normals, so that there are no beta-redexes.  Explicit substitutions (environments) are stored on binders, for NBE. *)
 
 (* The codomains of a pi-type are stored as a Cube of binders, and since binders are a type family this dependence has to be specified by applying a module functor (rather than just parametrizing a type).  Since values are defined mutually with binders, we need to "apply the functor Cube" mutually with the definition of these types.  This is possible using a recursive module. *)
+(* Each neutral is given a different number when it is created, to stand for its physical identity (see Neu below). *)
+let neutrals = ref 0
+
+let fresh_id () =
+  incr neutrals;
+  !neutrals
+
 module rec Value : sig
   (* A recursive module is required to specify its module type explicitly.  We make this as transparent as possible, so the module type is nearly a copy of the module itself.  For the comments, see the actual definition below. *)
   module BindFam : sig
@@ -175,6 +182,7 @@ module rec Value : sig
         ty : ('mode, kinetic) value Lazy.t;
         (* The degeneracy actions already performed on this neutral (see Act.act_value). *)
         mutable acted : 'mode action list;
+        id : int;
       }
         -> ('mode, kinetic) value
     | Constr :
@@ -496,6 +504,8 @@ end = struct
         ty : ('mode, kinetic) value Lazy.t;
         (* The degeneracy actions already performed on this neutral (see Act.act_value). *)
         mutable acted : 'mode action list;
+        (* A number that distinguishes this neutral from every other one created in this run (see fresh_id), so that tables keyed by the physical identity of a neutral can hash it.  It has no meaning beyond that: two neutrals with different ids may be equal, even structurally identical. *)
+        id : int;
       }
         -> ('mode, kinetic) value
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
@@ -906,6 +916,7 @@ let var : type dom modality mode.
         value = ready Unrealized;
         ty = Lazy.from_val ty;
         acted = [];
+        id = fresh_id ();
       } in
   (* A variable is the same as an earlier one with the same level, (identity) key, and physically the same type, since the same level in different scopes is a different variable with a different type. *)
   hashcons (Modality.src modality)
@@ -1061,6 +1072,7 @@ let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
             value;
             ty = lazy (universe_ty mode n);
             acted = [];
+            id = fresh_id ();
           } in
       universe_cache := Cached_universe (mode, n, v) :: !universe_cache;
       v
@@ -1106,6 +1118,7 @@ and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
           value;
           ty = lazy (universe mode D.zero);
           acted = [];
+          id = fresh_id ();
         }
 
 (* A failed term with a given type (see Failed above).  Each call creates a new value. *)
@@ -1118,6 +1131,7 @@ let failed : type mode. mode Mode.t -> (mode, kinetic) value Lazy.t -> (mode, ki
       value = defer (fun () -> fatal (Dependent "failed term"));
       ty;
       acted = [];
+      id = fresh_id ();
     }
 
 (* A failed type, i.e. a failed term whose type is the universe.  This is also the type of a failed term whose type is unknown. *)

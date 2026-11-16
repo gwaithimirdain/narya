@@ -8,11 +8,10 @@ open Origin
 type recursion = [ `Nonrecursive | `Recursive | `Unknown of Meta.WrapSet.t ]
 
 (* When "linking" a marshaled term unpickled from a compiled file, the metavariables in an `Unknown verdict must have their file autonumbers replaced along with all the other metavariables occurring in terms (see Link).  (Compiled files can't contain unsolved holes, but an `Unknown verdict blocked on since-solved holes is never rewritten, so it can appear in a compiled file.) *)
-let link_recursion : (File.t -> File.t) -> recursion -> recursion =
+let link_recursion : (File.t -> File.t) -> recursion -> unit =
  fun f -> function
-  | `Nonrecursive -> `Nonrecursive
-  | `Recursive -> `Recursive
-  | `Unknown ms -> `Unknown (Meta.WrapSet.map (fun (Meta.Wrap m) -> Meta.Wrap (Meta.remake f m)) ms)
+  | `Nonrecursive | `Recursive -> ()
+  | `Unknown ms -> Meta.WrapSet.iter (fun (Meta.Wrap m) -> Meta.relink f m) ms
 
 let merge : recursion -> recursion -> recursion =
  fun x y ->

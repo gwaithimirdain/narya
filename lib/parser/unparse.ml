@@ -354,6 +354,7 @@ let rec synths : type mode n s. (mode, n, s) term -> bool =
   | Unshift (_, _, tm) -> synths tm
   | Unact (_, tm) -> synths tm
   | Shift (_, _, tm) -> synths tm
+  | Share (_, tm) -> synths tm
   | Failed _ -> false
   (* Of the potential terms, a leaf synthesizes if its term does, while canonical types don't synthesize.  A match synthesizes if its discriminee does, and either it has an explicit motive or it is non-dependent and one of its branches synthesizes (giving the type of the match).  An implicitly dependent match doesn't synthesize, since its branches may have different types. *)
   | Realize tm -> synths tm
@@ -803,6 +804,7 @@ let rec unparse : type mode n lt ls rt rs s.
   (* An Unact only changes the dimension/action, not which variables are in scope, so for display we can simply unparse its body. *)
   | Unact (_, tm) -> unparse vars tm li ri
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
+  | Share (_, tm) -> unparse vars tm li ri
   (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
   | Failed _ -> fatal (Dependent "unparsing failed component")
 
