@@ -8,9 +8,6 @@ def □△ (A : Disc) : Disc ≔ data [ □△. (_ :□△| A) ]
 
 def eta (A : Disc) (x : A) : □△ A ≔ □△. x
 
-` The doubled counit △□△□ ⇒ 1 is unique.
-def counit2 (A :△□△□| Type) (x :△□△□| A) : A ≔ x
-
 ` The invertible counit of ◇ ⊣ ∇, in both directions.
 def epsilon (A : Disc) (x :◇∇| A) : A ≔ x
 
