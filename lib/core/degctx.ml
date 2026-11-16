@@ -134,43 +134,39 @@ module Ordered = struct
         let (Plus k_mn) = D.plus mn in
         let filter_kmn =
           Modality.filter_plus k_mn k_mn (Modality.filter_idempotent filter_k_l) filter_mn in
-        let degenerated () =
+        let bindings, newval =
           degenerate_binding (length newctx') k l k_mn filter_k_l filter_mn entry.vars readbacks env
         in
-        let finish vis : (mode, a, b, l) degctx =
-          match entry.vars with
-          (* A cube of variables extends both the degenerated context and its environment by a degenerated cube of variables. *)
-          | Vars ->
-              let bindings, newval = degenerated () in
-              Degctx
-                ( Suc
-                    ( kb,
-                      Inject (Plus_dim (k_mn, filter_mn, filter_k_l)),
-                      Suc (Zero, Dim (D.plus_out k k_mn, filter_kmn)) ),
-                  Snoc (newctx', { bindings; filter = filter_kmn; vis; vars = Vars }, ax),
-                  Ext
-                    {
-                      env;
-                      plus = k_mn;
-                      filter = filter_k_l;
-                      filtered = filter_mn;
-                      values = `Ok newval;
-                    } )
-          (* An alias is degenerated like a cube of variables, but it doesn't extend the context or the environment. *)
-          | Alias ->
-              let bindings, _ = degenerated () in
-              Degctx
-                (kb, Snoc (newctx', { bindings; filter = filter_kmn; vis; vars = Alias }, ax), env)
-        in
-        match entry.vis with
-        | Vis { hasfields = Has_fields; _ } ->
-            fatal (Anomaly "attempt to degenerate a context containing illusory variables")
-        | Vis { dim; plusdim; names; hasfields = No_fields; fields; fplus } ->
-            let (Plus km) = D.plus dim in
-            let plusdim = D.plus_assocl km plusdim k_mn in
-            finish
-              (Vis { dim = D.plus_out k km; plusdim; names; hasfields = No_fields; fields; fplus })
-        | Invis -> finish Invis)
+        let vis : _ Ctx_entry.visibility =
+          match entry.vis with
+          | Vis { hasfields = Has_fields; _ } ->
+              fatal (Anomaly "attempt to degenerate a context containing illusory variables")
+          | Vis { dim; plusdim; names; hasfields = No_fields; fields; fplus } ->
+              let (Plus km) = D.plus dim in
+              let plusdim = D.plus_assocl km plusdim k_mn in
+              Vis { dim = D.plus_out k km; plusdim; names; hasfields = No_fields; fields; fplus }
+          | Invis -> Invis in
+        match entry.vars with
+        (* A cube of variables extends both the degenerated context and its environment by a degenerated cube of variables. *)
+        | Vars ->
+            Degctx
+              ( Suc
+                  ( kb,
+                    Inject (Plus_dim (k_mn, filter_mn, filter_k_l)),
+                    Suc (Zero, Dim (D.plus_out k k_mn, filter_kmn)) ),
+                Snoc (newctx', { bindings; filter = filter_kmn; vis; vars = Vars }, ax),
+                Ext
+                  {
+                    env;
+                    plus = k_mn;
+                    filter = filter_k_l;
+                    filtered = filter_mn;
+                    values = `Ok newval;
+                  } )
+        (* An alias is degenerated like a cube of variables, but it doesn't extend the context or the environment. *)
+        | Alias ->
+            Degctx
+              (kb, Snoc (newctx', { bindings; filter = filter_kmn; vis; vars = Alias }, ax), env))
     | Weaken (ctx, code) ->
         let (Degctx (kb, newctx, env)) = degenerate ctx l in
         Degctx (kb, Weaken (newctx, code), env)
