@@ -60,51 +60,30 @@ module Ordered = struct
                   (opt_op_of_opt_sface
                      (comp_opt_sface (Modality.sface_of_filter l filter) (opt_of_sface fa))) in
               let m = dom_sface fb in
-              match (CubeOf.find readbacks fb, vars) with
-              | { tm = None; ty = _ }, Alias -> fatal (Anomaly "alias without a value")
-              | { tm = None; ty }, Vars ->
-                  let level = (i, !j) in
-                  j := !j + 1;
-                  let ty = Norm.eval_term alenv ty in
-                  let ty =
-                    inst ty
-                      (TubeOf.build D.zero
-                         (D.zero_plus (dom_sface fa))
-                         {
-                           build =
-                             (fun fc ->
-                               let (Plus l_m) = D.plus m in
-                               Hashtbl.find xstbl
-                                 (SFace_of
-                                    (sface_plus_sface
-                                       (comp_sface fa (sface_of_tface fc))
-                                       k_n l_m fb)));
-                         }) in
-                  let v = { tm = var modality level ty; ty = Lazy.from_val ty } in
-                  Hashtbl.add xstbl (SFace_of fab) v;
-                  Binding.make (Some level) v
-              | { tm = Some tm; ty }, _ ->
-                  (* Incrementing the level isn't really necessary since we aren't going to use it in this case, but we do it anyway for consistency. *)
-                  j := !j + 1;
-                  let tm = Norm.eval_term alenv tm in
-                  let ty = Norm.eval_term alenv ty in
-                  let ty =
-                    inst ty
-                      (TubeOf.build D.zero
-                         (D.zero_plus (dom_sface fa))
-                         {
-                           build =
-                             (fun fc ->
-                               let (Plus l_m) = D.plus m in
-                               Hashtbl.find xstbl
-                                 (SFace_of
-                                    (sface_plus_sface
-                                       (comp_sface fa (sface_of_tface fc))
-                                       k_n l_m fb)));
-                         }) in
-                  let v = { tm; ty = Lazy.from_val ty } in
-                  Hashtbl.add xstbl (SFace_of fab) v;
-                  Binding.make None v);
+              let b = CubeOf.find readbacks fb in
+              let ty =
+                inst (Norm.eval_term alenv b.ty)
+                  (TubeOf.build D.zero
+                     (D.zero_plus (dom_sface fa))
+                     {
+                       build =
+                         (fun fc ->
+                           let (Plus l_m) = D.plus m in
+                           Hashtbl.find xstbl
+                             (SFace_of
+                                (sface_plus_sface (comp_sface fa (sface_of_tface fc)) k_n l_m fb)));
+                     }) in
+              let tm, level =
+                match (b.tm, vars) with
+                | None, Alias -> fatal (Anomaly "alias without a value")
+                | None, Vars ->
+                    let level = (i, !j) in
+                    (var modality level ty, Some level)
+                | Some tm, _ -> (Norm.eval_term alenv tm, None) in
+              j := !j + 1;
+              let v = { tm; ty = Lazy.from_val ty } in
+              Hashtbl.add xstbl (SFace_of fab) v;
+              Binding.make level v);
         } in
     let newvals = CubeOf.mmap { map = (fun _ [ v ] -> (Binding.value v).tm) } [ newxs ] in
     (newxs, newvals)
