@@ -3665,7 +3665,7 @@ and synth : type mode a b s.
         match Ctx.lookup ctx i with
         | Aliased { value; dirt; modality; plus = plus_tgt } -> (
             Positivity.record dirt;
-            (* Since an alias has no corresponding variable, we have to read its value back into the current context to get a term. *)
+            (* Since an alias has no corresponding variable, we have to read its value back into the current context to get a term.  You might think we could store this readback lazily in the alias context entry so as to avoid recomputing it at every use, but that would be hard to degenerate in degctx.  In practice, alias terms are (almost?) always single let-rec metavariables with trivial environment, so readback of them should be fast. *)
             let (Plus_with_locks (_, locks)) = plus_tgt in
             let lock = Locks.cod locks in
             match (Modality.compare modality lock, Modalcell.find_unique modality lock) with
