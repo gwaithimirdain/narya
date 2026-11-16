@@ -415,30 +415,44 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let filter = Modality.filter_plus k_l m_n kfilter lfilter in
       (* The basic thing we do is evaluate the cubes of domains and codomains. *)
       let lenv = lock_env env al in
-      let doms =
-        CubeOf.build kl
-          {
-            build =
-              (fun fab ->
-                let (SFace_of_plus (_, fa, fb)) = sface_of_plus k_l fab in
-                (* Again, we have to act by a face to get the environment dimension down to k. *)
-                let op =
-                  comp_opt_op
-                    (opt_op_of_opt_sface (Modality.sface_of_filter m kfilter))
-                    (opt_op_of_sface fa) in
-                eval_term (act_env lenv op) (CubeOf.find doms fb));
-          } in
-      let cods =
-        BindCube.build mn
-          {
-            build =
-              (fun fab ->
-                let (SFace_of_plus (i_j, fa, fb)) = sface_of_plus m_n fab in
-                let (Filter_sface (_, jfilter1)) = Modality.filter_sface lfilter fb in
-                let (Cod (jfilter2, x)) = CodCube.find cods fb in
-                let Eq = Modality.filter_uniq jfilter1 jfilter2 in
-                BindFam (eval_binder (act_env env (opt_op_of_sface fa)) i_j modality jfilter1 x));
-          } in
+      (* By far the most common case is that both the pi-type and the environment are zero-dimensional.  Then there is only one domain and one codomain, and the faces and operators by which the general case acts on the environment are identities, so we can skip all of that. *)
+      let doms, cods =
+        (match (D.compare_zero m, D.compare_zero n) with
+         | Zero, Zero ->
+             let zero = Modality.filter_zero modality in
+             let Eq = Modality.filter_uniq kfilter zero in
+             let Eq = Modality.filter_uniq lfilter zero in
+             let Eq = D.plus_uniq k_l (D.plus_zero D.zero) in
+             let Eq = D.plus_uniq m_n (D.plus_zero D.zero) in
+             let (Cod (jfilter, x)) = CodCube.find_top cods in
+             ( CubeOf.singleton (eval_term lenv (CubeOf.find_top doms)),
+               BindCube.singleton
+                 (BindFam (eval_binder env (D.plus_zero D.zero) modality jfilter x)) )
+         | _ ->
+             ( CubeOf.build kl
+                 {
+                   build =
+                     (fun fab ->
+                       let (SFace_of_plus (_, fa, fb)) = sface_of_plus k_l fab in
+                       (* Again, we have to act by a face to get the environment dimension down to k. *)
+                       let op =
+                         comp_opt_op
+                           (opt_op_of_opt_sface (Modality.sface_of_filter m kfilter))
+                           (opt_op_of_sface fa) in
+                       eval_term (act_env lenv op) (CubeOf.find doms fb));
+                 },
+               BindCube.build mn
+                 {
+                   build =
+                     (fun fab ->
+                       let (SFace_of_plus (i_j, fa, fb)) = sface_of_plus m_n fab in
+                       let (Filter_sface (_, jfilter1)) = Modality.filter_sface lfilter fb in
+                       let (Cod (jfilter2, x)) = CodCube.find cods fb in
+                       let Eq = Modality.filter_uniq jfilter1 jfilter2 in
+                       BindFam
+                         (eval_binder (act_env env (opt_op_of_sface fa)) i_j modality jfilter1 x));
+                 } )
+          : (kl, (dom, kinetic) value) CubeOf.t * (mn, mode * modality * dom) BindCube.t) in
       (* However, because the result will be a Neu, we need to know its type as well.  The starting n-dimensional pi-type (which is itself uninstantiated) lies in a full instantiation of the n-dimensional universe at lower-dimensional pi-types formed from subcubes of its domains and codomains.  Accordingly, the resulting (m+n)-dimensional pi-type will like in a full instantiation of the (m+n)-dimensional universe at lower-dimensional pi-types obtained by evaluating these at appropriately split faces.  Since each of them *also* belongs to a universe instantiated similarly, and needs to know its type not just because it is an uninst but because it is a normal, we build the whole cube at once and then take its top. *)
       (* A zero-dimensional pi-type has only one face, so in that case we never need the table. *)
       let pitbl = lazy (Hashtbl.create 10) in
@@ -455,10 +469,25 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                    (fun fc ->
                      Hashtbl.find (Lazy.force pitbl) (SFace_of (comp_sface fab (sface_of_tface fc))));
                }) in
-        let (Filter_sface (fab', ufilter)) = Modality.filter_sface filter fab in
-        let (SFace_of_plus (ab, fa', fb')) = sface_of_plus k_l fab' in
-        let subdoms, subcods = (CubeOf.subcube fab' doms, BindCube.subcube fab cods) in
-        let subx = plus_variables (dom_sface fa') ab (sub_variables fb' x) in
+        let (Filter_sface
+               (type u')
+               ((fab', ufilter) : (u', kl) sface * (dom, modality, mode, u', u) Modality.filter_dim))
+            =
+          Modality.filter_sface filter fab in
+        let subdoms, subcods, subx =
+          (match is_id_sface fab with
+           | Some Eq ->
+               (* The top face has all the domains and codomains, so we don't need to copy them. *)
+               let Eq = Modality.filter_uniq ufilter filter in
+               (doms, cods, plus_variables k k_l x)
+           | None ->
+               let (SFace_of_plus (ab, fa', fb')) = sface_of_plus k_l fab' in
+               ( CubeOf.subcube fab' doms,
+                 BindCube.subcube fab cods,
+                 plus_variables (dom_sface fa') ab (sub_variables fb' x) )
+            : (u', (dom, kinetic) value) CubeOf.t
+              * (u, mode * modality * dom) BindCube.t
+              * u' variables) in
         let head : mode head = Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods } in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         (* The fibrancy fields of a pi-type are rarely used, and pi-types are evaluated very often (such as whenever a function is applied, to find the type of the result), so we compute them lazily. *)
