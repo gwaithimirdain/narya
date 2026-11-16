@@ -239,6 +239,39 @@ module Make (Q : Quiver) = struct
         let Eq = bcomp_uniq nm1 nm2 in
         Eq
 
+  (* ('a, 'm, 'b, 'n, 'mn) fcomp says that the forwards list of edges 'mn, ending at 'b, is obtained by prepending the backwards path 'm : 'a → 'b to the forwards list 'n, ending at 'a, so that the last edge of 'm becomes the first edge of 'mn.  This is analogous to Fwn.fplus. *)
+  type (_, _, _, _, _) fcomp =
+    | Zero : ('a, 'a id, 'a, 'n, 'n) fcomp
+    | Suc :
+        ('a, 'g, 'a1) Q.t * ('a1, 'm, 'b, ('g, 'n) cons, 'mn) fcomp
+        -> ('a, ('m, 'g) suc, 'b, 'n, 'mn) fcomp
+
+  let rec fcomp_left : type a m b n mn. b Obj.t -> (a, m, b, n, mn) fcomp -> (a, m, b) t =
+   fun b -> function
+    | Zero -> id b
+    | Suc (g, mn) -> suc (fcomp_left b mn) g
+
+  type (_, _, _, _) has_fcomp = Fcomp : ('a, 'm, 'b, 'n, 'mn) fcomp -> ('a, 'm, 'b, 'n) has_fcomp
+
+  let rec fcomp : type a m b n. (a, m, b) t -> (a, m, b, n) has_fcomp = function
+    | Path (Zero, _) -> Fcomp Zero
+    | Path (Suc (m, g), b) ->
+        let (Fcomp mn) = fcomp (Path (m, b)) in
+        Fcomp (Suc (g, mn))
+
+  (* Composition of backwards paths associates with the composition of a backwards path and a forwards one, and prepending a backwards path to a forwards one.  This is analogous to Fwn.bfplus_assocr. *)
+  let rec bfcomp_assocr : type a m b n c p l ml x q.
+      (a, m, b, n, c, p) comp ->
+      (a, m, b, l, ml) fcomp ->
+      (x, l, a, p, c, q) bcomp ->
+      (x, ml, b, n, c, q) bcomp =
+   fun mn ml lp ->
+    match (mn, ml) with
+    | Zero, Zero -> lp
+    | Suc (mn, g), Suc (g', ml) ->
+        let Eq = Q.tgt_uniq g g' in
+        bfcomp_assocr mn ml (Suc (g, lp))
+
   (* TODO: Do we need the "fwd" return value here?  It can be recovered from the "bcomp" with bcomp_right if necessary, and we don't seem to use it often. *)
   type (_, _, _) to_fwd =
     | To_fwd :

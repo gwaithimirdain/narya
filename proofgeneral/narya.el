@@ -1113,6 +1113,19 @@ With a negative prefix argument, set display of unique keys off."
          "display unique keys := off")
      "display unique keys := toggle")))
 
+(defun narya-display-let (arg)
+  "Cycle or set the display of local definitions and holes.
+With no prefix argument, cycle between displaying them by name, with
+their environments, and as their definitions.  With a prefix argument,
+prompt for which of these to set."
+  (interactive "P")
+  (proof-shell-invisible-command
+   (concat "display let := "
+           (if arg
+               (completing-read "Display let: "
+                                '("names" "environments" "definitions") nil t)
+             "cycle"))))
+
 (defun narya-display-degeneracy-names (num)
   "Set the dimension up to which degeneracies are displayed with names.
 NUM is the largest dimension of an iterated reflexivity that is
@@ -1139,7 +1152,10 @@ than with a superscript."
     "display implicits ≔ on"
     "display implicits ≔ off"
     "display unique keys ≔ on"
-    "display unique keys ≔ off"))
+    "display unique keys ≔ off"
+    "display let ≔ names"
+    "display let ≔ environments"
+    "display let ≔ definitions"))
 
 (defun narya-minibuffer-cmd (cmd)
   "Wrapper around `proof-minibuffer-cmd' with completion for Narya commands."
@@ -1250,6 +1266,7 @@ than with a superscript."
 (keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-boundaries-deprecated)
 (keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-boundaries-deprecated)
 (keymap-set narya-mode-map "C-c C-d C-k" 'narya-display-unique-keys)
+(keymap-set narya-mode-map "C-c C-d C-l" 'narya-display-let)
 (keymap-set narya-mode-map "C-c C-d C-v" 'narya-display-variables)
 (keymap-set narya-mode-map "C-c C-d C-d" 'narya-display-degeneracy-names)
 (keymap-set narya-mode-map "C-M-q" 'narya-reformat-command)

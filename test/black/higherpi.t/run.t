@@ -146,6 +146,30 @@
   
   [1]
 
+The boundaries of the codomain must not use the other variables of the cube, including via a hole whose context contains them.
+
+  $ narya higherpi.ny -e "axiom F : A → A → Type echo (x : Id A) ⇒ Id (F x.1) x.2"
+   ￫ error[E0706]
+   ￭ command-line exec string
+   1 | axiom F : A → A → Type echo (x : Id A) ⇒ Id (F x.1) x.2
+     ^ invalid higher function-type: invalid codomain scope
+  
+  [1]
+  $ narya higherpi.ny -e "axiom F : A → A → Type echo (x : Id A) ⇒ Id (F x.0) x.2"
+   ￫ error[E0706]
+   ￭ command-line exec string
+   1 | axiom F : A → A → Type echo (x : Id A) ⇒ Id (F x.0) x.2
+     ^ invalid higher function-type: invalid codomain scope
+  
+  [1]
+  $ narya higherpi.ny -e "axiom F : A → A → Type echo (x : Id A) ⇒ Id (F ?) x.2"
+   ￫ error[E0706]
+   ￭ command-line exec string
+   1 | axiom F : A → A → Type echo (x : Id A) ⇒ Id (F ?) x.2
+     ^ invalid higher function-type: invalid codomain scope
+  
+  [1]
+
   $ narya -e "echo refl ((X Y ↦ X → Y → Type) : Type → Type → Type)"
   X Y ⤇ X.2 ⇒ Y.2 ⇒ Type⁽ᵉ⁾
     : {𝑥₀ : Type} {𝑥₁ : Type} (𝑥₂ : Type⁽ᵉ⁾ 𝑥₀ 𝑥₁) {𝑦₀ : Type} {𝑦₁ : Type}

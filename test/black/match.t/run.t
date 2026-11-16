@@ -44,6 +44,12 @@
    ￮ constant doublematch' defined
   
    ￫ info[I0000]
+   ￮ constant doublematch'' defined
+  
+   ￫ info[I0000]
+   ￮ constant contra' defined
+  
+   ￫ info[I0000]
    ￮ constant ⊤ defined
   
    ￫ info[I0000]
@@ -63,6 +69,12 @@
   
    ￫ info[I0000]
    ￮ constant idvec_nil_or_cons defined
+  
+   ￫ info[I0000]
+   ￮ constant vec_is_nil defined
+  
+  true.
+    : bool
   
 
   $ narya -v -parametric multi.ny
@@ -658,5 +670,38 @@ And all the branches for a single constructor must name the same number of varia
    ￭ command-line exec string
    1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {zero.} {_} _ ↦ 1 | suc. {suc. k} _ ↦ k ]
      ^ inconsistent patterns in match
+  
+  [1]
+
+  $ narya -v nondep.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant Vec defined
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/nondep.ny
+   4 | def idvec (A : Type) (n : ℕ) (v : Vec A n) : Vec A n ≔ match v return _ [ nil. ↦ nil. | cons. m x xs ↦ cons. m x xs ]
+     ^ term synthesized type
+         Vec A 0
+       but is being checked against type
+         Vec A n
+       unequal terms:
+         0
+       does not equal
+         n
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/nondep.ny
+   4 | def idvec (A : Type) (n : ℕ) (v : Vec A n) : Vec A n ≔ match v return _ [ nil. ↦ nil. | cons. m x xs ↦ cons. m x xs ]
+     ^ term synthesized type
+         Vec A (suc. m)
+       but is being checked against type
+         Vec A n
+       unequal terms:
+         suc. m
+       does not equal
+         n
   
   [1]

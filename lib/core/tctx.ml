@@ -230,6 +230,23 @@ let rec locks_lock : type a m b tm. (a, m, b, a, tm, b) Lock.t -> (a, tm, b, a, 
 
 (* Witness that a tctx doesn't end with a lock *)
 
+(* The shape of the extension of a checked context 'b by a context entry, yielding the extended checked context 'bb: either a cube of variables, or nothing for an alias (which is a cube of let-bound values whose names refer directly to those values).  Matching on this refines the extended checked context. *)
+type (_, _, _, _) vars =
+  | Vars : ('modality, 'n, 'b, ('b, ('modality, 'n) dim_entry) snoc) vars
+  | Alias : ('modality, 'n, 'b, 'b) vars
+
+(* Extend a tctx according to a vars. *)
+let ext_vars : type dom modality mode n b bb.
+    (mode, b) Tctx.t ->
+    (modality, n, b, bb) vars ->
+    n D.t ->
+    (dom, modality, mode, n, n) Modality.filter_dim ->
+    (mode, bb) Tctx.t =
+ fun ctx vars n filter ->
+  match vars with
+  | Vars -> Tctx.suc ctx (Dim (n, filter))
+  | Alias -> ctx
+
 type _ ends_without_lock =
   | Without_lock_id : 'x id ends_without_lock
   | Without_lock_proj : ('x id, 'm proj) snoc ends_without_lock
@@ -321,6 +338,24 @@ let plus_with_locks_dim : type a cod modality mode dom ac annote n.
     (a, cod, modality, mode, (ac, (annote, n) dim_entry) suc) plus_with_locks =
  fun (Plus_with_locks (c, l)) n f ->
   Plus_with_locks (Suc (c, Dim (n, f)), Suc (l, Locks_dim (n, f), Zero))
+
+let plus_with_locks_modality : type ctx mode modality dom newctx.
+    (ctx, mode, modality, dom, newctx) plus_with_locks -> (dom, modality, mode) Modality.t =
+ fun (Plus_with_locks (_, l)) -> Locks.cod l
+
+(* The context extension consisting of one dimension entry followed by the locks of a plus_lock, as when weakening by one variable that lies behind those locks. *)
+let rec plus_with_locks_of_dim_plus_lock : type a cod modality mode dom ac annote n.
+    n D.t ->
+    (dom, annote, cod, n, n) Modality.filter_dim ->
+    ((a, (annote, n) dim_entry) snoc, cod, modality, mode, ac) plus_lock ->
+    (a, cod, modality, mode, ac) plus_with_locks =
+ fun n f (Plus_lock (lock, comp)) ->
+  match (lock, comp) with
+  | Zero (Eq cod), Zero -> plus_with_locks_dim (plus_with_no_locks cod) n f
+  | Suc (lock, Inject (Lock_lock g), Suc (Zero, Lock _)), Suc (comp, Lock g') ->
+      let Eq = Modality.Gen.src_uniq g g' in
+      let Eq = Modality.Gen.tgt_uniq g g' in
+      plus_with_locks_lock (plus_with_locks_of_dim_plus_lock n f (Plus_lock (lock, comp))) g
 
 (* A plus_with_locks with existentially quantified composite modality. *)
 type (_, _, _, _) wrapped_plus_with_locks =
