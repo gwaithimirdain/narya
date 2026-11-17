@@ -1322,6 +1322,16 @@ end
 module Delegate = Asai.StructuredReporter.Make (Code)
 include Delegate
 
+(* We never record Asai backtraces, so every diagnostic has an empty one.  But unless one is supplied, Asai gets the current one by performing a Reader effect, whose handler is usually far away (see Lexer.Specials for why that matters), and diagnostics are created often, since errors are used to abandon speculative attempts.  So we supply the empty one. *)
+let diagnostic ?severity ?loc ?text ?(backtrace = Bwd.Emp) ?extra_remarks msg =
+  Delegate.diagnostic ?severity ?loc ?text ~backtrace ?extra_remarks msg
+
+let emit ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  emit_diagnostic (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+
+let fatal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  fatal_diagnostic (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+
 let ( <|> ) : type a. a option -> Code.t -> a =
  fun x e ->
   match x with
