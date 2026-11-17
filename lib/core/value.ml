@@ -757,6 +757,26 @@ let rec lock_env : type dom mu cod m b bmu.
       let Eq = Modality.Gen.tgt_uniq g g' in
       Lock (lock_env env (Plus_lock (lock, comp)), g)
 
+(* The general vertical composition of key cells sharing a vertical source, using a pushout to reconcile the first cell's vertical target with the second cell's vertical source.  Used both for composing keys on values (act.ml) and for accumulating prekey actions on environments (env.ml). *)
+type _ key_comp = Wrap : ('a, 'm, 'n, 'b) Modalcell.t -> 'a key_comp
+
+let key_vcomp : type a b c m n p q.
+    (a, m, n, b) Modalcell.t -> (a, p, q, c) Modalcell.t -> a key_comp =
+ fun cell2 cell1 ->
+  (* An identity on any modality can be omitted, although the general composite would postwhisker the other cell by part of that modality, since acting by a cell is the same as acting by any postwhiskering of it (see act_head). *)
+  if Modalcell.is_id cell2 then Wrap cell1
+  else if Modalcell.is_id cell1 then Wrap cell2
+  else
+    match Modality.pushout (Modalcell.vtgt cell1) (Modalcell.vsrc cell2) with
+    | Some (Pushout (mu3, mu4, cod13, dom24)) ->
+        let (Comp cod24) = Modality.comp (Modalcell.vtgt cell2) in
+        let (Comp dom13) = Modality.comp (Modalcell.vsrc cell1) in
+        Wrap
+          (Modalcell.vcomp
+             (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) cell2)
+             (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) cell1))
+    | None -> fatal (Anomaly "incompatible keys")
+
 (* Create a lazy evaluation *)
 let lazy_eval : type mode n b s. (mode, n, b) env -> (mode, b, s) term -> (mode, s) lazy_eval =
  fun env tm -> ref (Deferred_eval (env, tm, ins_zero (dim_env env), Modalcell.id2 (mode_env env)))
