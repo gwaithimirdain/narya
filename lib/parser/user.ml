@@ -115,7 +115,9 @@ end
 
 (* A user "prenotation" includes all the information from a "notation" command, parsed and validated into a pattern, fixity, and so on, but not yet compiled into a notation tree. *)
 
-type key = [ `Constant of Core.Constant.t | `Constr of Core.Constr.t * int ]
+(* A notation whose head is a degeneracy, like "x = y ≔ Id (_ : Type) x y", is keyed by that degeneracy (as its superscript string, which is canonical, unlike its representation) and the form of its operand.  Currently the only form is an operand ascribed to be a (0-dimensional) type, so that the remaining arguments are its instantiation arguments. *)
+type key =
+  [ `Constant of Core.Constant.t | `Constr of Core.Constr.t * int | `Deg of string * [ `Type ] ]
 
 type ('left, 'tight, 'right) prenotation_data = {
   id : Id.t;
@@ -123,8 +125,10 @@ type ('left, 'tight, 'right) prenotation_data = {
   fixity : ('left, 'tight, 'right) fixity;
   pattern : ('left, 'right) Pattern.t;
   key : key;
-  (* The arguments of the head in the definition of the notation: variables of the pattern, or placeholders. *)
+  (* The arguments of the head in the definition of the notation: variables of the pattern, or placeholders.  For a degeneracy, the first of them is its operand. *)
   val_vars : (string option * [ `Explicit | `Implicit ]) list;
+  (* For a degeneracy, the name it was written with, the degeneracy itself, and the name of the universe its operand is ascribed to (which is also the name of the mode of that universe). *)
+  deg_head : (string * Dim.any_deg * string) option;
 }
 
 type prenotation = User : ('left, 'tight, 'right) prenotation_data -> prenotation
@@ -164,7 +168,8 @@ let make_user : prenotation -> notation =
   let open Notation in
   let (User
          (type l t r)
-         ({ id = _; name; fixity; pattern; key; val_vars } : (l, t, r) prenotation_data)) =
+         ({ id = _; name; fixity; pattern; key; val_vars; deg_head } : (l, t, r) prenotation_data))
+      =
     notn in
   let module New = Make (struct
     type nonrec left = l
@@ -210,26 +215,47 @@ let make_user : prenotation -> notation =
                    | Term x -> Some (Wrap x : wrapped_parse)
                    | _ -> None)
                  obs) in
+          (* A placeholder in the definition of the notation becomes a placeholder in each use of it. *)
+          let arg_of k : _ Raw.check Asai.Range.located =
+            match k with
+            | None -> { value = Raw.Unif None; loc }
+            | Some k -> (
+                match StringMap.find_opt k args with
+                | None -> fatal (Anomaly "not found processing user")
+                | Some arg -> arg) in
+          let spine head val_vars =
+            List.fold_left
+              (fun acc (k, implicit) ->
+                let arg = arg_of k in
+                Raw.App
+                  ( { value = Synth acc; loc },
+                    { value = `Arg arg.value; loc = arg.loc },
+                    Asai.Range.locate_opt None implicit ))
+              head val_vars in
           let value =
             match key with
-            | `Constant c ->
-                let spine =
-                  List.fold_left
-                    (fun acc (k, implicit) ->
-                      (* A placeholder in the definition of the notation becomes a placeholder in each use of it. *)
-                      let arg : _ Raw.check Asai.Range.located =
-                        match k with
-                        | None -> { value = Raw.Unif None; loc }
-                        | Some k -> (
-                            match StringMap.find_opt k args with
-                            | None -> fatal (Anomaly "not found processing user")
-                            | Some arg -> arg) in
-                      Raw.App
-                        ( { value = Synth acc; loc },
-                          { value = `Arg arg.value; loc = arg.loc },
-                          Asai.Range.locate_opt None implicit ))
-                    (Const c) val_vars in
-                Raw.Synth spine
+            | `Constant c -> Raw.Synth (spine (Const c) val_vars)
+            | `Deg (_, `Type) -> (
+                match (deg_head, val_vars) with
+                | Some (str, Any_deg s, uname), (k, _) :: val_vars ->
+                    (* The operand is ascribed to the universe, so that the degeneracy synthesizes a type of the dimension of the degeneracy, which the remaining arguments instantiate. *)
+                    let (Modal.Mode.Wrap mode) =
+                      match List.assoc_opt uname (Modal.Mode.all ()) with
+                      | Some mode -> mode
+                      | None -> fatal (Anomaly "universe not found processing user") in
+                    let operand : _ Raw.check Asai.Range.located =
+                      { value = Synth (Asc (arg_of k, { value = Synth (UU mode); loc })); loc }
+                    in
+                    let head = spine (Act ({ value = str; loc }, s, Some operand)) val_vars in
+                    (* In arity zero, a full instantiation is a nullary one, which the definition of the notation wrote as a dot. *)
+                    if val_vars = [] then
+                      Raw.Synth
+                        (App
+                           ( { value = Synth head; loc },
+                             { value = `Dot; loc },
+                             Asai.Range.locate_opt None `Explicit ))
+                    else Raw.Synth head
+                | _ -> fatal (Anomaly "invalid degeneracy notation processing user"))
             | `Constr (c, _) ->
                 let args =
                   List.map
@@ -268,7 +294,8 @@ let make_user : prenotation -> notation =
                 | `Explicit -> Plain pat in
               let (Wrap args) = Vec.of_list_map arg val_vars in
               Matchpattern.Constr ({ value = c; loc }, args)
-          | _ -> fatal (Anomaly "make_user"));
+          (* Only a notation for a constructor can be used in a pattern. *)
+          | `Constant _ | `Deg _ -> fatal ?loc (Invalid_notation_pattern name));
       (* We define this function inline here so that it can match against the constructor New.User that was generated above by the inline Make functor application.  The only way I can think of to factor this function out (and, for instance, put it in user.ml instead of this file) would be to pass it a first-class module as an argument.  At the moment, that seems like unnecessary complication. *)
       print_term =
         Some

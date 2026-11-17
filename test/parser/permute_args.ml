@@ -19,6 +19,7 @@ let () =
            pattern = Var (("x", `Nobreak, []), Var_nil ((Op "&", `Break, []), ("y", [])));
            key = `Constant foo;
            val_vars = [ (Some "y", `Explicit); (Some "x", `Explicit) ];
+           deg_head = None;
          }) in
   assume "a" "A";
   assume "b" "A";

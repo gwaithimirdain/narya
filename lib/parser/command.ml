@@ -46,8 +46,12 @@ type def = {
   tm : wrapped_parse;
 }
 
-(* An argument of the head in the definition of a notation can be explicit or implicit (in braces).  For an implicit one we remember the whitespace after the left brace and after the variable, for reformatting. *)
-type notation_arg = [ `Explicit | `Implicit of Whitespace.t list * Whitespace.t list ]
+(* An argument of the head in the definition of a notation can be explicit, implicit (in braces), or ascribed to a universe (in parentheses, such as "(_ : Type)"), which is allowed only for the operand of a degeneracy.  It can also be a dot, which is allowed only for the nullary instantiation of a degenerated type in arity 0.  We remember the whitespace inside the braces or parentheses, for reformatting: after the left brace and the variable, and after the left parenthesis, the variable, the colon, and the universe. *)
+type notation_arg =
+  [ `Explicit
+  | `Implicit of Whitespace.t list * Whitespace.t list
+  | `Typed of Whitespace.t list * Whitespace.t list * Whitespace.t list * string * Whitespace.t list
+  | `Dot ]
 
 module Command = struct
   type t =
@@ -83,7 +87,7 @@ module Command = struct
         wscoloneq : Whitespace.t list;
         head : [ `Constr of string | `Constant of Trie.path ];
         wshead : Whitespace.t list;
-        (* The arguments of the head, each a variable of the pattern, or a placeholder "_". *)
+        (* The arguments of the head, each a variable of the pattern, or a placeholder "_", possibly in braces (implicit) or ascribed to a universe (the operand of a degeneracy), or a dot (with no name). *)
         args : ((string option * notation_arg) * Whitespace.t list) list;
       }
         -> t
@@ -462,14 +466,24 @@ module Parse = struct
         | Underscore -> Some ((None, ws), state)
         | _ -> None)
 
-  (* An argument in braces is an implicit argument of the head. *)
+  (* An argument in braces is an implicit argument of the head.  An argument ascribed to a universe, like "(_ : Type)", is the operand of a degeneracy, and a dot is a nullary instantiation of it. *)
   let notation_var =
     (let* x, ws = notation_var_name in
      return ((x, `Explicit), ws))
-    </> let* wslbrace = token LBrace in
+    </> (let* ws = token Dot in
+         return ((None, `Dot), ws))
+    </> (let* wslbrace = token LBrace in
+         let* x, wsx = notation_var_name in
+         let* ws = token RBrace in
+         return ((x, `Implicit (wslbrace, wsx)), ws))
+    </> let* wslparen = token LParen in
         let* x, wsx = notation_var_name in
-        let* ws = token RBrace in
-        return ((x, `Implicit (wslbrace, wsx)), ws)
+        let* wscolon = token Colon in
+        let* loc, (u, wsu) = located ident in
+        let* ws = token RParen in
+        match u with
+        | [ u ] -> return ((x, `Typed (wslparen, wsx, wscolon, u, wsu)), ws)
+        | _ -> fatal ~loc:(Range.convert loc) (Invalid_notation_arguments "expected a universe")
 
   let notation =
     let* wsnotation = token Notation in
@@ -1132,12 +1146,79 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
       let notation_name = [ "notations"; name ] in
       Scope.check_name notation_name loc;
-      let key =
+      let not_typed args =
+        List.iter
+          (function
+            | (_, `Typed _), _ ->
+                fatal
+                  (Invalid_notation_arguments
+                     "only the operand of a degeneracy can be ascribed to a universe")
+            | (_, `Dot), _ ->
+                fatal
+                  (Invalid_notation_arguments
+                     "a dot is allowed only to instantiate a degenerated type in arity 0")
+            | _ -> ())
+          args in
+      (* As in parsing a term, a degeneracy name takes precedence over a constant of the same name in the head of an application. *)
+      let key, deg_head =
         match head with
-        | `Constr c -> `Constr (Constr.intern c, List.length args)
+        | `Constr c ->
+            not_typed args;
+            (`Constr (Constr.intern c, List.length args), None)
+        | `Constant [ str ] when Option.is_some (deg_of_name str) -> (
+            let (Any_deg s) = Option.get (deg_of_name str) in
+            match args with
+            | [] -> fatal (Missing_argument_of_degeneracy str)
+            | ((x, operand), _) :: rest ->
+                let u =
+                  match (operand, x) with
+                  | `Typed (_, _, _, u, _), _ -> u
+                  | _, None ->
+                      fatal
+                        (Invalid_notation_arguments
+                           "the operand of a degeneracy must be ascribed to a universe, as in (_ : Type)")
+                  | _, Some _ ->
+                      fatal
+                        (Unimplemented
+                           "notations for degeneracies whose operand isn't ascribed to a universe")
+                in
+                if not (List.mem_assoc u (Modal.Mode.all ())) then
+                  fatal (Invalid_notation_arguments ("not a universe: " ^ u));
+                if
+                  D.length (dom_deg s) <> 1
+                  ||
+                  match D.compare_zero (cod_deg s) with
+                  | Zero -> false
+                  | Pos _ -> true
+                then
+                  fatal
+                    (Invalid_notation_arguments
+                       ("the degeneracy " ^ str ^ " can't be applied to a 0-dimensional type"));
+                (* The degenerated type must be fully instantiated, so that the notation can be displayed for exactly the instantiations it would produce.  In arity 0 that is a nullary instantiation, written with a dot (without which the notation would mean an uninstantiated 1-dimensional type). *)
+                let (Wrap arity) = Endpoints.wrapped () in
+                let arity = N.to_int (Endpoints.len arity) in
+                (match (arity, rest) with
+                | 0, [ ((_, `Dot), _) ] -> ()
+                | 0, _ ->
+                    fatal
+                      (Invalid_notation_arguments
+                         "in arity 0, a degenerated type must be instantiated by a single \".\"")
+                | _ ->
+                    not_typed rest;
+                    if List.exists (fun ((_, i), _) -> i <> `Explicit) rest then
+                      fatal
+                        (Invalid_notation_arguments
+                           "the arguments instantiating a degenerated type must be explicit");
+                    if List.length rest <> arity then
+                      fatal
+                        (Invalid_notation_arguments
+                           (Printf.sprintf "a degenerated type must be instantiated by %d arguments"
+                              arity)));
+                (`Deg (string_of_deg s, `Type), Some (str, Any_deg s, u)))
         | `Constant c -> (
+            not_typed args;
             match Scope.lookup c with
-            | Some c -> `Constant c
+            | Some c -> (`Constant c, None)
             | None -> fatal (Invalid_notation_head (String.concat "." c))) in
       (* The arguments of a constant must match a prefix of its arguments, as they would be elaborated: an explicit argument of the notation skips any implicit arguments of the constant, which would be inserted, while an implicit one must supply the next implicit argument.  We can't check a constructor this way, since its name doesn't determine its datatype. *)
       (match key with
@@ -1149,10 +1230,13 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             let x = Option.value x ~default:"_" in
             match i with
             | `Implicit _ -> "{" ^ x ^ "}"
-            | `Explicit -> x in
+            | `Explicit | `Typed _ | `Dot -> x in
           let rec go (shape : arg_shape) args =
             match (args, shape) with
             | [], _ | _, (Arg_higher | Arg_unknown) -> ()
+            (* These were rejected above for a constant. *)
+            | ((_, (`Typed _ | `Dot)), _) :: _, _ ->
+                fatal (Anomaly "typed or dot notation argument")
             | (arg, _) :: _, Arg_none ->
                 fatal
                   (Invalid_notation_arguments
@@ -1167,15 +1251,15 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                         "the next argument of %s is explicit, so it can't be given by the implicit argument %s"
                         cname (show arg))) in
           go (arg_shape_of_ty ctx (Norm.eval_term (Ctx.env ctx) ty)) args
-      | `Constr _ -> ());
+      | `Constr _ | `Deg _ -> ());
+      (* The dot of a nullary instantiation is not an argument of the notation; the processor supplies it (see User.make_user). *)
       let args =
-        List.map
+        List.filter_map
           (fun ((x, i), ws) ->
-            ( ( x,
-                match i with
-                | `Explicit -> `Explicit
-                | `Implicit _ -> `Implicit ),
-              ws ))
+            match i with
+            | `Dot -> None
+            | `Typed _ | `Explicit -> Some ((x, `Explicit), ws)
+            | `Implicit _ -> Some ((x, `Implicit), ws))
           args in
       (* Find the "unbound" variables, if any, in the notation definition. *)
       let rec unbounds : type left right.
@@ -1204,15 +1288,27 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | _ :: _ as unbound ->
           fatal (Unbound_variable_in_notation (List.filter_map (fun ((x, _), _) -> x) unbound)));
       let user =
-        User { id = User.Id.make (); name; fixity; pattern; key; val_vars = List.map fst args }
-      in
+        User
+          {
+            id = User.Id.make ();
+            name;
+            fixity;
+            pattern;
+            key;
+            val_vars = List.map fst args;
+            deg_head;
+          } in
       let shadow = Scope.define_notation user ?loc notation_name in
       List.iter
         (fun key ->
           let keyname =
             match key with
             | `Constr (c, _) -> Constr.to_string c ^ "."
-            | `Constant c -> String.concat "." (Scope.name_of c) in
+            | `Constant c -> String.concat "." (Scope.name_of c)
+            | `Deg (_, `Type) -> (
+                match deg_head with
+                | Some (str, _, _) -> str ^ " of a type"
+                | None -> "a degeneracy of a type") in
           emit (Head_already_has_notation keyname))
         shadow;
       (None, fun _ -> Some (Notation_defined name))
@@ -1560,12 +1656,25 @@ let tightness_of_fixity : type left tight right. (left, tight, right) fixity -> 
 let pp_notation_var ((x, implicit) : string option * notation_arg) : PPrint.document =
   match implicit with
   | `Explicit -> pp_var x
-  (* As with braces in terms, the contents are aligned after the left brace, which matters only if there are comments inside. *)
+  (* As with parentheses and braces in terms, the contents are aligned after the opening one, which matters only if there are comments inside. *)
   | `Implicit (wslbrace, wsx) ->
       PPrint.(
         Token.pp LBrace
         ^^ align (pp_ws `None wslbrace ^^ pp_var x ^^ pp_ws `None wsx)
         ^^ Token.pp RBrace)
+  | `Dot -> Token.pp Dot
+  | `Typed (wslparen, wsx, wscolon, u, wsu) ->
+      PPrint.(
+        Token.pp LParen
+        ^^ align
+             (pp_ws `None wslparen
+             ^^ pp_var x
+             ^^ pp_ws `Nobreak wsx
+             ^^ Token.pp Colon
+             ^^ pp_ws `Nobreak wscolon
+             ^^ utf8string u
+             ^^ pp_ws `None wsu)
+        ^^ Token.pp RParen)
 
 let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document * Whitespace.t list
     =

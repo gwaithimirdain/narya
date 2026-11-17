@@ -385,7 +385,8 @@ let from_istream chan find_in_table =
           let key =
             match u.key with
             | `Constant c -> `Constant (Constant.remake find_in_table c)
-            | `Constr (c, i) -> `Constr (c, i) in
+            | `Constr (c, i) -> `Constr (c, i)
+            | `Deg (s, form) -> `Deg (s, form) in
           let u = User.User { u with key; id = User.Id.remake find_in_table u.id } in
           ((`Notation (u, User.make_user u), loc), tag))
     (Istream.unmarshal chan

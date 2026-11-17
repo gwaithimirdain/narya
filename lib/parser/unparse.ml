@@ -1937,8 +1937,7 @@ and unparse_act : type n lt ls rt rs a b.
           unlocated
             (Superscript (Some (tm.unparse li No.Interval.empty), unlocated (string_of_deg s), [])))
 
-(* We unparse instantiations like application spines, since that is how they are represented in user syntax.
-   TODO: How can we allow special notations for some instantiations, like x=y for Id A x y? *)
+(* We unparse instantiations like application spines, since that is how they are represented in user syntax, unless they are instantiations of a degenerated type with a notation, like x=y for Id A x y. *)
 and unparse_inst : type mode n n' lt ls rt rs m k mk s.
     (* We allow the type and its instantiation arguments to be in different contexts, for use in unparse_higher_pi. *)
     n Names.t ->
@@ -1963,7 +1962,79 @@ and unparse_inst : type mode n n' lt ls rt rs m k mk s.
       let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (argvars, x)) } [ tyargs ] in
       unparse_named_inst vars ty tyargs li ri
 
+(* A notation for a degeneracy of a type, such as "x = y ≔ Id (_ : Type) x y", is displayed for exactly the instantiations that it elaborates to: a full instantiation of that degeneracy of a 0-dimensional type.  Since the only degeneracy that can act on a 0-dimensional type and be fully instantiated is a reflexivity, we include the higher-dimensional universe of that dimension, which is that reflexivity of the 0-dimensional universe. *)
+and unparse_deg_inst : type mode n m k mk s.
+    n Names.t ->
+    (mode, n, s) term ->
+    (m, k, mk, mode Names.named_term) TubeOf.t ->
+    (Notation.t
+    * unparser list
+    * [ `Single of Token.t | `Multiple of Token.t * Token.t option list * Token.t ])
+    option =
+ fun vars ty tyargs ->
+  let open Monad.Ops (Monad.Maybe) in
+  let is_refl : type a b. a D.t -> b D.t -> bool =
+   fun dom cod ->
+    D.length dom = 1
+    &&
+    match D.compare_zero cod with
+    | Zero -> true
+    | Pos _ -> false in
+  let* deg, operand =
+    match ty with
+    | Act (_, tm, s, _) when is_refl (dom_deg s) (cod_deg s) ->
+        return (string_of_deg s, make_unparser vars tm)
+    | UU (mode, n) when is_refl n D.zero ->
+        return
+          ( string_of_dim n,
+            { unparse = (fun li ri -> unparse_universe vars mode D.zero !universes li ri) } )
+    | _ -> None in
+  let* () =
+    match D.compare_zero (TubeOf.uninst tyargs) with
+    | Zero -> return ()
+    | Pos _ -> None in
+  let* { notn; pat_vars; val_vars; inner_symbols; keys = _ } =
+    Scope.Situation.unparse (`Deg (deg, `Type)) in
+  let args = ref Bwd.Emp in
+  TubeOf.miter { it = (fun _ [ x ] -> args := Snoc (!args, x)) } [ tyargs ];
+  let args = Bwd.to_list !args in
+  let* k, val_vars =
+    match val_vars with
+    | (k, _) :: val_vars when List.length val_vars = List.length args -> return (k, val_vars)
+    | _ -> None in
+  (* If the operand is omitted, re-elaborating the notation has to solve for it, which it can do if one of the arguments synthesizes. *)
+  let* () =
+    if Option.is_some k || List.exists (fun (Names.Named (_, x)) -> synths x) args then return ()
+    else None in
+  let map =
+    List.fold_left2
+      (fun map (k, _) (Names.Named (xvars, x)) ->
+        match k with
+        | Some k -> map |> StringMap.add k (make_unparser xvars x)
+        | None -> map)
+      (match k with
+      | Some k -> StringMap.singleton k operand
+      | None -> StringMap.empty)
+      val_vars args in
+  let args =
+    List.map
+      (fun k -> StringMap.find_opt k map <|> Anomaly "not found in unparse_deg_inst")
+      pat_vars in
+  return (notn, args, inner_symbols)
+
 and unparse_named_inst : type mode n lt ls rt rs m k mk s.
+    n Names.t ->
+    (mode, n, s) term ->
+    (m, k, mk, mode Names.named_term) TubeOf.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars ty tyargs li ri ->
+  match unparse_deg_inst vars ty tyargs with
+  | Some (Wrap notn, args, inner_symbols) -> unparse_notation notn args inner_symbols li ri
+  | None -> unparse_inst_spine vars ty tyargs li ri
+
+and unparse_inst_spine : type mode n lt ls rt rs m k mk s.
     n Names.t ->
     (mode, n, s) term ->
     (m, k, mk, mode Names.named_term) TubeOf.t ->
