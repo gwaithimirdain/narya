@@ -12,3 +12,11 @@ let split_utf8_bwd s =
   loop 0 Emp
 
 let split_utf8 s = Bwd.to_list (split_utf8_bwd s)
+
+(* A string of n primes, using the multiple-prime characters where possible. *)
+let rec primes n =
+  if n <= 0 then ""
+  else if n = 1 then "′"
+  else if n = 2 then "″"
+  else if n = 3 then "‴"
+  else "⁗" ^ primes (n - 4)

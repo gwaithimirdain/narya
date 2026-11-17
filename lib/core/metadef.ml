@@ -22,6 +22,10 @@ type ('mode, 'a, 'b, 's) t = {
   ty : ('mode, 'b, kinetic) term;
   (* Whether the definition contains occurrences of constants that were being defined when the metavariable was created.  Meaningful only once the metavariable is defined; consulted when chasing the recursion verdicts of datatypes whose constructor types contain holes. *)
   recursion : Positivity.recursion;
+  (* For display purposes only, the constant in whose definition the metavariable was created (its "owner"), if any.  This is used to name a defined metavariable, and is remembered by a hole so that the metavariables created when solving it have the same owner. *)
+  owner : Constant.t option;
+  (* The name of the variable that a defined metavariable was bound to, if any; when it has an owner, this name has been made unique among the metavariables of that owner by adding primes (see Meta.local_name). *)
+  local : string option;
 }
 
 (* Define or redefine a metavariable, recording the recursion verdict of its definition if one is supplied. *)
