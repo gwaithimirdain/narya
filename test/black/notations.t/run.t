@@ -288,3 +288,29 @@
   a
     : A
   
+
+Reformatting keeps comments inside the braces of an implicit argument in the definition of a notation.
+
+  $ printf 'axiom A : Type\naxiom plus : {B : Type} → A → A → A\nnotation(0) x "+" y "@" B ≔ plus { {` c1 `} B {` c2 `} } x y\nnotation(0) x "⊕" y "@" B ≔ plus {\n  ` line comment\n  B} x y\n' > reformat_comments.ny
+  $ narya reformat_comments.ny
+   ￫ warning[E2209]
+   ￮ replacing printing notation for plus (previous notation will still be parseable)
+  
+  $ cat reformat_comments.ny
+  axiom A : Type
+  
+  axiom plus : {B : Type} → A → A → A
+  
+  notation(0) x "+" y "@" B ≔ plus { {` c1 `} B {` c2 `} } x y
+  
+  notation(0) x "⊕" y "@" B
+    ≔ plus
+        {
+         ` line comment
+         B} x y
+  $ cp reformat_comments.ny reformat_comments_1.ny
+  $ narya reformat_comments.ny
+   ￫ warning[E2209]
+   ￮ replacing printing notation for plus (previous notation will still be parseable)
+  
+  $ diff reformat_comments.ny reformat_comments_1.ny

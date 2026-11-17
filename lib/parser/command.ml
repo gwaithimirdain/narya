@@ -46,6 +46,9 @@ type def = {
   tm : wrapped_parse;
 }
 
+(* An argument of the head in the definition of a notation can be explicit or implicit (in braces).  For an implicit one we remember the whitespace after the left brace and after the variable, for reformatting. *)
+type notation_arg = [ `Explicit | `Implicit of Whitespace.t list * Whitespace.t list ]
+
 module Command = struct
   type t =
     | Axiom of {
@@ -81,7 +84,7 @@ module Command = struct
         head : [ `Constr of string | `Constant of Trie.path ];
         wshead : Whitespace.t list;
         (* The arguments of the head, each a variable of the pattern, or a placeholder "_". *)
-        args : ((string option * [ `Explicit | `Implicit ]) * Whitespace.t list) list;
+        args : ((string option * notation_arg) * Whitespace.t list) list;
       }
         -> t
     | Import of {
@@ -463,10 +466,10 @@ module Parse = struct
   let notation_var =
     (let* x, ws = notation_var_name in
      return ((x, `Explicit), ws))
-    </> let* _ = token LBrace in
-        let* x, _ = notation_var_name in
+    </> let* wslbrace = token LBrace in
+        let* x, wsx = notation_var_name in
         let* ws = token RBrace in
-        return ((x, `Implicit), ws)
+        return ((x, `Implicit (wslbrace, wsx)), ws)
 
   let notation =
     let* wsnotation = token Notation in
@@ -1136,6 +1139,15 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             match Scope.lookup c with
             | Some c -> `Constant c
             | None -> fatal (Invalid_notation_head (String.concat "." c))) in
+      let args =
+        List.map
+          (fun ((x, i), ws) ->
+            ( ( x,
+                match i with
+                | `Explicit -> `Explicit
+                | `Implicit _ -> `Implicit ),
+              ws ))
+          args in
       (* Find the "unbound" variables, if any, in the notation definition. *)
       let rec unbounds : type left right.
           ((string option * [ `Explicit | `Implicit ]) * Whitespace.t list) list ->
@@ -1516,10 +1528,15 @@ let tightness_of_fixity : type left tight right. (left, tight, right) fixity -> 
   | Outfix -> None
 
 (* An argument of the head of a notation, in braces if it is implicit. *)
-let pp_notation_var ((x, implicit) : string option * [ `Explicit | `Implicit ]) : PPrint.document =
+let pp_notation_var ((x, implicit) : string option * notation_arg) : PPrint.document =
   match implicit with
   | `Explicit -> pp_var x
-  | `Implicit -> PPrint.(Token.pp LBrace ^^ pp_var x ^^ Token.pp RBrace)
+  (* As with braces in terms, the contents are aligned after the left brace, which matters only if there are comments inside. *)
+  | `Implicit (wslbrace, wsx) ->
+      PPrint.(
+        Token.pp LBrace
+        ^^ align (pp_ws `None wslbrace ^^ pp_var x ^^ pp_ws `None wsx)
+        ^^ Token.pp RBrace)
 
 let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document * Whitespace.t list
     =
