@@ -350,7 +350,7 @@ Reformatting keeps comments inside the braces of an implicit argument in the def
     : Type⁽ᵉᵉ⁾ (Id A) (Id A) (Id A) (Id A)
   
    ￫ warning[E2209]
-   ￮ replacing printing notation for refl of a type (previous notation will still be parseable)
+   ￮ replacing printing notation for refl (_ : Type) (previous notation will still be parseable)
   
   x ≡ y ∈ A
     : Type
@@ -451,6 +451,25 @@ In arity 0 the dot of the nullary instantiation must be written, since without i
   
   [1]
 
+A notation for a degeneracy of a type applies only in the mode of the universe its operand is ascribed to, including behind locks.  Notations in different modes don't replace each other.
+
+  $ narya -composable-functors -e 'def ▱○ (X :▱○| AType) : CType ≔ data [ ▱○. (_ :▱○| X) ]' -e 'notation(0) x "=" y ≔ Id (_ : CType) x y' -e 'axiom T : (X :▱○| AType) (x y :▱○| X) (C : CType) (c : C) → ▱○ (Id X x y) → Id C c c' -e 'echo T' -e 'notation(0) x "≡" y ≔ Id (_ : AType) x y' -e 'echo T' -e 'axiom T′ : (X :▱○| AType) (x y :▱○| X) → ▱○ (x = y)'
+  T
+    : (X :▱○| AType) (x :▱○| X) (y :▱○| X) (C : CType) (c : C) →
+      ▱○ (Id X x y)
+      → c = c
+  
+  T
+    : (X :▱○| AType) (x :▱○| X) (y :▱○| X) (C : CType) (c : C) → ▱○ (x ≡ y)
+      → c = c
+  
+   ￫ error[E1700]
+   ￭ command-line exec string
+   1 | axiom T′ : (X :▱○| AType) (x y :▱○| X) → ▱○ (x = y)
+     ^ mode mismatch in synthesizing universe (CType ≠ AType)
+  
+  [1]
+
 Reformatting.
 
   $ printf 'notation(0) x "=" y ≔ Id (  _   :Type  ) x y\n' > reformat_deg.ny
@@ -464,7 +483,7 @@ Reformatting.
   $ printf 'notation(0) x "=" y ≔ Id ( {` c3 `} _ {` c4 `} : {` c5 `} Type {` c6 `} ) x y\nnotation(0) x "≡" y ≔ Id (\n  ` line comment\n  _ : Type) x y\n' > reformat_deg_comments.ny
   $ narya reformat_deg_comments.ny
    ￫ warning[E2209]
-   ￮ replacing printing notation for Id of a type (previous notation will still be parseable)
+   ￮ replacing printing notation for Id (_ : Type) (previous notation will still be parseable)
   
   $ cat reformat_deg_comments.ny
   notation(0) x "=" y
@@ -478,6 +497,6 @@ Reformatting.
   $ cp reformat_deg_comments.ny reformat_deg_comments_1.ny
   $ narya reformat_deg_comments.ny
    ￫ warning[E2209]
-   ￮ replacing printing notation for Id of a type (previous notation will still be parseable)
+   ￮ replacing printing notation for Id (_ : Type) (previous notation will still be parseable)
   
   $ diff reformat_deg_comments.ny reformat_deg_comments_1.ny

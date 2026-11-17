@@ -115,9 +115,11 @@ end
 
 (* A user "prenotation" includes all the information from a "notation" command, parsed and validated into a pattern, fixity, and so on, but not yet compiled into a notation tree. *)
 
-(* A notation whose head is a degeneracy, like "x = y ≔ Id (_ : Type) x y", is keyed by that degeneracy (as its superscript string, which is canonical, unlike its representation) and the form of its operand.  Currently the only form is an operand ascribed to be a (0-dimensional) type, so that the remaining arguments are its instantiation arguments. *)
+(* A notation whose head is a degeneracy, like "x = y ≔ Id (_ : Type) x y", is keyed by that degeneracy (as its superscript string, which is canonical, unlike its representation) and the form of its operand.  Currently the only form is an operand ascribed to be a (0-dimensional) type in the universe of some mode, given by name, so that the remaining arguments are its instantiation arguments. *)
 type key =
-  [ `Constant of Core.Constant.t | `Constr of Core.Constr.t * int | `Deg of string * [ `Type ] ]
+  [ `Constant of Core.Constant.t
+  | `Constr of Core.Constr.t * int
+  | `Deg of string * [ `Type of string ] ]
 
 type ('left, 'tight, 'right) prenotation_data = {
   id : Id.t;
@@ -127,8 +129,8 @@ type ('left, 'tight, 'right) prenotation_data = {
   key : key;
   (* The arguments of the head in the definition of the notation: variables of the pattern, or placeholders.  For a degeneracy, the first of them is its operand. *)
   val_vars : (string option * [ `Explicit | `Implicit ]) list;
-  (* For a degeneracy, the name it was written with, the degeneracy itself, and the name of the universe its operand is ascribed to (which is also the name of the mode of that universe). *)
-  deg_head : (string * Dim.any_deg * string) option;
+  (* For a degeneracy, the name it was written with, and the degeneracy itself. *)
+  deg_head : (string * Dim.any_deg) option;
 }
 
 type prenotation = User : ('left, 'tight, 'right) prenotation_data -> prenotation
@@ -235,9 +237,9 @@ let make_user : prenotation -> notation =
           let value =
             match key with
             | `Constant c -> Raw.Synth (spine (Const c) val_vars)
-            | `Deg (_, `Type) -> (
+            | `Deg (_, `Type uname) -> (
                 match (deg_head, val_vars) with
-                | Some (str, Any_deg s, uname), (k, _) :: val_vars ->
+                | Some (str, Any_deg s), (k, _) :: val_vars ->
                     (* The operand is ascribed to the universe, so that the degeneracy synthesizes a type of the dimension of the degeneracy, which the remaining arguments instantiate. *)
                     let (Modal.Mode.Wrap mode) =
                       match List.assoc_opt uname (Modal.Mode.all ()) with

@@ -1111,8 +1111,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                        | Zero -> true
                        | Pos _ -> false -> (
                     match Global.find_const name with
-                    | Definition { tm = `Defined tree; _ } ->
-                        unparse Names.empty tree No.Interval.entire No.Interval.entire
+                    | Definition { tm = `Defined tree; mode; _ } ->
+                        unparse (Names.empty mode) tree No.Interval.entire No.Interval.entire
                     | Definition { tm = `Axiom; _ } ->
                         unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
                           No.Interval.entire)
@@ -1214,7 +1214,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                         (Invalid_notation_arguments
                            (Printf.sprintf "a degenerated type must be instantiated by %d arguments"
                               arity)));
-                (`Deg (string_of_deg s, `Type), Some (str, Any_deg s, u)))
+                (`Deg (string_of_deg s, `Type u), Some (str, Any_deg s)))
         | `Constant c -> (
             not_typed args;
             match Scope.lookup c with
@@ -1305,10 +1305,12 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             match key with
             | `Constr (c, _) -> Constr.to_string c ^ "."
             | `Constant c -> String.concat "." (Scope.name_of c)
-            | `Deg (_, `Type) -> (
-                match deg_head with
-                | Some (str, _, _) -> str ^ " of a type"
-                | None -> "a degeneracy of a type") in
+            | `Deg (s, `Type u) ->
+                let str =
+                  match deg_head with
+                  | Some (str, _) -> str
+                  | None -> s in
+                str ^ " (_ : " ^ u ^ ")" in
           emit (Head_already_has_notation keyname))
         shadow;
       (None, fun _ -> Some (Notation_defined name))

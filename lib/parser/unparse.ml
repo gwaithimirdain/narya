@@ -1020,7 +1020,7 @@ and unparse_letonly_clauses_pending : type mode n i k b.
     observation Bwd.t * mode letonly_lock * b Names.t =
  fun vars ctx tmenv ->
   match (ctx, tmenv) with
-  | Emp _, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty)
+  | Emp mode, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty mode)
   (* An alias has no checked variables, so it isn't substituted for. *)
   | Ext (ctx, { vis = Vis (Alias, _); _ }, _, Zero), _ ->
       unparse_letonly_clauses_pending vars ctx tmenv
@@ -1058,7 +1058,7 @@ and unparse_letonly_clauses_pending : type mode n i k b.
         match pending with
         | No_letonly_lock -> Letonly_lock (Modality.of_gen gen)
         | Letonly_lock modality -> Letonly_lock (Modality.suc modality gen) in
-      (acc, pending, Names.add_gen_lock names)
+      (acc, pending, Names.add_gen_lock names gen)
   | _, Prekey { env; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } ->
       let acc, names =
         unparse_letonly_clauses (Names.add_lock (Names.split vars comp) plus_src) ctx env in
@@ -1289,9 +1289,10 @@ and unparse_constr_display : type lt ls rt rs.
  fun c argunps output li ri ->
   let head = { unparse = (fun _ _ -> unlocated (Constr (Constr.to_string c, []))) } in
   match output with
-  | None -> unparse_spine Names.empty (`Unparser head) argunps li ri
+  | None -> unparse_spine Names.empty_unknown (`Unparser head) argunps li ri
   | Some output -> (
-      let first = unparse_spine Names.empty (`Unparser head) argunps li (interval_left asc) in
+      let first =
+        unparse_spine Names.empty_unknown (`Unparser head) argunps li (interval_left asc) in
       let last = output.unparse (interval_right asc) ri in
       match (No.Interval.contains li No.minus_omega, No.Interval.contains ri No.minus_omega) with
       | Some left_ok, Some right_ok ->
@@ -1887,7 +1888,7 @@ and unparse_numeral : type mode n lt ls rt rs.
   let suc = Constr.intern "suc" in
   let make_numeral dim k =
     let tm = { unparse = (fun _ _ -> unlocated (Ident ([ string_of_int k ], []))) } in
-    Some (unparse_act ~sort:(`Other, `Other) Names.empty tm (deg_zero dim) li ri) in
+    Some (unparse_act ~sort:(`Other, `Other) Names.empty_unknown tm (deg_zero dim) li ri) in
   let rec getsucs : type c.
       c Names.t -> (mode, c, kinetic) term -> int -> (lt, ls, rt, rs) parse located option =
    fun vars tm k ->
@@ -1962,7 +1963,7 @@ and unparse_inst : type mode n n' lt ls rt rs m k mk s.
       let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (argvars, x)) } [ tyargs ] in
       unparse_named_inst vars ty tyargs li ri
 
-(* A notation for a degeneracy of a type, such as "x = y ≔ Id (_ : Type) x y", is displayed for exactly the instantiations that it elaborates to: a full instantiation of that degeneracy of a 0-dimensional type.  Since the only degeneracy that can act on a 0-dimensional type and be fully instantiated is a reflexivity, we include the higher-dimensional universe of that dimension, which is that reflexivity of the 0-dimensional universe. *)
+(* A notation for a degeneracy of a type, such as "x = y ≔ Id (_ : Type) x y", is displayed for exactly the instantiations that it elaborates to: a full instantiation of that degeneracy of a 0-dimensional type in the universe of the mode named in its definition.  Since the only degeneracy that can act on a 0-dimensional type and be fully instantiated is a reflexivity, we include the higher-dimensional universe of that dimension, which is that reflexivity of the 0-dimensional universe.  The mode of the degenerated type is that of the name-context, if known, or that of the universe. *)
 and unparse_deg_inst : type mode n m k mk s.
     n Names.t ->
     (mode, n, s) term ->
@@ -1980,21 +1981,39 @@ and unparse_deg_inst : type mode n m k mk s.
     match D.compare_zero cod with
     | Zero -> true
     | Pos _ -> false in
-  let* deg, operand =
+  (* The degenerated type may be behind keys, as it is when it is a variable behind a lock.  If those keys are omitted from the display, as unparse_key would decide, so is our notation's operand, and we display it in the context of their body. *)
+  let rec deg_operand : type a s.
+      a Names.t -> (mode, a, s) term -> [ `Print | `Omit ] option -> (string * unparser) option =
+   fun vars ty decided ->
     match ty with
     | Act (_, tm, s, _) when is_refl (dom_deg s) (cod_deg s) ->
         return (string_of_deg s, make_unparser vars tm)
+    | Key { tm; cell; plus_tgt = Plus_with_locks (comp, _); plus_src } ->
+        let decided =
+          match decided with
+          | Some decided -> decided
+          | None -> decide_keys cell tm in
+        if Modalcell.is_id cell || decided = `Omit then
+          deg_operand (Names.add_lock (Names.split vars comp) plus_src) tm (Some decided)
+        else None
+    | _ -> None in
+  let* deg, mode, operand =
+    match ty with
     | UU (mode, n) when is_refl n D.zero ->
         return
           ( string_of_dim n,
+            Modal.Mode.name mode,
             { unparse = (fun li ri -> unparse_universe vars mode D.zero !universes li ri) } )
-    | _ -> None in
+    | _ ->
+        let* deg, operand = deg_operand vars ty None in
+        let* (Wrap mode) = Names.mode vars in
+        return (deg, Modal.Mode.name mode, operand) in
   let* () =
     match D.compare_zero (TubeOf.uninst tyargs) with
     | Zero -> return ()
     | Pos _ -> None in
   let* { notn; pat_vars; val_vars; inner_symbols; keys = _ } =
-    Scope.Situation.unparse (`Deg (deg, `Type)) in
+    Scope.Situation.unparse (`Deg (deg, `Type mode)) in
   let args = ref Bwd.Emp in
   TubeOf.miter { it = (fun _ [ x ] -> args := Snoc (!args, x)) } [ tyargs ];
   let args = Bwd.to_list !args in
@@ -2395,7 +2414,7 @@ let rec unparse_ctx : type dom modality mode a b.
     type t = Print.printed_entry Bwd.t
   end in
   match ctx with
-  | Emp _ -> (Names.of_uniquified_vars names, Emp)
+  | Emp mode -> (Names.of_uniquified_vars ~mode names, Emp)
   | Lock (ctx, newlock) ->
       let (Comp ll) = Modality.comp lock in
       let names, out = unparse_ctx names (Modality.comp_out (Modality.of_gen newlock) ll) vars ctx in
