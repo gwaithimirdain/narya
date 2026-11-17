@@ -17,13 +17,23 @@ module Binding = Ctx.Binding
 (* The "Displaying" reader records whether we're reading back for printing to the user or for internal purposes.  For instance, when printing we do more eta-expansion if the user requested it.  Wrapping the "Displaying" module in another module called "Readback" and opening that module allows us to refer to the module as just "Displaying" here, but exports it as "Readback.Displaying" to other files even when they open this file. *)
 
 module Readback = struct
-  module Displaying = Algaeff.Reader.Make (Bool)
+  (* This is read at every readback of every value, so we store it in a plain reference rather than using a Reader effect, as for Lexer.Specials: performing an effect costs time proportional to the number of handlers installed between the "perform" and its handler, and this one is set outside everything else. *)
+  module Displaying = struct
+    let current : bool option ref = ref None
+
+    let run ~(env : bool) f =
+      let old = !current in
+      current := Some env;
+      Fun.protect ~finally:(fun () -> current := old) f
+
+    let read () =
+      match !current with
+      | Some env -> env
+      | None -> fatal (Anomaly "Readback.Displaying.read outside of Readback.Displaying.run")
+  end
 end
 
 open Readback
-
-let () =
-  Displaying.register_printer (function `Read -> Some "unhandled Readback.Displaying.read effect")
 
 (* Degenerating a context by a dimension (for the non-projectable instances of higher codata fields, when displaying a codatatype or comatch).  The degeneration itself is implemented in the downstream module Degctx, because it does an eval-readback cycle and hence depends on this file; but the readback/display code that consumes it lives here (below), so we make the degeneration a forward reference set by Degctx.  The result packages the degeneration plus-map, the degenerated context, and the canonical k-dimensional environment from it back to the original. *)
 type (_, _, _, _) degctx =
