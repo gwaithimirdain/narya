@@ -377,7 +377,6 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
       match D.compare_zero (CubeOf.dim bindings) with
       | Pos _ -> names
       | Zero -> (
-          let x, _, used = uniquify_opt (fun x -> (x, "")) (NICubeOf.find_top xs) names.used in
           (* Since this is only for display, if anything goes wrong reading back the value we just don't record it. *)
           match
             Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
@@ -386,7 +385,9 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
               Ctx.lock (Ctx.of_ordered ctx) (Modality.filter_modality filter) in
             meta_of_term (Readback.readback_nf lctx (Ctx.Binding.value (CubeOf.find_top bindings)))
           with
-          | Some v -> { names with used; aliases = Meta.WrapMap.add v x names.aliases }
+          | Some v ->
+              let x, _, used = uniquify_opt (fun x -> (x, "")) (NICubeOf.find_top xs) names.used in
+              { names with used; aliases = Meta.WrapMap.add v x names.aliases }
           | None -> names))
   | Snoc (ctx, { vis = Vis { dim; plusdim; names = vars; fields; _ }; vars = Vars; _ }, _) ->
       let { ctx; used; hidden; aliases } = of_ordered_ctx ctx in
