@@ -17,6 +17,8 @@ type definition = Definition : 'mode definition_args -> definition
 val register_invalidator : (unit -> unit) -> unit
 val find_const : Constant.t -> definition
 val find_meta : ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'a, 'b, 's) Metadef.t
+val meta_name : ?owner_name:(Constant.t -> string) -> ('mode, 'a, 'b, 's) Meta.t -> string
+val with_owner_of : ('mode, 'a, 'b, 's) Meta.t -> (unit -> 'x) -> 'x
 
 type find_hole =
   | Found_hole : {
@@ -54,6 +56,7 @@ val set :
 val add_error : Constant.t -> Reporter.Code.t -> unit
 
 val add_meta :
+  ?local:string ->
   ('mode, 'a, 'b, 's) Meta.t ->
   termctx:('mode, 'a, 'b) termctx ->
   ty:('mode, 'b, kinetic) term ->
