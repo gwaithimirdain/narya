@@ -6,14 +6,17 @@ open Equal
 
 (* This is a very bare-bones implementation of very simple subtyping.  We only allow subtyping between constants with no parameters (such as ℤ ≤ ℚ ≤ ℝ).  And there is no user interface for creating subtyping relations, so we don't check that the subtyping is valid (e.g. shared constructors or destructors); we trust the programmer to know what they're doing.  We store the subtypes in a state effect. *)
 
-module S = State.Make (struct
-  type t = unit Constant.Map.t Constant.Map.t
-end)
+(* The subtyping relation is consulted at every comparison of a synthesized type with an expected one, so we keep it in a plain reference rather than a State effect, whose handler would be outside everything else (see Lexer.Specials). *)
+module S = struct
+  let state : unit Constant.Map.t Constant.Map.t ref = ref Constant.Map.empty
+  let get () = !state
+  let modify f = state := f !state
 
-let () =
-  S.register_printer (function
-    | `Get -> Some "unhandled Subtype get effect"
-    | `Set _ -> Some "unhandled Subtype set effect")
+  let run ~init f =
+    let old = !state in
+    state := init;
+    Fun.protect ~finally:(fun () -> state := old) f
+end
 
 let add subtype supertype =
   match (Global.find_const subtype, Global.find_const supertype) with

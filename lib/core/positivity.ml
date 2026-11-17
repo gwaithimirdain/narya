@@ -21,25 +21,43 @@ let merge : recursion -> recursion -> recursion =
   | (`Unknown _ as u), `Nonrecursive | `Nonrecursive, (`Unknown _ as u) -> u
   | `Nonrecursive, `Nonrecursive -> `Nonrecursive
 
+(* A value that is set for the dynamic extent of a callback, like the environment of a Reader effect.  The occurrence collector is consulted every time the typechecker resolves a constant or checks an application, and its outermost scope is installed outside everything else, so we keep such values in plain references rather than using effects (see Lexer.Specials): performing an effect costs time proportional to the number of handlers between the "perform" and its handler. *)
+module Scoped (T : sig
+  type t
+
+  val name : string
+end) =
+struct
+  let current : T.t option ref = ref None
+
+  let run ~(env : T.t) f =
+    let old = !current in
+    current := Some env;
+    Fun.protect ~finally:(fun () -> current := old) f
+
+  let read () =
+    match !current with
+    | Some env -> env
+    | None -> failwith ("unhandled " ^ T.name ^ " effect")
+end
+
 (* The set of constants currently being defined: those of the current "def" block, or, when solving a hole, those that were being defined when the hole was created. *)
-module BeingDefined = Algaeff.Reader.Make (struct
+module BeingDefined = Scoped (struct
   type t = unit Constant.Map.t
+
+  let name = "Positivity.BeingDefined"
 end)
 
-let () =
-  BeingDefined.register_printer (function `Read -> Some "unhandled Positivity.BeingDefined effect")
-
-(* The collector is a stack of verdict accumulators for nested scopes.  A scope is opened around checking anything whose occurrences we want to know about: the argument telescope of each datatype constructor, and the value of each let or letrec binding.  Since the stack is mutable state confined to a dynamic extent, we implement it as a reader effect holding mutable state.  And we make it speculable so that holes in speculative branches don't persist. *)
+(* The collector is a stack of verdict accumulators for nested scopes.  A scope is opened around checking anything whose occurrences we want to know about: the argument telescope of each datatype constructor, and the value of each let or letrec binding.  Since the stack is mutable state confined to a dynamic extent, we hold it in a scoped value.  And we make it speculable so that holes in speculative branches don't persist. *)
 type stack = recursion list Speculable.t
 
-module Collector = Algaeff.Reader.Make (struct
+module Collector = Scoped (struct
   type t = stack
+
+  let name = "Positivity.Collector"
 end)
 
-let () =
-  Collector.register_printer (function `Read -> Some "unhandled Positivity.Collector effect")
-
-(* Install handlers for both effects.  This is done once at top level with an empty being-defined set; the callers that know a real being-defined set (checking a "def" block, or solving a hole) re-wrap with "run_beingdefined" below. *)
+(* Set both values.  This is done once at top level with an empty being-defined set; the callers that know a real being-defined set (checking a "def" block, or solving a hole) re-wrap with "run_beingdefined" below. *)
 let run : type a. (unit -> a) -> a =
  fun f ->
   BeingDefined.run ~env:Constant.Map.empty @@ fun () -> Collector.run ~env:(Speculable.make []) f
