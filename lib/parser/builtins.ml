@@ -3434,6 +3434,25 @@ let () =
       is_case = (fun _ -> false);
     }
 
+(* The omission marker "⋯", which the unparser displays in place of a subterm too deep to fit in the display size, is parsed only so that we can give a helpful error message about it.  (The marker in a let-only with elided clauses is part of the let-only notation.) *)
+let () =
+  make Postprocess.omitted
+    {
+      name = "omitted";
+      tree = Closed_entry (eop Omitted (Done_closed Postprocess.omitted));
+      processor =
+        (fun _ _ loc ->
+          fatal ?loc (Display_only_syntax "'⋯', which marks a part of a term omitted from display"));
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "omitted"));
+      print_term =
+        Some
+          (function
+          | [ Token (Omitted, (ws, _)) ] -> (Token.pp Omitted, ws)
+          | _ -> invalid "omitted");
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
 (* ********************
    Generating the state
  ******************** *)
@@ -3481,6 +3500,7 @@ let install () =
     Situation.add coloneq;
     Situation.add comatch;
     Situation.add Postprocess.dot;
+    Situation.add Postprocess.omitted;
     Situation.add implicit_mtch;
     Situation.add explicit_mtch;
     Situation.add mtchlam;
