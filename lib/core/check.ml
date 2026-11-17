@@ -227,13 +227,44 @@ type (_, _, _) synthable_branch =
     }
       -> ('mode, 'a, 'm) synthable_branch
 
+(* Each argument of a constructor binds a cube of variables in a match, whose dimension is that of the match filtered by the composite of the window modality and the modality of the argument (as in Domvars.ext_pi).  We record the number of faces of that cube, reading it off the constructor's stored function-type. *)
+let rec pattern_faces : type dom window mode m a.
+    (dom, window, mode) Modality.t -> m D.t -> (dom, a, kinetic) term -> int list =
+ fun window m ty ->
+  match ty with
+  | Pi { x = _; filter; doms = Modal (annotation, _, _); cods } -> (
+      match D.compare_zero (CodCube.dim cods) with
+      (* Only the readback of a higher-dimensionally degenerated datatype, which is for display, stores a higher-dimensional function-type as the type of a constructor. *)
+      | Pos _ -> fatal (Anomaly "higher-dimensional function-type of a constructor in a match")
+      | Zero ->
+          let Eq = Modality.filter_uniq filter (Modality.filter_zero annotation) in
+          let (Cod (cfilter, cod)) = CodCube.find_top cods in
+          let Eq = Modality.filter_uniq cfilter (Modality.filter_zero annotation) in
+          let (Comp wx) = Modality.comp annotation in
+          let modality = Modality.comp_out window wx in
+          let (Has_filter f) = Modality.filter modality m in
+          let faces = ref 0 in
+          CubeOf.iter_faces (Modality.filtered m f) { it = (fun _ -> incr faces) };
+          !faces :: pattern_faces window m cod)
+  | _ -> []
+
+(* In a higher-dimensional match with the non-cube abstraction ↦, an argument whose cube of variables has only one face (because it is modally filtered down to dimension zero) is named face by face by a single variable, so it is not a cube variable. *)
+let rec single_face_boundaries : type a c ac.
+    int list -> (a, c, ac) Patternvars.t -> (a, c, ac) Patternvars.t =
+ fun faces xs ->
+  match (faces, xs) with
+  | 1 :: faces, Cube x :: xs -> Boundary [ locate_opt None x ] :: single_face_boundaries faces xs
+  | _ :: faces, x :: xs -> x :: single_face_boundaries faces xs
+  | [], _ | _, [] -> xs
+
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype.  Curiously, the only mode parameter that appears here is the *source* of the window modality, i.e. the mode at which the datatype and discriminee live. *)
-let merge_branches : type hmode dom a m.
+let merge_branches : type hmode dom window mode a m.
     hmode head ->
+    (dom, window, mode) Modality.t ->
     (Constr.t, a branch) Abwd.t ->
     (Constr.t, (dom, m) Value.dataconstr) Abwd.t ->
     (Constr.t * (dom, a, m) checkable_branch) list =
- fun head user_branches data_constrs ->
+ fun head window user_branches data_constrs ->
   let user_branches, leftovers =
     Bwd.fold_left
       (fun ((userbrs, databrs) :
@@ -252,6 +283,11 @@ let merge_branches : type hmode dom a m.
               (userbrs, databrs)
           | Some (Value.Dataconstr { env; ty; fnty = _ }) -> (
               (* Check that the abstraction symbol matches the dimension of the discriminee.  A non-cube abstraction ↦ is allowed in a higher-dimensional match as long as none of the pattern variables it binds is a cube variable, i.e. all of them come with explicit boundaries.  If it is wrong, the branch can still be checked, since the variables it binds are determined by the constructor. *)
+              let xs =
+                match (cube, D.compare_zero (dim_env env)) with
+                | `Normal _, Pos _ when not (is_failed ty) ->
+                    single_face_boundaries (pattern_faces window (dim_env env) ty) xs
+                | _ -> xs in
               (match (cube, D.compare_zero (dim_env env)) with
               | `Normal loc, Pos _ ->
                   if not (Patternvars.all_boundary xs) then
@@ -1796,7 +1832,7 @@ and check_match_branches : type dom window mode a b bm.
           if value <> needed then fatal ?loc (Wrong_number_of_arguments_to_motive needed)
       | None -> ());
       (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
-      let user_branches = merge_branches name brs data_constrs in
+      let user_branches = merge_branches name window brs data_constrs in
       (* We use the callback to get the motive and other data.  This might typecheck some of the branches, if it is a synthesizing match. *)
       let motive, branches, check_branches = callbacks.get dim user_branches tyfam in
       (* If the match is synthesizing, at this point we can already compute what its output type will be.  We do it now so that the computation has any desired side effects, notably (in the dependent case) passing it to the ?synthed callback before any matches are checked. *)
@@ -2177,7 +2213,7 @@ and check_var_match : type dom modality mode a b bm.
           (* If all of those checks succeed, we continue on the path of a variable match. *)
           let constr_vars = TubeOf.plus_cube inst_vars (CubeOf.singleton level) in
           (* We start with a preprocesssing step that pairs each user-provided branch with the corresponding constructor information from the datatype. *)
-          let user_branches = merge_branches name brs data_constrs in
+          let user_branches = merge_branches name window brs data_constrs in
           (* We now iterate through the constructors, typechecking the corresponding branches and inserting them in the match tree. *)
           let branches =
             List.fold_left
