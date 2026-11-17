@@ -164,11 +164,11 @@ But the value must not involve variables outside the image of the renaming.  And
      ^ term synthesized type
          B w
        but is being checked against type
-         B (let only … in ?u0)
+         B (let only ⋯ in ?u0)
        unequal head terms:
          w
        does not equal
-         let only … in ?u0
+         let only ⋯ in ?u0
   
    ￫ error[E0406]
    ￭ stdin
@@ -176,11 +176,11 @@ But the value must not involve variables outside the image of the renaming.  And
      ^ term synthesized type
          B a
        and is being checked against type
-         B (let only … in ?u1)
+         B (let only ⋯ in ?u1)
        but can't determine whether they are equal, since comparing head terms
          a
        and
-         let only … in ?u1
+         let only ⋯ in ?u1
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -194,11 +194,11 @@ But the value must not involve variables outside the image of the renaming.  And
      ^ term synthesized type
          Type⁽ᵉ⁾ (B y) (B y)
        and is being checked against type
-         Type⁽ᵉ⁾ (B (let only … in ?u3)) (B y)
+         Type⁽ᵉ⁾ (B (let only ⋯ in ?u3)) (B y)
        but can't determine whether they are equal, since comparing head terms
          y
        and
-         let only … in ?u3
+         let only ⋯ in ?u3
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -210,9 +210,9 @@ But the value must not involve variables outside the image of the renaming.  And
    ￭ stdin
    8 | def repeated3 : A → Type ≔ let G : A → A → Type ≔ p q ↦ K _ _ in y ↦ let k : G y y ≔ kk _ in A
      ^ term synthesized type
-         K (let only … in ?u5) (let only … in ?u5)
+         K (let only ⋯ in ?u5) (let only ⋯ in ?u5)
        and is being checked against type
-         K (let only … in ?u5) (let only … in ?u6)
+         K (let only ⋯ in ?u5) (let only ⋯ in ?u6)
        but can't determine whether they are equal, since comparing head metavariables
          ?u5
        and
@@ -259,11 +259,11 @@ But the solution must still be well-typed, so it can't be solved if the type of 
          →⁽ᵉ⁾ Id Z 𝑦₀ 𝑦₁
        and is being checked against type
          {𝑥₀ : Z} {𝑥₁ : Z} (𝑥₂ : Id Z 𝑥₀ 𝑥₁) {𝑦₀ : Z} {𝑦₁ : Z} (𝑦₂ : Id Z 𝑦₀ 𝑦₁)
-         →⁽ᵉ⁾ Id Z ((let only … in ?u0) 𝑥₀ 𝑦₀) 𝑦₁
+         →⁽ᵉ⁾ Id Z ((let only ⋯ in ?u0) 𝑥₀ 𝑦₀) 𝑦₁
        but can't determine whether they are equal, since comparing head terms
          𝑦
        and
-         let only … in ?u0
+         let only ⋯ in ?u0
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -277,11 +277,11 @@ But the solution must still be well-typed, so it can't be solved if the type of 
      ^ term synthesized type
          Type⁽ᵉ⁾ (e z) (e z)
        and is being checked against type
-         Type⁽ᵉ⁾ (let only … in ?u2) (e z)
+         Type⁽ᵉ⁾ (let only ⋯ in ?u2) (e z)
        but can't determine whether they are equal, since comparing head terms
          e
        and
-         let only … in ?u2
+         let only ⋯ in ?u2
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -344,11 +344,11 @@ An environment entry can be a variable with a nonidentity key, as long as the va
      ^ term synthesized type
          D (C y)
        and is being checked against type
-         D (C (let only … in ?u1))
+         D (C (let only ⋯ in ?u1))
        but can't determine whether they are equal, since comparing head terms
          y
        and
-         let only … in ?u1
+         let only ⋯ in ?u1
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -362,11 +362,11 @@ An environment entry can be a variable with a nonidentity key, as long as the va
      ^ term synthesized type
          D ((z : A) → C y)
        and is being checked against type
-         D ((z : A) → let only … in ?u3)
+         D ((z : A) → let only ⋯ in ?u3)
        but can't determine whether they are equal, since comparing head head terms
          C
        and
-         let only … in ?u3
+         let only ⋯ in ?u3
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -888,11 +888,11 @@ At arity 0, a cube has only one face whatever its dimension, so an abstraction o
       ^ term synthesized type
           P f
         and is being checked against type
-          P (let only … in ?u4)
+          P (let only ⋯ in ?u4)
         but can't determine whether they are equal, since comparing head terms
           f
         and
-          let only … in ?u4
+          let only ⋯ in ?u4
         depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -1110,11 +1110,11 @@ A modal field can also occur inside an abstraction.  Then the variables bound by
       ^ term synthesized type
           P (w ↦ (fst ≔ y w))
         and is being checked against type
-          P (𝑥 ↦ (fst ≔ let only … in ?u4))
+          P (𝑥 ↦ (fst ≔ let only ⋯ in ?u4))
         but can't determine whether they are equal, since comparing head terms
           y
         and
-          let only … in ?u4
+          let only ⋯ in ?u4
         depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -1256,11 +1256,11 @@ But if a leaf is repeated, the value can't use it, since then there would be mor
      ^ term synthesized type
          C y y
        and is being checked against type
-         C (let only … in ?u0) (let only … in ?u1)
+         C (let only ⋯ in ?u0) (let only ⋯ in ?u1)
        but can't determine whether they are equal, since comparing head terms
          y
        and
-         let only … in ?u0
+         let only ⋯ in ?u0
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -1279,11 +1279,11 @@ But if a leaf is repeated, the value can't use it, since then there would be mor
      ^ term synthesized type
          B y
        and is being checked against type
-         B (let only … in ?u3)
+         B (let only ⋯ in ?u3)
        but can't determine whether they are equal, since comparing head terms
          y
        and
-         let only … in ?u3
+         let only ⋯ in ?u3
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -1297,11 +1297,11 @@ But if a leaf is repeated, the value can't use it, since then there would be mor
      ^ term synthesized type
          B y
        and is being checked against type
-         B (let only … in ?u5)
+         B (let only ⋯ in ?u5)
        but can't determine whether they are equal, since comparing head terms
          y
        and
-         let only … in ?u5
+         let only ⋯ in ?u5
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -1472,11 +1472,11 @@ The same applies to a prekey on the environment of a closure, which arises from 
      ^ term synthesized type
          Id A a a
        and is being checked against type
-         Id A (let only … in ?u2) a
+         Id A (let only ⋯ in ?u2) a
        but can't determine whether they are equal, since comparing head terms
          a
        and
-         let only … in ?u2
+         let only ⋯ in ?u2
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -1503,11 +1503,11 @@ In the ambiflector mode theory, the identity modality has two endomorphisms, the
      ^ term synthesized type
          Id A b b
        and is being checked against type
-         Id A (let only … in ?u1) b
+         Id A (let only ⋯ in ?u1) b
        but can't determine whether they are equal, since comparing head terms
          b
        and
-         let only … in ?u1
+         let only ⋯ in ?u1
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -1527,11 +1527,11 @@ In the ambiflector mode theory, the identity modality has two endomorphisms, the
      ^ term synthesized type
          Id A b b
        and is being checked against type
-         Id A (let only … in ?u0) b
+         Id A (let only ⋯ in ?u0) b
        but can't determine whether they are equal, since comparing head terms
          b
        and
-         let only … in ?u0
+         let only ⋯ in ?u0
        depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -1568,11 +1568,11 @@ In the gwpt mode theory, there can be several keys for a variable underneath a p
       ^ term synthesized type
           Id C a a
         and is being checked against type
-          Id C (let only … in ?u3) a
+          Id C (let only ⋯ in ?u3) a
         but can't determine whether they are equal, since comparing head terms
           a
         and
-          let only … in ?u3
+          let only ⋯ in ?u3
         depends on unsolved placeholders
   
    ￫ error[E2004]
@@ -2975,7 +2975,7 @@ But not otherwise, since then the metavariable could be something that is not a 
        expected
          suc
        but got
-         let only … in ?u0
+         let only ⋯ in ?u0
   
   [1]
 
@@ -3167,11 +3167,11 @@ A unification metavariable whose environment is not a renaming can't be solved y
      ^ term synthesized type
          B a
        and is being checked against type
-         B (let only … in ?u3)
+         B (let only ⋯ in ?u3)
        but can't determine whether they are equal, since comparing head terms
          a
        and
-         let only … in ?u3
+         let only ⋯ in ?u3
        depends on unsolved placeholders
   
    ￫ error[E2004]

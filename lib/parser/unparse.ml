@@ -855,7 +855,7 @@ let rec unparse : type mode n lt ls rt rs s.
     -> (
       let inner =
         Multiple
-          (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Ellipsis), wstok In)
+          (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Omitted), wstok In)
       in
       match No.Interval.contains ri No.minus_omega_plus_one with
       | Some right_ok ->
@@ -996,7 +996,7 @@ let rec unparse : type mode n lt ls rt rs s.
   (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
   | Failed _ -> fatal (Dependent "unparsing failed component")
   (* A subterm omitted from a term too large to display. *)
-  | Overflow -> unlocated (Ident ([ (if Display.chars () = `Unicode then "…" else "...") ], []))
+  | Overflow -> unparse_notation Postprocess.omitted [] (`Single Omitted) li ri
 
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =

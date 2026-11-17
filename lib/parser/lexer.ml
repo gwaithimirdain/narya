@@ -161,6 +161,8 @@ module Specials = struct
       (* ⩲ *)
       (0x2026, Ellipsis);
       (* … *)
+      (0x22EF, Omitted);
+      (* ⋯ *)
     |]
 
   (* Any sequence consisting entirely of these characters is its own token. *)
@@ -408,6 +410,7 @@ let canonicalize (loc : Asai.Range.t) (parts : [ `Dots of int | `Atom of string 
         match parts with
         | [ `Dots 1 ] -> Dot
         | [ `Dots 3 ] -> Ellipsis
+        | [ `Dots 4 ] -> Omitted
         (* Simple field (allowed to be positional) *)
         | [ `Dots 1; `Atom fld ] when valid_field fld -> Field (fld, [])
         (* Higher field with one suffix (not allowed to be positional) *)
