@@ -433,11 +433,18 @@ let rec trichotomy : type m n. m t -> n t -> (m, n) trichotomy =
 
 (* In particular, we can compare for equality and inequality. *)
 
-let compare : type m n. m t -> n t -> (m, n) Eq.compare =
+(* This is called very often (e.g. to compare numbers of endpoints at every branch of a cube traversal), nearly always on equal numbers, so we compare the underlying additions directly rather than going through trichotomy, which allocates at every step. *)
+let rec compare_plus : type a m am b n bn. (a, m, am) plus -> (b, n, bn) plus -> (m, n) Eq.compare =
  fun m n ->
-  match trichotomy m n with
-  | Eq -> Eq
-  | _ -> Neq
+  match (m, n) with
+  | Zero, Zero -> Eq
+  | Suc m, Suc n -> (
+      match compare_plus m n with
+      | Eq -> Eq
+      | Neq -> Neq)
+  | Zero, Suc _ | Suc _, Zero -> Neq
+
+let compare : type m n. m t -> n t -> (m, n) Eq.compare = fun (Nat m) (Nat n) -> compare_plus m n
 
 (* Similarly, we can compare two additions.  We are lazy and don't record the evidence for Lt and Gt. *)
 

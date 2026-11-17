@@ -437,9 +437,10 @@ end
 
 module Nonparametric = Path.Hom (Gen) (BD) (Nonparam_gen)
 
+(* A filter remembers the modality it is by.  That could be recomputed as the domain of its nonparametricity, but it is asked for very often (see filter_modality), and recomputing it allocates a path each time. *)
 type (_, _, _, _, _) filter_dim =
   | Filter :
-      ('x, 'm, 'y, unit, 'e, unit) Nonparametric.t * ('e, 'a, 'b) except
+      ('x, 'm, 'y, unit, 'e, unit) Nonparametric.t * ('e, 'a, 'b) except * ('x, 'm, 'y) t
       -> ('x, 'm, 'y, 'a, 'b) filter_dim
 
 type (_, _, _, _) has_filter =
@@ -450,11 +451,11 @@ let filter : type x m y b. (x, m, y) t -> b D.t -> (x, m, y, b) has_filter =
   let (Exists e) = Nonparametric.exists m in
   let (Loop d) = Nonparametric.cod e in
   let (Except ex) = except_dirs d b in
-  Has_filter (Filter (e, ex))
+  Has_filter (Filter (e, ex, m))
 
 let filter_uniq : type x m y b a1 a2.
     (x, m, y, a1, b) filter_dim -> (x, m, y, a2, b) filter_dim -> (a1, a2) Eq.t =
- fun (Filter (m1, e1)) (Filter (m2, e2)) ->
+ fun (Filter (m1, e1, _)) (Filter (m2, e2, _)) ->
   let Eq = Nonparametric.uniq m1 m2 in
   let Eq = except_uniq e1 e2 in
   Eq
@@ -462,33 +463,31 @@ let filter_uniq : type x m y b a1 a2.
 (* A filter_dim is by a particular modality, which determines its source and target modes; so two filter_dims by the same modality (or a filter_dim and a modality) have the same source and target.  This is needed to recover modes that have been bound existentially elsewhere (e.g. in Plusmap.uninsert) before they can be compared with filter_uniq. *)
 let filter_dim_modes : type x m y a b x2 y2.
     (x, m, y, a, b) filter_dim -> (x2, m, y2) t -> (x, x2) Eq.t * (y, y2) Eq.t =
- fun (Filter (n, _)) mu ->
-  let d = Nonparametric.dom n in
-  (src_uniq d mu, tgt_uniq d mu)
+ fun (Filter (_, _, d)) mu -> (src_uniq d mu, tgt_uniq d mu)
 
 let filter_modality : type x m y a b. (x, m, y, a, b) filter_dim -> (x, m, y) t =
- fun (Filter (e, _)) -> Nonparametric.dom e
+ fun (Filter (_, _, m)) -> m
 
-let filtered b (Filter (_, e)) = excepted e b
+let filtered b (Filter (_, e, _)) = excepted e b
 
 let filter_id : type mode a. mode Mode.t -> a D.t -> (mode, mode id, mode, a, a) filter_dim =
- fun mode a -> Filter (Nonparametric.id (To_unit mode), except_nothing a)
+ fun mode a -> Filter (Nonparametric.id (To_unit mode), except_nothing a, id mode)
 
 let eq_of_filter_id : type mode a b. (mode, mode id, mode, a, b) filter_dim -> (a, b) Eq.t =
- fun (Filter (p, ex)) ->
+ fun (Filter (p, ex, _)) ->
   let (Loop p) = Nonparametric.cod p in
   match D.compare_zero p with
   | Zero -> eq_of_except_nothing ex
   | Pos _ -> failwith "eq_of_filter_id"
 
 let filter_idempotent : type x m y a b. (x, m, y, a, b) filter_dim -> (x, m, y, a, a) filter_dim =
- fun (Filter (e, ex)) -> Filter (e, except_idempotent ex)
+ fun (Filter (e, ex, m)) -> Filter (e, except_idempotent ex, m)
 
 let filter_zero : type x m y. (x, m, y) t -> (x, m, y, D.zero, D.zero) filter_dim =
  fun m ->
   let (Exists e) = Nonparametric.exists m in
   let (Loop _) = Nonparametric.cod e in
-  Filter (e, except_zero)
+  Filter (e, except_zero, m)
 
 let filter_plus : type x m y a b c d ac bd.
     (a, c, ac) D.plus ->
@@ -496,9 +495,9 @@ let filter_plus : type x m y a b c d ac bd.
     (x, m, y, a, b) filter_dim ->
     (x, m, y, c, d) filter_dim ->
     (x, m, y, ac, bd) filter_dim =
- fun ac bd (Filter (e1, eab)) (Filter (e2, ecd)) ->
+ fun ac bd (Filter (e1, eab, m)) (Filter (e2, ecd, _)) ->
   let Eq = Nonparametric.uniq e1 e2 in
-  Filter (e1, except_plus ac bd eab ecd)
+  Filter (e1, except_plus ac bd eab ecd, m)
 
 type (_, _, _, _, _, _) filter_of_plus =
   | Filter_of_plus :
@@ -507,9 +506,9 @@ type (_, _, _, _, _, _) filter_of_plus =
 
 let filter_of_plus : type x m y b d ac bd.
     (b, d, bd) D.plus -> (x, m, y, ac, bd) filter_dim -> (x, m, y, b, d, ac) filter_of_plus =
- fun bd (Filter (e, eacbd)) ->
+ fun bd (Filter (e, eacbd, m)) ->
   let (Except_of_plus (ac, eab, ecd)) = except_of_plus bd eacbd in
-  Filter_of_plus (ac, Filter (e, eab), Filter (e, ecd))
+  Filter_of_plus (ac, Filter (e, eab, m), Filter (e, ecd, m))
 
 type (_, _, _, _, _) filter_sface =
   | Filter_sface :
@@ -518,19 +517,19 @@ type (_, _, _, _, _) filter_sface =
 
 let filter_sface : type x m y a b c.
     (x, m, y, a, b) filter_dim -> (c, b) sface -> (x, m, y, a, c) filter_sface =
- fun (Filter (e, ex)) s ->
+ fun (Filter (e, ex, m)) s ->
   let (Except_sface (s, ex)) = except_sface ex s in
-  Filter_sface (s, Filter (e, ex))
+  Filter_sface (s, Filter (e, ex, m))
 
 type (_, _, _, _, _) filter_deg =
   | Filter_deg : ('d, 'a) deg * ('x, 'm, 'y, 'd, 'c) filter_dim -> ('x, 'm, 'y, 'a, 'c) filter_deg
 
 let filter_deg : type x m y a b c.
     (x, m, y, a, b) filter_dim -> (c, b) deg -> (x, m, y, a, c) filter_deg =
- fun (Filter (e, ex)) s ->
+ fun (Filter (e, ex, m)) s ->
   let (Loop p) = Nonparametric.cod e in
   let (Except_deg (s, ex)) = except_deg p ex s in
-  Filter_deg (s, Filter (e, ex))
+  Filter_deg (s, Filter (e, ex, m))
 
 type (_, _, _, _, _) filter_op =
   | Filter_op : ('d, 'a) op * ('x, 'm, 'y, 'd, 'c) filter_dim -> ('x, 'm, 'y, 'a, 'c) filter_op
@@ -549,10 +548,10 @@ type (_, _, _, _, _) filter_perm =
 
 let filter_perm : type x m y a b c.
     (x, m, y, a, b) filter_dim -> (c, b) perm -> (x, m, y, a, c) filter_perm =
- fun (Filter (e, ex)) s ->
+ fun (Filter (e, ex, m)) s ->
   let (Loop p) = Nonparametric.cod e in
   let (Except_perm (s, ex)) = except_perm p ex s in
-  Filter_perm (s, Filter (e, ex))
+  Filter_perm (s, Filter (e, ex, m))
 
 type (_, _, _, _, _) pface_filter =
   | Pface_filter :
@@ -561,12 +560,12 @@ type (_, _, _, _, _) pface_filter =
 
 let pface_filter : type x m y a b c.
     b D.t -> (c, a) pface -> (x, m, y, a, b) filter_dim -> (x, m, y, b, c) pface_filter =
- fun b s (Filter (e, ex)) ->
+ fun b s (Filter (e, ex, m)) ->
   let (Pface_except (ex, s)) = pface_except b s ex in
-  Pface_filter (Filter (e, ex), s)
+  Pface_filter (Filter (e, ex, m), s)
 
 let deg_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (b, a) deg =
- fun b (Filter (_, ex)) -> deg_of_except b ex
+ fun b (Filter (_, ex, _)) -> deg_of_except b ex
 
 (* A filter is "trivial" at a dimension if the modality doesn't actually remove any directions there, i.e. the filtered dimension equals the outer dimension.  This decides whether a modal field is present (projectable, and required/allowed in a tuple) at a given dimension: it is present exactly when its modality's filter is trivial there.  We detect triviality by checking whether the degeneracy from the outer to the filtered dimension is the identity, which also yields the type-level equality of the two dimensions. *)
 let filter_is_trivial : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (a, b) Eq.t option =
@@ -576,13 +575,13 @@ let filter_is_trivial : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (
   | None -> None
 
 let sface_of_filter : type x m y a b. b D.t -> (x, m, y, a, b) filter_dim -> (a, b) opt_sface =
- fun b (Filter (_, ex)) -> sface_of_except b ex
+ fun b (Filter (_, ex, _)) -> sface_of_except b ex
 
 let filter_comp : type x y z m n nm a b c.
     (x, m, y, n, z, nm) comp ->
     (y, n, z, b, c) filter_dim ->
     (x, m, y, a, b) filter_dim ->
     (x, nm, z, a, c) filter_dim =
- fun n_m (Filter (f_n, ex_n)) (Filter (f_m, ex_m)) ->
+ fun n_m (Filter (f_n, ex_n, _)) (Filter (f_m, ex_m, _)) ->
   let (Comp (f_nm, Loopcomp n_m)) = Nonparametric.comp f_m f_n n_m in
-  Filter (f_nm, except_comp n_m ex_m ex_n)
+  Filter (f_nm, except_comp n_m ex_m ex_n, Nonparametric.dom f_nm)

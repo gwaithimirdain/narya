@@ -10,7 +10,14 @@ type (_, _) deg = Deg : ('m, 'k) sdeg * ('k, 'n) perm -> ('m, 'n) deg
 
 let dom_deg : type m n. (m, n) deg -> m D.t = fun (Deg (s, _)) -> dom_sdeg s
 let cod_deg : type m n. (m, n) deg -> n D.t = fun (Deg (_, p)) -> cod_perm p
-let id_deg : type n. n D.t -> (n, n) deg = fun n -> Deg (id_sdeg n, id_perm n)
+let id_deg_zero : (D.zero, D.zero) deg = Deg (id_sdeg D.zero, id_perm D.zero)
+
+(* The zero-dimensional identity is by far the most common, so we build it only once. *)
+let id_deg : type n. n D.t -> (n, n) deg =
+ fun n ->
+  match D.compare_zero n with
+  | Zero -> id_deg_zero
+  | Pos _ -> Deg (id_sdeg n, id_perm n)
 
 (* Every dimension is a degeneracy of zero. *)
 let deg_zero : type a. a D.t -> (a, D.zero) deg = fun a -> Deg (sdeg_zero a, Zero)

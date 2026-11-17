@@ -211,20 +211,24 @@ module Cube (F : Fam2) = struct
       cs Tlist.t ->
       (n, D.fwd_zero, cs) Heter.hgt =
    fun g xs cs ->
-    let g' : (n, nil, (b, bs) cons, cs) pmapper_pre =
-      {
-        map =
-          (fun (type m mb)
-            (fa : (m, n) sface)
-            (mb : (m, nil, mb) D.bplus)
-            (x : (mb, (b, bs) cons) Heter.hft)
-            :
-            (mb, cs) Heter.hft
-          ->
-            let Append_nil = mb in
-            g.map fa x);
-      } in
-    gpmap_pre Nil Nil Append_nil Fw.Zero g' xs cs
+    match xs with
+    (* A zero-dimensional cube is a single element, which is by far the most common case, so we map it directly rather than setting up the general traversal. *)
+    | Leaf (Append_nil, _) :: _ -> Heter.leaf Append_nil (g.map Zero (Heter.lab Append_nil xs))
+    | _ ->
+        let g' : (n, nil, (b, bs) cons, cs) pmapper_pre =
+          {
+            map =
+              (fun (type m mb)
+                (fa : (m, n) sface)
+                (mb : (m, nil, mb) D.bplus)
+                (x : (mb, (b, bs) cons) Heter.hft)
+                :
+                (mb, cs) Heter.hft
+              ->
+                let Append_nil = mb in
+                g.map fa x);
+          } in
+        gpmap_pre Nil Nil Append_nil Fw.Zero g' xs cs
 
   type ('n, 'bs, 'c) mmapper = { map : 'm. ('m, 'n) sface -> ('m, 'bs) Heter.hft -> ('m, 'c) F.t }
 
