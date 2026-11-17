@@ -61,17 +61,37 @@ end
 
 (* Weak hash sets of a mode-indexed family, for hash-consing.  Since every mode is [dummy] here, we can store elements of all modes in one set, and a mode supplies the type equality when an element is returned.  An element is looked up by a key that it must be given, which should be nearly unique to it (such as a combination of the identity numbers of its parts), and a predicate that decides whether the element found is the same as it.
 
-   The set is a single weak array indexed by the low bits of the key, so that an element displaces any other with the same index: it is a cache, not a complete record.  Elements are held weakly, so the set doesn't keep them alive past a major collection.  (A weak pointer does keep a young element alive through the next minor collection, which promotes it; that is unavoidable for anything that remembers values across minor collections.)  Each slot is stamped with the generation in which it was filled, so that clearing the set is just starting a new generation. *)
+   The set is a single weak array indexed by the low bits of the key, so that an element displaces any other with the same index: it is a cache, not a complete record.  Elements are held weakly, so the set doesn't keep them alive past a major collection.  (A weak pointer does keep a young element alive through the next minor collection, which promotes it; that is unavoidable for anything that remembers values across minor collections.)  Each slot is stamped with the generation in which it was filled, and clearing the set starts a new generation.  It also empties the slots filled in the old one: an element left in a slot would otherwise still be promoted by the next minor collection, along with everything reachable from it, although it could never be found again. *)
 module WeakSet = struct
   module Make (F : Fam) = struct
-    type t = { table : dummy F.t Weak.t; stamps : int array; mask : int; mutable generation : int }
+    type t = {
+      table : dummy F.t Weak.t;
+      stamps : int array;
+      mask : int;
+      mutable generation : int;
+      (* The slots filled in the current generation. *)
+      mutable touched : int array;
+      mutable ntouched : int;
+    }
 
     (* A set with 2^bits slots. *)
     let create bits =
       let n = 1 lsl bits in
-      { table = Weak.create n; stamps = Array.make n (-1); mask = n - 1; generation = 0 }
+      {
+        table = Weak.create n;
+        stamps = Array.make n (-1);
+        mask = n - 1;
+        generation = 0;
+        touched = Array.make 256 0;
+        ntouched = 0;
+      }
 
-    let clear s = s.generation <- s.generation + 1
+    let clear s =
+      for j = 0 to s.ntouched - 1 do
+        Weak.set s.table (Array.unsafe_get s.touched j) None
+      done;
+      s.ntouched <- 0;
+      s.generation <- s.generation + 1
 
     (* The element with the given key, if it is in the set and satisfies [same]. *)
     let find : type g. t -> g Mode.t -> int -> (g F.t -> bool) -> g F.t option =
@@ -88,6 +108,13 @@ module WeakSet = struct
      fun s (PK _) key v ->
       let i = key land s.mask in
       Weak.set s.table i (Some v);
+      if Array.unsafe_get s.stamps i <> s.generation then (
+        if s.ntouched = Array.length s.touched then (
+          let t = Array.make (2 * s.ntouched) 0 in
+          Array.blit s.touched 0 t 0 s.ntouched;
+          s.touched <- t);
+        Array.unsafe_set s.touched s.ntouched i;
+        s.ntouched <- s.ntouched + 1);
       Array.unsafe_set s.stamps i s.generation
   end
 end
