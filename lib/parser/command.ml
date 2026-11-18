@@ -1139,6 +1139,35 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             match Scope.lookup c with
             | Some c -> `Constant c
             | None -> fatal (Invalid_notation_head (String.concat "." c))) in
+      (* The arguments of a constant must match a prefix of its arguments, as they would be elaborated: an explicit argument of the notation skips any implicit arguments of the constant, which would be inserted, while an implicit one must supply the next implicit argument.  We can't check a constructor this way, since its name doesn't determine its datatype. *)
+      (match key with
+      | `Constant c ->
+          let cname = String.concat "." (Scope.name_of c) in
+          let (Definition { ty; mode; _ }) = Global.find_const c in
+          let ctx = Ctx.empty mode in
+          let show (x, i) =
+            let x = Option.value x ~default:"_" in
+            match i with
+            | `Implicit _ -> "{" ^ x ^ "}"
+            | `Explicit -> x in
+          let rec go (shape : arg_shape) args =
+            match (args, shape) with
+            | [], _ | _, (Arg_higher | Arg_unknown) -> ()
+            | (arg, _) :: _, Arg_none ->
+                fatal
+                  (Invalid_notation_arguments
+                     (Printf.sprintf "%s has no argument left for %s" cname (show arg)))
+            | ((_, `Explicit), _) :: _, Arg_pi (`Implicit, next) -> go (next ()) args
+            | ((_, `Explicit), _) :: args, Arg_pi (`Explicit, next)
+            | ((_, `Implicit _), _) :: args, Arg_pi (`Implicit, next) -> go (next ()) args
+            | (arg, _) :: _, Arg_pi (`Explicit, _) ->
+                fatal
+                  (Invalid_notation_arguments
+                     (Printf.sprintf
+                        "the next argument of %s is explicit, so it can't be given by the implicit argument %s"
+                        cname (show arg))) in
+          go (arg_shape_of_ty ctx (Norm.eval_term (Ctx.env ctx) ty)) args
+      | `Constr _ -> ());
       let args =
         List.map
           (fun ((x, i), ws) ->

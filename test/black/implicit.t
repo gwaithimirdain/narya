@@ -707,6 +707,37 @@ The definition of a notation can also give implicit arguments of its head explic
     : A
   
 
+The arguments in the definition of a notation for a constant must match a prefix of the arguments of the constant, as they would be elaborated: an argument without braces, even a placeholder, supplies the next explicit argument, inserting any implicit ones before it, while an argument in braces supplies the next implicit argument.  Definitions that unfold to function-types count, but a type that is only a variable doesn't.
+
+  $ narya - <<EOF
+  > axiom A : Type
+  > axiom plus {X : Type} (x y : X) : X
+  > def Endo (X : Type) : Type ≔ X → X
+  > axiom h : A → Endo A
+  > notation(0) x "+" y ≔ plus {_} x y
+  > notation(0) x "⊕" y ≔ h x y
+  > notation(0) x "*" y ≔ plus _ x y
+  > EOF
+   ￫ error[E2210]
+   ￮ invalid arguments of notation head: plus has no argument left for y
+  
+  [1]
+  $ narya -e 'axiom plus {X : Type} (x y : X) : X' -e 'notation(0) x "+" y "@" B ≔ plus x {B} y'
+   ￫ error[E2210]
+   ￮ invalid arguments of notation head: the next argument of plus is explicit, so it can't be given by the implicit argument {B}
+  
+  [1]
+  $ narya -e 'axiom A : Type' -e 'axiom h : A → A' -e 'notation(0) x "+" y ≔ h x y'
+   ￫ error[E2210]
+   ￮ invalid arguments of notation head: h has no argument left for y
+  
+  [1]
+  $ narya -e 'axiom id {X : Type} (x : X) : X' -e 'notation(0) x "+" y ≔ id x y'
+   ￫ error[E2210]
+   ￮ invalid arguments of notation head: id has no argument left for y
+  
+  [1]
+
 Braces in the definition of a notation are preserved by reformatting.
 
   $ cat >rf3.ny <<EOF

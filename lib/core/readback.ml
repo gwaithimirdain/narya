@@ -126,6 +126,34 @@ let sort_of_val : type mode. mode Mode.t -> (mode, kinetic) value -> [ `Type | `
   Reporter.discard_errors ~fallback:(fun () -> `Other) @@ fun () ->
   sort_of_ty (Ctx.empty mode) (view_type ty "sort_of_val")
 
+(* The shape of the arguments of a function of a given type, as far as it can be seen by descending through its pi-types (evaluating them, so that a definition that unfolds to a pi-type counts as one): the implicitness of each 0-dimensional pi-type, a higher-dimensional one (whose arguments are cubes, which we don't examine), or the end of the pi-types.  This is used to check the arguments in the definition of a notation against its head, and since that is only a check, if anything goes wrong we say we don't know (though internal errors are still reported).  As in sort_of_ty, we use the context only to create new variables. *)
+type arg_shape =
+  | Arg_pi of implicitness * (unit -> arg_shape)
+  | Arg_higher
+  | Arg_none
+  | Arg_unknown
+
+let rec arg_shape_of_ty : type mode a z. (mode, z, a) Ctx.t -> (mode, kinetic) value -> arg_shape =
+ fun ctx ty ->
+  Reporter.discard_errors ~fallback:(fun () -> Arg_unknown) @@ fun () ->
+  match view_type ty "arg_shape_of_ty" with
+  | Canonical (_, Pi { x = _; filter; implicit; doms; cods }, _, tyargs) -> (
+      match
+        (D.compare_zero (BindCube.dim cods), D.compare (TubeOf.inst tyargs) (BindCube.dim cods))
+      with
+      | Pos _, _ -> Arg_higher
+      | Zero, Neq ->
+          fatal (Dimension_mismatch ("arg_shape_of_ty", TubeOf.inst tyargs, BindCube.dim cods))
+      | Zero, Eq ->
+          Arg_pi
+            ( implicit,
+              fun () ->
+                Reporter.discard_errors ~fallback:(fun () -> Arg_unknown) @@ fun () ->
+                let args, newnfs = dom_vars ctx (Modality.filter_modality filter) doms in
+                let newctx = Ctx.invis ctx (Modality.filter_idempotent filter) newnfs in
+                arg_shape_of_ty newctx (tyof_app cods tyargs filter args) ))
+  | Canonical _ | Neutral _ -> Arg_none
+
 (* Whether a constant is defined to be a canonical type, possibly a family of them.  Such a constant is displayed with a superscript degeneracy rather than a name like "Id", even if the term in which it appears is not itself a type (e.g. a field projection out of a degenerated record type). *)
 let rec is_canonical_def : type mode a. (mode, a, potential) term -> bool = function
   | Canonical _ -> true

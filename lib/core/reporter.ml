@@ -309,6 +309,7 @@ module Code = struct
     | Notation_variable_used_twice : string -> t
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
+    | Invalid_notation_arguments : string -> t
     | Constant_assumed : { name : printable; parametric : bool; holes : int } -> t
     | Constant_defined : { names : printable list; parametric : bool; holes : int } -> t
     | Hole_solved : int -> t
@@ -520,6 +521,7 @@ module Code = struct
     | Notation_variable_used_twice _ -> Error
     | Unbound_variable_in_notation _ -> Error
     | Head_already_has_notation _ -> Warning
+    | Invalid_notation_arguments _ -> Error
     | Constant_assumed _ -> Info
     | Constant_defined _ -> Info
     | Notation_defined _ -> Info
@@ -776,6 +778,7 @@ module Code = struct
     | Notation_variable_used_twice _ -> "E2207"
     | Unbound_variable_in_notation _ -> "E2208"
     | Head_already_has_notation _ -> "E2209"
+    | Invalid_notation_arguments _ -> "E2210"
     (* import *)
     | Circular_import _ -> "E2300"
     | Library_has_extension _ -> "W2301"
@@ -1258,6 +1261,7 @@ module Code = struct
       | Head_already_has_notation name ->
           textf "replacing printing notation for %s (previous notation will still be parseable)"
             name
+      | Invalid_notation_arguments str -> textf "invalid arguments of notation head: %s" str
       | Constant_assumed { name; parametric; holes } ->
           let p = if parametric then "" else "nonparametric " in
           if holes > 1 then
