@@ -2511,6 +2511,10 @@ let () =
               let sort =
                 match args n with
                 | [ Term vars; Token (Mapsto, _); Term { value = Placeholder _; _ } ] ->
+                    (* This form only counts its variables, so it is deprecated in favor of a bare placeholder, which doesn't need the right number of them (or the braces for implicit indices and boundaries that an explicit motive needs). *)
+                    emit ?loc:motive.loc
+                      (Deprecated
+                         "'match M return _ ↦ _' for a non-dependent match: use 'match M return _'");
                     (* TODO: Should not be ascribed, and especially not modal *)
                     let (Extctx (mn, _, _, _)) = get_vars (Matchscope.names ctx) vars in
                     `Nondep

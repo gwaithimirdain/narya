@@ -776,7 +776,7 @@ A datatype family can have implicit indices, which are given in braces or insert
 
 Matching on an element of a family with an implicit index refines the index as usual.  An explicit motive must bind an implicit index in braces, including all the faces of the index in a higher-dimensional match, in which the boundary faces of an explicit index and of the datatype itself are also in braces, as in a higher-dimensional abstraction.
 
-  $ narya vec.ny -e 'def len {n : ℕ} (v : Vec A {n}) : ℕ ≔ match v return {m} w ↦ ℕ [ nil. ↦ zero. | cons. _ v ↦ suc. (len v) ]' -e 'echo len (cons. a (cons. a nil.))' -e 'def len′ {n : ℕ} (v : Vec A {n}) : ℕ ≔ match v return _ _ ↦ _ [ nil. ↦ zero. | cons. _ v ↦ suc. (len′ v) ]' -e 'def hlen {n0 n1 : ℕ} (n2 : Id ℕ n0 n1) (v0 : Vec A {n0}) (v1 : Vec A {n1}) (v2 : Id (Vec A) {n0} {n1} {n2} v0 v1) : ℕ ≔ match v2 return {m0} {m1} {m2} {w0} {w1} w2 ↦ ℕ [ nil. ⤇ zero. | cons. _ _ ⤇ zero. ]'
+  $ narya vec.ny -e 'def len {n : ℕ} (v : Vec A {n}) : ℕ ≔ match v return {m} w ↦ ℕ [ nil. ↦ zero. | cons. _ v ↦ suc. (len v) ]' -e 'echo len (cons. a (cons. a nil.))' -e 'def len′ {n : ℕ} (v : Vec A {n}) : ℕ ≔ match v return _ [ nil. ↦ zero. | cons. _ v ↦ suc. (len′ v) ]' -e 'def hlen {n0 n1 : ℕ} (n2 : Id ℕ n0 n1) (v0 : Vec A {n0}) (v1 : Vec A {n1}) (v2 : Id (Vec A) {n0} {n1} {n2} v0 v1) : ℕ ≔ match v2 return {m0} {m1} {m2} {w0} {w1} w2 ↦ ℕ [ nil. ⤇ zero. | cons. _ _ ⤇ zero. ]'
   2
     : ℕ
   

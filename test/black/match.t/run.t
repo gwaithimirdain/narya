@@ -111,6 +111,11 @@
    ￫ info[I0000]
    ￮ constant fib' defined
   
+   ￫ warning[E0110]
+   ￭ $TESTCASE_ROOT/multi.ny
+   33 | def fib'' (n : ℕ) : ℕ ≔ match n return _ ↦ _ [
+      ^ deprecated: 'match M return _ ↦ _' for a non-dependent match: use 'match M return _'
+  
    ￫ info[I0000]
    ￮ constant fib'' defined
   

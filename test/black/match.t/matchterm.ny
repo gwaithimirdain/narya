@@ -11,7 +11,7 @@ def ⊥ : Type ≔ data [ ]
 def contra (A C : Type) (a : A) (na : A → ⊥) : C ≔ match na a [ ]
 def doublematch (n : ℕ) : bool ≔ match n [ zero. ↦ false. | suc. k ↦ match n [ zero. ↦ true. | suc. _ ↦ false. ]]
 {` We can quiet the hint this way: `}
-def doublematch' (n : ℕ) : bool ≔ match n [ zero. ↦ false. | suc. k ↦ match n return _ ↦ _ [ zero. ↦ true. | suc. _ ↦ false. ]]
+def doublematch' (n : ℕ) : bool ≔ match n [ zero. ↦ false. | suc. k ↦ match n return _ [ zero. ↦ true. | suc. _ ↦ false. ]]
 {` Or more briefly this way, which doesn't need a variable for each index: `}
 def doublematch'' (n : ℕ) : bool ≔ match n [ zero. ↦ false. | suc. k ↦ match n return _ [ zero. ↦ true. | suc. _ ↦ false. ]]
 def contra' (A C : Type) (a : A) (na : A → ⊥) : C ≔ match na a return _ [ ]
