@@ -204,17 +204,15 @@ let rec is_top_bindings : type mode n d dom modality k.
     (mode, n, d) env -> (dom, modality, mode) Modality.t -> (k, dom Binding.t) CubeOf.t -> bool =
  fun env modality bindings ->
   match env with
-  | Ctx (Snoc (ctx, entry, _, comp)) -> (
-      match Ctx.Ordered.ext_kind entry comp with
-      (* An alias isn't part of the environment. *)
-      | Ext_alias -> is_top_bindings (Ctx ctx) modality bindings
-      | Ext_dim -> (
-          match
-            ( Modality.compare (Ctx.modality_entry entry) modality,
-              D.compare (Ctx.dim_entry entry) (CubeOf.dim bindings) )
-          with
-          | Eq, Eq -> Ctx.bindings_entry entry == bindings
-          | _ -> false))
+  (* An alias isn't part of the environment. *)
+  | Ctx (Snoc (ctx, { vars = Alias; _ }, _)) -> is_top_bindings (Ctx ctx) modality bindings
+  | Ctx (Snoc (_, ({ vars = Vars; _ } as entry), _)) -> (
+      match
+        ( Modality.compare (Ctx.modality_entry entry) modality,
+          D.compare (Ctx.dim_entry entry) (CubeOf.dim bindings) )
+      with
+      | Eq, Eq -> Ctx.bindings_entry entry == bindings
+      | _ -> false)
   | Ctx (Weaken (ctx, _)) -> is_top_bindings (Ctx ctx) modality bindings
   | _ -> false
 
@@ -225,7 +223,7 @@ let rec is_identity_ordered_env : type mode a b d.
   match (ctx, envctx) with
   (* Weakening entries and aliases contribute nothing to the checked length or the environment. *)
   | Weaken (ctx, _), _ -> is_identity_ordered_env ctx env envctx
-  | Snoc (ctx, _, _, Zero), _ -> is_identity_ordered_env ctx env envctx
+  | Snoc (ctx, { vars = Alias; _ }, _), _ -> is_identity_ordered_env ctx env envctx
   | Emp _, Path (Suc (Zero, Proj _), _) -> Some Eq
   (* Locks we test for equality and then remove from both contexts and the environment. *)
   | Lock (ctx, g), Path (Suc (envctx, Lock g'), o) -> (
@@ -241,53 +239,50 @@ let rec is_identity_ordered_env : type mode a b d.
             | Some Eq -> Some Eq
             | None -> None
           else None)
-  | Snoc (ctx, entry, _, comp), Path (Suc (envctx, Dim (tk, tfilter)), o) -> (
-      match Ctx.Ordered.ext_kind entry comp with
-      | Ext_alias -> None
-      | Ext_dim -> (
-          let modality = Ctx.modality_entry entry in
-          let bindings = Ctx.bindings_entry entry in
-          let k = CubeOf.dim bindings in
-          match (Modality.compare modality (Modality.filter_modality tfilter), D.compare k tk) with
-          | Eq, Eq -> (
-              let exception Not_identity in
-              try
-                (* If the environment's top entry is itself physically equal to this entry of the context, there is nothing to look up. *)
-                (if is_top_bindings env modality bindings then ()
-                 else if Option.is_none (Binding.value_opt (CubeOf.find_top bindings)) then
-                   (* If the entry is not yet determined (as while reading back its own bindings in readback_entry), it can't match, so we don't bother looking anything up. *)
-                   raise_notrace Not_identity
-                 else
-                   (* Otherwise we look up the top entry in the environment and check whether it is "the same as" the one in the context in a weaker sense. *)
-                   let (Looked_up { act; op; entry = xs; pre }) =
-                     lookup_cube env (D.zero_plus k) modality Now (id_opt_op k) in
-                   (* For free variables, we check that they have the same level and identity degeneracies and keys; for let-bound variables we check that their defined values are physically equal (skipping a costly semantic-equality check).  Neither of these can succeed if the looked up value has a nonidentity operation or key on it, since the act functions only return physically equal values if they short-circuit; so we wait to force the value with "act" until checking those.  (We do still need to call "act" even though the actions are identities, because lookup_cube returns an abstract type that we have to force into a value.) *)
-                   match (is_id_opt_op op, Modalcell.is_id pre) with
-                   | Some Eq, true ->
-                       let s = id_deg k in
-                       CubeOf.miter2
-                         {
-                           it2 =
-                             (fun _ x b ->
-                               if
-                                 not
-                                   (match (Binding.level b, Binding.value_opt b) with
-                                   (* A free variable's value is itself, except in a renamed context, where it may be a permutation of a variable (see renamed_var), and then a plain occurrence of that variable is not the same as the variable bound here. *)
-                                   | Some level, Some v ->
-                                       is_plain_var level v.tm && is_plain_var level (act x s pre)
-                                   | Some level, None -> is_plain_var level (act x s pre)
-                                   | None, Some v -> v.tm == act x s pre
-                                   | None, None -> false)
-                               then raise_notrace Not_identity);
-                         }
-                         xs bindings
-                   | _ -> raise_notrace Not_identity);
-                (* If we get here, the top environment entry succeded in matching the context entry, so we recurse. *)
-                match is_identity_ordered_env ctx (remove_top env) (Path (envctx, o)) with
-                | Some Eq -> Some Eq
-                | None -> None
-              with Not_identity -> None)
-          | _ -> None))
+  | Snoc (ctx, ({ vars = Vars; _ } as entry), _), Path (Suc (envctx, Dim (tk, tfilter)), o) -> (
+      let modality = Ctx.modality_entry entry in
+      let bindings = Ctx.bindings_entry entry in
+      let k = CubeOf.dim bindings in
+      match (Modality.compare modality (Modality.filter_modality tfilter), D.compare k tk) with
+      | Eq, Eq -> (
+          let exception Not_identity in
+          try
+            (* If the environment's top entry is itself physically equal to this entry of the context, there is nothing to look up. *)
+            (if is_top_bindings env modality bindings then ()
+             else if Option.is_none (Binding.value_opt (CubeOf.find_top bindings)) then
+               (* If the entry is not yet determined (as while reading back its own bindings in readback_entry), it can't match, so we don't bother looking anything up. *)
+               raise_notrace Not_identity
+             else
+               (* Otherwise we look up the top entry in the environment and check whether it is "the same as" the one in the context in a weaker sense. *)
+               let (Looked_up { act; op; entry = xs; pre }) =
+                 lookup_cube env (D.zero_plus k) modality Now (id_opt_op k) in
+               (* For free variables, we check that they have the same level and identity degeneracies and keys; for let-bound variables we check that their defined values are physically equal (skipping a costly semantic-equality check).  Neither of these can succeed if the looked up value has a nonidentity operation or key on it, since the act functions only return physically equal values if they short-circuit; so we wait to force the value with "act" until checking those.  (We do still need to call "act" even though the actions are identities, because lookup_cube returns an abstract type that we have to force into a value.) *)
+               match (is_id_opt_op op, Modalcell.is_id pre) with
+               | Some Eq, true ->
+                   let s = id_deg k in
+                   CubeOf.miter2
+                     {
+                       it2 =
+                         (fun _ x b ->
+                           if
+                             not
+                               (match (Binding.level b, Binding.value_opt b) with
+                               (* A free variable's value is itself, except in a renamed context, where it may be a permutation of a variable (see renamed_var), and then a plain occurrence of that variable is not the same as the variable bound here. *)
+                               | Some level, Some v ->
+                                   is_plain_var level v.tm && is_plain_var level (act x s pre)
+                               | Some level, None -> is_plain_var level (act x s pre)
+                               | None, Some v -> v.tm == act x s pre
+                               | None, None -> false)
+                           then raise_notrace Not_identity);
+                     }
+                     xs bindings
+               | _ -> raise_notrace Not_identity);
+            (* If we get here, the top environment entry succeded in matching the context entry, so we recurse. *)
+            match is_identity_ordered_env ctx (remove_top env) (Path (envctx, o)) with
+            | Some Eq -> Some Eq
+            | None -> None
+          with Not_identity -> None)
+      | _ -> None)
   | _ -> None
 
 (* The ways we can read back a metavariable whose environment is the identity, possibly weakened. *)
@@ -310,7 +305,7 @@ let rec is_weakened_identity : type mode a b d.
   Option.is_some (is_identity_ordered_env ctx env envctx)
   ||
   match (ctx, envctx) with
-  | Snoc (rest, _, _, _), _ -> is_weakened_identity rest env envctx
+  | Snoc (rest, _, _), _ -> is_weakened_identity rest env envctx
   | Weaken (rest, _), _ -> is_weakened_identity rest env envctx
   | Lock (ctx, g), Path (Suc (envctx, Lock g'), o) -> (
       match Modality.Gen.compare g g' with
@@ -323,11 +318,11 @@ let rec is_weakened_identity : type mode a b d.
   | _ -> false
 
 (* Test whether some face of a context entry is a variable that is let-bound to a given metavariable (whose full context is given) in an environment that is the identity, possibly weakened, on the context to its left locked by the modality of the variable, and whether the given environment for that metavariable (with the locks to the right of the variable stripped off) is also a weakened identity on the context to its left.  If so, return that face.  (The metavariable can be defined in a context shorter than the one to the left of the variable, as happens for the variables bound by a let-rec, whose metavariables all live in the context of the let-rec.) *)
-let let_var_of_meta : type mode a b d x s mmode dfull dom modality f k b2.
+let let_var_of_meta : type mode a b bb d x s mmode dfull dom modality f k.
     (mmode, x, dfull, s) Meta.t ->
     (mmode, dfull) Tctx.t ->
     (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, f, k, b2) Ctx.entry ->
+    (dom, modality, mode, f, k, b, bb) Ctx.entry ->
     (mode, D.zero, d) env ->
     (mode, d) Tctx.t ->
     k sface_of option =
@@ -379,22 +374,20 @@ let rec find_meta_readback : type mode a b d x s mmode dfull.
       (* If not, and the context ends with a variable, we check whether that variable is let-bound to the metavariable, and if so whether the rest of the environment is also an identity. *)
       match (ctx, envctx) with
       (* An alias isn't a variable, so it can't be read back as one, and it doesn't weaken the checked context. *)
-      | Snoc (rest, entry, _, comp), _ -> (
-          match Ctx.Ordered.ext_kind entry comp with
-          | Ext_alias -> find_meta_readback meta fullctx rest env envctx
-          | Ext_dim -> (
-              let k = Ctx.dim_entry entry in
-              let filter = Ctx.filter_entry entry in
-              match let_var_of_meta meta fullctx rest entry env envctx with
-              | Some (SFace_of fa) -> Some (Let_var (plus_with_no_locks mode, fa, filter))
-              | None -> (
-                  (* If not, we remove it from the context and try again, weakening the result if successful. *)
-                  match find_meta_readback meta fullctx rest env envctx with
-                  | Some (Weakened_meta (plus, newplus)) ->
-                      Some (Weakened_meta (plus, plus_with_locks_dim newplus k filter))
-                  | Some (Let_var (newplus, fa, f)) ->
-                      Some (Let_var (plus_with_locks_dim newplus k filter, fa, f))
-                  | None -> None)))
+      | Snoc (rest, { vars = Alias; _ }, _), _ -> find_meta_readback meta fullctx rest env envctx
+      | Snoc (rest, ({ vars = Vars; _ } as entry), _), _ -> (
+          let k = Ctx.dim_entry entry in
+          let filter = Ctx.filter_entry entry in
+          match let_var_of_meta meta fullctx rest entry env envctx with
+          | Some (SFace_of fa) -> Some (Let_var (plus_with_no_locks mode, fa, filter))
+          | None -> (
+              (* If not, we remove it from the context and try again, weakening the result if successful. *)
+              match find_meta_readback meta fullctx rest env envctx with
+              | Some (Weakened_meta (plus, newplus)) ->
+                  Some (Weakened_meta (plus, plus_with_locks_dim newplus k filter))
+              | Some (Let_var (newplus, fa, f)) ->
+                  Some (Let_var (plus_with_locks_dim newplus k filter, fa, f))
+              | None -> None))
       | Weaken (rest, _), _ -> find_meta_readback meta fullctx rest env envctx
       (* If the context ends with a lock that matches one at the end of the metavariable's context, we remove both and search behind them. *)
       | Lock (ctx, g), Path (Suc (envctx, Lock g'), o) -> (
@@ -1863,75 +1856,66 @@ and readback_ordered_env : type mode n a b c d.
  fun ctx env envctx ->
   match envctx with
   | Emp mode -> Emp (mode, dim_env env)
-  (* A weakening entry contributes nothing to the environment, so we skip it. *)
+  (* Weakening and alias entries contribute nothing to the environment, so we skip them. *)
   | Weaken (envctx, _) -> readback_ordered_env ctx env envctx
-  | Ext (envctx, ({ plus_lock = dplus; bindings; filter = filtered; _ } as entry), _, comp) -> (
-      match ext_kind entry comp with
-      (* An alias contributes nothing to the environment, so we skip it. *)
-      | Ext_alias -> readback_ordered_env ctx env envctx
-      | Ext_dim ->
-          let modality = plus_lock_modality dplus in
-          (* The dimension n of the environment gets filtered to m. *)
-          let n = dim_env env in
-          let (Has_filter filter) = Modality.filter modality n in
-          let m = Modality.filtered n filter in
-          (* The dimension of the context entry is k. *)
-          let k = dim_entry entry in
-          (* The dimension of the cube in the environment must therefore be m+k. *)
-          let (Plus m_k) = D.plus k in
-          let mk = D.plus_out m m_k in
-          (* We act by a sface_of_filter to reduce the dimension of the environment to m, so that we can get an (m+k)-dimensional cube out of it. *)
-          let aenv = act_env env (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
-          (* We get the top entry (Now) from the environment we're reading back.  We can't just match it against Ext or LazyExt because it could have other lazy operations applied to it like Shift, Unshift, Permute, etc. *)
-          (* Since no keys are stripped here, the prekey transport modality is just the entry's annotating modality. *)
-          let (Looked_up { act; op; entry = xs; pre }) =
-            lookup_cube aenv m_k modality Now (id_opt_op mk) in
-          (* As usual, the missing endpoints in sface_of_filter should be canceled by degeneracies in the non-unary case. *)
-          let (Op (fc, fd)) =
-            op_of_opt op <|> Anomaly "unexpected missing endpoint in readback_ordered_env" in
-          (* We are reading back bindings that were defined under a modality, so they are defined in a locked context. *)
-          let (Locked (bplus, lctx)) = Ctx.lock ctx modality in
-          (* We also analogously lock the environment we're reading back, for purposes of evaluating types. *)
-          let lenv = lock_env aenv dplus in
-          (* We apply the accumulated operators, degeneracies, and any prekey action to the entry we found. *)
-          let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
-          (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)
-          let xtytbl = Hashtbl.create 10 in
-          let tmxs =
-            CubeOf.mmap
-              {
-                map =
-                  (fun fab [ tm ] ->
-                    let (SFace_of_plus (_, fb, fa)) = sface_of_plus m_k fab in
-                    (* The type to read back at comes from the top entry in the codomain context.  This is a term, so we have to evaluate it to get a value before reading back at it.  We evaluate it in our given environment, so that it can use the terms to the left and also lower-dimensional terms in the current entry.  We have to lock that environment to make those latter entries available. *)
-                    let ty = (CubeOf.find bindings fa).ty in
-                    let ety = eval_term (act_env lenv (opt_op_of_sface fb)) ty in
-                    (* Now we instantiate it at the lower-dimensional normal forms that we already computed. *)
-                    let ty =
-                      inst ety
-                        (TubeOf.build D.zero
-                           (D.zero_plus (dom_sface fb))
-                           {
-                             build =
-                               (fun fc ->
-                                 Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
-                           }) in
-                    (* We use this computed type to make a normal form, and record it in the hashtbl. *)
-                    Hashtbl.add xtytbl (SFace_of fb) { tm; ty = Lazy.from_val ty };
-                    (* Finally, we read back the term in that instantiated type. *)
-                    readback_at Kinetic lctx tm ty);
-              }
-              [ xs ] in
-          (* For the recursive call, we remove the entry we found. *)
-          let tmenv = readback_ordered_env ctx (remove_top env) envctx in
-          Ext
-            {
-              env = tmenv;
-              plus = m_k;
-              values = Term.Modal (modality, bplus, tmxs);
-              filter;
-              filtered;
-            })
+  | Ext (envctx, { vars = Alias; _ }, _) -> readback_ordered_env ctx env envctx
+  | Ext (envctx, ({ plus_lock = dplus; bindings; filter = filtered; vars = Vars; _ } as entry), _)
+    ->
+      let modality = plus_lock_modality dplus in
+      (* The dimension n of the environment gets filtered to m. *)
+      let n = dim_env env in
+      let (Has_filter filter) = Modality.filter modality n in
+      let m = Modality.filtered n filter in
+      (* The dimension of the context entry is k. *)
+      let k = dim_entry entry in
+      (* The dimension of the cube in the environment must therefore be m+k. *)
+      let (Plus m_k) = D.plus k in
+      let mk = D.plus_out m m_k in
+      (* We act by a sface_of_filter to reduce the dimension of the environment to m, so that we can get an (m+k)-dimensional cube out of it. *)
+      let aenv = act_env env (opt_op_of_opt_sface (Modality.sface_of_filter n filter)) in
+      (* We get the top entry (Now) from the environment we're reading back.  We can't just match it against Ext or LazyExt because it could have other lazy operations applied to it like Shift, Unshift, Permute, etc. *)
+      (* Since no keys are stripped here, the prekey transport modality is just the entry's annotating modality. *)
+      let (Looked_up { act; op; entry = xs; pre }) =
+        lookup_cube aenv m_k modality Now (id_opt_op mk) in
+      (* As usual, the missing endpoints in sface_of_filter should be canceled by degeneracies in the non-unary case. *)
+      let (Op (fc, fd)) =
+        op_of_opt op <|> Anomaly "unexpected missing endpoint in readback_ordered_env" in
+      (* We are reading back bindings that were defined under a modality, so they are defined in a locked context. *)
+      let (Locked (bplus, lctx)) = Ctx.lock ctx modality in
+      (* We also analogously lock the environment we're reading back, for purposes of evaluating types. *)
+      let lenv = lock_env aenv dplus in
+      (* We apply the accumulated operators, degeneracies, and any prekey action to the entry we found. *)
+      let xs = act_cube { act } (CubeOf.subcube fc xs) fd pre in
+      (* Now we read back all the terms and types in that environment entry.  We record the normal forms in a hashtbl as we go, to use as instantiation arguments to types of higher-dimensional terms. *)
+      let xtytbl = Hashtbl.create 10 in
+      let tmxs =
+        CubeOf.mmap
+          {
+            map =
+              (fun fab [ tm ] ->
+                let (SFace_of_plus (_, fb, fa)) = sface_of_plus m_k fab in
+                (* The type to read back at comes from the top entry in the codomain context.  This is a term, so we have to evaluate it to get a value before reading back at it.  We evaluate it in our given environment, so that it can use the terms to the left and also lower-dimensional terms in the current entry.  We have to lock that environment to make those latter entries available. *)
+                let ty = (CubeOf.find bindings fa).ty in
+                let ety = eval_term (act_env lenv (opt_op_of_sface fb)) ty in
+                (* Now we instantiate it at the lower-dimensional normal forms that we already computed. *)
+                let ty =
+                  inst ety
+                    (TubeOf.build D.zero
+                       (D.zero_plus (dom_sface fb))
+                       {
+                         build =
+                           (fun fc ->
+                             Hashtbl.find xtytbl (SFace_of (comp_sface fb (sface_of_tface fc))));
+                       }) in
+                (* We use this computed type to make a normal form, and record it in the hashtbl. *)
+                Hashtbl.add xtytbl (SFace_of fb) { tm; ty = Lazy.from_val ty };
+                (* Finally, we read back the term in that instantiated type. *)
+                readback_at Kinetic lctx tm ty);
+          }
+          [ xs ] in
+      (* For the recursive call, we remove the entry we found. *)
+      let tmenv = readback_ordered_env ctx (remove_top env) envctx in
+      Ext { env = tmenv; plus = m_k; values = Term.Modal (modality, bplus, tmxs); filter; filtered }
   | Lock (envctx, g) ->
       (* We strip off the corresponding Lock from the environment being read back, along with any prekeys on top of it. *)
       let (Restrict_keys (env, pre)) =
@@ -1956,16 +1940,15 @@ and readback_ordered_env : type mode n a b c d.
 (* Read back a context of values into a context of terms. *)
 
 (* Read back the bindings in the last entry of a context, which live in the whole context locked by the modality of the entry.  Each value or type in the cube of bindings can refer to the variables that come before it in the cube (which include its faces), but not to itself or those that come after it.  So we read them back in the context to the left of the entry extended by delayed copies of its bindings, which can't be found until they are forced, and we force each one after reading back its value and type.  In particular, this prevents a variable let-bound to a metavariable from being read back as itself while reading back its own value (see let_var_of_meta). *)
-and readback_entry : type mode a x ax b bb b2 dom modality n.
+and readback_entry : type mode a x ax b bb dom modality n.
     (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, x, n, b2) Ctx.entry ->
+    (dom, modality, mode, x, n, b, bb) Ctx.entry ->
     (a, x, ax) N.plus ->
-    (mode, b2, mode, b, unit, bb) Tctx.comp ->
     (mode, ax, bb, modality, dom, n) readback_entry =
- fun rest { bindings; filter; vis } ax comp ->
+ fun rest ({ bindings; filter; _ } as e) ax ->
   let modality = Modality.filter_modality filter in
   let delayed = CubeOf.mmap { map = (fun _ [ b ] -> Binding.delay b) } [ bindings ] in
-  let ctx = Ctx.of_ordered (Snoc (rest, { bindings = delayed; filter; vis }, ax, comp)) in
+  let ctx = Ctx.of_ordered (Snoc (rest, { e with bindings = delayed }, ax)) in
   let (Locked (plus_lock, lctx)) = Ctx.lock ctx modality in
   let bindings =
     CubeOf.mmap
@@ -1987,12 +1970,12 @@ and readback_entry : type mode a x ax b bb b2 dom modality n.
 and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a, b) ordered_termctx
     = function
   | Emp mode -> Emp mode
-  | Snoc (rest, ({ bindings; filter; vis } as entry), af, comp) -> (
+  | Snoc (rest, ({ bindings; filter; vis; vars } as entry), af) -> (
       let top = Binding.value (CubeOf.find_top bindings) in
-      let (Readback_entry (plus_lock, lctx, bindings)) = readback_entry rest entry af comp in
+      let (Readback_entry (plus_lock, lctx, bindings)) = readback_entry rest entry af in
       let rest = readback_ordered_ctx rest in
       match vis with
-      | Vis (kind, { dim; plusdim; vars; hasfields; fields; fplus }) ->
+      | Vis { dim; plusdim; names; hasfields; fields; fplus } ->
           (* Fields as illusory variables are only used when typechecking records, which have substitution dimension 0 and can have no higher fields, so as field insertion we can use the identity on zero. *)
           let idm = Modality.id (Ctx.mode lctx) in
           let fins = ins_zero D.zero in
@@ -2002,14 +1985,14 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
                 let fldty = readback_val lctx (tyof_field idm top.tm (Lazy.force top.ty) f fins) in
                 (f, x, fldty))
               fields in
-          let vis = Vis (kind, { dim; plusdim; vars; hasfields; fields; fplus }) in
-          Ext (rest, { plus_lock; bindings; filter; vis }, af, comp)
+          let vis = Vis { dim; plusdim; names; hasfields; fields; fplus } in
+          Ext (rest, { plus_lock; bindings; filter; vis; vars }, af)
       | Invis name ->
           (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type we just skip the hints (though internal errors are still reported). *)
           let hints =
             Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
             View.hints_of_ty (Lazy.force top.ty) in
-          Ext (rest, { plus_lock; bindings; filter; vis = Invis { hints; name } }, af, comp))
+          Ext (rest, { plus_lock; bindings; filter; vis = Invis { hints; name }; vars }, af))
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
 
@@ -2971,10 +2954,10 @@ let renamed_ctx : type mode a b c d n x any.
         (* A nonidentity prekey encountered in the environment, such as the counit of an adjunction after projecting a modal field, acts on the values of the variables behind this lock, so readback has to take it into account (see readback_prekeyed). *)
         if not (Modalcell.is_id pre) then prekeyed_below := true;
         scan mctx env
-    | Snoc (mctx, entry, _, comp) -> (
-        match Ctx.Ordered.ext_kind entry comp with
-        | Ext_alias -> scan mctx env
-        | Ext_dim ->
+    | Snoc (mctx, entry, _) -> (
+        match entry.vars with
+        | Alias -> scan mctx env
+        | Vars ->
             let modality = Ctx.modality_entry entry in
             let bindings = Ctx.bindings_entry entry in
             let values, pre = renamed_values env modality (CubeOf.dim bindings) in
@@ -3134,10 +3117,10 @@ let renamed_ctx : type mode a b c d n x any.
           restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
         let (Renamed_ordered mctx) = go mctx env in
         Renamed_ordered (Lock (mctx, g))
-    | Snoc (mctx, entry, af, comp) -> (
-        match Ctx.Ordered.ext_kind entry comp with
-        | Ext_alias -> go mctx env
-        | Ext_dim ->
+    | Snoc (mctx, entry, af) -> (
+        match entry.vars with
+        | Alias -> go mctx env
+        | Vars ->
             let modality = Ctx.modality_entry entry in
             let bindings = Ctx.bindings_entry entry in
             let k = CubeOf.dim bindings in
@@ -3164,7 +3147,7 @@ let renamed_ctx : type mode a b c d n x any.
                 } in
             let vbs = renamed_bindings rest (Ctx.filter_entry entry) values free inverted rlevels in
             let (Plus a_x) = N.plus (N.plus_right af) in
-            Renamed_ordered (Snoc (rest, { entry with bindings = vbs }, a_x, comp))) in
+            Renamed_ordered (Snoc (rest, { entry with bindings = vbs }, a_x))) in
   let contracted : (unit -> (mode, d, kinetic) term option) list ref = ref [] in
   let rec go_args : type a any.
       (mode, a, d) Ctx.Ordered.t ->

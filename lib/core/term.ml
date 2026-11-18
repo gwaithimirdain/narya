@@ -305,55 +305,42 @@ module rec Term : sig
     | No_fields : ('m, N.zero) has_fields
     | Has_fields : (D.zero, 'f2) has_fields
 
-  (* The parameter 'bb is the checked context extended by the entry, which is 'b extended by 'b2 (see Ext); this is where the bindings live (before locking). *)
-  and ('dom, 'modality, 'mode, 'bb, 'bm, 'f, 'n, 'b2) entry = {
+  (* An entry extends the checked context 'b to 'bb, as specified by its vars: either a cube of variables or, for an alias, nothing (see Tctx.vars).  The bindings live in 'bb (before locking).  Independently, the entry is either visible or invisible to the raw world. *)
+  and ('dom, 'modality, 'mode, 'f, 'n, 'b, 'bb, 'bm) entry = {
     plus_lock : ('bb, 'mode, 'modality, 'dom, 'bm) plus_lock;
     filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
     bindings : ('n, ('dom, 'bm) binding) CubeOf.t;
-    vis : ('dom, 'modality, 'mode, 'bb, 'bm, 'f, 'n, 'b2) visibility;
+    vis : ('dom, 'modality, 'mode, 'bb, 'bm, 'f, 'n) visibility;
+    vars : ('modality, 'n, 'b, 'bb) vars;
   }
 
-  and (_, _, _, _, _, _, _, _) visibility =
-    (* A visible entry is either a cube of variables or an alias (see vis_kind). *)
+  and (_, _, _, _, _, _, _) visibility =
     | Vis :
-        ('modality, 'mode, 'mn, 'f2, 'b2) vis_kind
-        * ( 'dom,
-            'modality,
-            'mode,
-            'b,
-            'bm,
-            'm,
-            'n,
-            'mn,
-            'f1,
-            'f2,
-            'f,
-            ('dom, 'bm, kinetic) term )
-          vis_data
-        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn, 'b2) visibility
+        ( 'dom,
+          'modality,
+          'mode,
+          'b,
+          'bm,
+          'm,
+          'n,
+          'mn,
+          'f1,
+          'f2,
+          'f,
+          ('dom, 'bm, kinetic) term )
+        vis_data
+        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) visibility
     | Invis : {
         hints : hints;
         (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
         name : string option;
       }
-        -> ( 'dom,
-             'modality,
-             'mode,
-             'b,
-             'bm,
-             N.zero,
-             'n,
-             ('mode id, ('modality, 'n) dim_entry) snoc )
-           visibility
-
-  and (_, _, _, _, _) vis_kind =
-    | Vars : ('modality, 'mode, 'mn, 'f2, ('mode id, ('modality, 'mn) dim_entry) snoc) vis_kind
-    | Alias : ('modality, 'mode, 'mn, N.zero, 'mode id) vis_kind
+        -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) visibility
 
   and ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data = {
     dim : 'm D.t;
     plusdim : ('m, 'n, 'mn) D.plus;
-    vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
+    names : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
     hasfields : ('m, 'f2) has_fields;
     fields : (D.zero Field.t * string * 'fldty, 'f2) Bwv.t;
     fplus : ('f1, 'f2, 'f) N.plus;
@@ -363,9 +350,8 @@ module rec Term : sig
     | Emp : 'mode Mode.t -> ('mode, N.zero, (unit id, 'mode proj) suc) ordered_termctx
     | Ext :
         ('mode, 'a, 'b) ordered_termctx
-        * ('dom, 'modality, 'mode, 'bb, 'bm, 'x, 'n, 'b2) entry
+        * ('dom, 'modality, 'mode, 'x, 'n, 'b, 'bb, 'bm) entry
         * ('a, 'x, 'ax) N.plus
-        * ('mode, 'b2, 'mode, 'b, unit, 'bb) Tctx.comp
         -> ('mode, 'ax, 'bb) ordered_termctx
     | Lock :
         ('cod, 'a, 'b) ordered_termctx * ('dom, 'modality, 'cod) Modality.gen
@@ -713,60 +699,46 @@ end = struct
     | No_fields : ('m, N.zero) has_fields
     | Has_fields : (D.zero, 'f2) has_fields
 
-  (* The parameter 'bb is the checked context extended by the entry, which is 'b extended by 'b2 (see Ext); this is where the bindings live (before locking). *)
-  and ('dom, 'modality, 'mode, 'bb, 'bm, 'f, 'n, 'b2) entry = {
+  (* An entry extends the checked context 'b to 'bb, as specified by its vars: either a cube of variables or, for an alias, nothing (see Tctx.vars).  The bindings live in 'bb (before locking).  Independently, the entry is either visible or invisible to the raw world. *)
+  and ('dom, 'modality, 'mode, 'f, 'n, 'b, 'bb, 'bm) entry = {
     (* The reason for the dimension "snoc" here is so that some of the terms and types in these bindings can refer to other ones.  Of course it should really be only the *later* ones that can refer to the *earlier* ones, but we don't have a way to specify that in the type parameters. *)
     plus_lock : ('bb, 'mode, 'modality, 'dom, 'bm) plus_lock;
     filter : ('dom, 'modality, 'mode, 'n, 'n) Modality.filter_dim;
     bindings : ('n, ('dom, 'bm) binding) CubeOf.t;
-    vis : ('dom, 'modality, 'mode, 'bb, 'bm, 'f, 'n, 'b2) visibility;
+    vis : ('dom, 'modality, 'mode, 'bb, 'bm, 'f, 'n) visibility;
+    vars : ('modality, 'n, 'b, 'bb) vars;
   }
 
-  and (_, _, _, _, _, _, _, _) visibility =
-    (* A visible entry is either a cube of variables or an alias (see vis_kind). *)
+  and (_, _, _, _, _, _, _) visibility =
     | Vis :
-        ('modality, 'mode, 'mn, 'f2, 'b2) vis_kind
-        * ( 'dom,
-            'modality,
-            'mode,
-            'b,
-            'bm,
-            'm,
-            'n,
-            'mn,
-            'f1,
-            'f2,
-            'f,
-            ('dom, 'bm, kinetic) term )
-          vis_data
-        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn, 'b2) visibility
+        ( 'dom,
+          'modality,
+          'mode,
+          'b,
+          'bm,
+          'm,
+          'n,
+          'mn,
+          'f1,
+          'f2,
+          'f,
+          ('dom, 'bm, kinetic) term )
+        vis_data
+        -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) visibility
     | Invis : {
         hints : hints;
         (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
         name : string option;
       }
-        -> ( 'dom,
-             'modality,
-             'mode,
-             'b,
-             'bm,
-             N.zero,
-             'n,
-             ('mode id, ('modality, 'n) dim_entry) snoc )
-           visibility
-
-  (* The kind of a visible context entry.  An ordinary one is a cube of variables, which extends the checked context by one entry.  An alias also gives raw names to a cube, but of values rather than variables, so it doesn't extend the checked context (see Value.Ctx_entry); nor does it have any field variables.  The last parameter is the extension of the checked context. *)
-  and (_, _, _, _, _) vis_kind =
-    | Vars : ('modality, 'mode, 'mn, 'f2, ('mode id, ('modality, 'mn) dim_entry) snoc) vis_kind
-    | Alias : ('modality, 'mode, 'mn, N.zero, 'mode id) vis_kind
+        -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) visibility
 
   (* Vis means the cube of internal variables are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn.  If vis is omitted,  *)
   and ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data = {
     dim : 'm D.t;
     plusdim : ('m, 'n, 'mn) D.plus;
     (* We use an indexed cube to automatically count how many raw variables appear, by starting with zero and incrementing it for each entry in the cube.  It's tempting to want to start instead from the previous raw length of the context, thereby eliminating the "plus" parameter of Snoc, below; but this causes problems with telescopes (forwards contexts), used in Bindsome, whose raw indices are forwards natural numbers instead. *)
-    vars : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
-    (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'vars' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
+    names : (N.zero, 'n, binder_name, 'f1) NICubeOf.t;
+    (* While typechecking a record, we expose the "self" variable as a list of "illusory" variables, visible only to raw terms, that are substituted at typechecking time with the fields of self.  The type has_fields enforces that if 'f2 is nonzero, so that we're checking a record in this way, then 'm must be zero.  In the record case, the dimension 'n is the "gel dimension" of the record type being checked, so that 'names' above names all the boundary variables and then ends with the unnamed self variable that is "split" into all the field variables. *)
     hasfields : ('m, 'f2) has_fields;
     (* We also allow a vector of "field view" variables that look to the user like ordinary variables but actually expand *at typechecking time* to field projections of the top invisible variable.  Each of them also stores its type as a term, but we allow an arbitrary object to also be stored here so we can use the same record type for value contexts. *)
     fields : (D.zero Field.t * string * 'fldty, 'f2) Bwv.t;
@@ -778,9 +750,8 @@ end = struct
     (* I really want to call this "Snoc", but OCaml's typechecker is not properly bidirectional, so it ends up confusing such a constructor with the like-named constructor of Bwd.  *)
     | Ext :
         ('mode, 'a, 'b) ordered_termctx
-        * ('dom, 'modality, 'mode, 'bb, 'bm, 'x, 'n, 'b2) entry
+        * ('dom, 'modality, 'mode, 'x, 'n, 'b, 'bb, 'bm) entry
         * ('a, 'x, 'ax) N.plus
-        * ('mode, 'b2, 'mode, 'b, unit, 'bb) Tctx.comp
         -> ('mode, 'ax, 'bb) ordered_termctx
     | Lock :
         ('cod, 'a, 'b) ordered_termctx * ('dom, 'modality, 'cod) Modality.gen
@@ -1020,34 +991,23 @@ let rec dim_term_env : type mode a n b. (mode, a, n, b) env -> n D.t = function
   | Lock { env; _ } -> dim_term_env env
   | Prekey { env; _ } -> dim_term_env env
 
-let dim_entry : type dom modality mode bb f n bm b2.
-    (dom, modality, mode, bb, bm, f, n, b2) entry -> n D.t = function
+let dim_entry : type dom modality mode bb f n bm b.
+    (dom, modality, mode, f, n, b, bb, bm) entry -> n D.t = function
   | { bindings; _ } -> CubeOf.dim bindings
 
-let plus_lock_entry : type dom modality mode bb f n bm b2.
-    (dom, modality, mode, bb, bm, f, n, b2) entry -> (bb, mode, modality, dom, bm) plus_lock =
+let plus_lock_entry : type dom modality mode bb f n bm b.
+    (dom, modality, mode, f, n, b, bb, bm) entry -> (bb, mode, modality, dom, bm) plus_lock =
   function
   | { plus_lock; _ } -> plus_lock
 
-let modality_entry : type dom modality mode bb f n bm b2.
-    (dom, modality, mode, bb, bm, f, n, b2) entry -> (dom, modality, mode) Modality.t =
+let modality_entry : type dom modality mode bb f n bm b.
+    (dom, modality, mode, f, n, b, bb, bm) entry -> (dom, modality, mode) Modality.t =
  fun e -> plus_lock_modality (plus_lock_entry e)
 
-let filter_entry : type dom modality mode bb f n bm b2.
-    (dom, modality, mode, bb, bm, f, n, b2) entry -> (dom, modality, mode, n, n) Modality.filter_dim
+let filter_entry : type dom modality mode bb f n bm b.
+    (dom, modality, mode, f, n, b, bb, bm) entry -> (dom, modality, mode, n, n) Modality.filter_dim
     = function
   | { filter; _ } -> filter
-
-(* See Tctx.ext_kind. *)
-let ext_kind : type dom modality mode bb bm f n b2 b.
-    (dom, modality, mode, bb, bm, f, n, b2) entry ->
-    (mode, b2, mode, b, unit, bb) Tctx.comp ->
-    (mode, modality, n, b2, b, bb) ext_kind =
- fun { vis; _ } comp ->
-  match (vis, comp) with
-  | Vis (Vars, _), Suc (Zero, Dim _) -> Ext_dim
-  | Invis _, Suc (Zero, Dim _) -> Ext_dim
-  | Vis (Alias, _), Zero -> Ext_alias
 
 module Termctx = struct
   type ('mode, 'a, 'b) ordered = ('mode, 'a, 'b) ordered_termctx
@@ -1055,7 +1015,7 @@ module Termctx = struct
 
   let rec ordered_tctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, b) Tctx.t = function
     | Emp mode -> Path (Suc (Zero, Proj mode), Unit)
-    | Ext (ctx, _, _, comp) -> Tctx.comp_out (ordered_tctx ctx) comp
+    | Ext (ctx, e, _) -> ext_vars (ordered_tctx ctx) e.vars (dim_entry e) e.filter
     | Lock (ctx, modality) -> Tctx.suc (ordered_tctx ctx) (Lock modality)
     | Weaken (ctx, _) -> ordered_tctx ctx
 
@@ -1077,18 +1037,17 @@ module Termctx = struct
           bindings = CubeOf.singleton b;
           vis =
             Vis
-              ( Vars,
-                {
-                  dim = D.zero;
-                  plusdim = D.plus_zero D.zero;
-                  vars = NICubeOf.singleton x;
-                  hasfields = No_fields;
-                  fields = Emp;
-                  fplus = Zero;
-                } );
+              {
+                dim = D.zero;
+                plusdim = D.plus_zero D.zero;
+                names = NICubeOf.singleton x;
+                hasfields = No_fields;
+                fields = Emp;
+                fplus = Zero;
+              };
+          vars = Vars;
         },
-        Suc Zero,
-        Suc (Zero, Dim (D.zero, filter)) )
+        Suc Zero )
 
   let ext_let (Permute (p, ctx)) al xs b =
     let ctx = ordered_ext_let ctx al xs b in
@@ -1100,7 +1059,7 @@ module Termctx = struct
 
   let rec ordered_mode : type mode a b. (mode, a, b) ordered_termctx -> mode Mode.t = function
     | Emp mode -> mode
-    | Ext (ctx, _, _, _) -> ordered_mode ctx
+    | Ext (ctx, _, _) -> ordered_mode ctx
     | Lock (_, lock) -> Modality.Gen.src lock
     | Weaken (ctx, _) -> ordered_mode ctx
 
@@ -1118,15 +1077,13 @@ module Termctx = struct
    fun ctx ->
     match ctx with
     | Emp _ -> Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_proj)
-    | Ext (_, { vis = Vis (Vars, _); _ }, _, Suc (Zero, Dim _)) ->
-        Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_dim)
-    | Ext (_, { vis = Invis _; _ }, _, Suc (Zero, Dim _)) ->
+    | Ext (_, { vars = Vars; _ }, _) ->
         Ordered_remove_locks (ctx, plus_no_lock (ordered_mode ctx), Without_lock_dim)
     (* We can only remove locks below an alias if there aren't any, since the alias's bindings live in its context. *)
-    | Ext (ctx', ({ vis = Vis (Alias, _); _ } as e), af, Zero) -> (
+    | Ext (ctx', ({ vars = Alias; _ } as e), af) -> (
         match ordered_remove_locks ctx' with
         | Ordered_remove_locks (ctx', (Plus_lock (Zero _, Zero) as plus), wl) ->
-            Ordered_remove_locks (Ext (ctx', e, af, Zero), plus, wl)
+            Ordered_remove_locks (Ext (ctx', e, af), plus, wl)
         | _ -> Reporter.fatal (Anomaly "removing locks below an alias"))
     | Weaken (ctx, code) ->
         let (Ordered_remove_locks (ctx, plus, wl)) = ordered_remove_locks ctx in
@@ -1150,42 +1107,6 @@ module Termctx = struct
        Permute (Insert (p, Top), ctx) *)
 end
 
-(* Merge the binder names stored in a cube of visible variables in a termctx with raw names, as in ordered_hole_vars. *)
-let hole_vars_vis : type n f1 f2 f.
-    (N.zero, n, binder_name, f1) NICubeOf.t ->
-    (f1, f2, f) N.plus ->
-    (string option, f) Bwv.t ->
-    (binder_name, f) Bwv.t =
- fun cube fplus xs ->
-  let xs, fs = Bwv.unappend fplus xs in
-  (* First merge the raw names into the cube of binder names, consuming the Bwv from the right so that its indices match the cube's. *)
-  let module TR = NICubeOf.Traverse (struct
-    type 'a t = (string option, 'a) Bwv.t
-  end) in
-  let merge : type left m n.
-      (m, n) sface ->
-      (left, m, binder_name) NFamOf.t ->
-      (string option, left N.suc) Bwv.t ->
-      (string option, left) Bwv.t * (left, m, binder_name) NFamOf.t =
-   fun _ (NFamOf y) (Snoc (xs, x)) ->
-    match x with
-    | Some x -> (xs, NFamOf (`Named x))
-    | None -> (
-        match y with
-        | `Anon _ -> (xs, NFamOf y)
-        | `Named _ -> (xs, NFamOf (`Anon no_hints))) in
-  let _, merged = TR.fold_map_right { foldmap = (fun fb y xs -> merge fb y xs) } cube xs in
-  (* Then convert the merged cube of binder names back into a Bwv. *)
-  let module TL = NICubeOf.Traverse (struct
-    type 'a t = (binder_name, 'a) Bwv.t
-  end) in
-  let _, xs =
-    TL.fold_map_left { foldmap = (fun _ acc (NFamOf y) -> (NFamOf y, Snoc (acc, y))) } Emp merged
-  in
-  (* Field variables have no hints. *)
-  let fs = Bwv.map binder_name_of_option fs in
-  Bwv.bappend fplus xs fs
-
 (* Merge the binder names stored in a termctx, which carry display hints for anonymous variables, into a flat scope of raw variable names such as is stored for a hole.  Raw names that are present take precedence; absent ones pick up the hints (if any) from the corresponding termctx binder.  This is used when generating display names for the context of a hole. *)
 let rec ordered_hole_vars : type mode a b.
     (mode, a, b) ordered_termctx -> (string option, a) Bwv.t -> (binder_name, a) Bwv.t =
@@ -1199,14 +1120,43 @@ let rec ordered_hole_vars : type mode a b.
       (* The dataless weakening variable has no display name of its own; strip it and give it an anonymous hint. *)
       let (Snoc (vars, x)) = vars in
       Snoc (ordered_hole_vars ctx vars, binder_name_of_option x)
-  | Ext (ctx, entry, af, _) -> (
+  | Ext (ctx, entry, af) -> (
       let vars, xs = Bwv.unappend af vars in
       let rest = ordered_hole_vars ctx vars in
       match entry.vis with
       | Invis _ ->
           let Zero = af in
           rest
-      | Vis (_, { vars = cube; fplus; _ }) -> Bwv.bappend af rest (hole_vars_vis cube fplus xs))
+      | Vis { names = cube; fplus; _ } ->
+          let xs, fs = Bwv.unappend fplus xs in
+          (* First merge the raw names into the cube of binder names, consuming the Bwv from the right so that its indices match the cube's. *)
+          let module TR = NICubeOf.Traverse (struct
+            type 'a t = (string option, 'a) Bwv.t
+          end) in
+          let merge : type left m n.
+              (m, n) sface ->
+              (left, m, binder_name) NFamOf.t ->
+              (string option, left N.suc) Bwv.t ->
+              (string option, left) Bwv.t * (left, m, binder_name) NFamOf.t =
+           fun _ (NFamOf y) (Snoc (xs, x)) ->
+            match x with
+            | Some x -> (xs, NFamOf (`Named x))
+            | None -> (
+                match y with
+                | `Anon _ -> (xs, NFamOf y)
+                | `Named _ -> (xs, NFamOf (`Anon no_hints))) in
+          let _, merged = TR.fold_map_right { foldmap = (fun fb y xs -> merge fb y xs) } cube xs in
+          (* Then convert the merged cube of binder names back into a Bwv. *)
+          let module TL = NICubeOf.Traverse (struct
+            type 'a t = (binder_name, 'a) Bwv.t
+          end) in
+          let _, xs =
+            TL.fold_map_left
+              { foldmap = (fun _ acc (NFamOf y) -> (NFamOf y, Snoc (acc, y))) }
+              Emp merged in
+          (* Field variables have no hints. *)
+          let fs = Bwv.map binder_name_of_option fs in
+          Bwv.bappend af rest (Bwv.bappend fplus xs fs))
 
 let hole_vars : type mode a b.
     (mode, a, b) termctx -> (string option, a) Bwv.t -> (binder_name, a) Bwv.t =

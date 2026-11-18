@@ -23,7 +23,7 @@ type printable +=
   | DeepEnv : ('mode, 'n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
   | Apps : ('hmode, 'mode, 'any, 'fail) apps -> printable
-  | Entry : ('dom, 'modality, 'mode, 'x, 'n, 'b2) Ctx.entry -> printable
+  | Entry : ('dom, 'modality, 'mode, 'x, 'n, 'b, 'bb) Ctx.entry -> printable
   | OrderedCtx : ('mode, 'a, 'b) Ctx.Ordered.t -> printable
   | Ctx : ('mode, 'a, 'b) Ctx.t -> printable
 
@@ -320,14 +320,14 @@ module F = struct
                 (fun (CodatafieldAbwd.Entry (f, _)) -> Field.to_string f)
                 fields))
 
-  and entry : type dom modality mode x n b2.
-      formatter -> (dom, modality, mode, x, n, b2) Ctx.entry -> unit =
+  and entry : type dom modality mode x n b bb.
+      formatter -> (dom, modality, mode, x, n, b, bb) Ctx.entry -> unit =
    fun ppf -> function
-    | { bindings; filter; vis = Vis (_, { dim; plusdim; hasfields = No_fields; vars; _ }) } -> (
+    | { bindings; filter; vis = Vis { dim; plusdim; hasfields = No_fields; names; _ }; _ } -> (
         match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
         | Zero, Zero ->
             let x =
-              match NICubeOf.find_top vars with
+              match NICubeOf.find_top names with
               | `Named x -> x
               | `Anon _ -> "_" in
             let b = CubeOf.find_top bindings in
@@ -343,8 +343,8 @@ module F = struct
   and ordered_ctx : type mode a b. formatter -> (mode, a, b) Ctx.Ordered.t -> unit =
    fun ppf -> function
     | Emp _ -> ()
-    | Snoc (c, e, _, Zero) -> fprintf ppf "%a alias%a" ordered_ctx c entry e
-    | Snoc (c, e, _, _) -> fprintf ppf "%a %a" ordered_ctx c entry e
+    | Snoc (c, ({ vars = Alias; _ } as e), _) -> fprintf ppf "%a alias%a" ordered_ctx c entry e
+    | Snoc (c, ({ vars = Vars; _ } as e), _) -> fprintf ppf "%a %a" ordered_ctx c entry e
     | Lock (c, _) -> fprintf ppf "%a Lock" ordered_ctx c
     | Weaken (c, _) -> fprintf ppf "%a Weaken" ordered_ctx c
 

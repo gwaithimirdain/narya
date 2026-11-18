@@ -406,12 +406,12 @@ let alias_name : type b mode x a s. b t -> (mode, x, a, s) Meta.t -> string opti
 let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = function
   | Emp mode -> empty mode
   (* An alias has no checked variables, so it contributes nothing to the list of cubes of names.  But if it is zero-dimensional and its value is a metavariable, we record its name for that metavariable, reserving the name like that of a variable. *)
-  | Snoc (ctx, { vis = Vis (Alias, { vars; _ }); bindings; filter }, _, Zero) -> (
+  | Snoc (ctx, { vis = Vis { names = xs; _ }; vars = Alias; bindings; filter }, _) -> (
       let names = of_ordered_ctx ctx in
       match D.compare_zero (CubeOf.dim bindings) with
       | Pos _ -> names
       | Zero -> (
-          let x, _, used = uniquify_opt (fun x -> (x, "")) (NICubeOf.find_top vars) names.used in
+          let x, _, used = uniquify_opt (fun x -> (x, "")) (NICubeOf.find_top xs) names.used in
           let names = { names with used } in
           (* Since this is only for display, if anything goes wrong reading back the value we just don't record it. *)
           match
@@ -423,7 +423,7 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
           with
           | Some v -> { names with aliases = Meta.WrapMap.add v x names.aliases }
           | None -> names))
-  | Snoc (ctx, { vis = Vis (Vars, { dim; plusdim; vars; fields; _ }); _ }, _, Suc (Zero, Dim _)) ->
+  | Snoc (ctx, { vis = Vis { dim; plusdim; names = vars; fields; _ }; vars = Vars; _ }, _) ->
       let { ctx; used; hidden; aliases } = of_ordered_ctx ctx in
       let vars, used = uniquify_cube (fun x -> (x, "")) vars used in
       let used = ref used in
@@ -435,7 +435,7 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
             (Field.to_string f, x))
           (Bwv.to_bwd fields) in
       { ctx = Snoc (ctx, Variables (dim, plusdim, vars), fields); used = !used; hidden; aliases }
-  | Snoc (ctx, { bindings; vis = Invis name; _ }, _, Suc (Zero, Dim _)) ->
+  | Snoc (ctx, { bindings; vis = Invis name; vars = Vars; _ }, _) ->
       (* Invisible variables are anonymous, unless they have a name for display, but we can still give them hints from their types.  Since this is only for display, if anything goes wrong computing the type (e.g. the binding is an error placeholder) we just skip the hints (though internal errors are still reported). *)
       let name =
         match name with
@@ -446,6 +446,8 @@ let rec of_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> b t = func
                 View.hints_of_ty (Lazy.force (Ctx.Binding.value (CubeOf.find_top bindings)).ty) )
       in
       snd (add_cube (CubeOf.dim bindings) (of_ordered_ctx ctx) name)
+  (* An invisible alias has neither names nor checked variables. *)
+  | Snoc (ctx, { vis = Invis _; vars = Alias; _ }, _) -> of_ordered_ctx ctx
   | Lock (ctx, gen) ->
       let { ctx; used; hidden; aliases } = of_ordered_ctx ctx in
       { ctx = Lock (ctx, Some (Mode.Wrap (Modality.Gen.src gen))); used; hidden; aliases }

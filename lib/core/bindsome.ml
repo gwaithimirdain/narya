@@ -83,9 +83,9 @@ module Ordered = struct
      2. A forwards Tlist of backwards natural numbers that flattens to the raw length.  We could index contexts by an analogous backwards Tbwd of nats, but we don't have any need for that so far.  But retaining this index for telescopes is crucial to constructing the correct permutations in bind_some, below, in an intrinsically well-typed way. *)
   type ('lmode, 'rmode, _, _, _) tel =
     | Nil : 'mode Mode.t -> ('mode, 'mode, Fwn.zero, nil, 'mode id) tel
-    (* An entry contributes its raw variables to the raw length, and its extension of the checked context (a cube of variables, or nothing for an alias) to the checked length. *)
+    (* An entry contributes its raw variables to the raw length, and its extension of the checked context (a cube of variables, or nothing for an alias) to the checked length.  Since a telescope entry isn't attached to any particular checked context on its left, we store it "detached", as an extension of the empty path, with the composite recorded separately (see detach). *)
     | Cons :
-        ('ldom, 'lmodality, 'lmode, 'x, 'n, 'b2) Ctx.entry
+        ('ldom, 'lmodality, 'lmode, 'x, 'n, 'lmode id, 'b2) Ctx.entry
         * ('lmode, 'rmode, 'a, 'f, 'b) tel
         * ('x, 'a, 'xa) Fwn.fplus
         * ('lmode, 'b2, 'lmode, 'b, 'b2b) Tctx.fcomp
@@ -115,6 +115,20 @@ module Ordered = struct
     | Parametric_lock tel -> mode_tel tel
     | Weaken (tel, _, _) -> mode_tel tel
 
+  (* Detach an entry from the checked context it extends, re-expressing it as an extension of the empty path together with a composite giving its extension of the original checked context. *)
+  type (_, _, _, _, _, _, _) detached =
+    | Detached :
+        ('dom, 'modality, 'mode, 'f, 'n, 'mode id, 'b2) Ctx.entry
+        * ('mode, 'b2, 'mode, 'b, unit, 'bb) Tctx.comp
+        -> ('dom, 'modality, 'mode, 'f, 'n, 'b, 'bb) detached
+
+  let detach : type dom modality mode f n b bb.
+      (dom, modality, mode, f, n, b, bb) Ctx.entry -> (dom, modality, mode, f, n, b, bb) detached =
+   fun e ->
+    match e.vars with
+    | Vars -> Detached ({ e with vars = Vars }, Suc (Zero, Dim (Ctx.dim_entry e, e.filter)))
+    | Alias -> Detached ({ e with vars = Alias }, Zero)
+
   (* Convert a context to a telescope. *)
   type ('rmode, 'i, 'b) to_tel =
     | To_tel :
@@ -134,8 +148,9 @@ module Ordered = struct
      fun ctx tel ij bc ->
       match ctx with
       | Emp _ -> To_tel (ij, bc, tel)
-      | Snoc (ctx, e, ax, comp) ->
+      | Snoc (ctx, e, ax) ->
           let (Fplus xf) = Fwn.fplus (N.plus_right ax) in
+          let (Detached (e, comp)) = detach e in
           let (Fcomp fc) = Tctx.fcomp (Tctx.comp_right (Mode (Ctx.Ordered.mode ctx)) comp) in
           let bc = Tctx.bfcomp_assocr comp fc bc in
           go ctx (Cons (e, tel, xf, fc)) (Fwn.bfplus_assocr ax xf ij) bc
@@ -270,25 +285,25 @@ module Ordered = struct
       Some newentry
     with Short_circuit -> None
 
-  let bind_some_entry : type dom modality mode bindmode f i a n b2.
+  let bind_some_entry : type dom modality mode bindmode f i a n b bb.
       level:int ->
       bindmode var_binder ->
       oldctx:(mode, i, a) Ctx.Ordered.t ->
       newctx:(mode, i, a) Ctx.Ordered.t ->
-      (dom, modality, mode, f, n, b2) Ctx.entry ->
-      (dom, modality, mode, f, n, b2) Ctx.entry option =
-   fun ~level binder ~oldctx ~newctx { filter; bindings; vis } ->
+      (dom, modality, mode, f, n, b, bb) Ctx.entry ->
+      (dom, modality, mode, f, n, b, bb) Ctx.entry option =
+   fun ~level binder ~oldctx ~newctx { filter; bindings; vis; vars } ->
     let open Monad.Ops (Monad.Maybe) in
     let* bindings =
       match vis with
       (* The variables of an alias are all let-bound, so it doesn't matter whether they are bindable. *)
-      | Vis (_, { fplus = Zero; _ }) ->
+      | Vis { fplus = Zero; _ } ->
           bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings
           (* A variable that has views of its fields can't be bound. *)
       | Vis _ -> bind_some_normal_cube ~level binder `Nonbindable ~oldctx ~newctx filter bindings
       | Invis _ -> bind_some_normal_cube ~level binder `Bindable ~oldctx ~newctx filter bindings
     in
-    return ({ bindings; filter; vis } : _ Ctx_entry.entry)
+    return ({ bindings; filter; vis; vars } : _ Ctx_entry.entry)
 
   (* This seems an appropriate place to comment about the "insert" and "bplus_permute" data being returned from (go_)go_bind_some.  The issue is that in addition to a permuted context, we need to compute the permutation relating it to the original context.  In fact we need *two* permutations, one for the raw indices and one for the checked indices.
 
@@ -305,45 +320,40 @@ module Ordered = struct
 
   (* The insertion of the first entry of a telescope, whose extension of the checked context is prepended to the rest. *)
   let ext_insert_now : type ldom lmodality lmode x n b2 b c.
-      (ldom, lmodality, lmode, x, n, b2) Ctx.entry ->
+      (ldom, lmodality, lmode, x, n, lmode id, b2) Ctx.entry ->
       (lmode, b2, lmode, b, c) Tctx.fcomp ->
       (b2, b, c, lmode) ext_insert =
    fun e fc ->
-    match (e.vis, fc) with
-    | Vis (Vars, _), Suc (_, Zero) -> Inserted (Now (Ctx.dim_entry e, Ctx.filter_entry e))
-    | Invis _, Suc (_, Zero) -> Inserted (Now (Ctx.dim_entry e, Ctx.filter_entry e))
-    | Vis (Alias, _), Zero -> Not_inserted
+    match (e.vars, fc) with
+    | Vars, Suc (_, Zero) -> Inserted (Now (Ctx.dim_entry e, Ctx.filter_entry e))
+    | Alias, Zero -> Not_inserted
 
   (* The insertion of an entry found later in a telescope, after an entry that is skipped over and stays before it. *)
   let ext_insert_later : type ldom lmodality lmode x n b2 b b' c c' f.
-      (ldom, lmodality, lmode, x, n, b2) Ctx.entry ->
+      (ldom, lmodality, lmode, x, n, lmode id, b2) Ctx.entry ->
       (lmode, b2, lmode, b, b') Tctx.fcomp ->
       (lmode, b2, lmode, c, c') Tctx.fcomp ->
       (f, b, c, lmode) ext_insert ->
       (f, b', c', lmode) ext_insert =
    fun e fb fc ins ->
-    match (e.vis, fb, fc, ins) with
-    | Vis (Alias, _), Zero, Zero, _ -> ins
-    | Vis (Vars, _), Suc (_, Zero), Suc (_, Zero), Inserted ins ->
+    match (e.vars, fb, fc, ins) with
+    | Alias, Zero, Zero, _ -> ins
+    | Vars, Suc (_, Zero), Suc (_, Zero), Inserted ins ->
         Inserted (Later (Ctx.modality_entry e, ins))
-    | Invis _, Suc (_, Zero), Suc (_, Zero), Inserted ins ->
-        Inserted (Later (Ctx.modality_entry e, ins))
-    | Vis (Vars, _), Suc (_, Zero), Suc (_, Zero), Not_inserted -> Not_inserted
-    | Invis _, Suc (_, Zero), Suc (_, Zero), Not_inserted -> Not_inserted
+    | Vars, Suc (_, Zero), Suc (_, Zero), Not_inserted -> Not_inserted
 
   (* An entry inserted into the checked permutation is a cube of variables, whose extension of the checked context has the modality and dimension of the insertion. *)
   let inserted_cube : type dom modality mode f n x k.
-      (dom, modality, mode, f, n, (mode id, (x, k) dim_entry) Tbwd.snoc) Ctx.entry ->
+      (dom, modality, mode, f, n, mode id, (mode id, (x, k) dim_entry) Tbwd.snoc) Ctx.entry ->
       (x * k, modality * n) Eq.t =
    fun e ->
-    match e.vis with
-    | Vis (Vars, _) -> Eq
-    | Invis _ -> Eq
+    match e.vars with
+    | Vars -> Eq
 
   type (_, _, _, _, _) go_go_bind_some =
     | Found : {
-        oldentry : ('ldom, 'lmodality, 'lmode, 'f, 'n, 'b2) Ctx.entry;
-        newentry : ('ldom, 'lmodality, 'lmode, 'f, 'n, 'b2) Ctx.entry;
+        oldentry : ('ldom, 'lmodality, 'lmode, 'f, 'n, 'lmode id, 'b2) Ctx.entry;
+        newentry : ('ldom, 'lmodality, 'lmode, 'f, 'n, 'lmode id, 'b2) Ctx.entry;
         ins : ('b2, 'b, 'c, 'lmode) ext_insert;
         fins : ('bf, 'f, 'cf) Tlist.insert;
         rest : ('lmode, 'rmode, 'i, 'bf, 'b) tel;
@@ -422,10 +432,8 @@ module Ordered = struct
         match ins with
         | Inserted ins -> (
             let Eq = inserted_cube oldentry in
-            let oldctx =
-              Snoc (oldctx, oldentry, faces, Ctx.dim_comp oldentry.filter oldentry.bindings) in
-            let newctx =
-              Snoc (newctx, newentry, faces, Ctx.dim_comp newentry.filter newentry.bindings) in
+            let oldctx = Snoc (oldctx, { oldentry with vars = Vars }, faces) in
+            let newctx = Snoc (newctx, { newentry with vars = Vars }, faces) in
             match go_bind_some ~level binder ~oldctx ~newctx (Suc (af, Id k, faces)) rest with
             | Go_bind_some { raw_flat; raw_perm; checked_perm; oldctx; newctx } ->
                 Go_bind_some
@@ -438,8 +446,8 @@ module Ordered = struct
                   }
             | None -> None)
         | Not_inserted -> (
-            let oldctx = Snoc (oldctx, oldentry, faces, Zero) in
-            let newctx = Snoc (newctx, newentry, faces, Zero) in
+            let oldctx = Snoc (oldctx, { oldentry with vars = Alias }, faces) in
+            let newctx = Snoc (newctx, { newentry with vars = Alias }, faces) in
             match go_bind_some ~level binder ~oldctx ~newctx (Suc (af, Id k, faces)) rest with
             | Go_bind_some g -> Go_bind_some { g with raw_perm = Bp_insert (fins, g.raw_perm) }
             | None -> None))

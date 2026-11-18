@@ -349,7 +349,7 @@ let unparse_meta_name : type mode x b l s lt ls rt rs.
 (* Whether the context of a let-only has no clauses to display, because it contains only aliases and weakenings. *)
 let rec letonly_empty : type mode i b. (mode, i, b) ordered_termctx -> bool = function
   | Emp _ -> true
-  | Ext (ctx, { vis = Vis (Alias, _); _ }, _, Zero) -> letonly_empty ctx
+  | Ext (ctx, { vars = Alias; _ }, _) -> letonly_empty ctx
   | Weaken (ctx, _) -> letonly_empty ctx
   | Ext _ | Lock _ -> false
 
@@ -665,11 +665,6 @@ let constant_name : type n. n Names.t -> string list -> string list =
 (* The variable of an implicit argument of a constructor that is omitted from a match pattern is invisible to the user, so it is displayed in the pattern (in braces) only if it is mentioned in the body of the branch, or if the user has asked to display implicit arguments.  To notice whether it is mentioned, while displaying the body we record the names of such variables in this table, with a flag that is set when the variable is displayed.  The names of variables in scope are distinct, so the name identifies the variable. *)
 let hidden_pattern_vars : (string, bool ref) Hashtbl.t = Hashtbl.create 10
 
-(* A composite of adjacent locks in a let-only, with the given source mode. *)
-type _ letonly_lock =
-  | No_letonly_lock : 'mode letonly_lock
-  | Letonly_lock : ('mode, 'modality, 'tgt) Modality.t -> 'mode letonly_lock
-
 (* The name of a modality, as a spine of identifiers, or a placeholder for the identity. *)
 let unparse_modality_name : type dom modality mode. (dom, modality, mode) Modality.t -> observation
     =
@@ -694,8 +689,8 @@ let unparse_modality_name : type dom modality mode. (dom, modality, mode) Modali
 (* The composite of a nest of keys applied to a term, from the source of the innermost to the target of the outermost, if their sources and targets match up as they should. *)
 type any_cell = Any_cell : ('a, 'm, 'n, 'b) Modalcell.t -> any_cell
 
-let rec key_composite : type mode a mu nu cod e.
-    (mode, mu, nu, cod) Modalcell.t -> (mode, a, e) term -> any_cell option =
+let rec key_composite : type mode a mu nu cod s.
+    (mode, mu, nu, cod) Modalcell.t -> (mode, a, s) term -> any_cell option =
  fun outer body ->
   match body with
   | Key { tm; cell = inner; _ } -> (
@@ -707,8 +702,8 @@ let rec key_composite : type mode a mu nu cod e.
   | _ -> Some (Any_cell outer)
 
 (* Whether to print a nest of keys, given the outermost and its body.  Elaboration would insert the identity, if the source and target of the composite are equal, and otherwise the unique cell between them, if there is one; if that is the composite, we can omit all the keys (or must print them, if the user has enabled 'display unique keys' and it isn't an identity), and otherwise we must print them. *)
-let decide_keys : type mode a mu nu cod e.
-    (mode, mu, nu, cod) Modalcell.t -> (mode, a, e) term -> [ `Print | `Omit ] =
+let decide_keys : type mode a mu nu cod s.
+    (mode, mu, nu, cod) Modalcell.t -> (mode, a, s) term -> [ `Print | `Omit ] =
  fun cell body ->
   match key_composite cell body with
   | None -> `Print
@@ -865,6 +860,7 @@ let rec unparse : type mode n lt ls rt rs s.
             (unlocated
                (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v kind)
                   ~right_ok:No.minusomega_lt_minusomegaplusone)))
+  (* Otherwise, we unparse and display all the binding clauses of a let-only. *)
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty } -> (
       (* The bound terms are unparsed in the ambient context, while the types and the body are unparsed in the context of only the bound variables. *)
       let binding, bodyvars = unparse_letonly_clauses vars ctx tmenv in
@@ -1010,30 +1006,32 @@ and unparse_letonly_clauses : type mode n i k b.
     observation Bwd.t * b Names.t =
  fun vars ctx tmenv ->
   let acc, pending, names = unparse_letonly_clauses_pending vars ctx tmenv in
-  (flush_letonly_lock acc pending, names)
+  let acc =
+    match pending with
+    | None -> acc
+    | Some (Wrap modality) -> letonly_sep acc <: mktok Lock <: unparse_modality_name modality in
+  (acc, names)
 
 (* Adjacent locks are displayed as a single lock clause by their composite modality, so while walking the clauses we keep track of the composite of the locks seen since the last other clause, whose source is the mode at which the walk has arrived. *)
 and unparse_letonly_clauses_pending : type mode n i k b.
     n Names.t ->
     (mode, i, b) ordered_termctx ->
     (mode, n, k, b) env ->
-    observation Bwd.t * mode letonly_lock * b Names.t =
+    observation Bwd.t * mode Modality.tgt_wrapped option * b Names.t =
  fun vars ctx tmenv ->
   match (ctx, tmenv) with
-  | Emp mode, Emp _ -> (Snoc (Emp, mktok Only), No_letonly_lock, Names.empty mode)
-  (* An alias has no checked variables, so it isn't substituted for. *)
-  | Ext (ctx, { vis = Vis (Alias, _); _ }, _, Zero), _ ->
-      unparse_letonly_clauses_pending vars ctx tmenv
-  | ( Ext (ctx, ({ bindings; plus_lock; filter = _; vis } as e), _, (Suc (Zero, Dim _) as comp)),
+  | Emp mode, Emp _ -> (Snoc (Emp, mktok Only), None, Names.empty mode)
+  (* An alias has no checked variables, so it isn't substituted for.  (It was already substituted at typechecking time.) *)
+  | Ext (ctx, { vars = Alias; _ }, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
+  | ( Ext (ctx, { bindings; plus_lock; filter = _; vis; vars = Vars }, _),
       Ext { env; values = Modal (modality, plus, tms); _ } ) ->
-      let Ext_dim = ext_kind e comp in
       let top = CubeOf.find_top bindings in
       let acc, names = unparse_letonly_clauses vars ctx env in
       let n = CubeOf.dim bindings in
       (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
       let name =
         match vis with
-        | Vis (_, { vars = xs; _ }) -> NICubeOf.find_top xs
+        | Vis { names = xs; _ } -> NICubeOf.find_top xs
         | Invis { hints; name = None } -> `Anon hints
         | Invis { hints = _; name = Some x } -> Variables.binder_name_of_option (Some x) in
       let x, names = Names.add_cube n names name in
@@ -1048,16 +1046,16 @@ and unparse_letonly_clauses_pending : type mode n i k b.
         match Modality.compare_id modality with
         | Eq -> acc
         | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
-      (acc <: Term ty <: mktok Coloneq <: Term tm, No_letonly_lock, names)
+      (acc <: Term ty <: mktok Coloneq <: Term tm, None, names)
   (* A weakening entry, which can occur in the context of a metavariable, contributes nothing. *)
   | Weaken (ctx, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
   | Lock (ctx, cgen), Lock { env; gen; plus_tgt = Plus_with_locks (comp, _) } ->
       let Eq = Modality.Gen.tgt_uniq cgen gen in
       let acc, pending, names = unparse_letonly_clauses_pending (Names.split vars comp) ctx env in
-      let pending =
+      let pending : mode Modality.tgt_wrapped option =
         match pending with
-        | No_letonly_lock -> Letonly_lock (Modality.of_gen gen)
-        | Letonly_lock modality -> Letonly_lock (Modality.suc modality gen) in
+        | None -> Some (Wrap (Modality.of_gen gen))
+        | Some (Wrap modality) -> Some (Wrap (Modality.suc modality gen)) in
       (acc, pending, Names.add_gen_lock names gen)
   | _, Prekey { env; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } ->
       let acc, names =
@@ -1067,14 +1065,8 @@ and unparse_letonly_clauses_pending : type mode n i k b.
           (fun acc parts ->
             letonly_sep acc <: mktok Keyword_key <: Term (unlocated (Ident (parts, []))))
           acc (Modalcell.name cell),
-        No_letonly_lock,
+        None,
         names )
-
-and flush_letonly_lock : type mode. observation Bwd.t -> mode letonly_lock -> observation Bwd.t =
- fun acc pending ->
-  match pending with
-  | No_letonly_lock -> acc
-  | Letonly_lock modality -> letonly_sep acc <: mktok Lock <: unparse_modality_name modality
 
 (* The first clause of a let-only directly follows "only", while the rest are preceded by "and". *)
 and letonly_sep (acc : observation Bwd.t) : observation Bwd.t =
@@ -2440,16 +2432,17 @@ let rec unparse_ctx : type dom modality mode a b.
               ty = Wrap (unlocated (Placeholder []));
             } ) )
   | Ext
-      (type edom emod a' x b' bm n b2)
-      ((ctx, ({ plus_lock; bindings; filter = _; vis } as e), af, comp) :
+      (type edom emod a' x b' bm n)
+      ((ctx, { plus_lock; bindings; filter = _; vis; vars = evars }, af) :
         (mode, a', b') ordered_termctx
-        * (edom, emod, mode, b, bm, x, n, b2) Term.entry
-        * (a', x, a) N.plus
-        * (mode, b2, mode, b', unit, b) Tctx.comp) -> (
+        * (edom, emod, mode, x, n, b', b, bm) Term.entry
+        * (a', x, a) N.plus) -> (
       let vars, xs = Bwv.unappend af vars in
       let names, result = unparse_ctx names lock vars ctx in
-      match (ext_kind e comp, vis) with
-      | Ext_dim, Invis { hints = _; name = Some x } ->
+      match (evars, vis) with
+      (* An invisible alias has neither raw nor checked variables, so there is nothing to display or name. *)
+      | Alias, Invis _ -> (names, result)
+      | Vars, Invis { hints = _; name = Some x } ->
           (* An invisible entry with a name is bound by a match pattern that omits an implicit argument of a constructor.  The user can't refer to it, but other entries can mention it, so we display it, marked as not in scope. *)
           let Variables (_, _, xs), names =
             Names.add names
@@ -2478,11 +2471,11 @@ let rec unparse_ctx : type dom modality mode a b.
             }
             [ bindings ];
           (names, !result)
-      | Ext_dim, Invis { hints; name = None } ->
+      | Vars, Invis { hints; name = None } ->
           (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device: the self-variable of a datatype's constructors, or a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
           let _, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           (names, result)
-      | ext, Vis (kind, { dim; plusdim; vars; hasfields; fields; fplus }) ->
+      | _, Vis { dim; plusdim; names = cube; hasfields; fields; fplus } ->
           let modality = Modality.name (plus_lock_modality plus_lock) in
           (* First we split off the field variables, if any. *)
           let xs, fs = Bwv.unappend fplus xs in
@@ -2497,7 +2490,7 @@ let rec unparse_ctx : type dom modality mode a b.
               left N.suc T.t ->
               left T.t * (left, m, string * [ `Original | `Renamed ]) NFamOf.t =
            fun _ (NFamOf _) (Snoc (xs, x)) -> (xs, NFamOf x) in
-          let _, vardata = Fold.fold_map_right { foldmap = do_var } vars xs in
+          let _, vardata = Fold.fold_map_right { foldmap = do_var } cube xs in
           (* Then we project out the variable names alone.  TODO: Can we do this as part of the same iteration?  It would require a two-output version of the traversal.  *)
           let projector : type left m n.
               (m, n) sface ->
@@ -2509,10 +2502,9 @@ let rec unparse_ctx : type dom modality mode a b.
           let fnames =
             Bwv.mmap (fun [ (x, _); (f, _, _) ] -> (Field.to_string f, x)) [ fs; fields ] in
           let (names : b Names.t) =
-            match (kind, ext) with
-            | Vars, Ext_dim ->
-                Names.unsafe_add names (Variables (dim, plusdim, xs)) (Bwv.to_bwd fnames)
-            | Alias, Ext_alias -> names in
+            match evars with
+            | Vars -> Names.unsafe_add names (Variables (dim, plusdim, xs)) (Bwv.to_bwd fnames)
+            | Alias -> names in
           let xnames = Names.add_lock names plus_lock in
           let lock = Modality.name lock in
           (* Then we iterate forwards through the bindings, unparsing them with these names and adding them to the result. *)
@@ -2556,7 +2548,7 @@ let rec unparse_ctx : type dom modality mode a b.
             [ fs; fields ];
           (* If an alias is zero-dimensional and its value is a metavariable, we record its name for that metavariable (see Names.add_alias). *)
           let names =
-            match (kind, D.compare_zero (CubeOf.dim bindings), (CubeOf.find_top bindings).tm) with
+            match (evars, D.compare_zero (CubeOf.dim bindings), (CubeOf.find_top bindings).tm) with
             | Alias, Zero, Some tm -> Names.add_alias names (fst (NICubeOf.find_top vardata)) tm
             | _ -> names in
           (names, !result))
