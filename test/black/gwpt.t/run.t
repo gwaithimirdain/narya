@@ -203,7 +203,7 @@ between its endpoints: here the composite differs from the identity.
      ^ term synthesized type
          Disc⁽ᵉ⁾ (P y) (P y)
        but is being checked against type
-         Disc⁽ᵉ⁾ (t1 y) (P y)
+         Disc⁽ᵉ⁾ (P (y #◇△⇨1 #□⇨◇.△ #1⇨□△.□△)) (P y)
        unequal head terms:
          y
        does not equal
