@@ -232,9 +232,18 @@ However, unlike the other types and constructs we have discussed so far, matches
 
 then ``neg1`` and ``neg2`` are not convertible.  By η-expansion, when trying to convert them we do automatically introduce a new variable ``x`` and try to compare ``neg1 x`` with ``neg2 x``, but neither of these terms reduce since ``x`` is not a constructor.  In particular, datatypes do not satisfy any kind of η-conversion themselves.
 
-Unlike for other case tree nodes, the ``about`` command will not display a stuck match; instead it simply displays the application spine of the function defined by matching, like ``echo``.  Indeed, in general there may not be an obvious well-typed syntax to display for a stuck match: the branches of a :ref:`Variable matches` can depend for their well-typedness on its refinement of the context and goal, which only makes sense if the discriminee is a variable, but after application the discriminee of a stuck match may become an arbitrary term.
+The ``about`` command can display a stuck match, but it has to take care: in general the discriminee of a stuck match may have become an arbitrary term, while the branches of a :ref:`Variable matches` can depend for their well-typedness on its refinement of the context and goal, which only makes sense if the discriminee is a variable.  So instead ``about`` displays the match in its original context, wrapped in a :ref:`Let-only binding` that binds the variables of that context to the values they had when it got stuck, and ascribed with the type it was checked at.  For instance, with ``neg1`` as above and an axiom ``b : Bool``, the command ``about neg1 b`` displays
 
-There is one case in which ``about`` will display a match, however: if you give it a bare top-level named constant such as ``about neg1``, it can simply look up and display the definition of that constant without needing to do any normalization.
+.. code-block:: none
+
+   let only 𝑥 : Bool ≔ b in
+   (match 𝑥 [ false. ↦ true. | true. ↦ false. ] : Bool)
+
+Here ``𝑥`` is the name Narya generates for the unnamed variable of the matching abstraction.
+
+If a stuck match has been applied to further arguments, as when a function of two arguments is defined by matching on the first and then applied to two arguments, it can't be displayed in this way, and ``about`` falls back to displaying the application spine of the function, like ``echo``.
+
+In addition, if you give ``about`` a bare top-level named constant such as ``about neg1``, it simply looks up and displays the definition of that constant without needing to do any normalization.
 
 
 Recursion

@@ -148,7 +148,8 @@ module F = struct
   and evaluation : type mode s. int -> formatter -> (mode, s) evaluation -> unit =
    fun depth ppf v ->
     match v with
-    | Unrealized -> fprintf ppf "Unrealized"
+    | Unrealized None -> fprintf ppf "Unrealized"
+    | Unrealized (Some _) -> fprintf ppf "Unrealized(stuck)"
     | Realize v -> fprintf ppf "Realize (%a)" (dvalue depth) v
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 

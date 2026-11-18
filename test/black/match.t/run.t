@@ -466,13 +466,23 @@ The pattern variables of a higher-dimensional match can be given explicit bounda
    ￫ info[I0001]
    ￮ axiom a2 assumed
   
-  bar a0 a1 a2
+  let only y0 : ℕ ≔ a0
+  and y1 : ℕ ≔ a1
+  and y2 : ℕ⁽ᵉ⁾ y0 y1 ≔ a2 in
+  (match y2 [ suc. n ⤇ n.0 | zero. ⤇ 0 ] : ℕ)
     : ℕ
   
-  bar′ a0 a1 a2
+  let only y0 : ℕ ≔ a0
+  and y1 : ℕ ≔ a1
+  and y2 : ℕ⁽ᵉ⁾ y0 y1 ≔ a2 in
+  (match y2 [ suc. {m0} {m1} m2 ↦ m0 | zero. ↦ 0 ] : ℕ)
     : ℕ
   
-  y0 y1 y2 ⤇ ap bar′ y0.2 y1.2 y2.2
+  y0 y1 y2 ⤇
+  let⁽ᵉ⁾ only y0 : ℕ ≔ y0.2
+  and y1 : ℕ ≔ y1.2
+  and y2 : ℕ⁽ᵉ⁾ y0 y1 ≔ y2.2 in
+  (match y2 [ suc. {m0} {m1} m2 ↦ m0 | zero. ↦ 0 ] : ℕ)
     : {y0₀ : ℕ} {y0₁ : ℕ} (y0₂ : ℕ⁽ᵉ⁾ y0₀ y0₁) {y1₀ : ℕ} {y1₁ : ℕ}
       (y1₂ : ℕ⁽ᵉ⁾ y1₀ y1₁) {y2₀ : ℕ⁽ᵉ⁾ y0₀ y1₀} {y2₁ : ℕ⁽ᵉ⁾ y0₁ y1₁}
       (y2₂ : ℕ⁽ᵉᵉ⁾ y0₂ y1₂ y2₀ y2₁)

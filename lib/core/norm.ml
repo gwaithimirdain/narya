@@ -226,7 +226,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                 | `Defined tree ->
                     (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
                     Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
-                | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
+                | `Axiom -> Neu { head; args = Emp; value = ready (Unrealized None); ty } in
               add_cached_const name dim mode result;
               Val result
           | Neq ->
@@ -258,10 +258,12 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
           (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
           Val (Neu { head; args = Emp; value = lazy_eval env tm; ty = lazy (make_ty meta ty) })
       (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  We don't need to return the metavariable itself; it suffices to know that that branch of the case tree is stuck, as the constant whose definition it is should handle all identity/equality checks correctly. *)
-      | _, Potential -> Unrealized
+      | _, Potential -> Unrealized None
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
       | { ty; _ }, Kinetic ->
-          Val (Neu { head; args = Emp; value = ready Unrealized; ty = lazy (make_ty meta ty) }))
+          Val
+            (Neu { head; args = Emp; value = ready (Unrealized None); ty = lazy (make_ty meta ty) })
+      )
   | UU (mode, n) ->
       let m = dim_env env in
       let (Plus mn) = D.plus n in
@@ -544,7 +546,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Restrict_keys (env, pre)) = restrict_keys env plus_tgt in
       let env = prekey_env (prekey_env (lock_env env plus_src) cell) pre in
       eval env tm
-  | Match { tm; window; plus_lock; dim = match_dim; branches; motive = _ } -> (
+  | Match { tm; window; plus_lock; dim = match_dim; branches; motive = _; display } as mtch -> (
       let env_dim = dim_env env in
       let kenv = lock_env env plus_lock in
       let (Has_filter fw) = Modality.filter window env_dim in
@@ -574,8 +576,11 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   eval (Permute (perm, env)) tm))
       (* A match on a failed term also realizes to a failed value. *)
       | Neu { head = Failed _; _ } -> Realize (failed_untyped (mode_env env))
-      (* Otherwise, the case tree doesn't reduce. *)
-      | _ -> Unrealized)
+      (* Otherwise, the case tree doesn't reduce.  If the match has display data, we remember where it got stuck, for display by "about". *)
+      | _ -> (
+          match display with
+          | Some display -> Unrealized (Some (Stuck { env; tm = mtch; display }))
+          | None -> Unrealized None))
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
   | Unshift (n, plusmap, tm) ->
@@ -867,13 +872,14 @@ and struct_field : type src f mode s et n k nk.
                   let (Adjunction { counit; _ }) = adj in
                   act_evaluation (force_eval v) (id_deg D.zero) counit
               | None ->
-                  if unset_ok then Unrealized else fatal (Anomaly (err ^ " field value unset")))
+                  if unset_ok then Unrealized None else fatal (Anomaly (err ^ " field value unset"))
+              )
           | Neq ->
               fatal (Dimension_mismatch (err ^ " field intrinsic", intrinsic, cod_right_ins fldins))
           ))
   | _ -> (
       match energy with
-      | Potential -> Unrealized
+      | Potential -> Unrealized None
       | Kinetic -> fatal (Anomaly ("missing field in eval struct: " ^ Field.to_string fld)))
 
 and field_term : type src f mode n k nk.
@@ -1547,7 +1553,7 @@ and app_eval_entry : type mode1 mode2 s any inst.
           let (Val v) =
             act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized -> Unrealized)
+      | Unrealized _ -> Unrealized None)
   | Field (filter, fld, fldplus, ins) -> (
       let fm = Modality.filter_modality filter in
       let mode = Modality.tgt fm in
@@ -1563,12 +1569,12 @@ and app_eval_entry : type mode1 mode2 s any inst.
               (field fm tm fld (id_ins (cod_left_ins ins) fldplus))
               p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized -> Unrealized)
+      | Unrealized _ -> Unrealized None)
   | Inst (_, args) -> (
       match ev with
       | Val tm -> Val (inst tm args)
       | Realize tm -> Realize (inst tm args)
-      | Unrealized -> Unrealized)
+      | Unrealized _ -> Unrealized None)
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the Locks on the end of the environment have already been stripped off by restrict_keys (which the type of the index ensures, since an insertion only passes dimension entries).  Any Prekeys inside are accumulated into a prekey action. *)
 and lookup_cube : type dom mu mode n a b k mk nk.

@@ -323,7 +323,12 @@ module Act = struct
       (mode, s) evaluation =
    fun tm s c ->
     match tm with
-    | Unrealized -> Unrealized
+    | Unrealized None -> Unrealized None
+    (* A stuck match stays stuck in the acted environment, so we can push the action into it.  The environment of a stuck match has the dimension of the evaluation, but since evaluations aren't indexed by their dimension we have to check this.  The stuck data is used only for display, so if it ever failed we could just drop it. *)
+    | Unrealized (Some (Stuck { env; tm; display })) -> (
+        match D.compare (cod_deg s) (dim_env env) with
+        | Eq -> Unrealized (Some (Stuck { env = act_env_deg env s c; tm; display }))
+        | Neq -> Unrealized None)
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
 
@@ -431,7 +436,7 @@ module Act = struct
           defer @@ fun () ->
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
-          | Unrealized -> Unrealized
+          | Unrealized _ -> Unrealized None
           | Val
               (Canonical { mode; canonical = c; tyargs = ctyargs; ins; fields = _; inst_fields = _ })
             -> (
@@ -707,5 +712,5 @@ let field_lazy : type src f mode s n t i.
   let (Has_filter filter) = Modality.filter f n in
   let lev = act_lazy_eval lev p (Modalcell.id2 src) in
   match !lev with
-  | Ready Unrealized -> ready Unrealized
+  | Ready (Unrealized _) -> ready (Unrealized None)
   | _ -> ref (Applied (lev, Apps (Field (filter, fld, nk, ins_zero n))))

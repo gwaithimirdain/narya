@@ -165,10 +165,10 @@ module rec Term : sig
     | Letonly : {
         termctx : ('mode, 'c, 'b) termctx;
         env : ('mode, 'a, 'k, 'b) env;
-        tm : ('mode, 'b, kinetic) term;
+        tm : ('mode, 'b, 's) term;
         ty : ('mode, 'b, kinetic) term;
       }
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     | Lam :
         'k variables
         * 'n D.t
@@ -183,6 +183,7 @@ module rec Term : sig
         dim : 'n D.t;
         motive : ('mode, 'a) match_motive;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
+        display : ('mode, 'a) match_display option;
       }
         -> ('mode, 'a, potential) term
     | Realize : ('mode, 'a, kinetic) term -> ('mode, 'a, potential) term
@@ -209,6 +210,13 @@ module rec Term : sig
   }
 
   and ('mode, 'a) match_motive = [ `Explicit of ('mode, 'a, kinetic) term | `Implicit | `Nondep ]
+
+  and ('mode, 'a) match_display =
+    | Match_display : {
+        termctx : ('mode, 'c, 'a) termctx;
+        ty : ('mode, 'a, kinetic) term;
+      }
+        -> ('mode, 'a) match_display
 
   and (_, _, _) branch =
     | Branch : {
@@ -507,14 +515,14 @@ end = struct
         (* A let is also always zero-dimensional. *)
         * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 's) term
         -> ('mode, 'a, 's) term
-    (* A 'let only' binds some variables, forming a context that doesn't extend the ambient one, and whose values are given by a term environment in the ambient context, of some dimension 'k.  The body lives in that context of only those variables, without their values.  Evaluation just evaluates the environment and then the body in it.  The context, and the type of the body, are stored only for display (the latter so that a body that doesn't synthesize on its own can be displayed with an ascription).  A let-only is always kinetic, as are its bound terms and its body: a case tree in any of them is bound to a metavariable as usual. *)
+    (* A 'let only' binds some variables, forming a context that doesn't extend the ambient one, and whose values are given by a term environment in the ambient context, of some dimension 'k.  The body lives in that context of only those variables, without their values.  Evaluation just evaluates the environment and then the body in it.  The context, and the type of the body, are stored only for display (the latter so that a body that doesn't synthesize on its own can be displayed with an ascription).  A let-only produced by typechecking is always kinetic, as are its bound terms and its body: a case tree in any of them is bound to a metavariable as usual.  But for display, readback can produce a potential let-only whose body is a stuck match (see Value.stuck); its bound terms are still kinetic. *)
     | Letonly : {
         termctx : ('mode, 'c, 'b) termctx;
         env : ('mode, 'a, 'k, 'b) env;
-        tm : ('mode, 'b, kinetic) term;
+        tm : ('mode, 'b, 's) term;
         ty : ('mode, 'b, kinetic) term;
       }
-        -> ('mode, 'a, kinetic) term
+        -> ('mode, 'a, 's) term
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)
     | Lam :
         'k variables
@@ -532,6 +540,7 @@ end = struct
         (* How the match was typechecked: with an explicit motive supplied by the user (a type family over the datatype's indices and the datatype itself), implicitly dependently (refining a variable in the context and the goal), or non-dependently.  This is stored only for display: the explicit motive is displayed with a "return" clause, and whether the match synthesizes when redisplayed depends on how it was checked.  Evaluation never needs it, since the branch it selects carries its own body. *)
         motive : ('mode, 'a) match_motive;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
+        display : ('mode, 'a) match_display option;
       }
         -> ('mode, 'a, potential) term
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)
@@ -563,6 +572,14 @@ end = struct
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them.  Finally, each of the variables might be annotated by a different modality, so we include a list of such modalities and make it into a tctx extension that all have the same dimension. *)
   (* The pattern-variable display names are carried inside the "annotate" witness (one per variable, in VarAnnote/VarAnnotator), so unparse.ml can recover them when displaying a match branch ("about pred"). *)
   and ('mode, 'a) match_motive = [ `Explicit of ('mode, 'a, kinetic) term | `Implicit | `Nondep ]
+
+  (* The context of a match and the type it was checked at, stored only for display: if the match is stuck when evaluated, its evaluation environment can be read back along this context, and the match displayed as a let-only around itself (ascribed with its type, since a match doesn't synthesize).  Only the "about" command uses this.  *)
+  and ('mode, 'a) match_display =
+    | Match_display : {
+        termctx : ('mode, 'c, 'a) termctx;
+        ty : ('mode, 'a, kinetic) term;
+      }
+        -> ('mode, 'a) match_display
 
   and (_, _, _) branch =
     | Branch : {

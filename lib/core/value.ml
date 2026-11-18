@@ -205,7 +205,15 @@ module rec Value : sig
   and (_, _) evaluation =
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    | Unrealized : ('mode, potential) evaluation
+    | Unrealized : 'mode stuck option -> ('mode, potential) evaluation
+
+  and 'mode stuck =
+    | Stuck : {
+        env : ('mode, 'n, 'a) env;
+        tm : ('mode, 'a, potential) Term.term;
+        display : ('mode, 'a) Term.match_display;
+      }
+        -> 'mode stuck
 
   and (_, _, _) canonical =
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
@@ -523,9 +531,18 @@ end = struct
     (* When 's = potential, a Val means the case tree is not yet fully applied; while when 's = kinetic, it is the only possible kind of result.  Collapsing these two together seems to unify the code for Lam and Struct as much as possible. *)
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    | Unrealized : ('mode, potential) evaluation
+    | Unrealized : 'mode stuck option -> ('mode, potential) evaluation
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
+  (* A case tree that is stuck on a match can remember the match term and the environment it was stuck in, along with the stored display data of that match, so that "about" can display it as a let-only around the match.  This is dropped as soon as anything more is done to the stuck evaluation other than acting on it by a degeneracy or modal cell (which can be pushed into the environment): further applications, field projections, or instantiations of it can't be represented in such a display. *)
+  and 'mode stuck =
+    | Stuck : {
+        env : ('mode, 'n, 'a) env;
+        tm : ('mode, 'a, potential) Term.term;
+        display : ('mode, 'a) Term.match_display;
+      }
+        -> 'mode stuck
+
   and (_, _, _) canonical =
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
@@ -791,7 +808,8 @@ let apply_lazy : type dom modality mode m n s.
     (mode, s) lazy_eval =
  fun lev m filter xs ->
   match !lev with
-  | Ready Unrealized -> lev
+  | Ready (Unrealized None) -> lev
+  | Ready (Unrealized (Some _)) -> ready (Unrealized None)
   | _ -> ref (Applied (lev, Apps (Arg (filter, xs, ins_zero m))))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
@@ -804,7 +822,7 @@ let var : type dom modality mode.
     {
       head = Live (Var { level; deg = id_deg D.zero; key = Modalcell.id modality });
       args = Emp;
-      value = ready Unrealized;
+      value = ready (Unrealized None);
       ty = Lazy.from_val ty;
     }
 
@@ -1009,7 +1027,8 @@ let inst_lazy : type mode m n mn s.
     (mode, s) lazy_eval -> (m, n, mn, mode normal) TubeOf.t -> (mode, s) lazy_eval =
  fun lev args ->
   match (D.compare_zero (TubeOf.inst args), !lev) with
-  | Zero, _ | _, Ready Unrealized -> lev
+  | Zero, _ | _, Ready (Unrealized None) -> lev
+  | _, Ready (Unrealized (Some _)) -> ready (Unrealized None)
   | Pos k, _ -> ref (Applied (lev, Apps (Inst (k, args))))
 
 let inst_tys : type mode. (mode, kinetic) value -> (mode, kinetic) value TubeOf.full = function

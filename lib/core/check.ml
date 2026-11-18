@@ -187,6 +187,11 @@ let spine : type a.
     | _ -> (tm, args) in
   spine tm []
 
+(* The display data stored with a match: its context and the type it is checked at, read back so that "about" can display the match as a let-only around itself if it is stuck when evaluated. *)
+let match_display : type mode a b.
+    (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, b) Term.match_display option =
+ fun ctx ty -> Some (Match_display { termctx = readback_ctx ctx; ty = readback_val ctx ty })
+
 (* Pull all the actions off of a term and compose them. *)
 let rec actions : type a. a check located option -> any_deg * a check located option =
  fun tm ->
@@ -1888,7 +1893,9 @@ and check_match_branches : type dom window mode a b bm.
         (fun b ->
           if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
         highers;
-      (Term.Match { tm; window; plus_lock; dim; motive = motive_tm; branches }, synthed_type)
+      let display = Option.bind synthed_type (match_display ctx) in
+      ( Term.Match { tm; window; plus_lock; dim; motive = motive_tm; branches; display },
+        synthed_type )
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -2160,7 +2167,7 @@ and check_var_match : type dom modality mode a b bm.
         match view_term x.tm with
         | Neu { head = Live (Var { level; deg; key }); args = Emp; value; ty = _ } -> (
             match force_eval value with
-            | Unrealized ->
+            | Unrealized _ ->
                 (if Option.is_none (is_id_deg deg) then
                    let (Locked (_, lctx)) = Ctx.lock ctx window in
                    raise_notrace
@@ -2355,6 +2362,7 @@ and check_var_match : type dom modality mode a b bm.
                                                                dim;
                                                                motive = `Nondep;
                                                                branches = Constr.Map.empty;
+                                                               display = None;
                                                              })
                                                     else
                                                       s :=
@@ -2386,8 +2394,16 @@ and check_var_match : type dom modality mode a b bm.
               if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
           (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store, but we record that it is implicitly dependent. *)
-          Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = `Implicit; branches }
-      )
+          Match
+            {
+              window;
+              plus_lock = plus;
+              tm = Term.Var index;
+              dim;
+              motive = `Implicit;
+              branches;
+              display = match_display ctx motive;
+            })
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -2468,7 +2484,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     | None -> (head, args) in
   let hyp tm =
     let branches = branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm }) in
-    hyp (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches }) in
+    hyp (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches; display = None }) in
   Potential (head, apps, hyp)
 
 (* Refute the first of the supplied terms whose type is an empty datatype, by matching against it with zero branches.  Here "empty" means literally declared as a datatype with no constructors: we don't perform additional matches to expose a term of empty type.  Each term carries its own optional window modality.  If none of them can be refuted, an implicit refutation reports the errors that matching against the first one with zero branches would produce. *)
@@ -2502,6 +2518,7 @@ and check_refute : type mode a b.
                 dim = cod_left_ins ins;
                 motive = `Nondep;
                 branches = Constr.Map.empty;
+                display = None;
               }
         | Canonical (_, Data { constrs = Snoc _ as constrs; _ }, _, _) ->
             go (err (`Missing (Bwd.map (fun (c, _) -> (c, ())) constrs))) tms
@@ -2583,6 +2600,7 @@ and check_empty_match_lam : type mode a b.
                   dim;
                   motive = `Nondep;
                   branches = Constr.Map.empty;
+                  display = None;
                 } )
       | None, `Notfirst ->
           Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst)
@@ -2659,6 +2677,7 @@ and empty_witness_cube : type mode dom modality k n a c.
                dim;
                motive = `Nondep;
                branches = Constr.Map.empty;
+               display = None;
              })
 
 and check_data : type mode a b i.
