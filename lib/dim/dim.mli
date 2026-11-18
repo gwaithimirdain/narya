@@ -39,6 +39,7 @@ module Endpoints : sig
   val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
   val len : 'l len -> 'l N.t
   val indices : 'l len -> ('l t, 'l) Bwv.t
+  val to_string : ?unicode:bool -> 'l t option -> string
   val wrapped : unit -> wrapped
   val internal : unit -> bool
   val hott : unit -> N.two len option

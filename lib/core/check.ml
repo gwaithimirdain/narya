@@ -4884,13 +4884,14 @@ and synth : type mode a b s.
 
 (* Given something that can be applied, its type, and a list of arguments, check the arguments in appropriately-sized groups. *)
 and synth_apps : type mode a b.
+    ?inst_done:int ->
     (mode, a, b) Ctx.t ->
     (mode, b, kinetic) term located ->
     (mode, kinetic) value ->
     a check located ->
     (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list ->
     (mode, b, kinetic) term * (mode, kinetic) value =
- fun ctx sfn sty fn args ->
+ fun ?(inst_done = 0) ctx sfn sty fn args ->
   match args with
   (* An ellipsis does as many steps as it can, so we deal with it separately. *)
   | (l, ({ value = (`Ellipsis | `More_ellipsis _) as e; _ } as arg), i) :: rest -> (
@@ -4907,6 +4908,8 @@ and synth_apps : type mode a b.
   | _ when stuck_after_retry sty -> postpone_apps ctx sfn sty fn args
   | _ -> (
       (* To determine what to do, we inspect the (fully instantiated) *type* of the function being applied.  Failure of view_type here is really a bug, not a user error: the user can try to check something against an abstraction as if it were a type, but our synthesis functions should never synthesize (say) a lambda-abstraction as if it were a type. *)
+      (* We count the dimensions instantiated so far in this spine, for the names of the faces of the instantiation arguments (see synth_inst). *)
+      let next_inst_done = ref 0 in
       let asfn, aty, afn, aargs =
         match view_type sty "synthesizing application spine" with
         (* The obvious thing we can "apply" is an element of a pi-type. *)
@@ -4931,7 +4934,9 @@ and synth_apps : type mode a b.
                   | `Explicit -> None in
                 synth_app ?missing ctx filter implicit sfn doms cods tyargs fn args)
         (* We can also "apply" a higher-dimensional *type*, leading to a (further) instantiation of it.  Here the number of arguments must exactly match *some* integral instantiation. *)
-        | Canonical (_, UU _, _, tyargs) -> synth_inst ctx sfn tyargs fn args
+        | Canonical (_, UU _, _, tyargs) ->
+            next_inst_done := inst_done + 1;
+            synth_inst ~inst_done ctx sfn tyargs fn args
         (* Something that synthesizes a type that isn't a pi-type or a universe cannot be applied to anything, but this is a user error, not a bug. *)
         | _ ->
             fatal ?loc:sfn.loc
@@ -4944,7 +4949,7 @@ and synth_apps : type mode a b.
               Annotate.ctx Kinetic ctx afn;
               Annotate.ty ctx aty;
               Annotate.tm ctx asfn.value);
-          synth_apps ctx asfn aty afn aargs)
+          synth_apps ~inst_done:!next_inst_done ctx asfn aty afn aargs)
 
 (* The location and error code of the placeholders inserted for a cube of implicit arguments of a function, named after the variable of its function-type.  The function is displayed without any implicit arguments it has already been applied to, since those are usually ones inserted before this one. *)
 and insertion : type mode a b n.
@@ -5007,7 +5012,7 @@ and synth_arg_cube : type dom modality mode a b n c.
     ?implicit:implicitness ->
     ?insert:Asai.Range.t option * Code.t ->
     ?missing:Asai.Range.t option * Code.t ->
-    ?labels:bool ->
+    ?label_prefix:string ->
     not_enough:Reporter.Code.t ->
     which:string ->
     (mode, a, b) Ctx.t ->
@@ -5021,8 +5026,8 @@ and synth_arg_cube : type dom modality mode a b n c.
     * (Asai.Range.t option
       * a check located
       * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list) =
- fun ?(implicit = `Explicit) ?insert ?missing ?(labels = false) ~not_enough ~which ctx modality
-     choose doms (sfnloc, fn, args) ->
+ fun ?(implicit = `Explicit) ?insert ?missing ?label_prefix ~not_enough ~which ctx modality choose
+     doms (sfnloc, fn, args) ->
   (* Based on the dimension of the application and whether the first argument is implicit, decide whether we are taking a whole cube of arguments or only one argument with the boundary synthesized from it. *)
   let module TakenArgs = struct
     type t =
@@ -5070,6 +5075,22 @@ and synth_arg_cube : type dom modality mode a b n c.
     | None ->
         fatal ?loc:label.loc
           (Invalid_face_argument ("no face " ^ label.value ^ " in this cube of arguments")) in
+  (* Where a label lies relative to the face at a given position: negative if earlier, zero if the same, positive if later.  In a function application the label is a face of the cube.  In an instantiation it is instead a face of the whole tube of instantiation arguments, like the faces of a cube variable belonging to the instantiated type, and the caller gives the prefix of the names of the faces in this cube: a top character for each dimension already instantiated, and the endpoint of this cube.  Since the arguments come in increasing order of their faces, we can compare a label with a face in this cube by comparing their names. *)
+  let label_cmp (label : string located) (i : int) : int =
+    match label_prefix with
+    | None -> compare (face_index label) i
+    | Some prefix ->
+        let (SFace_of fa) = List.nth (Lazy.force faces) i in
+        let here = prefix ^ string_of_sface fa in
+        let top =
+          String.concat "" (List.init (String.length here) (fun _ -> Endpoints.to_string None))
+        in
+        (match sface_of_string label.value with
+        | Some _ when String.length label.value = String.length here && label.value <> top -> ()
+        | _ ->
+            fatal ?loc:label.loc
+              (Invalid_face_argument ("no face " ^ label.value ^ " in this instantiation")));
+        String.compare label.value here in
   let primary_error loc =
     fatal ?loc
       (Unexpected_implicitness
@@ -5083,8 +5104,11 @@ and synth_arg_cube : type dom modality mode a b n c.
       (Invalid_face_argument
          ("face "
          ^ label.value
-         ^ " is out of order or repeated: faces must be given in order, and a dot starts the next cube"
-         )) in
+         ^
+         match label_prefix with
+         | None ->
+             " is out of order or repeated: faces must be given in order, and a dot starts the next cube"
+         | Some _ -> " is out of order or repeated: faces must be given in order")) in
   (* Whether the arguments of the current cube have ended, so that the remaining faces are placeholders. *)
   let ended = ref false in
   (* The argument to supply the face at a given position, or None if it is a placeholder. *)
@@ -5097,12 +5121,28 @@ and synth_arg_cube : type dom modality mode a b n c.
       | `Explicit, true, (_, { value = `Arg t; loc }, { value = `Explicit; _ }) :: _ ->
           consume ();
           Some { value = t; loc }
-      | `Explicit, true, (_, { value = `Face (label, _); _ }, _) :: _ ->
-          if face_index label < i then order_error label
+      | `Explicit, true, (_, { value = `Face (label, _); _ }, _) :: _ -> (
+          let c = label_cmp label i in
+          if c < 0 then order_error label
           else
-            fatal ?loc:label.loc
-              (Invalid_face_argument
-                 ("the primary argument of an explicit function can't be labelled: " ^ label.value))
+            match label_prefix with
+            | None ->
+                fatal ?loc:label.loc
+                  (Invalid_face_argument
+                     ("the primary argument of an explicit function can't be labelled: "
+                     ^ label.value))
+            | Some prefix ->
+                let (SFace_of fa) = List.nth (Lazy.force faces) i in
+                let here = prefix ^ string_of_sface fa in
+                fatal ?loc:label.loc
+                  (Invalid_face_argument
+                     (if c = 0 then
+                        "an explicit instantiation argument can't be labelled: " ^ label.value
+                      else
+                        "the explicit instantiation argument for face "
+                        ^ here
+                        ^ " must come before face "
+                        ^ label.value)))
       | `Explicit, true, (_, { loc; _ }, { value = `Implicit; _ }) :: _ -> primary_error loc
       | `Explicit, _, (_, { value = `Dot; loc }, _) :: _ ->
           fatal ?loc
@@ -5114,11 +5154,11 @@ and synth_arg_cube : type dom modality mode a b n c.
           consume ();
           Some { value = t; loc }
       | _, _, (_, { value = `Face (label, t); loc }, _) :: _ ->
-          let j = face_index label in
-          if j = i then (
+          let c = label_cmp label i in
+          if c = 0 then (
             consume ();
             Some { value = t; loc })
-          else if j > i then None
+          else if c > 0 then None
           else order_error label
       (* A dot ends an implicit cube, and is consumed. *)
       | `Implicit, _, (_, { value = `Dot; _ }, _) :: _ ->
@@ -5140,18 +5180,16 @@ and synth_arg_cube : type dom modality mode a b n c.
         let loc, err = Option.get insert in
         Insert (loc, err)
     | [], _, _ -> fatal not_enough
-    (* In a function application, braced arguments supply the faces of the cube in order. *)
-    | (_, _, { value = `Implicit; _ }) :: _, _, _ when labels -> Stream
-    (* At an implicit function-type, every argument in the cube is implicit, so we take a whole cube. *)
-    | (_, _, { value = `Implicit; _ }) :: _, _, _ when implicit = `Implicit -> Take
+    (* Braced arguments supply the faces of the cube in order (see stream_arg). *)
+    | (_, _, { value = `Implicit; _ }) :: _, _, _ -> Stream
     | (_, _, { value = `Explicit; loc }) :: _, _, _ when implicit = `Implicit ->
         fatal ?loc
           (Unexpected_implicitness
              ( `Explicit,
                "argument",
                "the function-type is implicit, so its argument must be in braces" ))
-    (* If the first argument is implicit, or if the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
-    | (_, _, { value = `Implicit; _ }) :: _, Pos _, false | _, Zero, _ | _, _, true -> Take
+    (* If the cube would have only one element (i.e. it is 0-dimensional or consists entirely of nullary dimensions) take a whole cube. *)
+    | _, Zero, _ | _, _, true -> Take
     (* Otherwise, the first argument must be explicit.  If it is synthesizing, we can get the boundary from its type. *)
     | (_, { value = `Arg (Synth toptm); loc }, { value = `Explicit; _ }) :: _, Pos _, false
       when synth_has_synth toptm -> (
@@ -5273,8 +5311,8 @@ and synth_arg_cube : type dom modality mode a b n c.
                     | `Ellipsis | `More_ellipsis _ -> fatal ?loc:tm.loc Invalid_ellipsis_application
                     | `Face _ ->
                         fatal ?loc:tm.loc
-                          (Invalid_face_argument
-                             "face labels can only be used in applications of functions") in
+                          (Invalid_face_argument "a face label can only supply an implicit argument")
+                  in
                   (* If the argument fails to typecheck, we record it as Failed and go on.  Since it is evaluated lazily, later arguments can still be checked as long as their types, and the output type, don't depend on it. *)
                   let ctm =
                     Reporter.mortalize ~fallback:(fun () -> Term.Failed Kinetic) @@ fun () ->
@@ -5306,9 +5344,8 @@ and synth_app : type dom modality mode a b k n.
     * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list =
  fun ?insert ?missing ctx filter implicit sfn doms cods tyargs fn args ->
   let (cargs, eargs), (newloc, newfn, rest) =
-    synth_arg_cube ~implicit ?insert ?missing ~labels:true
-      ~not_enough:Not_enough_arguments_to_function ~which:"higher-dimensional application" ctx
-      (Modality.filter_modality filter)
+    synth_arg_cube ~implicit ?insert ?missing ~not_enough:Not_enough_arguments_to_function
+      ~which:"higher-dimensional application" ctx (Modality.filter_modality filter)
       (fun etm _ -> etm)
       doms (sfn.loc, fn, args) in
   (* Evaluate cod at these lazily evaluated arguments and instantiate it at the appropriate values of tyargs. *)
@@ -5323,6 +5360,7 @@ and synth_app : type dom modality mode a b k n.
 
 (* Pick up enough arguments to form a tube for instantiating a higher-dimensional type by a single direction, and return the result along with the remaining arguments not yet picked up.  *)
 and synth_inst : type mode a b n.
+    ?inst_done:int ->
     (mode, a, b) Ctx.t ->
     (mode, b, kinetic) term located ->
     (D.zero, n, n, mode normal) TubeOf.t ->
@@ -5332,7 +5370,7 @@ and synth_inst : type mode a b n.
     * (mode, kinetic) value
     * a check located
     * (Asai.Range.t option * a check app_arg located * [ `Implicit | `Explicit ] located) list =
- fun ctx sfn tyargs fn args ->
+ fun ?(inst_done = 0) ctx sfn tyargs fn args ->
   let n = TubeOf.inst tyargs in
   match D.compare_zero n with
   | Zero -> fatal (Instantiating_zero_dimensional_type (PTerm (ctx, sfn.value)))
@@ -5349,20 +5387,25 @@ and synth_inst : type mode a b n.
       let idm = Modality.id (Ctx.mode ctx) in
       (* We thread the leftover arguments through the vector iteration in a mutable reference. *)
       let state = ref (sfn.loc, fn, args) in
+      (* Face labels name faces of the whole tube of instantiation arguments supplied in this application spine, so the faces in the cube for an endpoint are named by a top character for each dimension already instantiated in the spine, then that endpoint, then a face of the cube (see synth_arg_cube). *)
+      let tops = String.concat "" (List.init inst_done (fun _ -> Endpoints.to_string None)) in
       let cargs, nargs =
         match Bwv.length doms with
         | Nat (Suc _) ->
             let [ cargs; nargs ] =
               Bwv.pmap
-                (fun [ doms ] ->
+                (fun [ doms; e ] ->
                   let (Modal (Path (Zero, _), Plus_lock (Zero _, Zero), cargs), eargs), s =
-                    synth_arg_cube ~not_enough:Not_enough_arguments_to_instantiation
-                      ~which:"instantiation" ctx idm
+                    synth_arg_cube
+                      ~label_prefix:(tops ^ Endpoints.to_string (Some e))
+                      ~not_enough:Not_enough_arguments_to_instantiation ~which:"instantiation" ctx
+                      idm
                       (fun etm ty -> { tm = force_eval_term etm; ty = Lazy.from_val ty })
                       doms !state in
                   state := s;
                   [ (cargs : (nminusone, (mode, b, kinetic) term) CubeOf.t); eargs ])
-                [ doms ] (Cons (Cons Nil)) in
+                [ doms; Endpoints.indices l ]
+                (Cons (Cons Nil)) in
             (cargs, nargs)
         | Nat Zero -> (
             (* If instantiating a nullary dimension, we expect a single . argument. *)

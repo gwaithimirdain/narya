@@ -795,3 +795,75 @@ Matching on an element of a family with an implicit index refines the index as u
   
   [1]
   $ narya vec.ny -e 'def hpred {n0 n1 : ℕ} (n2 : Id ℕ n0 n1) : ℕ ≔ match n2 return {m0} {m1} m2 ↦ ℕ [ zero. ⤇ zero. | suc. _ ⤇ zero. ]'
+
+Face labels can also be used in type instantiations, where they name faces of the whole tube of instantiation arguments, like the faces of a cube variable belonging to the instantiated type.  As in function applications, they supply implicit (boundary) arguments in order, any that aren't supplied are placeholders, and explicit arguments can't be labelled.
+
+  $ cat >sq.ny <<EOF
+  > axiom A : Type
+  > axiom a00 : A
+  > axiom a01 : A
+  > axiom a10 : A
+  > axiom a11 : A
+  > axiom a02 : Id A a00 a01
+  > axiom a12 : Id A a10 a11
+  > axiom a20 : Id A a00 a10
+  > axiom a21 : Id A a01 a11
+  > axiom x : A
+  > EOF
+  $ narya sq.ny -e 'def s1 : Type ≔ A⁽ᵉᵉ⁾ {01 ≔ a01} a02 {11 ≔ a11} a12 a20 a21' -e 'def s2 : Type ≔ A⁽ᵉᵉ⁾ {00 ≔ a00} {01 ≔ a01} a02 a12 a20 a21' -e 'def s3 : Type ≔ A⁽ᵉᵉ⁾ {a00} {01 ≔ a01} a02 {10 ≔ a10} a12 a20 a21' -e 'def s4 : Type⁽ᵉ⁾ (Id A a00 a10) (Id A a01 a11) ≔ A⁽ᵉᵉ⁾ {01 ≔ a01} a02 {11 ≔ a11} a12' -e 'def c : Type ≔ A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ {201 ≔ refl x} x⁽ᵉᵉ⁾ {210 ≔ refl x} {211 ≔ refl x} x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾' -e 'display implicits ≔ on' -e 'echo s1'
+  A⁽ᵉᵉ⁾ {a00} {a01} a02 {a10} {a11} a12 a20 a21
+    : Type
+  
+  $ narya sq.ny -e 'echo A⁽ᵉᵉ⁾ {01 ≔ a01} {00 ≔ a00} a02 a12 a20 a21'
+   ￫ error[E0712]
+   ￭ command-line exec string
+   1 | echo A⁽ᵉᵉ⁾ {01 ≔ a01} {00 ≔ a00} a02 a12 a20 a21
+     ^ invalid face argument: face 00 is out of order or repeated: faces must be given in order
+  
+  [1]
+  $ narya sq.ny -e 'echo A⁽ᵉᵉ⁾ {11 ≔ a11} a02 a12 a20 a21'
+   ￫ error[E0712]
+   ￭ command-line exec string
+   1 | echo A⁽ᵉᵉ⁾ {11 ≔ a11} a02 a12 a20 a21
+     ^ invalid face argument: the explicit instantiation argument for face 02 must come before face 11
+  
+  [1]
+  $ narya sq.ny -e 'echo A⁽ᵉᵉ⁾ {02 ≔ a02} a12 a20 a21'
+   ￫ error[E0712]
+   ￭ command-line exec string
+   1 | echo A⁽ᵉᵉ⁾ {02 ≔ a02} a12 a20 a21
+     ^ invalid face argument: an explicit instantiation argument can't be labelled: 02
+  
+  [1]
+  $ narya sq.ny -e 'echo A⁽ᵉᵉ⁾ a02 a12 {20 ≔ a20} a21'
+   ￫ error[E0712]
+   ￭ command-line exec string
+   1 | echo A⁽ᵉᵉ⁾ a02 a12 {20 ≔ a20} a21
+     ^ invalid face argument: an explicit instantiation argument can't be labelled: 20
+  
+  [1]
+  $ narya sq.ny -e 'echo A⁽ᵉᵉ⁾ {1 ≔ a01} a02 a12 a20 a21'
+   ￫ error[E0712]
+   ￭ command-line exec string
+   1 | echo A⁽ᵉᵉ⁾ {1 ≔ a01} a02 a12 a20 a21
+     ^ invalid face argument: no face 1 in this instantiation
+  
+  [1]
+  $ narya sq.ny -e 'echo A⁽ᵉᵉ⁾ {22 ≔ a01} a02 a12 a20 a21'
+   ￫ error[E0712]
+   ￭ command-line exec string
+   1 | echo A⁽ᵉᵉ⁾ {22 ≔ a01} a02 a12 a20 a21
+     ^ invalid face argument: no face 22 in this instantiation
+  
+  [1]
+  $ narya sq.ny -e 'echo A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ {121 ≔ refl x} x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾'
+   ￫ error[E0712]
+   ￭ command-line exec string
+   1 | echo A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ {121 ≔ refl x} x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾
+     ^ invalid face argument: face 121 is out of order or repeated: faces must be given in order
+  
+  [1]
+  $ narya -parametric -direction p,rel,Br -arity 3 -e 'axiom A : Type' -e 'axiom x : A' -e 'echo A⁽ᵖᵖ⁾ {01 ≔ x} {02 ≔ x} (rel x) (rel x) {21 ≔ x} (rel x) (rel x) (rel x) (rel x)'
+  A⁽ᵖᵖ⁾ (rel x) (rel x) (rel x) (rel x) (rel x) (rel x)
+    : Type
+  
