@@ -752,3 +752,38 @@ Braces in the definition of a notation are preserved by reformatting.
   axiom plus {X : Type} (x y : X) : X
   
   notation(0) x "+" y "@" B ≔ plus {B} x y
+
+A datatype family can have implicit indices, which are given in braces or inserted like any implicit arguments, and hidden in display like them.
+
+  $ cat >vec.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]
+  > def Vec (A : Type) : {n : ℕ} → Type ≔ data [
+  > | nil. : Vec A {zero.}
+  > | cons. {n : ℕ} (a : A) (v : Vec A {n}) : Vec A {suc. n} ]
+  > axiom A : Type
+  > axiom a : A
+  > EOF
+  $ narya vec.ny -e 'def x : Vec A {suc. zero.} ≔ cons. a nil.' -e 'echo x' -e 'def y : Vec A . ≔ cons. a (cons. a nil.)' -e 'def z : Vec A … ≔ nil.' -e 'echo Id (Vec A {zero.}) nil. nil.' -e 'def D : {n : ℕ} (b : ℕ) → Type ≔ data [ d. : D {zero.} zero. ]' -e 'def w : D zero. ≔ d.' -e 'echo w'
+  cons. a nil.
+    : Vec A .
+  
+  Vec⁽ᵉ⁾ (Id A) . nil. nil.
+    : Type
+  
+  d.
+    : D 0
+  
+
+Matching on an element of a family with an implicit index refines the index as usual.  An explicit motive must bind an implicit index in braces, including all the faces of the index in a higher-dimensional match.
+
+  $ narya vec.ny -e 'def len {n : ℕ} (v : Vec A {n}) : ℕ ≔ match v return {m} w ↦ ℕ [ nil. ↦ zero. | cons. _ v ↦ suc. (len v) ]' -e 'echo len (cons. a (cons. a nil.))' -e 'def len′ {n : ℕ} (v : Vec A {n}) : ℕ ≔ match v return _ _ ↦ _ [ nil. ↦ zero. | cons. _ v ↦ suc. (len′ v) ]' -e 'def hlen {n0 n1 : ℕ} (n2 : Id ℕ n0 n1) (v0 : Vec A {n0}) (v1 : Vec A {n1}) (v2 : Id (Vec A) {n0} {n1} {n2} v0 v1) : ℕ ≔ match v2 return {m0} {m1} {m2} w0 w1 w2 ↦ ℕ [ nil. ⤇ zero. | cons. _ _ ⤇ zero. ]'
+  2
+    : ℕ
+  
+  $ narya vec.ny -e 'def len {n : ℕ} (v : Vec A {n}) : ℕ ≔ match v return m w ↦ ℕ [ nil. ↦ zero. | cons. _ v ↦ suc. (len v) ]'
+   ￫ error[E0702]
+   ￭ command-line exec string
+   1 | def len {n : ℕ} (v : Vec A {n}) : ℕ ≔ match v return m w ↦ ℕ [ nil. ↦ zero. | cons. _ v ↦ suc. (len v) ]
+     ^ unexpected explicit abstraction: the function-type is implicit, so its variable must be in braces
+  
+  [1]

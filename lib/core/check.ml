@@ -94,7 +94,7 @@ let rec motive_of_family : type dom window mode a b.
   let module F = struct
     type ('left, 'c, 'any) t =
       | Ftm :
-          ('left, mode, window, dom, 'lw) plus_lock * (dom, 'lw, kinetic) term
+          ('left, mode, window, dom, 'lw) plus_lock * (dom, 'lw, kinetic) term * implicitness
           -> ('left, 'c, 'any) t
   end in
   let module FCube = Icube (S) (F) in
@@ -110,23 +110,25 @@ let rec motive_of_family : type dom window mode a b.
       (left, m, any) F.t ->
       (left, (window, D.zero) dim_entry) snoc T.t ->
       left T.t * (left, m, any) F.t =
-   fun (Ftm (left_plus, dom)) cod ->
+   fun (Ftm (left_plus, dom, implicit)) cod ->
     ( Pi
         {
           x = singleton_variables D.zero (`Anon no_hints);
           filter;
-          implicit = `Explicit;
+          implicit;
           doms = Modal (window, left_plus, CubeOf.singleton dom);
           cods = CodCube.singleton (Cod (filter, cod));
         },
-      Ftm (left_plus, dom) ) in
+      Ftm (left_plus, dom, implicit) ) in
+  (* Each domain of the motive for an index has the implicitness of that index (all the faces of a higher-dimensional one, which are flattened into separate domains, having that of the whole index), while those for the datatype itself are explicit. *)
   let builder : type left n m.
+      implicitness ->
       n variables ->
       (n, dom Binding.t) CubeOf.t ->
       (m, n) sface ->
       left C.t ->
       (left, m, b) MC.fwrap_left =
-   fun x newnfs fa (Any_ctx ctx) ->
+   fun implicit x newnfs fa (Any_ctx ctx) ->
     let (Locked (plus_window, wctx)) = Ctx.lock ctx window in
     let v = CubeOf.find newnfs fa in
     let cv = readback_val wctx (Lazy.force (Binding.value v).ty) in
@@ -137,10 +139,10 @@ let rec motive_of_family : type dom window mode a b.
     let (Any_ctx newctx) =
       (* TODO: In the case of a cube variable, should we be annotating the variable names by their face somehow?  *)
       Ctx.variables_vis ctx filter (singleton_variables D.zero name) (CubeOf.singleton v) in
-    Fwrap (Ftm (plus_window, cv), Any_ctx newctx) in
+    Fwrap (Ftm (plus_window, cv, implicit), Any_ctx newctx) in
   (* We start by inspecting the type of the family passed. *)
   match view_type ty "motive_of_family" with
-  | Canonical (_, Pi { x; filter = ffilter; implicit = _; doms; cods }, ins, tyargs) -> (
+  | Canonical (_, Pi { x; filter = ffilter; implicit; doms; cods }, ins, tyargs) -> (
       (* The type family itself must be non-modal (any modal window is carried separately). *)
       match Modality.compare_id (Modality.filter_modality ffilter) with
       | Neq -> fatal (Anomaly "modal family in motive_of_family")
@@ -150,7 +152,7 @@ let rec motive_of_family : type dom window mode a b.
           (* We extend the context, not by the cube of types of newnfs, but by its elements one at a time as singletons.  This is because we want eventually to construct a 0-dimensional pi-type.  As we go, we also read back these types and store them to later take the pi-type over.  Since they are all in different contexts, and we need to keep track of the type-indexed checked length of those contexts to ensure the later pis are well-typed, we use an indexed cube indexed over Tctxs. *)
           let (Wrap (newdoms, Any_ctx newctx)) =
             MC.build_left (CubeOf.dim newnfs)
-              { build = (fun fa ctx -> builder x newnfs fa ctx) }
+              { build = (fun fa ctx -> builder implicit x newnfs fa ctx) }
               (Any_ctx ctx) in
           (* Now we recurse into the codomain of the pi-type, having applied the type family itself to the new variables we introduced. *)
           let newtm = apply_term tm ffilter newvars in
@@ -165,7 +167,11 @@ let rec motive_of_family : type dom window mode a b.
       let m = CubeOf.dim newnfs in
       let (Wrap (newdoms, _)) =
         MC.build_left m
-          { build = (fun fa ctx -> builder (singleton_variables m (`Anon no_hints)) newnfs fa ctx) }
+          {
+            build =
+              (fun fa ctx ->
+                builder `Explicit (singleton_variables m (`Anon no_hints)) newnfs fa ctx);
+          }
           (Any_ctx ctx) in
       (* The result is a pi-type over all those domains, whose codomain is just the universe. *)
       let motive, _ =
