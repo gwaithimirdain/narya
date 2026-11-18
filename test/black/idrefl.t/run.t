@@ -208,9 +208,11 @@
    ￭ command-line exec string
    1 | def idff_eq_idff' : Id Type idff idff' := refl idff
      ^ term synthesized type
-         Type⁽ᵉ⁾ idff idff
+         Type⁽ᵉ⁾ ({𝑥₀ : X} {𝑥₁ : X} (𝑥₂ : Id X 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id Y (f 𝑥₀) (f' 𝑥₁))
+           ({𝑥₀ : X} {𝑥₁ : X} (𝑥₂ : Id X 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id Y (f 𝑥₀) (f' 𝑥₁))
        but is being checked against type
-         Type⁽ᵉ⁾ idff idff'
+         Type⁽ᵉ⁾ ({𝑥₀ : X} {𝑥₁ : X} (𝑥₂ : Id X 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Id Y (f 𝑥₀) (f' 𝑥₁))
+           ((x : X) (x' : X) (x'' : Id X x x') → Id Y (f x) (f' x'))
        unequal head terms:
          Id X ⇒ Id Y
        does not equal

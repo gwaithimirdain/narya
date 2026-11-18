@@ -134,9 +134,9 @@ Different keys are different.
    ￭ command-line exec string
    1 | def needs_key_12 (A : Disc) (x :□△| A) : Id (□△□△ A) (needs_key1 A x) (needs_key2 A x) ≔ refl _
      ^ term synthesized type
-         □△□△⁽ᵉ⁾ (Id A) (needs_key2 A x) (needs_key2 A x)
+         □△□△⁽ᵉ⁾ (Id A) (□△□△. (x #η)) (□△□△. (x #η))
        but is being checked against type
-         □△□△⁽ᵉ⁾ (Id A) (needs_key1 A x) (needs_key2 A x)
+         □△□△⁽ᵉ⁾ (Id A) (□△□△. (x #η.□△)) (□△□△. (x #η))
        unequal head terms:
          x #η
        does not equal
