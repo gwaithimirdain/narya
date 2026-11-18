@@ -120,7 +120,7 @@ let rec motive_of_family : type dom window mode a b.
           cods = CodCube.singleton (Cod (filter, cod));
         },
       Ftm (left_plus, dom, implicit) ) in
-  (* Each domain of the motive for an index has the implicitness of that index (all the faces of a higher-dimensional one, which are flattened into separate domains, having that of the whole index), while those for the datatype itself are explicit. *)
+  (* The faces of a higher-dimensional index or datatype are flattened into separate domains of the motive.  As in a higher-dimensional abstraction, those for its boundary are implicit, and the one for the top face has the implicitness of the index (or is explicit, for the datatype itself). *)
   let builder : type left n m.
       implicitness ->
       n variables ->
@@ -139,6 +139,10 @@ let rec motive_of_family : type dom window mode a b.
     let (Any_ctx newctx) =
       (* TODO: In the case of a cube variable, should we be annotating the variable names by their face somehow?  *)
       Ctx.variables_vis ctx filter (singleton_variables D.zero name) (CubeOf.singleton v) in
+    let implicit =
+      match is_id_sface fa with
+      | Some _ -> implicit
+      | None -> `Implicit in
     Fwrap (Ftm (plus_window, cv, implicit), Any_ctx newctx) in
   (* We start by inspecting the type of the family passed. *)
   match view_type ty "motive_of_family" with

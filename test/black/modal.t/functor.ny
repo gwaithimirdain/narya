@@ -24,7 +24,7 @@ def from_Id (A :○| DomType) (x0 x1 :○| A)
   (u2 : Id (○ A) (○. x0) (○. x1))
   : ○ (Id A x0 x1)
   ≔ match u2
-    return u0 u1 u2 ↦
+    return {u0} {u1} u2 ↦
            match u0, u1 [ ○. x0, ○. x1 ↦ ○ (Id A x0 x1) ] [
 | ○. x ⤇ ○. x.2]
 
@@ -33,7 +33,7 @@ def to_from_id (A :○| DomType) (x0 x1 :○| A)
   : Id (Id (○ A) (○. x0) (○. x1))
       (to_Id A x0 x1 (from_Id A x0 x1 u2)) u2
   ≔ match u2
-    return u0 u1 u2 ↦
+    return {u0} {u1} u2 ↦
            match u0, u1 [
            | ○. x0, ○. x1 ↦
                Id (Id (○ A) (○. x0) (○. x1))
