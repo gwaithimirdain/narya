@@ -271,9 +271,9 @@
    ￫ warning[W2400]
    ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/degblank.nyo
   
-   ￫ error[E0400]
+   ￫ error[E2004]
    ￭ command-line exec string
    1 | import "degblank" echo sym _ : Id (Id A) a2 a2 (refl a0) (refl a1)
-     ^ non-synthesizing term in synthesizing position (pure symmetry of placeholder)
+     ^ can't determine a value for this placeholder
   
   [1]

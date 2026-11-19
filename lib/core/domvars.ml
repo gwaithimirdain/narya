@@ -127,7 +127,8 @@ let rec ext_pi : type dom window mode a b c ac e n.
   | ( :: ) (type a1) ((x, xs) : (a, a1) Raw.Patternvars.arg * _) -> (
       let m = dim_env env in
       (* The constructor's function-type is an uninstantiated m-dimensional pi-type; we view it as in check_at_pi (view_type would demand full instantiation). *)
-      let (Viewed_pi { x = pix; filter = pifilter; doms; cods }) = view_pi "ext_pi" m ft in
+      let (Viewed_pi { x = pix; filter = pifilter; implicit = _; doms; cods }) =
+        view_pi "ext_pi" m ft in
       (* The annotation is the (raw) modality of this pi's domain; we recompute its dimension filter and compose it with the window modality. *)
       let annotation = Modality.filter_modality pifilter in
       let (Has_filter afilter) = Modality.filter annotation m in
@@ -143,17 +144,23 @@ let rec ext_pi : type dom window mode a b c ac e n.
           | Eq ->
               let newvars, newnfs = dom_vars ctx modality doms in
               let filter_k_k = Modality.filter_idempotent filter_k_m in
-              (* If a single cube variable is anonymous, we fall back on the name of the constructor's argument. *)
+              (* If a single cube variable is anonymous, or an implicit argument is omitted, we fall back on the name of the constructor's argument. *)
               let x : (a, a1) Raw.Patternvars.arg =
                 match x with
                 | Cube None -> IndexedPatternvars.Cube (option_of_binder_name (top_variable pix))
+                | Implicit (None, named) ->
+                    Implicit (option_of_binder_name (top_variable pix), named)
+                | Hidden None -> Hidden (option_of_binder_name (top_variable pix))
                 | _ -> x in
               let newctx : (mode, a1, (e, (_, _) dim_entry) Tbwd.snoc) Ctx.t =
                 match x with
                 (* A single variable becomes a cube variable, whose boundary is accessed with face suffixes. *)
                 | Cube x -> Ctx.cube_vis ctx filter_k_k x newnfs
+                | Implicit (x, _) -> Ctx.cube_vis ctx filter_k_k x newnfs
+                (* An omitted implicit argument is bound by an invisible variable. *)
+                | Hidden x -> Ctx.invis ?name:x ctx filter_k_k newnfs
                 (* Explicit boundary variables must be exactly one for each face of the cube, the last of them being the top face. *)
-                | Boundary ns ->
+                | Boundary (_, ns) ->
                     let k = CubeOf.dim newnfs in
                     let (Vars (af, names)) =
                       vars_of_names (fun j -> Wrong_boundary_of_pattern_variable j) None k ns in
@@ -205,7 +212,7 @@ let rec get_pi_vars : type mode a b.
     binder_name Bwd.t =
  fun ctx cube xs ty ->
   match View.view_type ty "get_pi_vars" with
-  | Canonical (_, Pi { x; filter; doms; cods }, ins, tyargs) -> (
+  | Canonical (_, Pi { x; filter; implicit = _; doms; cods }, ins, tyargs) -> (
       let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
       match (D.compare_zero (CubeOf.dim doms), cube) with

@@ -392,10 +392,8 @@
   
   [1]
   $ narya -parametric errors.ny -e "echo _"
-   ￫ error[E0100]
-   ￭ command-line exec string
-   1 | echo _
-     ^ unimplemented: unification arguments
+   ￫ error[E0400]
+   ￮ non-synthesizing term in synthesizing position (argument of echo)
   
   [1]
   $ narya -parametric errors.ny -e "echo (a ↦ ( fst ≔ a, fst ≔ a ))"

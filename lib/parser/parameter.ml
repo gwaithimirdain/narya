@@ -1,4 +1,6 @@
+(* A group of parameters of a definition or axiom, in parentheses, or in braces if they are implicit. *)
 type t = {
+  implicit : [ `Explicit | `Implicit ];
   wslparen : Whitespace.t list;
   names : (string option * Whitespace.t list) list;
   wscolon : Whitespace.t list;

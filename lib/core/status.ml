@@ -19,7 +19,7 @@ type (_, _) potential_head =
 
 let head_of_potential : type mode a. (mode, a) potential_head -> mode Value.head = function
   | Constant (name, _, n) -> Const { name; ins = ins_zero n }
-  | Meta (meta, env) -> Meta { meta; env; ins = ins_zero (dim_env env) }
+  | Meta (meta, env) -> Meta { meta; kind = Global_meta; env; ins = ins_zero (dim_env env) }
 
 let mode_of_potential : type mode a. (mode, a) potential_head -> mode Mode.t = function
   | Constant (_, mode, _) -> mode

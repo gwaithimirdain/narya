@@ -42,7 +42,7 @@ include Value.Ctx_entry
 let raw_entry : type dom modality mode f n b bb. (dom, modality, mode, f, n, b, bb) entry -> f N.t =
   function
   | { vis = Vis { names; fplus; _ }; _ } -> N.plus_out (NICubeOf.out N.zero names) fplus
-  | { vis = Invis; _ } -> N.zero
+  | { vis = Invis _; _ } -> N.zero
 
 let modality_entry : type dom modality mode f n b bb.
     (dom, modality, mode, f, n, b, bb) entry -> (dom, modality, mode) Modality.t = function
@@ -64,25 +64,34 @@ let bindings_entry : type dom modality mode f n b bb.
 let variables_entry : type dom modality mode f n b bb.
     (dom, modality, mode, f, n, b, bb) entry -> n variables = function
   | { vis = Vis { dim; plusdim; names; _ }; _ } -> Variables (dim, plusdim, names)
-  | { vis = Invis; bindings; _ } ->
+  | { vis = Invis _; bindings; _ } ->
       (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
       let hints =
         Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
         View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
       singleton_variables (CubeOf.dim bindings) (`Anon hints)
 
-(* Given an entry containing no let-bound variables, produce an "app" that says how to apply a function to its cube of (free) variables. *)
+(* The implicitness of the last of a list of entries, listed last first, and the rest of them.  Entries beyond the end of the list are explicit. *)
+let pop_implicit : implicitness list -> implicitness list * implicitness = function
+  | [] -> ([], `Explicit)
+  | implicit :: implicits -> (implicits, implicit)
+
+(* Given an entry containing no let-bound variables, produce an "app" that says how to apply a function to its cube of (free) variables, implicitly or explicitly. *)
 let app_entry : type hmode dom modality mode f n b bb any.
+    implicitness ->
     (hmode, mode, any, live) apps ->
     (dom, modality, mode, f, n, b, bb) entry ->
     (hmode, mode, noninst, live) apps =
- fun apps { bindings; filter; _ } ->
+ fun implicit apps { bindings; filter; _ } ->
   if all_free bindings then
     let n = CubeOf.dim bindings in
     Snoc
       ( apps,
-        Arg (filter, CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ], ins_zero n)
-      )
+        Arg
+          ( filter,
+            implicit,
+            CubeOf.mmap { map = (fun _ [ x ] -> Binding.value x) } [ bindings ],
+            ins_zero n ) )
   else fatal (Anomaly "let-bound variable in Ctx.apps")
 
 module Ordered = struct
@@ -161,11 +170,13 @@ module Ordered = struct
         af )
 
   let invis : type dom modality mode a b n.
+      ?name:string ->
       (mode, a, b) t ->
       (dom, modality, mode, n, n) Modality.filter_dim ->
       (n, dom Binding.t) CubeOf.t ->
       (mode, a, (b, (modality, n) dim_entry) snoc) t =
-   fun ctx filter bindings -> Snoc (ctx, { bindings; filter; vis = Invis; vars = Vars }, Zero)
+   fun ?name ctx filter bindings ->
+    Snoc (ctx, { bindings; filter; vis = Invis name; vars = Vars }, Zero)
 
   let rec raw_length : type mode a b. (mode, a, b) t -> a N.t = function
     | Emp _ -> N.zero
@@ -227,12 +238,18 @@ module Ordered = struct
         let newctx = lock_to ctx (Path (modality, mode)) (Plus_lock (l, al)) in
         Lock (newctx, mu)
 
-  let rec apps : type mode a b. (mode, a, b) t -> (mode, mode, noninst, live) apps = function
+  (* The application spine applying a function to the variables of a context, such as the parameters of a definition.  Their implicitness, if given, is listed last first, aligned with the entries of the context that contribute variables; by default they are explicit. *)
+  let rec apps : type mode a b.
+      ?implicits:implicitness list -> (mode, a, b) t -> (mode, mode, noninst, live) apps =
+   fun ?(implicits = []) ctx ->
+    match ctx with
     | Emp _ -> Emp
-    | Snoc (ctx, ({ vars = Vars; _ } as e), _) -> app_entry (apps ctx) e
+    | Snoc (ctx, ({ vars = Vars; _ } as e), _) ->
+        let implicits, implicit = pop_implicit implicits in
+        app_entry implicit (apps ~implicits ctx) e
     (* An alias contributes no checked variables. *)
-    | Snoc (ctx, { vars = Alias; _ }, _) -> apps ctx
-    | Weaken (ctx, _) -> apps ctx
+    | Snoc (ctx, { vars = Alias; _ }, _) -> apps ~implicits ctx
+    | Weaken (ctx, _) -> apps ~implicits ctx
     | Lock _ -> fatal (Anomaly "context lock in Ctx.apps")
 
   (* When looking up a raw variable, we return either an ordinary value variable or an illusory field-access variable.  We also return its modal annotation, and the composite of all the locks to its right.  (These will later be forced to agree, but in the intermediate recursive calls to lookup they may not.) *)
@@ -435,7 +452,7 @@ module Ordered = struct
                         plus = plus_with_no_locks (Modality.tgt modality);
                       })))
     (* By definition, an invisible entry can't be looked up into, and doesn't increment the raw indices. *)
-    | Invis ->
+    | Invis _ ->
         let Zero = pf in
         pop_looked_up e (lookup ctx k)
 
@@ -547,29 +564,36 @@ module Ordered = struct
 
   (* Generate a case tree consisting of a sequence of abstractions corresponding to the (checked) variables in a context.  The context must contain NO LET-BOUND VARIABLES, including field-access variables, since abstracting over them would not be well-defined.  (In general, we couldn't just omit them, because some of the variables in a cube could be bound but not others, and cubes in the context yield cube abstractions.  However, at least when this comment was written, this function was only used for contexts consisting entirely of 0-dimensional cubes without let-bound variables.)  Likewise it must contain NO MODAL LOCKS. *)
   let rec lam : type mode a b.
-      (mode, a, b) t -> (mode, b, potential) term -> (mode, mode emp, potential) term =
-   fun ctx tree ->
+      ?implicits:implicitness list ->
+      (mode, a, b) t ->
+      (mode, b, potential) term ->
+      (mode, mode emp, potential) term =
+   fun ?(implicits = []) ctx tree ->
     match ctx with
     | Emp _ -> tree
-    | Weaken (ctx, _) -> lam ctx tree
+    | Weaken (ctx, _) -> lam ~implicits ctx tree
     | Lock _ -> fatal (Anomaly "context lock in Ctx.lam")
-    | Snoc (ctx, { vars = Alias; _ }, _) -> lam ctx tree
+    | Snoc (ctx, { vars = Alias; _ }, _) -> lam ~implicits ctx tree
     | Snoc
         ( ctx,
           { bindings; filter; vis = Vis { dim; plusdim; names; fplus = Zero; _ }; vars = Vars },
           _ )
       when all_free bindings ->
-        lam ctx (Lam (Variables (dim, plusdim, names), D.plus_out dim plusdim, filter, tree))
-    | Snoc (ctx, { bindings; filter; vis = Invis; vars = Vars }, _) when all_free bindings ->
+        let implicits, implicit = pop_implicit implicits in
+        lam ~implicits ctx
+          (Lam (Variables (dim, plusdim, names), D.plus_out dim plusdim, filter, implicit, tree))
+    | Snoc (ctx, { bindings; filter; vis = Invis _; vars = Vars }, _) when all_free bindings ->
         (* Invisible variables are anonymous, but we can still give them display hints from their types.  Since this only affects display, if anything goes wrong computing the type (e.g. it is a failed type) we just skip the hints (though internal errors are still reported). *)
         let hints =
           Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
           View.hints_of_ty (Lazy.force (Binding.value (CubeOf.find_top bindings)).ty) in
-        lam ctx
+        let implicits, implicit = pop_implicit implicits in
+        lam ~implicits ctx
           (Lam
              ( singleton_variables (CubeOf.dim bindings) (`Anon hints),
                CubeOf.dim bindings,
                filter,
+               implicit,
                tree ))
     | _ -> fatal (Anomaly "let-bound variable in Ctx.lam")
 
@@ -611,29 +635,45 @@ module Ordered = struct
         ('cod, 'a, 'b) t * ('b, 'cod, 'modality, 'mode, 'bc) plus_with_locks
         -> ('cod, 'modality, 'mode, 'bc) remove_lock
 
-  let rec remove_lock : type mode modality cod a bc.
-      (mode, a, bc) t -> (mode, modality, cod) Modality.t -> (cod, modality, mode, bc) remove_lock =
+  let rec remove_lock_opt : type mode modality cod a bc.
+      (mode, a, bc) t ->
+      (mode, modality, cod) Modality.t ->
+      (cod, modality, mode, bc) remove_lock option =
    fun ctx modality ->
     match Modality.compare_id modality with
-    | Eq -> Remove_lock (ctx, plus_with_no_locks (mode ctx))
+    | Eq -> Some (Remove_lock (ctx, plus_with_no_locks (mode ctx)))
     | Neq -> (
         match ctx with
-        | Emp _ -> fatal (Anomaly "Ctx.remove_lock: empty context but nonidentity lock")
+        | Emp _ -> None
         | Snoc (ctx, e, _) -> (
-            let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
-            match e.vars with
-            | Vars -> Remove_lock (ctx, plus_with_locks_dim plus (dim_entry e) (filter_entry e))
-            | Alias -> Remove_lock (ctx, plus))
-        | Weaken (ctx, code) ->
+            match remove_lock_opt ctx modality with
+            | None -> None
+            | Some (Remove_lock (ctx, plus)) -> (
+                match e.vars with
+                | Vars ->
+                    Some
+                      (Remove_lock (ctx, plus_with_locks_dim plus (dim_entry e) (filter_entry e)))
+                | Alias -> Some (Remove_lock (ctx, plus))))
+        | Weaken (ctx, code) -> (
             (* A weakening entry isn't a lock and doesn't appear in the checked context, so we skip past it and re-add it on the way out. *)
-            let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
-            Remove_lock (Weaken (ctx, code), plus)
+            match remove_lock_opt ctx modality with
+            | None -> None
+            | Some (Remove_lock (ctx, plus)) -> Some (Remove_lock (Weaken (ctx, code), plus)))
         | Lock (ctx, l) -> (
             match Modality.factor modality (Modality.of_gen l) with
-            | Some (Factor (modality, Suc (Zero, _))) ->
-                let (Remove_lock (ctx, plus)) = remove_lock ctx modality in
-                Remove_lock (ctx, plus_with_locks_lock plus l)
-            | None -> fatal (Anomaly "Ctx.remove_lock: modalities don't factor")))
+            | Some (Factor (modality, Suc (Zero, _))) -> (
+                match remove_lock_opt ctx modality with
+                | None -> None
+                | Some (Remove_lock (ctx, plus)) ->
+                    Some (Remove_lock (ctx, plus_with_locks_lock plus l)))
+            | None -> None))
+
+  let remove_lock : type mode modality cod a bc.
+      (mode, a, bc) t -> (mode, modality, cod) Modality.t -> (cod, modality, mode, bc) remove_lock =
+   fun ctx modality ->
+    match remove_lock_opt ctx modality with
+    | Some result -> result
+    | None -> fatal (Anomaly "Ctx.remove_lock: context doesn't have the required locks")
 
   (* The same, but with a supplied plus_with_locks *)
 
@@ -740,8 +780,8 @@ let vis_fields (Permute { perm; level; ctx }) xs vars fields fplus af =
       ctx = Ordered.vis_fields ctx xs vars fields fplus bf;
     }
 
-let invis (Permute { perm; level; ctx }) filter vars =
-  Permute { perm; level = level + 1; ctx = Ordered.invis ctx filter vars }
+let invis ?name (Permute { perm; level; ctx }) filter vars =
+  Permute { perm; level = level + 1; ctx = Ordered.invis ?name ctx filter vars }
 
 type (_, _, _, _, _) locked =
   | Locked :
@@ -788,7 +828,7 @@ let total_locks : type mode a b. (mode, a, b) t -> mode Modality.tgt_wrapped =
  fun (Permute { ctx; _ }) -> Ordered.total_locks ctx
 
 let tctx (Permute { ctx; _ }) = Ordered.checked_length ctx
-let apps (Permute { ctx; _ }) = Ordered.apps ctx
+let apps ?implicits (Permute { ctx; _ }) = Ordered.apps ?implicits ctx
 
 (* Lookup is the only place where the permutations are used nontrivially: we apply the permutation to the raw index before looking it up. *)
 let lookup (Permute { perm; ctx; _ }) i = Ordered.lookup ctx (N.perm_apply perm (fst i), snd i)
@@ -837,7 +877,7 @@ let pop : type mode a b. (mode, a, b) t -> ((mode, a, b) pop, string) Result.t =
   | Some (Pop (_, Eq, Eq, _, _)), Insert (_, Pop _) -> Error "nonidentity permutation"
   | None, _ -> Error "empty or locked"
 
-let lam (Permute { ctx; _ }) tm = Ordered.lam ctx tm
+let lam ?implicits (Permute { ctx; _ }) tm = Ordered.lam ?implicits ctx tm
 
 let forget_levels (Permute { perm; ctx; level; _ }) forget =
   let ctx = Ordered.forget_levels ctx forget in
@@ -863,6 +903,16 @@ let remove_lock : type mode modality cod a bc.
   let (Remove_lock (ctx, bc)) = Ordered.remove_lock ctx modality in
   (* We save the level of the old, longer, context, so that when new level variables are created in the new shorter context there's no chance they'll conflict with level variables from the old context.  *)
   Remove_lock (of_ordered ~level ctx, bc)
+
+(* The same, but returning None if the context doesn't have the required locks. *)
+let remove_lock_opt : type mode modality cod a bc.
+    (mode, a, bc) t ->
+    (mode, modality, cod) Modality.t ->
+    (cod, modality, mode, bc) remove_lock option =
+ fun (Permute { ctx; level; _ }) modality ->
+  match Ordered.remove_lock_opt ctx modality with
+  | Some (Remove_lock (ctx, bc)) -> Some (Remove_lock (of_ordered ~level ctx, bc))
+  | None -> None
 
 let remove_locks : type cod mode modality a b bc.
     (mode, a, bc) t -> (b, cod, modality, mode, bc) plus_with_locks -> (cod, b) any =

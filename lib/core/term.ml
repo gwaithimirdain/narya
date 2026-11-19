@@ -19,6 +19,9 @@ type (_, _, _, _) is_glue =
         has_eta )
       is_glue
 
+(* Whether a function-type is implicit, so that its arguments are inserted automatically when it is applied to an explicit argument, and are written in braces.  This is recorded in function-types, and also in abstractions and applications, so that they can be displayed accordingly; but an abstraction or application is implicit exactly when the function-type it belongs to is. *)
+type implicitness = [ `Explicit | `Implicit ]
+
 (* ******************** Typechecked terms ******************** *)
 
 (* Typechecked, but unevaluated, terms.  Uses De Bruijn indices that are intrinsically well-scoped by Tctxs, but are no longer separated into synthesizing and checking; hence without type ascriptions.  Note that extending a Tctx by a dimension 'k means adding a whole cube of new variables, which are indexed by the position of that dimension together with a strict face of it.  (At user-level, those variables may all be accessed as faces of one "cube variable", or they may have independent names, but internally there is no difference.)
@@ -125,7 +128,9 @@ module rec Term : sig
   type (_, _, _) term =
     | Var : ('mode, 'a) index -> ('mode, 'a, kinetic) term
     | Const : Constant.t -> ('mode, 'a, kinetic) term
-    | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
+    | Meta :
+        ('mode, 'x, 'b, 'l) Meta.t * ('mode, 'b, 'l, 's) meta_kind * 's energy
+        -> ('mode, 'b, 's) term
     | Field :
         's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion
         -> ('mode, 'a, 's) term
@@ -139,10 +144,11 @@ module rec Term : sig
         * ('mode, 'a, 's) term
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * implicitness
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, 's) term
     | Constr :
-        Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
+        Constr.t * 'n D.t * (('n, 'mode, 'a, kinetic) any_modal_term_cube * implicitness) list
         -> ('mode, 'a, kinetic) term
     | Act :
         's energy
@@ -173,6 +179,7 @@ module rec Term : sig
         'k variables
         * 'n D.t
         * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * implicitness
         * ('mode, ('a, ('modality, 'k) dim_entry) snoc, 's) Term.term
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
@@ -193,10 +200,12 @@ module rec Term : sig
     | Unact : ('m, 'n) op * ('mode, 'b, 's) term -> ('mode, 'b, 's) term
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     | Failed : 's energy -> ('mode, 'a, 's) term
+    | Overflow : ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
     filter : ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim;
+    implicit : implicitness;
     doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
     cods : ('n, 'dom * 'modality * 'mode * 'a) CodCube.t;
   }
@@ -321,7 +330,12 @@ module rec Term : sig
           ('dom, 'bm, kinetic) term )
         vis_data
         -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) visibility
-    | Invis : { hints : hints } -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) visibility
+    | Invis : {
+        hints : hints;
+        (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
+        name : string option;
+      }
+        -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) visibility
 
   and ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data = {
     dim : 'm D.t;
@@ -348,6 +362,10 @@ module rec Term : sig
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
+
+  and (_, _, _, _) meta_kind =
+    | Global_meta : ('mode, 'b, 'l, 's) meta_kind
+    | Unif_meta : ('mode, 'b, kinetic) term option ref -> ('mode, 'b, kinetic, kinetic) meta_kind
 end = struct
   module CodFam = struct
     type ('k, _) t =
@@ -464,7 +482,9 @@ end = struct
     | Var : ('mode, 'a) index -> ('mode, 'a, kinetic) term
     | Const : Constant.t -> ('mode, 'a, kinetic) term
     (* A metavariable lives in its own context.  When one arises by readback from a value metavariable whose environment is not the identity, it is wrapped in a let-only that binds the variables of its context. *)
-    | Meta : ('mode, 'x, 'b, 'l) Meta.t * 's energy -> ('mode, 'b, 's) term
+    | Meta :
+        ('mode, 'x, 'b, 'l) Meta.t * ('mode, 'b, 'l, 's) meta_kind * 's energy
+        -> ('mode, 'b, 's) term
     (* A field projection.  For a modal field, the term being projected lives behind a lock by the left adjoint of the field's adjunction; for ordinary fields that modality is the identity. *)
     | Field :
         's energy * ('mode, 'f, 'a, 's) modal_term * 'i Field.t * ('n, 't, 'i) insertion
@@ -481,10 +501,11 @@ end = struct
         * ('mode, 'a, 's) term
         * 'm D.t
         * ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * implicitness
         * ('n, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube
         -> ('mode, 'a, 's) term
     | Constr :
-        Constr.t * 'n D.t * ('n, 'mode, 'a, kinetic) any_modal_term_cube list
+        Constr.t * 'n D.t * (('n, 'mode, 'a, kinetic) any_modal_term_cube * implicitness) list
         -> ('mode, 'a, kinetic) term
     | Act :
         's energy
@@ -520,6 +541,7 @@ end = struct
         'k variables
         * 'n D.t
         * ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim
+        * implicitness
         * ('mode, ('a, ('modality, 'k) dim_entry) snoc, 's) Term.term
         -> ('mode, 'a, 's) term
     | Struct : ('mode, 'n, 'a, 's, 'et) struct_args -> ('mode, 'a, 's) term
@@ -545,10 +567,13 @@ end = struct
     | Shift : 'n D.t * ('n, 'b, 'nb, 'mode) plusmap * ('mode, 'b, 's) term -> ('mode, 'nb, 's) term
     (* A term that failed to typecheck, such as a component of a structure (a field of a struct, or a constructor of a datatype), allowing the rest of the term or structure to be checked and used.  Evaluating it produces a failed value (see Value.Failed), which fails silently when it is inspected. *)
     | Failed : 's energy -> ('mode, 'a, 's) term
+    (* A subterm omitted from a displayed term because the term would otherwise be too large to display (see "display size").  Only readback for display produces it, so it never reaches evaluation or typechecking. *)
+    | Overflow : ('mode, 'a, 's) term
 
   and ('k, 'n, 'dom, 'modality, 'mode, 'a) pi_args = {
     x : 'k variables;
     filter : ('dom, 'modality, 'mode, 'k, 'n) Modality.filter_dim;
+    implicit : implicitness;
     doms : ('k, 'dom, 'modality, 'mode, 'a, kinetic) modal_term_cube;
     cods : ('n, 'dom * 'modality * 'mode * 'a) CodCube.t;
   }
@@ -700,7 +725,12 @@ end = struct
           ('dom, 'bm, kinetic) term )
         vis_data
         -> ('dom, 'modality, 'mode, 'b, 'bm, 'f, 'mn) visibility
-    | Invis : { hints : hints } -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) visibility
+    | Invis : {
+        hints : hints;
+        (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
+        name : string option;
+      }
+        -> ('dom, 'modality, 'mode, 'b, 'bm, N.zero, 'n) visibility
 
   (* Vis means the cube of internal variables are visible to the parser as a list of cubes of variables, the list-of-cubes being obtained by decomposing the dimension as a sum.  Note that the division into a cube and non-cube part, and the sum of dimensions, are only relevant for looking up *raw* indices: they are invisible to the checked world, whose indices store the total face of mn.  If vis is omitted,  *)
   and ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data = {
@@ -733,6 +763,11 @@ end = struct
 
   and ('mode, 'a, 'b) termctx =
     | Permute : ('a, 'i) N.permute * ('mode, 'i, 'b) ordered_termctx -> ('mode, 'a, 'b) termctx
+
+  (* Every occurrence of a metavariable records what kind of metavariable it is, which determines where its data is found.  The kind is indexed by the energy of the metavariable and that of the occurrence: a global metavariable can occur with either energy, but a unification metavariable is kinetic and so are its occurrences.  A global metavariable lives in the global table of metavariables (see Global).  A unification metavariable lives in the table of the command that created it, which stores its type and context.  When it is solved, its solution is written into a mutable cell that is shared by all of its occurrences, so that it can be evaluated without the table.  It must be solved by the end of the command; otherwise the command fails and the cell gets a failed term. *)
+  and (_, _, _, _) meta_kind =
+    | Global_meta : ('mode, 'b, 'l, 's) meta_kind
+    | Unif_meta : ('mode, 'b, kinetic) term option ref -> ('mode, 'b, kinetic, kinetic) meta_kind
 end
 
 include Term
@@ -762,30 +797,37 @@ let singleton_fieldtype : type i gmode b rb.
 let rec nth_var : type mode a b s. (mode, a, s) term -> b Bwd.t -> any_variables option =
  fun tr args ->
   match tr with
-  | Lam (x, _, _, body) -> (
+  | Lam (x, _, _, _, body) -> (
       match args with
       | Emp -> Some (Any x)
       | Snoc (args, _) -> nth_var body args)
   | _ -> None
 
 let pi : type mode modality a.
+    ?implicit:implicitness ->
     D.zero variables ->
     (mode, modality, a, kinetic) modal_term ->
     (mode, (a, (modality, D.zero) dim_entry) snoc, kinetic) term ->
     (mode, a, kinetic) term =
- fun x (Modal (modality, plus, dom)) cod ->
+ fun ?(implicit = `Explicit) x (Modal (modality, plus, dom)) cod ->
   let filter = Modality.filter_zero modality in
   Pi
     {
       x;
       filter;
+      implicit;
       doms = Modal (modality, plus, CubeOf.singleton dom);
       cods = CodCube.singleton (Cod (filter, cod));
     }
 
-let app fn modality al arg =
+let app ?(implicit = `Explicit) fn modality al arg =
   App
-    (Kinetic, fn, D.zero, Modality.filter_zero modality, Modal (modality, al, CubeOf.singleton arg))
+    ( Kinetic,
+      fn,
+      D.zero,
+      Modality.filter_zero modality,
+      implicit,
+      Modal (modality, al, CubeOf.singleton arg) )
 
 let appid fn mode arg =
   App
@@ -793,6 +835,7 @@ let appid fn mode arg =
       fn,
       D.zero,
       Modality.filter_id mode D.zero,
+      `Explicit,
       Modal (Modality.id mode, plus_no_lock mode, CubeOf.singleton arg) )
 
 let apps fn mode args =
@@ -869,12 +912,13 @@ let rec is_failed : type mode a s. (mode, a, s) term -> bool = function
   | Shift (_, _, tm) -> is_failed tm
   | _ -> false
 
-(* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated.  *)
+(* A telescope is a list of types, each dependent on the previous ones.  Note that 'a and 'ab are lists of dimensions, but 'b is just a forwards natural number counting the number of *zero-dimensional* variables added to 'a to get 'ab.  The variables bound in a telescope are all zero-dimensional, but they can be nontrivially modally annotated, and implicit (as can the parameters of a definition). *)
 module Telescope = struct
   type ('mode, 'a, 'b, 'ab) t =
     | Emp : ('mode, 'a, Fwn.zero, 'a) t
     | Ext :
         string option
+        * implicitness
         * ('mode, 'modality, 'a, kinetic) modal_term
         * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 'b, 'ab) t
         -> ('mode, 'a, 'b Fwn.suc, 'ab) t
@@ -884,18 +928,27 @@ module Telescope = struct
    fun doms cod ->
     match doms with
     | Emp -> cod
-    | Ext (x, dom, doms) ->
-        pi (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
+    | Ext (x, implicit, dom, doms) ->
+        pi ~implicit (singleton_variables D.zero (binder_name_of_option x)) dom (pis doms cod)
+
+  (* The implicitness of the entries of a telescope, listed last first, as for the entries of a context (see Ctx.lam). *)
+  let implicits : type mode a b ab. (mode, a, b, ab) t -> implicitness list =
+   fun doms ->
+    let rec go : type a b ab. implicitness list -> (mode, a, b, ab) t -> implicitness list =
+     fun acc -> function
+       | Emp -> acc
+       | Ext (_, implicit, _, doms) -> go (implicit :: acc) doms in
+    go [] doms
 
   (* Whether any of the types in a telescope failed to typecheck (see Check.check_tel). *)
   let rec has_failed : type mode a b ab. (mode, a, b, ab) t -> bool = function
     | Emp -> false
-    | Ext (_, Modal (_, _, ty), doms) -> is_failed ty || has_failed doms
+    | Ext (_, _, Modal (_, _, ty), doms) -> is_failed ty || has_failed doms
 end
 
 (* Count the number of zero-dimensional pi-types on the front of a term, i.e. the length of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to determine a datatype constructor's arity from its stored function-type.  We peel only zero-dimensional pis: a dimension-killing modality can have a zero-dimensional domain cube on a positive-dimensional pi, which must not be counted, and the codomain of a higher pi is not a constructor argument. *)
 let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = function
-  | Pi { x = _; filter; doms = Modal (modality, _, _); cods } -> (
+  | Pi { x = _; filter; implicit = _; doms = Modal (modality, _, _); cods } -> (
       match D.compare_zero (CodCube.dim cods) with
       | Pos _ -> Wrap Zero
       | Zero ->
@@ -908,9 +961,21 @@ let rec pi_arity : type mode a. (mode, a, kinetic) term -> Fwn.wrapped = functio
   | tm when is_failed tm -> Reporter.fatal (Dependent "arity of failed constructor")
   | _ -> Wrap Zero
 
+(* Collect the implicitness of the zero-dimensional pi-types on the front of a term, in order, such as the arguments of a constructor whose function-type this is. *)
+let rec pi_implicits : type mode a. (mode, a, kinetic) term -> implicitness list = function
+  | Pi { x = _; filter; implicit; doms = Modal (modality, _, _); cods } -> (
+      match D.compare_zero (CodCube.dim cods) with
+      | Pos _ -> []
+      | Zero ->
+          let Eq = Modality.filter_uniq filter (Modality.filter_zero modality) in
+          let (Cod (cfilter, cod)) = CodCube.find_top cods in
+          let Eq = Modality.filter_uniq cfilter (Modality.filter_zero modality) in
+          implicit :: pi_implicits cod)
+  | _ -> []
+
 (* Collect the binder names of the zero-dimensional pi-types on the front of a term, in order, as a plain list — the names of the argument telescope of the constructor whose function-type this is, without reconstructing the telescope.  Used to name the pattern variables when displaying a "split". *)
 let rec pi_names : type mode a. (mode, a, kinetic) term -> string option list = function
-  | Pi { x; filter; doms = Modal (modality, _, _); cods } -> (
+  | Pi { x; filter; implicit = _; doms = Modal (modality, _, _); cods } -> (
       match D.compare_zero (CodCube.dim cods) with
       | Pos _ -> []
       | Zero ->

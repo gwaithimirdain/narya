@@ -66,7 +66,7 @@ module F = struct
   let rec dvalue : type mode s. int -> formatter -> (mode, s) value -> unit =
    fun depth ppf v ->
     match v with
-    | Neu { head = h; args = a; value = _; ty } ->
+    | Neu { head = h; args = a; value = _; ty; acted = _ } ->
         if depth > 0 then
           fprintf ppf "Neu (%a, %a, %a)" neu_head h apps a (dvalue (depth - 1)) (Lazy.force ty)
         else fprintf ppf "Neu (%a, %a, ?)" neu_head h apps a
@@ -140,6 +140,7 @@ module F = struct
       | Ready v -> (evaluation (depth - 1)) ppf v
       | Deferred_eval _ -> fprintf ppf "(Deferred_eval)"
       | Deferred _ -> fprintf ppf "(Deferred)"
+      | Blocked_on (Blocker (m, _), _) -> fprintf ppf "(Blocked_on %s)" (Meta.name m)
       | Applied (inner, Apps e) -> fprintf ppf "Applied (%a, %a)" (lazy_eval 0) inner apps_entry e
       | Applied (inner, Action (s, c)) ->
           fprintf ppf "Acted (%a, %s, %s)" (lazy_eval 0) inner (string_of_deg s)
@@ -149,6 +150,7 @@ module F = struct
    fun depth ppf v ->
     match v with
     | Unrealized -> fprintf ppf "Unrealized"
+    | Blocked (Blocker (m, _)) -> fprintf ppf "Blocked %s" (Meta.name m)
     | Realize v -> fprintf ppf "Realize (%a)" (dvalue depth) v
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 
@@ -163,7 +165,7 @@ module F = struct
       formatter -> (mode1, mode2, any, inst) apps_entry -> unit =
    fun ppf e ->
     match e with
-    | Arg (_, xs, _) -> cubeof normal ppf xs
+    | Arg (_, _, xs, _) -> cubeof normal ppf xs
     | Field (_, fld, plus, ins) -> (
         (* 'ins' is an *outer* insertion, not the field insertion.  The field insertion has been pushed inside and become the 'plus'. *)
         (* Intrinsic dimension *)
@@ -196,7 +198,7 @@ module F = struct
     | Const { name; ins } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Const (%s, %s)" (print_to_string (PConstant name)) (string_of_deg p)
-    | Meta { meta; env = e; ins } ->
+    | Meta { meta; env = e; ins; _ } ->
         let (To p) = deg_of_ins ins in
         fprintf ppf "Meta (%s, %a, %s)" (Meta.name meta) env e (string_of_deg p)
     | UU (_, n) -> fprintf ppf "UU %a" dim n
@@ -259,7 +261,7 @@ module F = struct
     | Var (Index (x, fa, _, _)) ->
         fprintf ppf "IVar %d.%s" (Tctx.int_of_insert x) (string_of_sface fa)
     | Const c -> fprintf ppf "Const %s" (print_to_string (PConstant c))
-    | Meta (v, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
+    | Meta (v, _, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
     | Field (_, Modal (_, _, tm), fld, ins) ->
         fprintf ppf "Field (%a, %s%s(%s))" term tm (Field.to_string fld) (string_of_ins ins)
           (string_of_dim (dom_ins ins))
@@ -277,9 +279,9 @@ module F = struct
           (let (Cod (filt, t)) = CodCube.find_top cods in
            let Eq = Modality.filter_uniq filter filt in
            (t : (mode, (b, (modality, k) Tctx.dim_entry) Tctx.suc, s) term))
-    | App (_, fn, _, _, Modal (_modality, _al, arg)) ->
+    | App (_, fn, _, _, _, Modal (_modality, _al, arg)) ->
         fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
-    | Lam (x, _, filter, body) ->
+    | Lam (x, _, filter, _, body) ->
         fprintf ppf "Lam^(%s) (?, %s, %a)"
           (string_of_dim (dim_variables x))
           (Modality.to_string (Modality.filter_modality filter))
@@ -297,6 +299,7 @@ module F = struct
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
     | Failed _ -> fprintf ppf "Failed"
+    | Overflow -> fprintf ppf "Overflow"
 
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->
@@ -370,10 +373,13 @@ module F = struct
     | Constr (c, args) ->
         fprintf ppf "Constr(%s,(%a))" (Constr.to_string c.value)
           (fun ppf ->
-            List.iter (fun ((x : a check Asai.Range.located), (i : _ Asai.Range.located)) ->
-                match i.value with
-                | `Implicit -> fprintf ppf "{%a}, " check x.value
-                | `Explicit -> fprintf ppf "%a, " check x.value))
+            List.iter
+              (fun ((x : a check Raw.constr_arg Asai.Range.located), (i : _ Asai.Range.located)) ->
+                match (x.value, i.value) with
+                | `Arg x, `Implicit -> fprintf ppf "{%a}, " check x
+                | `Arg x, `Explicit -> fprintf ppf "%a, " check x
+                | `Face (label, x), _ -> fprintf ppf "{%s ≔ %a}, " label.value check x
+                | `Dot, _ -> fprintf ppf "., "))
           args
     | Numeral x -> fprintf ppf "Numeral(%s)" (Q.to_string x)
     | Empty_co_match -> fprintf ppf "Emptycomatch(?)"
@@ -383,13 +389,8 @@ module F = struct
     | SelfRecord _ -> fprintf ppf "SelfRecord(?)"
     | Refute (_, _) -> fprintf ppf "Refute(?)"
     | Hole _ -> fprintf ppf "Hole"
+    | Unif _ -> fprintf ppf "Unif"
     | Realize x -> fprintf ppf "Realize %a" check x
-    | ImplicitApp (fn, _, args) ->
-        fprintf ppf "ImplicitApp (%a," synth fn.value;
-        List.iter
-          (fun (_, (x : a check Asai.Range.located)) -> fprintf ppf "%a, " check x.value)
-          args;
-        fprintf ppf ")"
     | Embed _ -> .
     | First tms ->
         fprintf ppf "First(%a)"
@@ -412,13 +413,17 @@ module F = struct
               else "." ^ f ^ "." ^ String.concat "" (List.map string_of_int p)
           | `Int i -> "." ^ string_of_int i)
     | Key (tm, parts) -> fprintf ppf "Key(%a, #%s)" synth tm.value (String.concat "." parts.value)
-    | Pi (_, _, _, _) -> fprintf ppf "Pi(?)"
-    | HigherPi (_, _, _, _) -> fprintf ppf "HigherPi(?)"
-    | InstHigherPi (_, _, _, _) -> fprintf ppf "InstHigherPi(?)"
-    | App (fn, { value = Some arg; _ }, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg
-    | App (fn, { value = None; _ }, _) -> fprintf ppf "App(%a, .)" check fn.value
+    | Pi (_, _, _, _, _) -> fprintf ppf "Pi(?)"
+    | HigherPi (_, _, _, _, _) -> fprintf ppf "HigherPi(?)"
+    | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
+    | App (fn, { value = `Arg arg; _ }, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg
+    | App (fn, { value = `Dot; _ }, _) -> fprintf ppf "App(%a, .)" check fn.value
+    | App (fn, { value = `Face (label, arg); _ }, _) ->
+        fprintf ppf "App(%a, %s ≔ %a)" check fn.value label.value check arg
+    | App (fn, { value = `Ellipsis | `More_ellipsis _; _ }, _) ->
+        fprintf ppf "App(%a, …)" check fn.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
-    | AscLam (x, _, dom, body) ->
+    | AscLam (x, _, _, dom, body) ->
         fprintf ppf "AscLam(%s, %a, %a)"
           (Option.value ~default:"_" x.value)
           check dom.value synth body.value
@@ -430,7 +435,6 @@ module F = struct
         fprintf ppf "Match (%a, (%a))" synth tm.value branches br
     | UU mode -> fprintf ppf "%s" (Mode.name mode)
     | Fail _ -> fprintf ppf "Error"
-    | ImplicitSApp (fn, _, arg) -> fprintf ppf "ImplicitSApp(%a, %a)" synth fn.value synth arg.value
     | SFirst (tms, arg) ->
         fprintf ppf "SFirst(%a, %a)"
           (pp_print_list ~pp_sep:(fun ppf () -> pp_print_string ppf ", ") synth)
@@ -453,17 +457,13 @@ module F = struct
     let strvar : string option -> string = function
       | Some x -> x
       | None -> "_" in
-    let rec strnames : type a b ab. (a, b, ab) Namevec.t -> string = function
+    let rec strvars : type a ab. (a, ab) Patternitems.t -> string = function
       | [] -> ""
-      | [ x ] -> strvar x.value
-      | x :: xs -> "{" ^ strvar x.value ^ "} " ^ strnames xs in
-    let rec strvars : type a b ab. (a, b, ab) Patternvars.t -> string = function
-      | [] -> ""
-      | [ Cube x ] -> strvar x
-      | Cube x :: xs -> strvar x ^ " " ^ strvars xs
-      (* The last of the boundary names is the top face, which is displayed without braces. *)
-      | [ Boundary ns ] -> strnames ns
-      | Boundary ns :: xs -> strnames ns ^ " " ^ strvars xs in
+      | [ (`Plain, x) ] -> strvar x.value
+      | [ (`Braced, x) ] -> "{" ^ strvar x.value ^ "}"
+      | (`Plain, x) :: xs -> strvar x.value ^ " " ^ strvars xs
+      | (`Braced, x) :: xs -> "{" ^ strvar x.value ^ "} " ^ strvars xs
+      | Dot (_, xs) -> ". " ^ strvars xs in
     let mapsto =
       match cube with
       | `Normal _ -> "↦"

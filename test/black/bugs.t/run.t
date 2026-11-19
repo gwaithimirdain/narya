@@ -18,7 +18,7 @@
    ￮ constant get_f defined
   
 
-  $ narya issue84.ny
+  $ narya -display-size ∞ issue84.ny
   (Id A ⇒ Id B) .trr
     : (A → B) → A → B
   

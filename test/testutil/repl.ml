@@ -104,7 +104,7 @@ let print (tm : string) : unit =
       let etm = eval_term (Emp (test_mode, D.zero)) ctm in
       Readback.Displaying.run ~env:true @@ fun () ->
       let btm = readback_at Kinetic (Ctx.empty test_mode) etm ety in
-      let utm = unparse Names.empty btm No.Interval.entire No.Interval.entire in
+      let utm = unparse (Names.empty test_mode) btm No.Interval.entire No.Interval.entire in
       PPrint.ToChannel.pretty 1.0 (Display.columns ()) stdout (pp_complete_term (Wrap utm) `None);
       print_newline ()
   | _ -> fatal (Nonsynthesizing "argument of print")
@@ -116,6 +116,7 @@ let run f =
   Display.run ~init:Display.default @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
+  Readback.Unifying.run ~env:None @@ fun () ->
   Positivity.run @@ fun () ->
   Meta.run_owner @@ fun () ->
   Dim.Endpoints.set ~arity:2 ~refl_char:'e' ~refl_names:[ "refl"; "Id" ] ~internal:true ~hott:false;

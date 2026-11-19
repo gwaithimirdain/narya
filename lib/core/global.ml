@@ -254,15 +254,66 @@ let notify_holes () =
 
 type hole = { meta : Meta.wrapped; printable : printable; startpos : int; endpos : int }
 
+(* The unification metavariables created by a command are stored only in the state of that command, since they are either solved by the time it ends or else cause it to fail.  For each one we store its type and context, which are needed only while it is unsolved, along with its cell (see Term.meta_kind), shared by all its occurrences, into which its solution is written as soon as it is solved.  Since the state of the command is a Speculable, the table entries of metavariables created inside a speculative computation are discarded if it backtracks.
+
+   We also record the depth of speculation (see Origin.speculate) at which each one was created.  A speculation can only solve the unification metavariables created inside it, not those from outside it, since if it backtracks, values created outside it that saw the solution (e.g. by forcing lazy computations that depended on it) would remain incorrect.  When a speculation succeeds, the unification metavariables created inside it now belong to the enclosing computation, so we decrease their recorded depth to match.  Thus a solution can only be backtracked together with its metavariable, which is discarded entirely, along with everything that refers to it, so a solution can be written into the cell at once, and is then permanent.  (The cell of a discarded metavariable may be left written, but nothing can reach it.)
+
+   The context is computed lazily, since it is needed only if the metavariable is compared to itself, read back with a nontrivial environment, or displayed.  It must not be read back for display, so its thunk sets the display flag explicitly (see Check.make_unif).  The table is never marshaled, so it can contain such functional values. *)
+module Unifdata = struct
+  type ('mode, 'a, 'b, 's) t = {
+    meta : ('mode, 'a, 'b, kinetic) Meta.t;
+    unif : ('mode, 'b, kinetic) term option ref;
+    ctx : ('mode, 'a, 'b) Ctx.t;
+    ty : ('mode, 'b, kinetic) term;
+    termctx : ('mode, 'a, 'b) termctx Lazy.t;
+    depth : int;
+    (* Where the metavariable came from, and the error to report there if it isn't solved. *)
+    loc : Asai.Range.t option;
+    err : Reporter.Code.t;
+    (* A delayed metavariable stands for a term that can't be used yet, because its correctness depends on a postponed constraint.  It can't be solved by unification, only released by that constraint once it is satisfied (see Postponed).  Since it evaluates to a neutral blocked on it, like any other unsolved unification metavariable, computations involving it are redone once it is released. *)
+    delayed : bool;
+  }
+end
+
+module Uniftable = Meta.Table.Make_map (Unifdata)
+
+(* A postponed constraint is a problem, such as an equality or subtyping check, that couldn't be decided because it was stuck on unsolved unification metavariables, its blockers.  We retry it only once one of its blockers has been solved (or, at the end of a command, once anything has been solved since we last tried it, since the blockers are not necessarily complete), and only at "safe points" where this can't happen re-entrantly inside another comparison.  Like a unification metavariable, it can only be retried at the depth of speculation where it was created (see Unifdata).
+
+   Its attempt is a closure that does whatever is appropriate if the problem is decided, such as releasing a delayed metavariable or reporting an error, and otherwise returns new blockers.  If it is never decided, its report is called at the end of the command to report it. *)
+module Postponed = struct
+  type t = {
+    id : int;
+    blockers : Value.blocker list;
+    (* The number of metavariable solutions in the current command when we last attempted this constraint. *)
+    seen : int;
+    depth : int;
+    attempt : unit -> [ `Done | `Stuck of Value.blocker list ];
+    report : unit -> unit;
+  }
+end
+
 type current_command = {
   holes_allowed : (unit, string) Result.t;
   current_holes : hole Bwd.t;
+  unifs : Uniftable.t;
+  postponed : Postponed.t list;
+  (* The number of unification metavariables that have been solved or released during this command, so that we can tell whether anything has been solved since a postponed constraint was last attempted. *)
+  solves : int;
   parametric : [ `Must_be_parametric | `Maybe_parametric | `Nonparametric ];
 }
 
+let empty_command holes_allowed origin parametric =
+  {
+    holes_allowed;
+    current_holes = Emp;
+    unifs = Uniftable.empty origin;
+    postponed = [];
+    solves = 0;
+    parametric;
+  }
+
 let current_command : current_command Speculable.t =
-  Speculable.make
-    { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric }
+  Speculable.make (empty_command (Error "run") Top `Maybe_parametric)
 
 (* Set and get parametric-ness *)
 
@@ -286,8 +337,273 @@ let get_parametric () =
   | `Nonparametric -> `Nonparametric
   | `Must_be_parametric | `Maybe_parametric -> `Parametric
 
+(* Add a new unification metavariable, with its cell, to the table of the current command. *)
+let add_unif : type mode a b.
+    (mode, a, b, kinetic) Meta.t ->
+    (mode, b, kinetic) term option ref ->
+    ctx:(mode, a, b) Ctx.t ->
+    ty:(mode, b, kinetic) term ->
+    termctx:(mode, a, b) termctx Lazy.t ->
+    loc:Asai.Range.t option ->
+    err:Reporter.Code.t ->
+    delayed:bool ->
+    unit =
+ fun meta unif ~ctx ~ty ~termctx ~loc ~err ~delayed ->
+  Speculable.modify current_command (fun d ->
+      {
+        d with
+        unifs =
+          Uniftable.add meta
+            { meta; unif; ctx; ty; termctx; depth = Origin.speculation_depth (); loc; err; delayed }
+            d.unifs;
+      })
+
+(* Look up the data of a unification metavariable.  This is only possible during the command that created it. *)
+let find_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, a, b, kinetic) Unifdata.t =
+ fun meta ->
+  match Uniftable.find_opt meta (Speculable.get current_command).unifs with
+  | Some d -> d
+  | None ->
+      fatal
+        (Anomaly
+           ("unification metavariable used outside the command that created it: " ^ Meta.name meta))
+
+(* The context in which a unification metavariable was created. *)
+let unif_ctx : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, a, b) Ctx.t =
+ fun meta -> (find_unif meta).ctx
+
+(* The location of a unification metavariable, and the error to report there if it isn't solved. *)
+let unif_error : type mode a b.
+    (mode, a, b, kinetic) Meta.t -> Asai.Range.t option * Reporter.Code.t =
+ fun meta ->
+  let d = find_unif meta in
+  (d.loc, d.err)
+
+(* Whether something created at a given depth of speculation belongs to the current one, i.e. was created inside the innermost current speculation (or a speculation that has since succeeded into it). *)
+let at_current_depth name depth =
+  let current = Origin.speculation_depth () in
+  if depth > current then fatal (Anomaly (name ^ " deeper than current speculation"))
+  else depth = current
+
+(* Whether a unification metavariable can be solved by unification: it must not be delayed, and it must have been created at the current depth of speculation. *)
+let unif_assignable : type mode a b. (mode, a, b, kinetic) Meta.t -> bool =
+ fun meta ->
+  let d = find_unif meta in
+  (not d.delayed) && at_current_depth ("unification metavariable " ^ Meta.name meta) d.depth
+
+(* When a speculation succeeds, the unification metavariables and postponed constraints created inside it now belong to the enclosing computation. *)
+let () =
+  Origin.on_speculation_success @@ fun () ->
+  let depth = Origin.speculation_depth () in
+  Speculable.modify current_command (fun c ->
+      {
+        c with
+        unifs = Uniftable.map { map = (fun d -> { d with depth = min d.depth depth }) } c.unifs;
+        postponed = List.map (fun p -> Postponed.{ p with depth = min p.depth depth }) c.postponed;
+      })
+
+let set_unif_solution : type mode a b.
+    string -> (mode, a, b, kinetic) Meta.t -> (mode, b, kinetic) term -> unit =
+ fun what meta tm ->
+  let d = find_unif meta in
+  match !(d.unif) with
+  | Some _ -> fatal (Anomaly (what ^ " already-solved unification metavariable " ^ Meta.name meta))
+  | None ->
+      invalidate ();
+      d.unif := Some tm;
+      Speculable.modify current_command (fun c -> { c with solves = c.solves + 1 })
+
+(* Record the solution of an unsolved unification metavariable, by writing it into its cell.  This is permanent, since a metavariable can only be solved at the depth of speculation where it was created (see Unifdata). *)
+let solve_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, b, kinetic) term -> unit =
+ fun meta tm ->
+  if not (unif_assignable meta) then
+    fatal (Anomaly ("solving delayed or outer unification metavariable " ^ Meta.name meta))
+  else set_unif_solution "solving" meta tm
+
+(* Release a delayed metavariable, giving it its value, once the constraint it was waiting for has been decided.  If that constraint failed, its value is a failed term. *)
+let release_unif : type mode a b. (mode, a, b, kinetic) Meta.t -> (mode, b, kinetic) term -> unit =
+ fun meta tm ->
+  let d = find_unif meta in
+  if not (d.delayed && at_current_depth ("delayed metavariable " ^ Meta.name meta) d.depth) then
+    fatal (Anomaly ("releasing non-delayed or outer metavariable " ^ Meta.name meta))
+  else set_unif_solution "releasing" meta tm
+
+(* The solution of a unification metavariable, if it has one, from its cell. *)
+let unif_solution : type mode b.
+    (mode, b, kinetic) term option ref -> (mode, b, kinetic) term option =
+ fun unif -> !unif
+
+(* If a unification metavariable is delayed and not yet released, the location of the term it stands for. *)
+let delayed_unif_loc : type mode a b.
+    (mode, a, b, kinetic) Meta.t -> (mode, b, kinetic) term option ref -> Asai.Range.t option option
+    =
+ fun meta unif ->
+  match !unif with
+  | Some _ -> None
+  | None -> (
+      match Uniftable.find_opt meta (Speculable.get current_command).unifs with
+      | Some { delayed = true; loc; _ } -> Some loc
+      | _ -> None)
+
+(* Whether a unification metavariable has been solved. *)
+let unif_solved : type mode b. (mode, b, kinetic) term option ref -> bool =
+ fun unif -> Option.is_some !unif
+
+(* The stored context and type of a metavariable of either kind. *)
+let meta_termctx : type mode a b s e.
+    (mode, a, b, s) Meta.t -> (mode, b, s, e) meta_kind -> (mode, a, b) termctx =
+ fun meta -> function
+  | Global_meta -> (find_meta meta).termctx
+  | Unif_meta _ -> Lazy.force (find_unif meta).termctx
+
+let meta_ty : type mode a b s e.
+    (mode, a, b, s) Meta.t -> (mode, b, s, e) meta_kind -> (mode, b, kinetic) term =
+ fun meta -> function
+  | Global_meta -> (find_meta meta).ty
+  | Unif_meta _ -> (find_unif meta).ty
+
+(* Iterate over the currently unsolved unification metavariables. *)
+type unsolved_unif_iter = {
+  it :
+    'mode 'a 'b.
+    ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'a, 'b) Ctx.t -> ('mode, 'b, kinetic) term -> unit;
+}
+
+let iter_unsolved_unifs f =
+  Uniftable.fold
+    { fold = (fun { meta; unif; ctx; ty; _ } () -> if Option.is_none !unif then f.it meta ctx ty) }
+    (Speculable.get current_command).unifs ()
+
+(* Some unification metavariables can be solved at the end of a command even if nothing has constrained them, because their type has only one element up to eta-conversion.  That's defined in Unify, downstream of here. *)
+let singleton_unif_solver : (unit -> unit) ref = ref (fun () -> ())
+let set_singleton_unif_solver f = singleton_unif_solver := f
+let solve_singleton_unifs () = !singleton_unif_solver ()
+
+let count_unsolved_unifs () =
+  Uniftable.fold
+    { fold = (fun { unif; _ } n -> if Option.is_none !unif then n + 1 else n) }
+    (Speculable.get current_command).unifs 0
+
+(* Report the error of each unsolved unification metavariable.  Metavariables can be created together for the same term, such as the boundary of a primary argument, the fields of an expansion, or the type of a placeholder, and these have the same location.  Since at most one error is useful for each term, we report only the first. *)
+let report_unsolved_unifs () =
+  let seen = ref [] in
+  Uniftable.fold
+    {
+      fold =
+        (fun { unif; loc; err; delayed; _ } () ->
+          (* A delayed metavariable is unsolved only if its constraint is, and that is reported instead. *)
+          if Option.is_none !unif && (not delayed) && not (List.mem loc !seen) then (
+            seen := loc :: !seen;
+            mortal ?loc err));
+    }
+    (Speculable.get current_command).unifs ()
+
+(* Postpone a constraint, to be retried later. *)
+let postpone_counter = ref 0
+
+let postpone ~blockers ~attempt ~report =
+  incr postpone_counter;
+  Speculable.modify current_command (fun c ->
+      {
+        c with
+        postponed =
+          c.postponed
+          @ [
+              {
+                id = !postpone_counter;
+                blockers;
+                seen = c.solves;
+                depth = Origin.speculation_depth ();
+                attempt;
+                report;
+              };
+            ];
+      })
+
+(* Whether a postponed constraint should be retried, because one of its blockers has been solved, or if [stale], because anything has been solved since it was last attempted. *)
+let woken ~stale (p : Postponed.t) =
+  if stale then p.seen < (Speculable.get current_command).solves
+  else List.exists (fun (Value.Blocker (_, unif)) -> unif_solved unif) p.blockers
+
+(* Retry the postponed constraints that have been woken, at the current depth of speculation, until none remain.  Return whether anything happened, i.e. a constraint was decided or a metavariable was solved.  Attempting a constraint may lead back here, e.g. by typechecking a term, but we don't retry re-entrantly.  Nor do we retry while disabled by [without_retries]. *)
+let retrying = ref false
+
+(* Disable retrying postponed constraints while running a callback.  This is for typechecking that happens in the middle of comparing values, such as expanding a unification metavariable, since a retried comparison would run in the state of the outer one (e.g. whether it is flexible). *)
+let without_retries f =
+  let old = !retrying in
+  retrying := true;
+  Fun.protect ~finally:(fun () -> retrying := old) f
+
+let retry_postponed ?(stale = false) () =
+  if !retrying then false
+  else (
+    retrying := true;
+    Fun.protect ~finally:(fun () -> retrying := false) @@ fun () ->
+    let start = (Speculable.get current_command).solves in
+    let decided = ref false in
+    let rec loop () =
+      let c = Speculable.get current_command in
+      match
+        List.find_opt
+          (fun (p : Postponed.t) ->
+            at_current_depth "postponed constraint" p.depth && woken ~stale p)
+          c.postponed
+      with
+      | None -> ()
+      | Some p ->
+          (* We remove the constraint while attempting it, so that it doesn't get retried inside itself. *)
+          Speculable.modify current_command (fun c ->
+              { c with postponed = List.filter (fun (q : Postponed.t) -> q.id <> p.id) c.postponed });
+          (* If the attempt fails with a fatal error, such as a dependent one from comparing a failed term, we report it and regard the constraint as decided, so that the rest of the command can finish. *)
+          (match Reporter.mortalize ~fallback:(fun () -> `Done) p.attempt with
+          | `Done -> decided := true
+          | `Stuck blockers ->
+              Speculable.modify current_command (fun c ->
+                  { c with postponed = c.postponed @ [ { p with blockers; seen = c.solves } ] }));
+          loop () in
+    loop ();
+    !decided || (Speculable.get current_command).solves > start)
+
+(* Solve everything we can at the end of a command, or before it displays something: retry the postponed constraints, and solve the unification metavariables whose types are singletons, until nothing changes. *)
+(* The number of times a unification metavariable has been solved or released in the current command, so that a cache of comparisons can tell when it might be out of date. *)
+let solve_count () = (Speculable.get current_command).solves
+
+let rec settle_unifs () =
+  let retried = retry_postponed () in
+  let retried_stale = retry_postponed ~stale:true () in
+  let before = (Speculable.get current_command).solves in
+  solve_singleton_unifs ();
+  if retried || retried_stale || (Speculable.get current_command).solves > before then
+    settle_unifs ()
+
+(* Report the undecided postponed constraints.  A constraint that is stuck only on delayed metavariables is stuck because of their constraints, which are reported instead. *)
+let report_postponed () =
+  List.iter
+    (fun (p : Postponed.t) ->
+      if not (List.for_all (fun (Value.Blocker (meta, _)) -> (find_unif meta).delayed) p.blockers)
+      then p.report ())
+    (Speculable.get current_command).postponed
+
+(* At the end of a command, all its unification metavariables must be solved, or else it fails.  If the command has already failed for some other reason, we don't report its unsolved unification metavariables, since they are likely to be consequences of that failure. *)
+let finish_unifs () =
+  if not (moribund ()) then settle_unifs ();
+  (* An undecided constraint and the unsolved metavariables it is stuck on are both worth reporting, since the constraint may be undecided only because of them. *)
+  if not (moribund ()) then (
+    report_postponed ();
+    report_unsolved_unifs ());
+  (* Even if the command failed, the constants it was defining may still be used by later commands, with their failed parts failing silently if they are inspected.  Thus, an unsolved unification metavariable, whose table is about to go away, must become such a failed part. *)
+  Uniftable.fold
+    {
+      fold = (fun { unif; _ } () -> if Option.is_none !unif then unif := Some (Term.Failed Kinetic));
+    }
+    (Speculable.get current_command).unifs ()
+
+(* Whether the current command has created any unification metavariables that are not yet solved, and hence will fail at its end unless they are.  A command that produces output before then, such as echo, can check this to avoid producing it. *)
+let unsolved_unifs () = count_unsolved_unifs () > 0
+
 (* At successful completion of a command, notify the user of generated holes.  Use make_msg to show the number of holes, and also emit the holes separately to be shown in the goals buffer.  This is a subroutine of run_command and friends, below. *)
 let end_command (offset, make_msg) =
+  finish_unifs ();
   (* If the command ended up being parametric, we must retroactively label all the holes as parametric, so that they can only be filled using parametric constants, and oppositely. *)
   let update_parametric : type mode a b s.
       (mode, a, b, s) Metadef.hole -> (mode, a, b, s) Metadef.hole =
@@ -330,11 +646,11 @@ let in_command init f =
 
 let run_command ~holes_allowed f =
   Origin.do_command @@ fun () ->
-  in_command { holes_allowed; current_holes = Emp; parametric = `Maybe_parametric } f
+  in_command (empty_command holes_allowed (Origin.current ()) `Maybe_parametric) f
 
 let run_command_then_undo ~holes_allowed f =
   Origin.do_command_then_undo @@ fun () ->
-  in_command { holes_allowed; current_holes = Emp; parametric = `Maybe_parametric } f
+  in_command (empty_command holes_allowed (Origin.current ()) `Maybe_parametric) f
 
 (* In the rewind cases, we have to restore the parametric-ness information from the past also. *)
 let rewind_command ~parametric ~holes_allowed instant f =
@@ -343,7 +659,7 @@ let rewind_command ~parametric ~holes_allowed instant f =
     | `Parametric -> `Must_be_parametric
     | `Nonparametric -> `Nonparametric in
   Origin.rewind_command instant @@ fun () ->
-  in_command { holes_allowed; current_holes = Emp; parametric } f
+  in_command (empty_command holes_allowed (Origin.current ()) parametric) f
 
 let rewind_command_then_undo ~parametric ~holes_allowed instant f =
   let parametric =
@@ -351,12 +667,11 @@ let rewind_command_then_undo ~parametric ~holes_allowed instant f =
     | `Parametric -> `Must_be_parametric
     | `Nonparametric -> `Nonparametric in
   Origin.rewind_command_then_undo instant @@ fun () ->
-  in_command { holes_allowed; current_holes = Emp; parametric } f
+  in_command (empty_command holes_allowed (Origin.current ()) parametric) f
 
 (* For white box testing *)
 let run f =
-  Speculable.set current_command
-    { holes_allowed = Error "run"; current_holes = Emp; parametric = `Maybe_parametric };
+  Speculable.set current_command (empty_command (Error "run") Top `Maybe_parametric);
   f ()
 
 (* Add a new hole. *)

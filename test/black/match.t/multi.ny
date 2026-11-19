@@ -106,7 +106,7 @@ echo sum⊥' Type (inr. oops)
 {` We can do a non-dependent or explicit match too `}
 def sum⊥'' (A : Type) (a : sum A ⊥) : A ≔ match a return _ ↦ A [ inl. a ↦ a ]
 
-def sum⊥''' (A : Type) (a : sum A ⊥) : A ≔ match a return _ ↦ _ [
+def sum⊥''' (A : Type) (a : sum A ⊥) : A ≔ match a return _ [
 | inl. a ↦ a]
 
 def is_zero : ℕ → Type ≔ [ zero. ↦ ⊤ | suc. _ ↦ ⊥ ]

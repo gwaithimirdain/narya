@@ -49,11 +49,13 @@ let get_notation : type mode n s. [> `Term of (mode, n, s) term | `Constr of Con
     (* TODO: Can we associate notations to Fields too? *)
     | _ -> None in
   (* There's probably a more efficient way to do this that doesn't involve converting to and from forwards lists, but this way is more natural and easier to understand, and I think this is unlikely to be a performance bottleneck. *)
+  (* An argument in the position of a placeholder in the definition of the notation is omitted. *)
   let rec take_labeled labels elts acc =
     match (labels, elts) with
     | [], _ -> return (acc, elts)
     | _ :: _, [] -> None
-    | k :: labels, x :: elts -> take_labeled labels elts (acc |> StringMap.add k x) in
+    | (Some k, _) :: labels, x :: elts -> take_labeled labels elts (acc |> StringMap.add k x)
+    | (None, _) :: labels, _ :: elts -> take_labeled labels elts acc in
   let* first, rest = take_labeled val_vars (Bwd.to_list args) StringMap.empty in
   let first =
     List.map (fun k -> StringMap.find_opt k first <|> Anomaly "not found in get_notation") pat_vars
@@ -221,7 +223,10 @@ let rec get_list : type mode n.
  fun tm elts ->
   match tm with
   | Term.Constr (c, _, []) when c = Constr.intern "nil" -> Some elts
-  | Constr (c, _, [ Modal (carmod, carplus, car); Modal (cdrmod, cdrplus, cdr) ])
+  | Constr
+      ( c,
+        _,
+        [ (Modal (carmod, carplus, car), `Explicit); (Modal (cdrmod, cdrplus, cdr), `Explicit) ] )
     when c = Constr.intern "cons" -> (
       (* Currently, only "cons" constructors with non-modal arguments can be printed using list syntax.  *)
       match
@@ -240,7 +245,10 @@ let rec get_bwd : type mode n.
  fun tm elts ->
   match tm with
   | Term.Constr (c, _, []) when c = Constr.intern "emp" -> Some (Bwd.of_list elts)
-  | Constr (c, _, [ Modal (rdcmod, rdcplus, rdc); Modal (racmod, racplus, rac) ])
+  | Constr
+      ( c,
+        _,
+        [ (Modal (rdcmod, rdcplus, rdc), `Explicit); (Modal (racmod, racplus, rac), `Explicit) ] )
     when c = Constr.intern "snoc" -> (
       (* Currently, only "snoc" constructors with non-modal arguments can be printed using bwd syntax.  *)
       match
@@ -298,16 +306,27 @@ end
 let () = MetaDefs.register_printer (function `Read -> Some "unhandled MetaDefs effect")
 
 (* A metavariable inserted automatically to hold a bare case tree construct is displayed as its definition, which lives in the context of the metavariable.  So are other metavariables (such as those bound by let-bindings), if the user asks for it with "display let ≔ definitions".  If it has no definition (e.g. a hole, or because we are displaying an error that occurred while checking it), we fall back to its name.  We also use its name for occurrences inside its own definition, as in the constructor types of a datatype or a recursive let-binding. *)
-let displayed_metadef : type mode x b s. (mode, x, b, s) Meta.t -> (mode, x, b, s) Metadef.t option
-    =
- fun v ->
-  if (Meta.is_bare v || Display.lets () = `Definitions) && not (MetaDefs.unparsing v) then
-    match
-      Reporter.discard_errors ~fallback:(fun () -> None) (fun () -> Some (Global.find_meta v))
-    with
-    | Some ({ tm = `Defined _; _ } as def) -> Some def
-    | _ -> None
-  else None
+let displayed_metadef : type mode x b s e.
+    (mode, x, b, s) Meta.t -> (mode, b, s, e) meta_kind -> (mode, x, b, s) Metadef.t option =
+ fun v kind ->
+  match kind with
+  (* A unification metavariable has no definition to display: once it is solved, it evaluates to its solution. *)
+  | Unif_meta _ -> None
+  | Global_meta ->
+      if (Meta.is_bare v || Display.lets () = `Definitions) && not (MetaDefs.unparsing v) then
+        match
+          Reporter.discard_errors ~fallback:(fun () -> None) (fun () -> Some (Global.find_meta v))
+        with
+        | Some ({ tm = `Defined _; _ } as def) -> Some def
+        | _ -> None
+      else None
+
+(* The solution of a unification metavariable, if it has one, which is displayed in its place. *)
+let solved_unif : type mode x b l s.
+    (mode, x, b, l) Meta.t -> (mode, b, l, s) meta_kind -> (mode, b, s) term option =
+ fun _ -> function
+  | Global_meta -> None
+  | Unif_meta unif -> Global.unif_solution unif
 
 (* The full name of a metavariable, using the name currently in scope for the constant that owns it. *)
 let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
@@ -317,10 +336,15 @@ let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
 let meta_var_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
  fun v -> if Display.metas () == `Numbered then meta_name v else "?"
 
-(* That name as an unparsed Ident. *)
-let unparse_meta_name : type mode x b s lt ls rt rs.
-    (mode, x, b, s) Meta.t -> (lt, ls, rt, rs) parse located =
- fun v -> unlocated (Ident ([ meta_var_name v ], []))
+(* That name as an unparsed Ident.  If it is a delayed metavariable, we notice that it is being displayed, so that a message containing it can point to the term it stands for. *)
+let unparse_meta_name : type mode x b l s lt ls rt rs.
+    (mode, x, b, l) Meta.t -> (mode, b, l, s) meta_kind -> (lt, ls, rt, rs) parse located =
+ fun v kind ->
+  (match kind with
+  | Global_meta -> ()
+  | Unif_meta unif ->
+      Option.iter (Reporter.notice_delayed_meta (meta_var_name v)) (Global.delayed_unif_loc v unif));
+  unlocated (Ident ([ meta_var_name v ], []))
 
 (* Whether the context of a let-only has no clauses to display, because it contains only aliases and weakenings. *)
 let rec letonly_empty : type mode i b. (mode, i, b) ordered_termctx -> bool = function
@@ -334,18 +358,21 @@ let rec synths : type mode n s. (mode, n, s) term -> bool =
  fun tm ->
   match tm with
   (* A metavariable displayed as its definition synthesizes if that definition does, while one displayed as its name synthesizes. *)
-  | Meta (v, _) -> (
-      match displayed_metadef v with
-      | Some { tm = `Defined def; _ } ->
-          (* When asking whether the definition synthesizes, we assume temporarily that we're unparsing that metavariable, so it doesn't again get displayed as its definition. *)
-          MetaDefs.while_unparsing v @@ fun () -> synths def
-      | _ -> true)
+  | Meta (v, kind, _) -> (
+      match solved_unif v kind with
+      | Some tm -> synths tm
+      | None -> (
+          match displayed_metadef v kind with
+          | Some { tm = `Defined def; _ } ->
+              (* When asking whether the definition synthesizes, we assume temporarily that we're unparsing that metavariable, so it doesn't again get displayed as its definition. *)
+              MetaDefs.while_unparsing v @@ fun () -> synths def
+          | _ -> true))
   | Var _ | Const _ | Field _ | UU _ | Inst _ | Pi _ -> true
   (* A let-only always synthesizes, since its body is ascribed if necessary. *)
   | Letonly _ -> true
   | Constr _ | Lam _ | Struct _ -> false
   (* Applications, actions, and let-bindings can also check.  They only synthesize if the appropriate one of their subterms does.  *)
-  | App (_, fn, _, _, _) -> synths fn
+  | App (_, fn, _, _, _, _) -> synths fn
   | Act (_, tm, _, _) -> synths tm
   | Let (_, _, body) -> synths body
   (* A key is either omitted from the display, or applied to its body as a postfix that requires the body to synthesize. *)
@@ -370,6 +397,8 @@ let rec synths : type mode n s. (mode, n, s) term -> bool =
               | Failed_branch -> false)
             branches
       | `Implicit -> false)
+  (* An omitted subterm prints as an atom. *)
+  | Overflow -> true
 
 (* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
 let show_ins : type nk n k. (nk, n, k) insertion -> int list =
@@ -382,12 +411,12 @@ let show_ins : type nk n k. (nk, n, k) insertion -> int list =
       | Pos _ -> ints_of_ins ins)
   | _ -> ints_of_ins ins
 
-(* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine).  We don't include the modality, since modalities are not printed with applications. *)
+(* Given a term, extract its head and arguments as an application spine.  If the spine contains a field projection, stop there and return only the arguments after it, noting the field name and what it is applied to (which itself be another spine).  We don't include the modality, since modalities are not printed with applications.  An argument can be explicit, implicit (printed in braces), or a hidden cube of implicit arguments, which is printed as a dot unless it would be inserted automatically when re-parsing (see drop_inserted). *)
 type (_, _) spine_arg =
   | Spine_arg :
       (('a, 'mode, 'modality, 'dom, 'an) plus_lock, ('a, 'an) Eq.t) Either.t
       * ('dom, 'an, 's) term
-      * [ `Implicit | `Explicit ]
+      * [ `Implicit | `Explicit | `Hidden ]
       -> ('a, 's) spine_arg
 
 let rec get_spine : type mode a s.
@@ -401,6 +430,7 @@ let rec get_spine : type mode a s.
         fn,
         _,
         _,
+        implicit,
         (* Modalities are not printed with applications *)
         Modal (type am) ((_modality, plus, arg) : _ * _ * (_, (_, am, kinetic) Term.term) CubeOf.t)
       ) -> (
@@ -412,10 +442,15 @@ let rec get_spine : type mode a s.
           {
             it =
               (fun fa [ (x : (_, am, kinetic) Term.term) ] ->
-                match (Display.implicits (), is_id_sface fa, all_args) with
-                | `Hide, None, false -> ()
-                | _, None, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
-                | _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Explicit)));
+                match (implicit, Display.implicits (), is_id_sface fa, all_args) with
+                (* All the arguments of an implicit application are implicit, and are hidden unless the user has asked to display implicit arguments.  A hidden cube of them is recorded once, by its top face. *)
+                | `Implicit, `Hide, Some _, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Hidden))
+                | `Implicit, `Hide, None, _ -> ()
+                | `Implicit, `Show, _, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
+                (* The boundary of an explicit application is hidden in the same way, unless it is needed because the primary argument doesn't synthesize. *)
+                | `Explicit, `Hide, None, false -> ()
+                | `Explicit, _, None, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Implicit))
+                | `Explicit, _, Some _, _ -> s := Snoc (!s, Spine_arg (Left plus, x, `Explicit)));
           }
           [ arg ];
         !s in
@@ -441,6 +476,86 @@ let rec get_spine : type mode a s.
       | Eq, Plus_with_locks (Zero, Zero _), Plus_lock (Zero _, Zero) -> get_spine body
       | _ -> `App (tm, Emp))
   | tm -> `App (tm, Emp)
+
+(* A hidden cube of implicit arguments in a spine is omitted entirely if re-parsing would insert it automatically, namely if it is followed by an explicit argument (perhaps after other hidden ones) or, when [dots_at_end] is false, by a field projection.  Otherwise it is displayed as a dot, which inserts it explicitly. *)
+let drop_inserted : type a s. dots_at_end:bool -> (a, s) spine_arg Bwd.t -> (a, s) spine_arg Bwd.t =
+ fun ~dots_at_end args ->
+  let rec go droppable acc = function
+    | Bwd.Emp -> acc
+    | Bwd.Snoc (args, (Spine_arg (_, _, `Hidden) as arg)) ->
+        if droppable then go true acc args else go false (arg :: acc) args
+    | Bwd.Snoc (args, (Spine_arg (_, _, `Explicit) as arg)) -> go true (arg :: acc) args
+    | Bwd.Snoc (args, (Spine_arg (_, _, `Implicit) as arg)) -> go false (arg :: acc) args in
+  Bwd.of_list (go (not dots_at_end) [] args)
+
+(* Match the arguments of the head in the definition of a notation against the arguments in a spine (or the variables in a pattern), according to their implicitness, and return the notation, the arguments for its pattern variables in their order, the symbols to intersperse with them, and the remaining arguments.  An explicit argument of the notation matches the next explicit argument, skipping any hidden implicit ones before it, which would be inserted; and an implicit one matches the next implicit argument, hidden or not.  If an implicit argument that is being displayed would be skipped, or omitted by a placeholder in the notation, we don't use the notation, since the notation can't display it. *)
+let match_notation : type x.
+    ?droppable:(x -> bool) ->
+    (x -> [ `Implicit | `Explicit | `Hidden ]) ->
+    User.notation ->
+    x Bwd.t ->
+    (User.notation * x list * x Bwd.t) option =
+ fun ?(droppable = fun _ -> true) kind ({ pat_vars; val_vars; _ } as notn) args ->
+  let open Monad.Ops (Monad.Maybe) in
+  let rec take slots elts acc =
+    match (slots, elts) with
+    | [], _ -> return (acc, elts)
+    | _ :: _, [] -> None
+    | (k, i) :: slots', x :: elts' -> (
+        match (i, kind x) with
+        | `Explicit, `Hidden -> take slots elts' acc
+        | `Explicit, `Implicit -> None
+        | `Implicit, `Explicit -> None
+        (* A placeholder in the definition of the notation omits the argument it matches, which must therefore be one that we can omit. *)
+        | _ when k = None && not (droppable x) -> None
+        | _ ->
+            take slots' elts'
+              (match k with
+              | Some k -> acc |> StringMap.add k x
+              | None -> acc)) in
+  let* first, rest = take val_vars (Bwd.to_list args) StringMap.empty in
+  let first =
+    List.map
+      (fun k -> StringMap.find_opt k first <|> Anomaly "not found in match_notation")
+      pat_vars in
+  return (notn, first, Bwd.of_list rest)
+
+let spine_arg_kind (Spine_arg (_, _, i)) = i
+
+(* If the head of an application spine is a constant with an associated notation, match its arguments against the spine. *)
+let notation_of_spine : type mode a s.
+    (mode, a, s) term ->
+    (a, kinetic) spine_arg Bwd.t ->
+    (User.notation * (a, kinetic) spine_arg list * (a, kinetic) spine_arg Bwd.t) option =
+ fun head args ->
+  let open Monad.Ops (Monad.Maybe) in
+  let* notn =
+    match head with
+    | Const c -> Scope.Situation.unparse (`Constant c)
+    | _ -> None in
+  match_notation ~droppable:(fun x -> spine_arg_kind x <> `Implicit) spine_arg_kind notn args
+
+(* A notation for a constructor is associated to the number of arguments in its definition, which may or may not include its implicit ones, so we try all the numbers that it could be, starting with the smallest, so as to prefer a notation that doesn't display hidden implicit arguments.  Since a constructor is always fully applied, the notation must use all the arguments, apart from hidden implicit ones that would be inserted. *)
+let notation_of_constr : type x.
+    ?droppable:(x -> bool) ->
+    (x -> [ `Implicit | `Explicit | `Hidden ]) ->
+    Constr.t ->
+    x Bwd.t ->
+    (User.notation * x list) option =
+ fun ?droppable kind c args ->
+  let explicit = Bwd.fold_left (fun n x -> if kind x = `Explicit then n + 1 else n) 0 args in
+  let rec go k =
+    if k > Bwd.length args then None
+    else
+      match
+        Option.bind
+          (Scope.Situation.unparse (`Constr (c, k)))
+          (fun notn -> match_notation ?droppable kind notn args)
+      with
+      | Some (notn, first, rest) when Bwd.for_all (fun x -> kind x = `Hidden) rest ->
+          Some (notn, first)
+      | _ -> go (k + 1) in
+  go explicit
 
 (* Build a field projection "x .fld" as a parse tree, for use as the "self" pattern in unparsing codatatypes and records.  It is built in the "entire" tightness interval and packed existentially into an observation at the call site. *)
 let unparse_field_app (x : string) (fld : string) (pbij : string list) :
@@ -547,6 +662,9 @@ let constant_name : type n. n Names.t -> string list -> string list =
       else name
   | None -> name
 
+(* The variable of an implicit argument of a constructor that is omitted from a match pattern is invisible to the user, so it is displayed in the pattern (in braces) only if it is mentioned in the body of the branch, or if the user has asked to display implicit arguments.  To notice whether it is mentioned, while displaying the body we record the names of such variables in this table, with a flag that is set when the variable is displayed.  The names of variables in scope are distinct, so the name identifies the variable. *)
+let hidden_pattern_vars : (string, bool ref) Hashtbl.t = Hashtbl.create 10
+
 (* The name of a modality, as a spine of identifiers, or a placeholder for the identity. *)
 let unparse_modality_name : type dom modality mode. (dom, modality, mode) Modality.t -> observation
     =
@@ -602,29 +720,39 @@ let decide_keys : type mode a mu nu cod s.
 
 (* The primary unparsing function.  Given the variable names, unparse a term into given tightness intervals. *)
 let rec unparse : type mode n lt ls rt rs s.
+    ?dots_at_end:bool ->
     n Names.t ->
     (mode, n, s) term ->
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars tm li ri ->
+ fun ?(dots_at_end = true) vars tm li ri ->
   match tm with
-  | Var x -> unlocated (Ident (Names.lookup vars x, []))
+  | Var x ->
+      let name = Names.lookup vars x in
+      (match name with
+      | x :: _ -> Option.iter (fun r -> r := true) (Hashtbl.find_opt hidden_pattern_vars x)
+      | [] -> ());
+      unlocated (Ident (name, []))
   | Const c -> (
       match Scope.Situation.unparse (`Constant c) with
       | Some { keys = _; notn = Wrap notn; pat_vars = []; val_vars = []; inner_symbols } ->
           unparse_notation notn [] inner_symbols li ri
       | _ -> unlocated (Ident (constant_name vars (Scope.name_of c), [])))
-  | Meta (v, _) -> (
-      (* A metavariable to which an alias in scope refers, such as the metavariable of a let-rec variable in a hole in the definition of one of its siblings, is displayed as the name of that alias, just as a variable let-bound to it would be. *)
-      match Names.alias_name vars v with
-      | Some x -> unlocated (Ident ([ x ], []))
+  (* A solved unification metavariable is displayed as its solution. *)
+  | Meta (v, kind, _) -> (
+      match solved_unif v kind with
+      | Some tm -> unparse vars tm li ri
       | None -> (
-          (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
-          match displayed_metadef v with
-          | Some { tm = `Defined def; _ } ->
-              MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
-          | _ -> unparse_meta_name v))
+          (* A metavariable to which an alias in scope refers, such as the metavariable of a let-rec variable in a hole in the definition of one of its siblings, is displayed as the name of that alias, just as a variable let-bound to it would be. *)
+          match Names.alias_name vars v with
+          | Some x -> unlocated (Ident ([ x ], []))
+          | None -> (
+              (* A metavariable may be displayed as its definition, which lives in the same context (see displayed_metadef). *)
+              match displayed_metadef v kind with
+              | Some { tm = `Defined def; _ } ->
+                  MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
+              | _ -> unparse_meta_name v kind)))
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
@@ -645,18 +773,39 @@ let rec unparse : type mode n lt ls rt rs s.
       unparse_pis arr notn vars Emp tm li ri
   | App _ -> (
       match get_spine tm with
-      | `App (fn, args) ->
-          unparse_spine vars (`Term fn) (Bwd.map (make_unparser_implicit vars) args) li ri
+      | `App (fn, args) -> (
+          (* The arguments of a notation are displayed as ordinary terms, even if they are implicit arguments of its head. *)
+          let operand (Spine_arg (plus, x, _)) =
+            make_unparser_implicit vars (Spine_arg (plus, x, `Explicit)) in
+          match notation_of_spine fn args with
+          | Some ({ notn = Wrap notn; inner_symbols; _ }, first, rest) -> (
+              let first = List.map operand first in
+              let rest = drop_inserted ~dots_at_end rest in
+              match rest with
+              | Emp -> unparse_notation notn first inner_symbols li ri
+              | Snoc _ ->
+                  unparse_spine ~notation:false vars
+                    (`Unparser
+                       { unparse = (fun li ri -> unparse_notation notn first inner_symbols li ri) })
+                    (Bwd.map (make_unparser_implicit vars) rest)
+                    li ri)
+          | None ->
+              let args = drop_inserted ~dots_at_end args in
+              unparse_spine ~notation:false vars (`Term fn)
+                (Bwd.map (make_unparser_implicit vars) args)
+                li ri)
       | `Field (head, fld, ins, args) ->
           unparse_spine vars
             (`Field (head, fld, ins))
-            (Bwd.map (make_unparser_implicit vars) args)
+            (Bwd.map (make_unparser_implicit vars) (drop_inserted ~dots_at_end args))
             li ri)
   (* A nontrivial key is treated by get_spine as an opaque head, which routes back to here; we handle it directly rather than through get_spine (which would loop). *)
   | Key { tm = body; cell; plus_tgt = Plus_with_locks (comp, _); plus_src } ->
       unparse_key vars body cell comp plus_src li ri
   | Act (_, tm, s, sort) ->
-      unparse_act ~sort vars { unparse = (fun li ri -> unparse vars tm li ri) } s li ri
+      (* An identity degeneracy is invisible, so whatever follows the action follows its body. *)
+      let dots_at_end = dots_at_end || Option.is_none (is_id_deg s) in
+      unparse_act ~sort vars { unparse = (fun li ri -> unparse ~dots_at_end vars tm li ri) } s li ri
   | Let (x, Modal (modality, plus, tm), body) -> (
       let tm = unparse (Names.add_lock vars plus) tm No.Interval.entire No.Interval.entire in
       (* If a let-in doesn't fit in its interval, we have to parenthesize it. *)
@@ -695,20 +844,21 @@ let rec unparse : type mode n lt ls rt rs s.
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; _ } when letonly_empty ctx ->
       let _, bodyvars = unparse_letonly_clauses vars ctx tmenv in
       unparse bodyvars body li ri
-  (* A let-only whose body is a non-bare metavariable (that is, a let-bound or a hole) arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
-  | Letonly { env = tmenv; tm = Meta (v, _); _ }
-    when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
+  (* A let-only whose body is a metavariable that isn't a bare one arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses, unless it is a solved unification metavariable, which is displayed as its solution. *)
+  | Letonly { env = tmenv; tm = Meta (v, kind, _); _ }
+    when (not (Meta.is_bare v)) && Display.lets () = `Names && Option.is_none (solved_unif v kind)
+    -> (
       let inner =
         Multiple
-          (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Ellipsis), wstok In)
+          (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Omitted), wstok In)
       in
       match No.Interval.contains ri No.minus_omega_plus_one with
       | Some right_ok ->
-          unlocated (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v) ~right_ok)
+          unlocated (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v kind) ~right_ok)
       | None ->
           parenthesize
             (unlocated
-               (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v)
+               (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v kind)
                   ~right_ok:No.minusomega_lt_minusomegaplusone)))
   (* Otherwise, we unparse and display all the binding clauses of a let-only. *)
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty } -> (
@@ -742,7 +892,7 @@ let rec unparse : type mode n lt ls rt rs s.
                (prefix ~notn:letonly
                   ~inner:(Multiple (dimtok Let (dim_term_env tmenv), binding, wstok In))
                   ~last:body ~right_ok)))
-  | Lam (Variables (m, _, _), _, _, _) ->
+  | Lam (Variables (m, _, _), _, _, _, _) ->
       (* Modalities aren't printed on abstractions *)
       let cube =
         match D.compare m D.zero with
@@ -793,34 +943,42 @@ let rec unparse : type mode n lt ls rt rs s.
       (* TODO: This doesn't print the dimension.  This is correct since constructors don't have to (and in fact *can't* be) written with their dimension, but it could also be somewhat confusing, e.g. printing "refl (0:N)" yields just "0", and similarly "refl (nil. : List N)" yields "nil.". *)
       match unparse_numeral vars tm li ri with
       | Some res -> res
-      | None ->
+      | None -> (
+          (* The modality isn't printed for constructor applications.  An implicit argument is hidden unless the user has asked to display implicit arguments, in which case we print its whole cube in braces.  Similarly, the boundary of an explicit argument is hidden, or printed in braces. *)
           let args =
-            match Display.implicits () with
-            (* The modality isn't printed for constructor applications. *)
-            | `Hide ->
-                of_list_map
-                  (fun (Modal (_modality, plus, x)) ->
-                    make_unparser (Names.add_lock vars plus) (CubeOf.find_top x))
-                  args
-            (* When displaying implicits, we print the whole boundary of each argument, with the strict faces in braces. *)
-            | `Show ->
-                List.fold_left
-                  (fun s (Modal (_modality, plus, x)) ->
-                    let s = ref s in
-                    CubeOf.miter
-                      {
-                        it =
-                          (fun fa [ x ] ->
-                            let i =
-                              match is_id_sface fa with
-                              | Some _ -> `Explicit
-                              | None -> `Implicit in
-                            s := Snoc (!s, make_unparser_implicit vars (Spine_arg (Left plus, x, i))));
-                      }
-                      [ x ];
-                    !s)
-                  Emp args in
-          unparse_spine vars (`Constr c) args li ri)
+            List.fold_left
+              (fun s (Modal (_modality, plus, x), implicit) ->
+                let s = ref s in
+                CubeOf.miter
+                  {
+                    it =
+                      (fun fa [ x ] ->
+                        let arg i = s := Snoc (!s, Spine_arg (Left plus, x, i)) in
+                        match (implicit, Display.implicits (), is_id_sface fa) with
+                        | `Implicit, `Hide, Some _ -> arg `Hidden
+                        | _, `Hide, None -> ()
+                        | `Implicit, `Show, _ | `Explicit, `Show, None -> arg `Implicit
+                        | `Explicit, _, Some _ -> arg `Explicit);
+                  }
+                  [ x ];
+                !s)
+              Emp args in
+          (* The arguments of a notation are displayed as ordinary terms, even if they are implicit arguments of the constructor. *)
+          let operand (Spine_arg (plus, x, _)) =
+            make_unparser_implicit vars (Spine_arg (plus, x, `Explicit)) in
+          match
+            notation_of_constr
+              ~droppable:(fun x -> spine_arg_kind x <> `Implicit)
+              spine_arg_kind c args
+          with
+          | Some ({ notn = Wrap notn; inner_symbols; _ }, first) ->
+              unparse_notation notn (List.map operand first) inner_symbols li ri
+          | None ->
+              (* Since a constructor is always fully applied, its hidden implicit arguments are always inserted when re-parsing, so they can be omitted entirely. *)
+              let args = Bwd.filter (fun (Spine_arg (_, _, i)) -> i <> `Hidden) args in
+              unparse_spine ~notation:false vars (`Constr c)
+                (Bwd.map (make_unparser_implicit vars) args)
+                li ri))
   | Realize tm -> unparse vars tm li ri
   | Canonical c -> unparse_canonical vars c li ri
   | Struct { eta = Noeta; dim; fields; energy = _ } -> unparse_comatch vars dim fields li ri
@@ -833,6 +991,8 @@ let rec unparse : type mode n lt ls rt rs s.
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
   (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
   | Failed _ -> fatal (Dependent "unparsing failed component")
+  (* A subterm omitted from a term too large to display. *)
+  | Overflow -> unparse_notation Postprocess.omitted [] (`Single Omitted) li ri
 
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
@@ -860,7 +1020,7 @@ and unparse_letonly_clauses_pending : type mode n i k b.
     observation Bwd.t * mode Modality.tgt_wrapped option * b Names.t =
  fun vars ctx tmenv ->
   match (ctx, tmenv) with
-  | Emp _, Emp _ -> (Snoc (Emp, mktok Only), None, Names.empty)
+  | Emp mode, Emp _ -> (Snoc (Emp, mktok Only), None, Names.empty mode)
   (* An alias has no checked variables, so it isn't substituted for.  (It was already substituted at typechecking time.) *)
   | Ext (ctx, { vars = Alias; _ }, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
   | ( Ext (ctx, { bindings; plus_lock; filter = _; vis; vars = Vars }, _),
@@ -872,7 +1032,8 @@ and unparse_letonly_clauses_pending : type mode n i k b.
       let name =
         match vis with
         | Vis { names = xs; _ } -> NICubeOf.find_top xs
-        | Invis { hints } -> `Anon hints in
+        | Invis { hints; name = None } -> `Anon hints
+        | Invis { hints = _; name = Some x } -> Variables.binder_name_of_option (Some x) in
       let x, names = Names.add_cube n names name in
       let ty =
         unparse (Names.add_lock names plus_lock) (uninst_letonly_type n top.ty) No.Interval.entire
@@ -895,7 +1056,7 @@ and unparse_letonly_clauses_pending : type mode n i k b.
         match pending with
         | None -> Some (Wrap (Modality.of_gen gen))
         | Some (Wrap modality) -> Some (Wrap (Modality.suc modality gen)) in
-      (acc, pending, Names.add_gen_lock names)
+      (acc, pending, Names.add_gen_lock names gen)
   | _, Prekey { env; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } ->
       let acc, names =
         unparse_letonly_clauses (Names.add_lock (Names.split vars comp) plus_src) ctx env in
@@ -945,6 +1106,7 @@ and make_unparser_implicit : type n. n Names.t -> (n, kinetic) spine_arg -> unpa
             let tm = unparse vars tm No.Interval.entire No.Interval.entire in
             braceize tm);
       }
+  | `Hidden -> { unparse = (fun li ri -> unparse_notation Postprocess.dot [] (`Single Dot) li ri) }
 
 (* Unparse a canonical type (a datatype or codatatype/record). *)
 and unparse_canonical : type mode n lt ls rt rs.
@@ -1119,9 +1281,10 @@ and unparse_constr_display : type lt ls rt rs.
  fun c argunps output li ri ->
   let head = { unparse = (fun _ _ -> unlocated (Constr (Constr.to_string c, []))) } in
   match output with
-  | None -> unparse_spine Names.empty (`Unparser head) argunps li ri
+  | None -> unparse_spine Names.empty_unknown (`Unparser head) argunps li ri
   | Some output -> (
-      let first = unparse_spine Names.empty (`Unparser head) argunps li (interval_left asc) in
+      let first =
+        unparse_spine Names.empty_unknown (`Unparser head) argunps li (interval_left asc) in
       let last = output.unparse (interval_right asc) ri in
       match (No.Interval.contains li No.minus_omega, No.Interval.contains ri No.minus_omega) with
       | Some left_ok, Some right_ok ->
@@ -1163,7 +1326,7 @@ and unparse_dataconstr : type mode a lt ls rt rs.
       b Names.t -> unparser Bwd.t -> (mode, b, kinetic) term -> (lt, ls, rt, rs) parse located =
    fun vars accum tm ->
     match tm with
-    | Pi { x; filter; doms = Modal (modality, plus, doms); cods } -> (
+    | Pi { x; filter; implicit; doms = Modal (modality, plus, doms); cods } -> (
         match D.compare_zero (CodCube.dim cods) with
         | Pos _ -> output vars accum tm
         | Zero ->
@@ -1178,7 +1341,8 @@ and unparse_dataconstr : type mode a lt ls rt rs.
                    {
                      unparse =
                        (fun _ _ ->
-                         unparse_pi_dom (NICubeOf.find_top xs) (Modality.name modality)
+                         unparse_pi_dom ~implicit:(implicit = `Implicit) (NICubeOf.find_top xs)
+                           (Modality.name modality)
                            (unparse (Names.add_lock vars plus) (CubeOf.find_top doms)
                               No.Interval.entire No.Interval.entire));
                    } ))
@@ -1227,13 +1391,69 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
             (* Extend the name context by the branch's pattern variables (named via the stored "annotate" witness), then permute it to the body's context. *)
             let abvars, xs = Names.add_match_vars vars annotate comp in
             let bodyvars = Names.permute perm abvars in
-            let args = List.fold_left unparse_pattern_var Emp xs in
-            let pat = unparse_spine vars (`Constr c) args No.Interval.entire No.Interval.entire in
-            let ubody = unparse bodyvars body No.Interval.entire No.Interval.entire in
+            (* We display the body first, watching for mentions of the variables of omitted implicit arguments. *)
+            let watched =
+              match Display.implicits () with
+              | `Show -> []
+              | `Hide ->
+                  List.filter_map
+                    (function
+                      | Names.Hidden_var x ->
+                          let r = ref false in
+                          Hashtbl.add hidden_pattern_vars x r;
+                          Some (x, r)
+                      | _ -> None)
+                    xs in
+            let ubody =
+              Fun.protect
+                ~finally:(fun () ->
+                  List.iter (fun (x, _) -> Hashtbl.remove hidden_pattern_vars x) watched)
+                (fun () -> unparse bodyvars body No.Interval.entire No.Interval.entire) in
+            let shown x =
+              match List.assoc_opt x watched with
+              | Some r -> !r
+              | None -> true in
+            let args = List.fold_left (unparse_pattern_var ~shown) Emp xs in
+            (* A notation for the constructor matches the pattern variables according to their implicitness, as for a term, and displays them without braces. *)
+            let pat =
+              (* A pattern variable can be omitted by a placeholder in the notation only if it is hidden, since it might be used in the body. *)
+              match notation_of_constr ~droppable:(fun (_, i) -> i = `Hidden) snd c args with
+              | Some ({ notn = Wrap notn; inner_symbols; _ }, first) ->
+                  unparse_notation notn (List.map fst first) inner_symbols No.Interval.entire
+                    No.Interval.entire
+              | None ->
+                  (* A hidden implicit argument is omitted, unless the next argument that isn't hidden is in braces, in which case it has to be skipped explicitly with a dot so that re-parsing doesn't give that argument to it. *)
+                  let dot =
+                    {
+                      unparse =
+                        (fun li ri -> unparse_notation Postprocess.dot [] (`Single Dot) li ri);
+                    } in
+                  let args, _ =
+                    Bwd.fold_right
+                      (fun (x, i) (acc, next_braced) ->
+                        match i with
+                        | `Explicit -> (x :: acc, false)
+                        | `Implicit ->
+                            ( {
+                                unparse =
+                                  (fun _ _ ->
+                                    braceize (x.unparse No.Interval.entire No.Interval.entire));
+                              }
+                              :: acc,
+                              true )
+                        | `Hidden -> if next_braced then (dot :: acc, true) else (acc, false))
+                      args ([], false) in
+                  let args = Bwd.of_list args in
+                  unparse_spine ~notation:false vars (`Constr c) args No.Interval.entire
+                    No.Interval.entire in
             let is_cube = function
-              | Names.Cube_var _ -> true
+              | Names.Cube_var _ | Names.Implicit_var _ -> true
+              | Names.Hidden_var x -> shown x
               | Names.Boundary_var _ -> false in
-            acc <: (pat, ubody, List.exists is_cube xs, List.exists (fun x -> not (is_cube x)) xs)
+            let is_boundary = function
+              | Names.Boundary_var _ -> true
+              | _ -> false in
+            acc <: (pat, ubody, List.exists is_cube xs, List.exists is_boundary xs)
         (* A failed branch can only be displayed in an error message of the command whose checking failed.  We don't have names for its pattern variables, so we just omit it. *)
         | Term.Failed_branch -> acc)
       branches Emp in
@@ -1254,24 +1474,33 @@ and unparse_match : type mode window dom n aw m lt ls rt rs.
       start ubranches in
   unlocated (outfix ~notn ~inner:(Multiple (wstok Match, inner, wstok RBracket)))
 
-(* Add the pattern variables bound by one argument of a constructor in a match branch to the argument spine of the pattern.  A cube variable is a single explicit argument, while an explicit boundary is one argument for each face, with the strict faces in braces and the top face explicit, exactly as in a non-cube abstraction. *)
-and unparse_pattern_var : unparser Bwd.t -> Names.pattern_var -> unparser Bwd.t =
- fun args -> function
-  | Cube_var x -> Snoc (args, { unparse = (fun _ _ -> unparse_var x) })
-  | Boundary_var (Variables (_, _, xs)) ->
+(* Add the pattern variables bound by one argument of a constructor in a match branch to the argument spine of the pattern.  A cube variable is a single explicit argument, while an explicit boundary is one argument for each face, with the strict faces in braces and the top face explicit (or also in braces, if the argument is implicit), exactly as in a non-cube abstraction.  The variable of an implicit argument is in braces, and is omitted if it is hidden and not shown. *)
+and unparse_pattern_var :
+    shown:(string -> bool) ->
+    (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t ->
+    Names.pattern_var ->
+    (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t =
+ fun ~shown args -> function
+  | Cube_var x -> Snoc (args, ({ unparse = (fun _ _ -> unparse_var x) }, `Explicit))
+  (* An implicit argument is a cube variable in braces, or omitted if it is hidden. *)
+  | Implicit_var x -> Snoc (args, ({ unparse = (fun _ _ -> unparse_var x) }, `Implicit))
+  | Hidden_var x ->
+      Snoc (args, ({ unparse = (fun _ _ -> unparse_var x) }, if shown x then `Implicit else `Hidden))
+  | Boundary_var (implicit, Variables (_, _, xs)) ->
       let module Fold = NICubeOf.Traverse (struct
-        type 'acc t = unparser Bwd.t
+        type 'acc t = (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t
       end) in
       let folder : type left k m.
           (k, m) sface ->
-          unparser Bwd.t ->
+          (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t ->
           (left, k, string) NFamOf.t ->
-          (left, k, unit) NFamOf.t * unparser Bwd.t =
+          (left, k, unit) NFamOf.t * (unparser * [ `Explicit | `Implicit | `Hidden ]) Bwd.t =
        fun s acc (NFamOf x) ->
         let arg =
-          match is_id_sface s with
-          | Some _ -> { unparse = (fun _ _ -> unparse_var x) }
-          | None -> { unparse = (fun _ _ -> braceize (unparse_var x)) } in
+          ( { unparse = (fun _ _ -> unparse_var x) },
+            match (is_id_sface s, implicit) with
+            | Some _, `Explicit -> `Explicit
+            | _ -> `Implicit ) in
         (NFamOf (), Snoc (acc, arg)) in
       snd (Fold.fold_map_left { foldmap = (fun s acc x -> folder s acc x) } args xs)
 
@@ -1334,6 +1563,7 @@ and unparse_comatch : type mode n a s et lt ls rt rs.
 (* Unparse a spine with its arguments whose head could be many things: an as-yet-not-unparsed term, a constructor, a field projection, a degeneracy, or a general delayed unparsing.  The flag ~more indicates that the spine will be applied to more arguments, so that its right edge faces a juxtaposition (see word_like_notation). *)
 and unparse_spine : type mode n lt ls rt rs s.
     ?more:bool ->
+    ?notation:bool ->
     n Names.t ->
     [ `Term of (mode, n, s) term
     | `Constr of Constr.t
@@ -1344,14 +1574,14 @@ and unparse_spine : type mode n lt ls rt rs s.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun ?(more = false) vars head args li ri ->
+ fun ?(more = false) ?(notation = true) vars head args li ri ->
   (* A head whose right edge faces a juxtaposition, and an argument whose left edge does (or whose right edge does, if it is followed by more arguments), are parenthesized if that edge is word-like. *)
   let head_parens tm = if more && word_like_notation `Right tm then parenthesize tm else tm in
   let arg_parens ?(more = more) tm =
     if word_like_notation `Left tm || (more && word_like_notation `Right tm) then parenthesize tm
     else tm in
   (* First we check whether the head is a term with an associated notation, and if so whether it is applied to enough arguments to instantiate that notation. *)
-  match get_notation head args with
+  match if notation then get_notation head args else None with
   (* If it's applied to exactly the right number of arguments, we unparse it as that notation. *)
   | Some (Wrap notn, args, inner_symbols, Emp) ->
       head_parens (unparse_notation notn args inner_symbols li ri)
@@ -1375,7 +1605,9 @@ and unparse_spine : type mode n lt ls rt rs s.
           (* As before, if the application doesn't fit in its tightness interval, we have to parenthesize it. *)
           match (No.Interval.contains li No.plus_omega, No.Interval.contains ri No.plus_omega) with
           | Some left_ok, Some right_ok ->
-              let fn = unparse_spine ~more:true vars head args li No.Interval.plus_omega_only in
+              let fn =
+                unparse_spine ~more:true ~notation vars head args li No.Interval.plus_omega_only
+              in
               let arg = arg_parens (arg.unparse No.Interval.empty ri) in
               (* We parenthesize the argument if the style dictates and it doesn't already have parentheses. *)
               let arg =
@@ -1385,7 +1617,7 @@ and unparse_spine : type mode n lt ls rt rs s.
               unlocated (App { fn; arg; left_ok; right_ok })
           | _ ->
               let fn =
-                unparse_spine ~more:true vars head args No.Interval.plus_omega_only
+                unparse_spine ~more:true ~notation vars head args No.Interval.plus_omega_only
                   No.Interval.plus_omega_only in
               (* Since the whole application is parenthesized, the right edge of its last argument doesn't face a juxtaposition. *)
               let arg =
@@ -1412,7 +1644,7 @@ and unparse_modal_field : type mode dom f n am lt ls rt rs s.
     (lt, ls, rt, rs) parse located =
  fun vars fm plus_lock itm fld ins li ri ->
   let lvars = Names.add_lock vars plus_lock in
-  let inner = unparse lvars itm No.Interval.entire No.Interval.entire in
+  let inner = unparse ~dots_at_end:false lvars itm No.Interval.entire No.Interval.entire in
   (* Thunks, so that each use below is polymorphic in the surrounding tightness interval. *)
   let asc () = unparse_modal_ascription inner fm in
   let arg () = unlocated (Field (fld, List.map string_of_int ins, [])) in
@@ -1436,12 +1668,15 @@ and unparse_field : type mode n lt ls rt rs s.
   | Some res -> res
   | None -> (
       match (No.Interval.contains li No.plus_omega, No.Interval.contains ri No.plus_omega) with
+      (* A field projection inserts the implicit arguments of what it projects from, so they don't need dots. *)
       | Some left_ok, Some right_ok ->
-          let fn = unparse vars tm li No.Interval.plus_omega_only in
+          let fn = unparse ~dots_at_end:false vars tm li No.Interval.plus_omega_only in
           let arg = unlocated (Field (fld, List.map string_of_int ins, [])) in
           unlocated (App { fn; arg; left_ok; right_ok })
       | _ ->
-          let fn = unparse vars tm No.Interval.plus_omega_only No.Interval.plus_omega_only in
+          let fn =
+            unparse ~dots_at_end:false vars tm No.Interval.plus_omega_only
+              No.Interval.plus_omega_only in
           let arg = unlocated (Field (fld, List.map string_of_int ins, [])) in
           let left_ok = No.le_refl No.plus_omega in
           let right_ok = No.le_refl No.plus_omega in
@@ -1571,7 +1806,7 @@ and unparse_lam : type mode n lt ls rt rs s.
  fun cube vars xs body li ri ->
   (* Modalities are not printed in abstractions *)
   match body with
-  | Lam ((Variables (m, _, _) as boundvars), _, _filter, inner) -> (
+  | Lam ((Variables (m, _, _) as boundvars), _, _filter, lam_implicit, inner) -> (
       match (cube, D.compare m D.zero) with
       | `Normal, Eq | `Cube, Neq ->
           let Variables (_, _, x), vars = Names.add vars boundvars in
@@ -1585,10 +1820,11 @@ and unparse_lam : type mode n lt ls rt rs s.
               (left, k, string) NFamOf.t ->
               (left, k, unit) NFamOf.t * (string * [ `Explicit | `Implicit ]) Bwd.t =
            fun s acc (NFamOf x) ->
+            (* The boundary variables are always in braces, and so is the top one if the abstraction is implicit. *)
             let implicit =
               match is_id_sface s with
               | None -> `Implicit
-              | Some _ -> `Explicit in
+              | Some _ -> lam_implicit in
             (NFamOf (), Snoc (acc, (x, implicit))) in
           unparse_lam cube vars
             (snd (Fold.fold_map_left { foldmap = (fun s acc x -> folder s acc x) } xs x))
@@ -1644,14 +1880,14 @@ and unparse_numeral : type mode n lt ls rt rs.
   let suc = Constr.intern "suc" in
   let make_numeral dim k =
     let tm = { unparse = (fun _ _ -> unlocated (Ident ([ string_of_int k ], []))) } in
-    Some (unparse_act ~sort:(`Other, `Other) Names.empty tm (deg_zero dim) li ri) in
+    Some (unparse_act ~sort:(`Other, `Other) Names.empty_unknown tm (deg_zero dim) li ri) in
   let rec getsucs : type c.
       c Names.t -> (mode, c, kinetic) term -> int -> (lt, ls, rt, rs) parse located option =
    fun vars tm k ->
     match tm with
     | Term.Constr (c, dim, []) when c = zero -> make_numeral dim k
     | Term.Constr (c, dim, []) when c = one -> make_numeral dim (k + 1)
-    | Term.Constr (c, _, [ Modal (filter, plus, arg) ]) when c = suc -> (
+    | Term.Constr (c, _, [ (Modal (filter, plus, arg), `Explicit) ]) when c = suc -> (
         (* Currently, only "suc" constructors with non-modal argument can be displayed as (generalized) numerals. *)
         match Modality.compare_id (Modality.filter_modality filter) with
         | Eq -> getsucs (Names.add_lock vars plus) (CubeOf.find_top arg) (k + 1)
@@ -1694,8 +1930,7 @@ and unparse_act : type n lt ls rt rs a b.
           unlocated
             (Superscript (Some (tm.unparse li No.Interval.empty), unlocated (string_of_deg s), [])))
 
-(* We unparse instantiations like application spines, since that is how they are represented in user syntax.
-   TODO: How can we allow special notations for some instantiations, like x=y for Id A x y? *)
+(* We unparse instantiations like application spines, since that is how they are represented in user syntax, unless they are instantiations of a degenerated type with a notation, like x=y for Id A x y. *)
 and unparse_inst : type mode n n' lt ls rt rs m k mk s.
     (* We allow the type and its instantiation arguments to be in different contexts, for use in unparse_higher_pi. *)
     n Names.t ->
@@ -1708,19 +1943,109 @@ and unparse_inst : type mode n n' lt ls rt rs m k mk s.
  fun vars ty argvars tyargs li ri ->
   match (D.compare_zero (TubeOf.uninst tyargs), D.compare_zero (TubeOf.inst tyargs), ty) with
   (* A fully instantiated higher pi-type we can unparse prettily.  The instantiation is at the outer (unfiltered) dimension, that of the codomains. *)
-  | Zero, Pos _, Pi { x; filter; doms = Modal (_, plus, doms); cods } -> (
+  | Zero, Pos _, Pi { x; filter; implicit; doms = Modal (_, plus, doms); cods } -> (
       match D.compare (TubeOf.inst tyargs) (CodCube.dim cods) with
       | Eq ->
           let Eq = D.plus_uniq (TubeOf.plus tyargs) (D.zero_plus (TubeOf.inst tyargs)) in
           let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (argvars, x)) } [ tyargs ] in
-          unparse_higher_pi vars Emp x filter plus doms cods tyargs li ri
+          unparse_higher_pi vars Emp x filter implicit plus doms cods tyargs li ri
       | Neq ->
           fatal (Dimension_mismatch ("unparsing higher pi", TubeOf.inst tyargs, CodCube.dim cods)))
   | _ ->
       let tyargs = TubeOf.mmap { map = (fun _ [ x ] -> Names.Named (argvars, x)) } [ tyargs ] in
       unparse_named_inst vars ty tyargs li ri
 
+(* A notation for a degeneracy of a type, such as "x = y ≔ Id (_ : Type) x y", is displayed for exactly the instantiations that it elaborates to: a full instantiation of that degeneracy of a 0-dimensional type in the universe of the mode named in its definition.  Since the only degeneracy that can act on a 0-dimensional type and be fully instantiated is a reflexivity, we include the higher-dimensional universe of that dimension, which is that reflexivity of the 0-dimensional universe.  The mode of the degenerated type is that of the name-context, if known, or that of the universe. *)
+and unparse_deg_inst : type mode n m k mk s.
+    n Names.t ->
+    (mode, n, s) term ->
+    (m, k, mk, mode Names.named_term) TubeOf.t ->
+    (Notation.t
+    * unparser list
+    * [ `Single of Token.t | `Multiple of Token.t * Token.t option list * Token.t ])
+    option =
+ fun vars ty tyargs ->
+  let open Monad.Ops (Monad.Maybe) in
+  let is_refl : type a b. a D.t -> b D.t -> bool =
+   fun dom cod ->
+    D.length dom = 1
+    &&
+    match D.compare_zero cod with
+    | Zero -> true
+    | Pos _ -> false in
+  (* The degenerated type may be behind keys, as it is when it is a variable behind a lock.  If those keys are omitted from the display, as unparse_key would decide, so is our notation's operand, and we display it in the context of their body. *)
+  let rec deg_operand : type a s.
+      a Names.t -> (mode, a, s) term -> [ `Print | `Omit ] option -> (string * unparser) option =
+   fun vars ty decided ->
+    match ty with
+    | Act (_, tm, s, _) when is_refl (dom_deg s) (cod_deg s) ->
+        return (string_of_deg s, make_unparser vars tm)
+    | Key { tm; cell; plus_tgt = Plus_with_locks (comp, _); plus_src } ->
+        let decided =
+          match decided with
+          | Some decided -> decided
+          | None -> decide_keys cell tm in
+        if Modalcell.is_id cell || decided = `Omit then
+          deg_operand (Names.add_lock (Names.split vars comp) plus_src) tm (Some decided)
+        else None
+    | _ -> None in
+  let* deg, mode, operand =
+    match ty with
+    | UU (mode, n) when is_refl n D.zero ->
+        return
+          ( string_of_dim n,
+            Modal.Mode.name mode,
+            { unparse = (fun li ri -> unparse_universe vars mode D.zero !universes li ri) } )
+    | _ ->
+        let* deg, operand = deg_operand vars ty None in
+        let* (Wrap mode) = Names.mode vars in
+        return (deg, Modal.Mode.name mode, operand) in
+  let* () =
+    match D.compare_zero (TubeOf.uninst tyargs) with
+    | Zero -> return ()
+    | Pos _ -> None in
+  let* { notn; pat_vars; val_vars; inner_symbols; keys = _ } =
+    Scope.Situation.unparse (`Deg (deg, `Type mode)) in
+  let args = ref Bwd.Emp in
+  TubeOf.miter { it = (fun _ [ x ] -> args := Snoc (!args, x)) } [ tyargs ];
+  let args = Bwd.to_list !args in
+  let* k, val_vars =
+    match val_vars with
+    | (k, _) :: val_vars when List.length val_vars = List.length args -> return (k, val_vars)
+    | _ -> None in
+  (* If the operand is omitted, re-elaborating the notation has to solve for it, which it can do if one of the arguments synthesizes. *)
+  let* () =
+    if Option.is_some k || List.exists (fun (Names.Named (_, x)) -> synths x) args then return ()
+    else None in
+  let map =
+    List.fold_left2
+      (fun map (k, _) (Names.Named (xvars, x)) ->
+        match k with
+        | Some k -> map |> StringMap.add k (make_unparser xvars x)
+        | None -> map)
+      (match k with
+      | Some k -> StringMap.singleton k operand
+      | None -> StringMap.empty)
+      val_vars args in
+  let args =
+    List.map
+      (fun k -> StringMap.find_opt k map <|> Anomaly "not found in unparse_deg_inst")
+      pat_vars in
+  return (notn, args, inner_symbols)
+
 and unparse_named_inst : type mode n lt ls rt rs m k mk s.
+    n Names.t ->
+    (mode, n, s) term ->
+    (m, k, mk, mode Names.named_term) TubeOf.t ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars ty tyargs li ri ->
+  match unparse_deg_inst vars ty tyargs with
+  | Some (Wrap notn, args, inner_symbols) -> unparse_notation notn args inner_symbols li ri
+  | None -> unparse_inst_spine vars ty tyargs li ri
+
+and unparse_inst_spine : type mode n lt ls rt rs m k mk s.
     n Names.t ->
     (mode, n, s) term ->
     (m, k, mk, mode Names.named_term) TubeOf.t ->
@@ -1772,12 +2097,12 @@ and unparse_pis : type mode a lt ls rt rs.
     (lt, ls, rt, rs) parse located =
  fun dim notn vars accum tm li ri ->
   match tm with
-  | Pi { x; filter; doms = Modal (modality, plus, doms); cods } -> (
+  | Pi { x; filter; implicit; doms = Modal (modality, plus, doms); cods } -> (
       match (D.compare_zero (CodCube.dim cods), dim) with
       | Zero, `Arrow | Pos _, `DblArrow -> (
-          (* Nontrivially modal pi-types are always printed dependently *)
-          match (top_variable x, Modality.compare_id modality) with
-          | (`Anon _ as anon), Eq ->
+          (* Nontrivially modal pi-types are always printed dependently, and so are implicit ones, since there is no non-dependent implicit arrow. *)
+          match (top_variable x, Modality.compare_id modality, implicit) with
+          | (`Anon _ as anon), Eq, `Explicit ->
               (* non-dependent pi-type *)
               let _, newvars = Names.add vars (singleton_variables (CubeOf.dim doms) anon) in
               let dim =
@@ -1794,7 +2119,7 @@ and unparse_pis : type mode a lt ls rt rs.
                         li ri);
                 }
                 li ri
-          | x, _ ->
+          | x, _, _ ->
               (* dependent pi-type *)
               let Variables (_, _, x), newvars =
                 Names.add vars (singleton_variables (CubeOf.dim doms) x) in
@@ -1804,7 +2129,8 @@ and unparse_pis : type mode a lt ls rt rs.
                      {
                        unparse =
                          (fun _ _ ->
-                           unparse_pi_dom (NICubeOf.find_top x) (Modality.name modality)
+                           unparse_pi_dom ~implicit:(implicit = `Implicit) (NICubeOf.find_top x)
+                             (Modality.name modality)
                              (unparse (Names.add_lock vars plus) (CubeOf.find_top doms)
                                 No.Interval.entire No.Interval.entire));
                      } ))
@@ -1897,6 +2223,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
     unparser Bwd.t ->
     k variables ->
     (dom, modality, mode, k, n) Modality.filter_dim ->
+    implicitness ->
     (a, mode, modality, dom, am) plus_lock ->
     (k, (dom, am, kinetic) term) CubeOf.t ->
     (n, dom * modality * mode * a) CodCube.t ->
@@ -1904,7 +2231,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
     (lt, ls) No.iinterval ->
     (rt, rs) No.iinterval ->
     (lt, ls, rt, rs) parse located =
- fun vars accum xs filter plus doms cods tyargs li ri ->
+ fun vars accum xs filter pi_implicit plus doms cods tyargs li ri ->
   let modality = Modality.filter_modality filter in
   let n = CodCube.dim cods in
   let kfilter = Modality.filter_idempotent filter in
@@ -1932,7 +2259,8 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
                            kfilter,
                            plus_with_locks_of_plus_lock xsplus )));
               } in
-          let implicit = Option.is_none (is_id_sface s) in
+          (* The boundary domains are always in braces, and so is the top one if the pi-type is implicit. *)
+          let implicit = Option.is_none (is_id_sface s) || pi_implicit = `Implicit in
           (* Here we use the flexibility allowed by unparse_inst to have the type and the instantiation arguments in different contexts, since the type is not in the context extended by the new variables.  However, it's important that we get the context for the type by *removing* those new variables from newvars, rather than using the original vars, since that retains the extra information stored in a Names.t about how many copies of a variable there have been, for future renaming use.  *)
           let dom =
             unparse_inst
@@ -1956,7 +2284,7 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
           let _, (lamvars : (b, (modality, ks) dim_entry) snoc Names.t) =
             Names.add_strings lamvars lam_xs in
           match lam with
-          | Lam (ys, nd, lfilter, body) -> (
+          | Lam (ys, nd, lfilter, _, body) -> (
               let _ = ys in
               match
                 ( D.compare nd (dom_tface s),
@@ -1988,19 +2316,37 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
                       weaken_dim (dom_sface fb) sfilter' nonlam,
                       dom_tface s,
                       sfilter,
+                      (* The instantiation arguments of an implicit higher function-type are implicit functions. *)
+                      pi_implicit,
                       Modal (modality, plusm, lamargs) ) )) in
     TubeOf.mmap { map = (fun s [ lam ] -> map s lam) } [ tyargs ] in
   (* We only need the top codomain. *)
   match cod_top filter cods with
-  | Pi { x = newxs; filter = newfilter; doms = Modal (_, newplus, newdoms); cods = newcods } -> (
+  | Pi
+      {
+        x = newxs;
+        filter = newfilter;
+        implicit = newimplicit;
+        doms = Modal (_, newplus, newdoms);
+        cods = newcods;
+      } -> (
       (* If it's another pi-type, it must be of the same outer dimension since it is an (uninstantiated!) n-dimensional type, and we continue recursively. *)
       match D.compare (CodCube.dim newcods) n with
-      | Eq -> unparse_higher_pi newvars accum newxs newfilter newplus newdoms newcods tyargs li ri
+      | Eq ->
+          unparse_higher_pi newvars accum newxs newfilter newimplicit newplus newdoms newcods tyargs
+            li ri
       | Neq -> fatal (Dimension_mismatch ("unparse_higher_pi recursion", CodCube.dim newcods, n)))
   (* It might also be a *partially* instantiated *higher* dimensional pi-type, in which case we combine the instantiation arguments to make it fully instantiated.  We don't continue accumulating domains as in the previous case, though, because in this case the codomain has different dimension, and hence needs its own arrow. *)
   | Inst
       ( _,
-        Pi { x = newxs; filter = newfilter; doms = Modal (_, newplus, newdoms); cods = newcods },
+        Pi
+          {
+            x = newxs;
+            filter = newfilter;
+            implicit = newimplicit;
+            doms = Modal (_, newplus, newdoms);
+            cods = newcods;
+          },
         newtyargs ) -> (
       match
         ( D.compare (TubeOf.out newtyargs) (CodCube.dim newcods),
@@ -2014,8 +2360,8 @@ and unparse_higher_pi : type dom modality mode a am lt ls rt rs k n.
             {
               unparse =
                 (fun li ri ->
-                  unparse_higher_pi newvars Emp newxs newfilter newplus newdoms newcods plustyargs
-                    li ri);
+                  unparse_higher_pi newvars Emp newxs newfilter newimplicit newplus newdoms newcods
+                    plustyargs li ri);
             } in
           unparse_pis_final (`Arrow (Some (CodCube.dim cods))) arrow vars accum tm li ri
       | Neq, _ ->
@@ -2060,7 +2406,7 @@ let rec unparse_ctx : type dom modality mode a b.
     type t = Print.printed_entry Bwd.t
   end in
   match ctx with
-  | Emp _ -> (Names.of_uniquified_vars names, Emp)
+  | Emp mode -> (Names.of_uniquified_vars ~mode names, Emp)
   | Lock (ctx, newlock) ->
       let (Comp ll) = Modality.comp lock in
       let names, out = unparse_ctx names (Modality.comp_out (Modality.of_gen newlock) ll) vars ctx in
@@ -2096,7 +2442,36 @@ let rec unparse_ctx : type dom modality mode a b.
       match (evars, vis) with
       (* An invisible alias has neither raw nor checked variables, so there is nothing to display or name. *)
       | Alias, Invis _ -> (names, result)
-      | Vars, Invis { hints; _ } ->
+      | Vars, Invis { hints = _; name = Some x } ->
+          (* An invisible entry with a name is bound by a match pattern that omits an implicit argument of a constructor.  The user can't refer to it, but other entries can mention it, so we display it, marked as not in scope. *)
+          let Variables (_, _, xs), names =
+            Names.add names
+              (singleton_variables (CubeOf.dim bindings) (binder_name_of_option (Some x))) in
+          let x = NICubeOf.find_top xs in
+          let modality = Modality.name (plus_lock_modality plus_lock) in
+          let xnames = Names.add_lock names plus_lock in
+          let lock = Modality.name lock in
+          let result = ref result in
+          CubeOf.miter
+            {
+              it =
+                (fun fa [ (b : (edom, bm) binding) ] ->
+                  let ty = Wrap (unparse xnames b.ty No.Interval.entire No.Interval.entire) in
+                  let tm =
+                    Option.map
+                      (fun t -> Wrap (unparse xnames t No.Interval.entire No.Interval.entire))
+                      b.tm in
+                  (* It is a single cube variable, so its faces are named with suffixes, unless it is zero-dimensional. *)
+                  let var =
+                    match D.compare_zero (CubeOf.dim bindings) with
+                    | Zero -> x
+                    | Pos _ -> x ^ "." ^ string_of_sface fa in
+                  result :=
+                    Snoc (!result, { var; modality; renamed = true; hidden = false; lock; tm; ty }));
+            }
+            [ bindings ];
+          (names, !result)
+      | Vars, Invis { hints; name = None } ->
           (* An invisible entry takes no raw variable, so it is not anything the user wrote but an internal device: the self-variable of a datatype's constructors, or a variable of one of the scratch contexts that readback, evaluation of a term context, and bind_some build.  So we display nothing for it.  But it must still take its place in the name context, since the variable indices of everything after it count it, and if a displayed term ever did mention such a variable, that is where its name would come from.  As elsewhere, we treat it as consisting of all nameless variables, using any display hints recorded from their types at readback time. *)
           let _, names = Names.add names (singleton_variables (CubeOf.dim bindings) (`Anon hints)) in
           (names, result)
@@ -2193,6 +2568,7 @@ let () =
               string "_UNPRINTABLE")
       @@ fun () ->
       Readback.Displaying.run ~env:true @@ fun () ->
+      Readback.Unifying.run ~env:None @@ fun () ->
       match pr with
       | PUnit -> empty
       | PAnd (x, y) -> print x ^^ utf8string " and " ^^ print y
@@ -2205,18 +2581,25 @@ let () =
           pp_complete_term
             (Wrap (unparse (Names.of_ctx ctx) tm No.Interval.entire No.Interval.entire))
             `None
+      (* A displayed value or head is limited to the display size. *)
+      | PHead (ctx, h) ->
+          let rtm, truncated = budgeted (Display.size ()) (fun () -> readback_head ctx h) in
+          pp_complete_term
+            (Wrap (unparse (Names.of_ctx ctx) rtm No.Interval.entire No.Interval.entire))
+            `None
+          ^^ pp_truncated truncated
       | PVal (ctx, tm) ->
+          let rtm, truncated = budgeted (Display.size ()) (fun () -> readback_val ctx tm) in
           pp_complete_term
-            (Wrap
-               (unparse (Names.of_ctx ctx) (readback_val ctx tm) No.Interval.entire
-                  No.Interval.entire))
+            (Wrap (unparse (Names.of_ctx ctx) rtm No.Interval.entire No.Interval.entire))
             `None
+          ^^ pp_truncated truncated
       | PNormal (ctx, tm) ->
+          let rtm, truncated = budgeted (Display.size ()) (fun () -> readback_nf ctx tm) in
           pp_complete_term
-            (Wrap
-               (unparse (Names.of_ctx ctx) (readback_nf ctx tm) No.Interval.entire
-                  No.Interval.entire))
+            (Wrap (unparse (Names.of_ctx ctx) rtm No.Interval.entire No.Interval.entire))
             `None
+          ^^ pp_truncated truncated
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
       | PMeta v -> utf8string (meta_name v)
       | PHole (origin, vars, termctx, ty) ->
@@ -2225,7 +2608,9 @@ let () =
             Reporter.discard_errors ~fallback:(fun () -> (termctx, ty)) @@ fun () ->
             let ctx = Norm.eval_ctx termctx in
             let ety = Norm.eval_term (Ctx.env ctx) ty in
-            (readback_ctx ctx, readback_val ctx ety) in
+            (* They are displayed, so they are limited to the display size. *)
+            ( fst (budgeted (Display.size ()) (fun () -> readback_ctx ctx)),
+              fst (budgeted (Display.size ()) (fun () -> readback_val ctx ety)) ) in
           let run =
             match origin with
             (* If the hole comes from an earlier time, we rewind to that time before displaying, so that the correct notations and names will be in scope. *)

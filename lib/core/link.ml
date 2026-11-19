@@ -10,41 +10,48 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   match tm with
   | Var i -> Var i
   | Const c -> Const (Constant.remake f c)
-  | Meta (m, s) -> Meta (Meta.remake f m, s)
+  | Meta (m, Global_meta, s) -> Meta (Meta.remake f m, Global_meta, s)
+  (* A unification metavariable in a compiled file must have been solved during the command that created it, so we inline its solution. *)
+  | Meta (_, Unif_meta { contents = Some tm }, _) -> term f tm
+  | Meta (m, Unif_meta { contents = None }, _) ->
+      Reporter.fatal
+        (Anomaly ("unsolved unification metavariable in compiled file: " ^ Meta.name m))
   | Field (e, Modal (modality, al, tm), fld, fldins) ->
       Field (e, Modal (modality, al, term f tm), fld, fldins)
   | UU (mode, n) -> UU (mode, n)
   | Inst (energy, tm, args) ->
       Inst (energy, term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
-  | Pi { x; filter; doms = Modal (modality, al, doms); cods } ->
+  | Pi { x; filter; implicit; doms = Modal (modality, al, doms); cods } ->
       Pi
         {
           x;
           filter;
+          implicit;
           doms = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ]);
           cods = CodCube.mmap { map = (fun _ [ Cod (filt, x) ] -> Cod (filt, term f x)) } [ cods ];
         }
-  | App (energy, fn, m, filter, Modal (modality, al, args)) ->
+  | App (energy, fn, m, filter, implicit, Modal (modality, al, args)) ->
       App
         ( energy,
           term f fn,
           m,
           filter,
+          implicit,
           Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ]) )
   | Constr (c, n, args) ->
       Constr
         ( c,
           n,
           List.map
-            (fun (Term.Modal (filter, al, arg)) ->
-              Modal (filter, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ arg ]))
+            (fun (Term.Modal (filter, al, arg), implicit) ->
+              (Modal (filter, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ arg ]), implicit))
             args )
   | Act (e, tm, s, sort) -> Act (e, term f tm, s, sort)
   | Key v -> Key { v with tm = term f v.tm }
   | Let (x, Modal (modality, al, v), body) -> Let (x, Modal (modality, al, term f v), term f body)
   | Letonly { termctx = tc; env = e; tm = body; ty } ->
       Letonly { termctx = termctx f tc; env = env f e; tm = term f body; ty = term f ty }
-  | Lam (x, p, filter, body) -> Lam (x, p, filter, term f body)
+  | Lam (x, p, filter, implicit, body) -> Lam (x, p, filter, implicit, term f body)
   | Struct { eta; dim; fields = flds; energy } ->
       Struct
         {
@@ -76,6 +83,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Unact (o, tm) -> Unact (o, term f tm)
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
   | Failed energy -> Failed energy
+  | Overflow -> Overflow
 
 and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, a, n) branch =
  fun f br ->

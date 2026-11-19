@@ -4,11 +4,14 @@ open Dim
 open Core
 open Tctx
 open Term
+open Modal
 
 type 'n t
 type wrapped = Wrap : 'n t -> wrapped
 
-val empty : 'mode emp t
+val empty : 'mode Mode.t -> 'mode emp t
+val empty_unknown : 'mode emp t
+val mode : 'n t -> Mode.wrapped option
 val remove : 'b t -> ('a, 'modality, 'n, 'b) insert -> 'a t
 val split : 'ab t -> ('x, 'b, 'y, 'a, 'z, 'ab) Tctx.comp -> 'a t
 val permute : ('a, 'b) permute -> 'b t -> 'a t
@@ -16,7 +19,9 @@ val permute : ('a, 'b) permute -> 'b t -> 'a t
 (* The variables bound by one argument of a constructor in a match branch, as they are to be displayed: either a single (cube) variable, or a cube of variables naming all the faces of its boundary. *)
 type pattern_var =
   | Cube_var : string -> pattern_var
-  | Boundary_var : ('n, string) gvariables -> pattern_var
+  | Boundary_var : [ `Explicit | `Implicit ] * ('n, string) gvariables -> pattern_var
+  | Implicit_var : string -> pattern_var
+  | Hidden_var : string -> pattern_var
 
 val add_match_vars :
   'a t ->
@@ -43,13 +48,13 @@ val add_full :
   'b t -> 'mn variables -> ('mn, string) gvariables * ('b, ('modality, 'mn) dim_entry) snoc t
 
 val add_lock : 'a t -> ('a, 'mode, 'modality, 'dom, 'am) plus_lock -> 'am t
-val add_gen_lock : 'a t -> ('a, 'g lock_entry) snoc t
+val add_gen_lock : 'a t -> ('dom, 'g, 'cod) Modality.gen -> ('a, 'g lock_entry) snoc t
 val of_ctx : ('mode, 'a, 'b) Ctx.t -> 'b t
 val degenerate : 'r D.t -> ('r, 'b, 'kb, 'mode) plusmap -> 'b t -> 'kb t
 
 type uniquified_vars
 
-val of_uniquified_vars : uniquified_vars -> 'mode emp t
+val of_uniquified_vars : ?mode:'mode Mode.t -> uniquified_vars -> 'mode emp t
 
 val uniquify_vars :
   (binder_name, 'a) Bwv.t -> (string * [ `Original | `Renamed ], 'a) Bwv.t * uniquified_vars

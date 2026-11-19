@@ -124,7 +124,7 @@ module Ordered = struct
               let (Plus km) = D.plus dim in
               let plusdim = D.plus_assocl km plusdim k_mn in
               Vis { dim = D.plus_out k km; plusdim; names; hasfields = No_fields; fields; fplus }
-          | Invis -> Invis in
+          | Invis name -> Invis name in
         match entry.vars with
         (* A cube of variables extends both the degenerated context and its environment by a degenerated cube of variables. *)
         | Vars ->

@@ -7,6 +7,7 @@ open Monoid
 module D : sig
   include MonoidPos
 
+  val length : 'n t -> int
   val minus : 'mn t -> ('m, 'n, 'mn) plus -> 'm t
   val minus_uniq : ('m1, 'n, 'mn) plus -> ('m2, 'n, 'mn) plus -> ('m1, 'm2) Eq.t
   val minus_uniq' : 'm t -> ('m, 'n1, 'mn) plus -> ('m, 'n2, 'mn) plus -> ('n1, 'n2) Eq.t
@@ -38,6 +39,7 @@ module Endpoints : sig
   val uniq : 'l1 len -> 'l2 len -> ('l1, 'l2) Eq.t
   val len : 'l len -> 'l N.t
   val indices : 'l len -> ('l t, 'l) Bwv.t
+  val to_string : ?unicode:bool -> 'l t option -> string
   val wrapped : unit -> wrapped
   val internal : unit -> bool
   val hott : unit -> N.two len option
@@ -74,6 +76,7 @@ val plus_deg :
 val swap_deg : ('m, 'n, 'mn) D.plus -> ('n, 'm, 'nm) D.plus -> ('mn, 'nm) deg
 val is_id_deg : ('m, 'n) deg -> ('m, 'n) Eq.t option
 val pos_deg : 'n D.pos -> ('m, 'n) deg -> 'm D.pos
+val deg_equal : ('m, 'n) deg -> ('k, 'l) deg -> unit option
 val deg_equiv : ('m, 'n) deg -> ('k, 'l) deg -> unit option
 val deg_zero : 'a D.t -> ('a, D.zero) deg
 
@@ -964,6 +967,7 @@ val except_comp :
 
 (* *)
 val deg_of_name : string -> any_deg option
+val is_type_deg_name : string -> bool
 
 (* Returns the name a degeneracy should be displayed with, if any, and the number of times it should be applied ("max" is the greatest number of iterations the user wants displayed with names rather than a superscript). *)
 val name_of_deg :

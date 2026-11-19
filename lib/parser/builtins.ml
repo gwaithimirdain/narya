@@ -348,7 +348,7 @@ let rec get_vars : type n lt ls rt rs.
 
 let rec raw_lam : type a b ab.
     (string option, ab) Bwv.t ->
-    [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located ->
+    [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal | `Generated ] located ->
     (a, b, ab) N.plus ->
     (string located list located, b) Bwv.t ->
     (Asai.Range.t option * wrapped_parse option * [ `Explicit | `Implicit ], b) Bwv.t ->
@@ -364,7 +364,7 @@ let rec raw_lam : type a b ab.
         match (dom, body) with
         | None, _ -> Lam { name; cube; implicit; dom = None; body }
         | Some (Wrap dom), { value = Synth body; loc } ->
-            Synth (AscLam (name, modality, process ctx dom, locate_opt loc body))
+            Synth (AscLam (name, implicit, modality, process ctx dom, locate_opt loc body))
         | Some (Wrap dom), _ ->
             let dom = Some (modality, process ctx dom) in
             Lam { name; cube; implicit; dom; body } in
@@ -512,7 +512,7 @@ let rec process_letrec_terms : type c a.
       let ty = process ctx ty in
       let (Letrec_terms (tel, Suc cb, terms, body)) =
         process_letrec_terms (Snoc (ctx, x)) rest (Snoc (terms, Wrap tm)) (N.suc c) in
-      Letrec_terms (Ext (x, locate_opt None [], ty, tel), cb, terms, body)
+      Letrec_terms (Ext (x, `Explicit, locate_opt None [], ty, tel), cb, terms, body)
   | [ Token (In, _); Term body ] ->
       let (Fplus cb) = Fwn.fplus c in
       let body = process ctx body in
@@ -575,9 +575,9 @@ let rec process_letonly_terms : type a e.
 
 let process_letonly ctx obs loc =
   match split_let obs with
-  | Some (_, _, Token (Only, _) :: Token (Ellipsis, _) :: _) ->
+  | Some (_, _, Token (Only, _) :: Token (Omitted, _) :: _) ->
       fatal ?loc
-        (Display_only_syntax "'let only … in'. Use 'display let := definitions' to print bindings")
+        (Display_only_syntax "'let only ⋯ in'. Use 'display let := definitions' to print bindings")
   | Some (_, sup, Token (Only, _) :: obs) -> (
       let (Letonly_terms (clauses, body)) =
         process_letonly_terms ctx No_clauses Emp (Token (And, ([], None)) :: obs) in
@@ -605,7 +605,7 @@ and letonly_clause () =
 
 and letonly_terms () = Inner (letonly_clause ())
 
-(* The first clause can also be an ellipsis "…", which is how a let-only is displayed with its clauses elided.  This is parsed only so that we can give a helpful error message about it. *)
+(* The first clause can also be the omission marker "⋯", which is how a let-only is displayed with its clauses elided.  This is parsed only so that we can give a helpful error message about it. *)
 let letonly_first_clause () =
   let clause = letonly_clause () in
   Inner
@@ -616,7 +616,7 @@ let letonly_first_clause () =
           [
             (Lock, letonly_rest ());
             (Keyword_key, letonly_rest ());
-            (Ellipsis, op In (Done_closed letonly));
+            (Omitted, op In (Done_closed letonly));
           ];
     }
 
@@ -660,9 +660,9 @@ let rec get_abslets heads obs =
               :: Term arg
               :: rest ->
                 (`Op ([ (plet, wslet); (Token.pp Only, wsonly) ], tok, wstok, Wrap arg), rest)
-            (* For display only, the clauses of a let-only can be elided entirely by an ellipsis. *)
-            | Token (Only, (wsonly, _)) :: Token (Ellipsis, (wsellipsis, _)) :: rest ->
-                ( `Elided [ (plet, wslet); (Token.pp Only, wsonly); (Token.pp Ellipsis, wsellipsis) ],
+            (* For display only, the clauses of a let-only can be elided entirely by an omission marker. *)
+            | Token (Only, (wsonly, _)) :: Token (Omitted, (wsomitted, _)) :: rest ->
+                ( `Elided [ (plet, wslet); (Token.pp Only, wsonly); (Token.pp Omitted, wsomitted) ],
                   rest )
             | Term x :: rest -> (`Var ([ (plet, wslet) ], Wrap x), rest)
             | _ -> invalid "let")
@@ -1143,13 +1143,15 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi ([ locate_opt None None ], modality, cdom, cod)); loc }
+      | `Lower, _, _ ->
+          { value = Synth (Pi ([ locate_opt None None ], `Explicit, modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
               Synth
                 (HigherPi
                    ( [ locate_opt None None ],
+                     `Explicit,
                      modality,
                      locate_opt cdom.loc sdom,
                      locate_opt cod.loc scod ));
@@ -1158,91 +1160,60 @@ let rec process_pi : type n lt ls rt rs.
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
-  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } :: doms -> (
+  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit; _ } :: doms -> (
       (* A pi-type binds all the variables of a group at once, so that their shared domain is processed only once, in the scope outside all of them. *)
       let cdom = process ctx dom in
       let (Pi_vars (names, ctx)) = pi_vars ctx x xs in
       let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (names, modality, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi (names, implicit, modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
-              Synth (HigherPi (names, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+              Synth
+                (HigherPi
+                   (names, implicit, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
             loc;
           }
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
-  | Dep { vars = []; implicit = `Explicit; _ } :: doms -> process_pi ctx higher doms cod
-  | Dep { implicit = `Implicit; _ } :: _ -> fatal (Unimplemented "general implicit function-types")
+  | Dep { vars = []; _ } :: doms -> process_pi ctx higher doms cod
 
-(* One group of domains for an instantiated higher pi-type: a telescope consisting of the implicit boundary domains and ending with the (first) explicit primary domain.  The number of domains needed is not known until typechecking time (it is determined by the modality, which can't be parsed until the modes are known), so we just collect them all in a telescope; but the *grouping* into successive higher pi-types is visible at parse time, since each group consists of implicit domains followed by a single explicit one. *)
-type _ higher_dom_group =
-  | Higher_dom_group :
-      ('n, 'b, 'nb) tel
-      (* Other variables sharing the type of the primary domain (see Raw.InstHigherPi). *)
-      * ('nb, 'c, 'nbc) Indexed.Namevec.t
-      * (string option, 'nbc) Bwv.t
-      * pi_dom list
-      * Asai.Range.t option
-      -> 'n higher_dom_group
+(* The domains of a sequence of instantiated higher pi-types, as one telescope, together with the scope extended by their variables.  The division of the telescope into pi-types is done at typechecking time (see Raw.InstHigherPi), since it depends on the modalities. *)
+type _ higher_doms =
+  | Higher_doms :
+      ('n, 'b, 'nb) tel * (string option, 'nb) Bwv.t * Asai.Range.t option
+      -> 'n higher_doms
 
-(* A possibly-empty list of variables, as a Namevec, together with the scope extended by them. *)
-type _ some_vars =
-  | Some_vars : ('n, 'c, 'nc) Indexed.Namevec.t * (string option, 'nc) Bwv.t -> 'n some_vars
-
-let rec some_vars : type n.
-    (string option, n) Bwv.t -> (string option located * Whitespace.t list) list -> n some_vars =
- fun ctx xs ->
-  match xs with
-  | [] -> Some_vars ([], ctx)
-  | (x, _) :: xs ->
-      let (Some_vars (names, ctx)) = some_vars (Bwv.snoc ctx x.value) xs in
-      Some_vars (x :: names, ctx)
-
-let rec process_higher_dom_group : type n.
-    (string option, n) Bwv.t -> pi_dom list -> Asai.Range.t option -> n higher_dom_group =
- fun ctx doms loc ->
+let rec process_higher_doms : type n. (string option, n) Bwv.t -> pi_dom list -> n higher_doms =
+ fun ctx doms ->
   match doms with
-  | [] ->
-      fatal
-        (Unexpected_implicitness
-           (`Implicit, "domain", "the primary domain of a higher function-type must be explicit"))
-  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } :: rest -> (
+  | [] -> Higher_doms (Emp, ctx, None)
+  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit; _ } :: rest ->
       (* The other variables of a group share its type, which we process only once, in the scope outside all of them. *)
       let cdom = process ctx dom in
-      let loc =
-        match loc with
-        | Some loc -> Some loc
-        | None -> xloc in
-      match implicit with
-      | `Explicit ->
-          (* The primary domain ends the group, so any other variables sharing its type become further pi-types with only a primary domain. *)
-          let (Some_vars (names, newctx)) = some_vars (Bwv.snoc ctx x.value) xs in
-          Higher_dom_group (Ext (x.value, modality, cdom, Emp), names, newctx, rest, loc)
-      | `Implicit ->
-          let (Higher_dom_group (tele, names, newctx, rest2, loc2)) =
-            process_higher_dom_same (Bwv.snoc ctx x.value) xs rest loc in
-          Higher_dom_group (Ext (x.value, modality, cdom, tele), names, newctx, rest2, loc2))
-  | _ -> invalid "higher pi"
+      let (Higher_doms (tele, newctx, _)) =
+        process_higher_doms_same (Bwv.snoc ctx x.value) xs rest in
+      Higher_doms (Ext (x.value, implicit, modality, cdom, tele), newctx, loc)
+  | Dep { vars = []; _ } :: rest -> process_higher_doms ctx rest
+  | Nondep _ :: _ -> fatal (Invalid_higher_function "non-dependent domain")
 
-and process_higher_dom_same : type n.
+and process_higher_doms_same : type n.
     (string option, n) Bwv.t ->
     (string option located * Whitespace.t list) list ->
     pi_dom list ->
-    Asai.Range.t option ->
-    n higher_dom_group =
- fun ctx xs doms loc ->
+    n higher_doms =
+ fun ctx xs doms ->
   match xs with
-  | [] -> process_higher_dom_group ctx doms loc
+  | [] -> process_higher_doms ctx doms
   | (x, _) :: xs ->
-      let (Higher_dom_group (tele, names, newctx, rest, loc)) =
-        process_higher_dom_same (Bwv.snoc ctx x.value) xs doms loc in
-      Higher_dom_group (Same (x.value, tele), names, newctx, rest, loc)
+      let (Higher_doms (tele, newctx, loc)) =
+        process_higher_doms_same (Bwv.snoc ctx x.value) xs doms in
+      Higher_doms (Same (x.value, tele), newctx, loc)
 
-let rec process_inst_higher_pi : type n lt ls rt rs m.
+let process_inst_higher_pi : type n lt ls rt rs m.
     (string option, n) Bwv.t ->
     m D.pos ->
     pi_dom list ->
@@ -1252,11 +1223,10 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
   match doms with
   | [] -> process ctx cod
   | _ :: _ ->
-      let (Higher_dom_group (tele, names, newctx, doms, loc)) =
-        process_higher_dom_group ctx doms None in
-      let cod = process_inst_higher_pi newctx dim doms cod in
+      let (Higher_doms (tele, newctx, loc)) = process_higher_doms ctx doms in
+      let cod = process newctx cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (InstHigherPi (dim, tele, names, cod)); loc }
+      { value = Synth (InstHigherPi (dim, tele, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
@@ -1375,10 +1345,9 @@ let () =
 
 (* Coloneq is an auxiliary notation only used as a sub-notation of others. *)
 
-type (_, _, _) identity += Coloneq : (No.strict opn, No.minus_omega, No.nonstrict opn) identity
-
+(* The identity of colon-equals was declared in Postprocess. *)
 let coloneq : (No.strict opn, No.minus_omega, No.nonstrict opn) notation =
-  (Coloneq, Infixr No.minus_omega)
+  (Postprocess.Coloneq, Infixr No.minus_omega)
 
 let () =
   make coloneq
@@ -1607,6 +1576,23 @@ let () =
           (function
           | [ Token (Dot, (wsdot, _)) ] -> (Token.pp Dot, wsdot)
           | _ -> invalid "dot");
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
+(* An ellipsis "…" as an argument is an auxiliary notation for applying a function to all of its leading implicit arguments, or instantiating a type at all of its leading nullary dimensions.  It was defined in postprocess.ml. *)
+let () =
+  make Postprocess.ellipsis
+    {
+      name = "ellipsis";
+      tree = Closed_entry (eop Ellipsis (Done_closed Postprocess.ellipsis));
+      processor = (fun _ _ loc -> fatal ?loc (Parse_error "bare ellipsis"));
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "ellipsis"));
+      print_term =
+        Some
+          (function
+          | [ Token (Ellipsis, (ws, _)) ] -> (Token.pp Ellipsis, ws)
+          | _ -> invalid "ellipsis");
       print_case = None;
       is_case = (fun _ -> false);
     }
@@ -1963,94 +1949,61 @@ let name_of_pattern : pattern -> string option = function
   | Var name -> name.value
   | Constr _ -> None
 
-type (_, _) has_patternvars =
-  | Patternvars : ('a, 'm, 'am) Raw.Indexed.Patternvars.t -> ('a, 'm) has_patternvars
-
 let pattern_loc : pattern -> Asai.Range.t option = function
   | Var name -> name.loc
   | Constr (c, _) -> c.loc
 
-(* Assemble the pattern variables bound by the arguments of a constructor pattern.  An argument with no explicit boundary binds a single (cube) variable, while one with an explicit boundary binds one variable for each face, the last being the top face, which is the argument pattern itself. *)
-let rec patternvars_of_args : type a m. (Matchpattern.arg, m) Vec.t -> (a, m) has_patternvars =
- fun args ->
-  match args with
-  | [] -> Patternvars []
-  | { boundary = []; pat } :: args ->
-      let (Patternvars xs) = patternvars_of_args args in
-      Patternvars (Cube (name_of_pattern pat) :: xs)
-  | { boundary = _ :: _ as boundary; pat } :: args ->
-      let (Wrap pats) = Vec.of_list (boundary @ [ pat ]) in
-      let (Bplus ac) = Raw.Indexed.bplus (Vec.length pats) in
-      let (Patternvars xs) = patternvars_of_args args in
-      Patternvars
-        (Boundary
-           (Indexed.Namevec.of_vec ac
-              (Vec.map (fun p -> locate_opt (pattern_loc p) (name_of_pattern p)) pats))
-        :: xs)
+(* The pattern of an argument of a constructor pattern, unless it is a dot, which binds no variable. *)
+let arg_pattern : Matchpattern.arg -> pattern option = function
+  | Plain pat | Braced pat -> Some pat
+  | Dot _ -> None
 
-(* The patterns to be matched against the variables bound by the arguments of a constructor pattern, in each of 'k branches for that constructor: one for each variable, i.e. a single pattern for a cube variable, and one for each face of an explicit boundary.  Thus they all have the same length, namely the number of variables bound, which is recorded by the bplus.  The shape of the variables is given by a Patternvars (computed from the first branch), and a branch whose boundaries don't match that shape is an error, since all the branches for a single constructor must extend the scope by the same number of variables. *)
-type (_, _, _) flat_patterns =
-  | Flat :
-      ('a, 'b, 'am) Raw.Indexed.bplus * ((pattern, 'b) Vec.t, 'k) Vec.t
-      -> ('a, 'am, 'k) flat_patterns
+let arg_shape : Matchpattern.arg -> [ `Plain | `Braced | `Dot ] = function
+  | Plain _ -> `Plain
+  | Braced _ -> `Braced
+  | Dot _ -> `Dot
 
-(* Prepend the patterns for the faces of one explicit boundary, given in each branch as a list of boundary patterns followed by the top one, to the flattened patterns of the remaining arguments. *)
-let rec flatten_boundary : type a c ac b am k.
-    (a, c, ac) Raw.Indexed.Namevec.t ->
-    (pattern list * pattern, k) Vec.t ->
-    (ac, b, am) Raw.Indexed.bplus ->
-    ((pattern, b) Vec.t, k) Vec.t ->
-    (a, am, k) flat_patterns =
- fun ns heads ab rest ->
-  match ns with
-  | [] -> fatal (Anomaly "empty boundary of match pattern variable")
-  | [ _ ] ->
-      Flat
-        ( Suc ab,
-          Vec.mmap
-            (fun [ p; ps ] ->
-              match p with
-              | [], pat -> Vec.cons pat ps
-              | x :: _, _ -> fatal ?loc:(pattern_loc x) Inconsistent_patterns)
-            [ heads; rest ] )
-  | _ :: (_ :: _ as ns) ->
-      let [ fsts; snds ] =
-        Vec.pmap
-          (fun [ hd ] ->
-            match hd with
-            | [], pat -> fatal ?loc:(pattern_loc pat) Inconsistent_patterns
-            | x :: bdry, pat -> [ x; (bdry, pat) ])
-          [ heads ] (Cons (Cons Nil)) in
-      let (Flat (ab, rest)) = flatten_boundary ns snds ab rest in
-      Flat (Suc ab, Vec.mmap (fun [ p; ps ] -> Vec.cons p ps) [ fsts; rest ])
+(* Assemble the pattern variables bound by the arguments of a constructor pattern, one for each argument other than a dot, remembering which are in braces, along with the dots.  The typechecker groups them into the arguments of the constructor (see Check.group_patternvars). *)
+let rec patternitems_of_args : type a b ab.
+    (a, b, ab) Raw.Indexed.bplus -> Matchpattern.arg list -> (a, ab) Raw.Indexed.Patternitems.t =
+ fun ab args ->
+  match (ab, args) with
+  | _, Dot loc :: args -> Dot (loc, patternitems_of_args ab args)
+  | Zero, [] -> []
+  | Suc ab, ((Plain pat | Braced pat) as arg) :: args ->
+      ( (match arg with
+        | Braced _ -> `Braced
+        | _ -> `Plain),
+        locate_opt (pattern_loc pat) (name_of_pattern pat) )
+      :: patternitems_of_args ab args
+  | _ -> fatal (Anomaly "wrong number of pattern variables")
 
-let rec flatten_args : type a m am k.
-    (a, m, am) Raw.Indexed.Patternvars.t ->
+(* The patterns to be matched against the variables bound by the arguments of a constructor pattern, in each of the branches for that constructor.  All the branches for a single constructor must put the same arguments in braces, and the dots in the same places, since the typechecker groups them into the arguments of the constructor in the same way. *)
+let flatten_args : type m b k.
+    b Fwn.t ->
+    Matchpattern.arg list ->
     ((Matchpattern.arg, m) Vec.t, k) Vec.t ->
-    (a, am, k) flat_patterns =
- fun xs argss ->
-  match xs with
-  | [] -> Flat (Zero, Vec.map (fun _ -> Vec.[]) argss)
-  | Cube _ :: xs ->
-      let [ heads; tails ] =
-        Vec.pmap
-          (fun [ (args : (Matchpattern.arg, m) Vec.t) ] ->
-            match args with
-            | { boundary = []; pat } :: tail -> [ pat; tail ]
-            | { boundary = x :: _; pat = _ } :: _ ->
-                fatal ?loc:(pattern_loc x) Inconsistent_patterns)
-          [ argss ] (Cons (Cons Nil)) in
-      let (Flat (ab, rest)) = flatten_args xs tails in
-      Flat (Suc ab, Vec.mmap (fun [ p; ps ] -> Vec.cons p ps) [ heads; rest ])
-  | Boundary ns :: xs ->
-      let [ heads; tails ] =
-        Vec.pmap
-          (fun [ (args : (Matchpattern.arg, m) Vec.t) ] ->
-            let (({ boundary; pat } : Matchpattern.arg) :: tail) = args in
-            [ (boundary, pat); tail ])
-          [ argss ] (Cons (Cons Nil)) in
-      let (Flat (ab, rest)) = flatten_args xs tails in
-      flatten_boundary ns heads ab rest
+    ((pattern, b) Vec.t, k) Vec.t =
+ fun b shape argss ->
+  let shape = List.map arg_shape shape in
+  Vec.map
+    (fun args ->
+      let args = Vec.to_list args in
+      List.iter2
+        (fun s arg ->
+          if s <> arg_shape arg then
+            fatal
+              ?loc:
+                (match arg with
+                | Plain pat | Braced pat -> pattern_loc pat
+                | Dot loc -> loc)
+              Inconsistent_patterns)
+        shape args;
+      let (Wrap pats) = Vec.of_list (List.filter_map arg_pattern args) in
+      match Fwn.compare (Vec.length pats) b with
+      | Eq -> (pats : (pattern, b) Vec.t)
+      | Neq -> fatal Inconsistent_patterns)
+    argss
 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.
@@ -2169,11 +2122,15 @@ let rec process_branches : type a n.
             | [] -> fatal (Anomaly "empty list of branches for constructor")
             | (_, pats, _, cube, _) :: _ as brs ->
                 (* The pattern variables of this constructor, for all of its direct arguments, including explicit boundaries if any (grouped with their primary argument).  This doesn't incorporate yet which of these arguments may be further deep patterns, those are just marked here as unnamed.  The names, if any, are taken from the first branch for this constructor; the other branches must bind the same number of variables with the same explicitness of boundaries, but can name them differently in their own scopes.  Every variable, including each face of an explicit boundary, is a new discriminee to be matched against the corresponding pattern; so like an ordinary discriminee it is added to the scope anonymously, and named by process_branches if its pattern is a variable. *)
-                let (Patternvars names) = patternvars_of_args pats in
+                let pats = Vec.to_list pats in
+                let (Wrap vars) = Vec.of_list (List.filter_map arg_pattern pats) in
+                let (Bplus ab) = Raw.Indexed.bplus (Vec.length vars) in
+                let names = patternitems_of_args ab pats in
                 let (Wrap brs) = Vec.of_list brs in
-                (* Now we pass through all the branches and flatten their patterns into a list of patterns, one for each pattern variable, with explicit boundaries interspersed with primary arguments.  Which of them are primary or boundaries is remembered by "names". *)
-                let (Flat (ab, newpats)) =
-                  flatten_args names (Vec.map (fun (_, cpats, _, _, _) -> cpats) brs) in
+                (* Now we pass through all the branches and extract their patterns, one for each pattern variable. *)
+                let newpats =
+                  flatten_args (Vec.length vars) pats
+                    (Vec.map (fun (_, cpats, _, _, _) -> cpats) brs) in
                 let (Plus bn) = Fwn.plus (Raw.Indexed.bplus_right ab) in
                 (* We add all the variables to the ambient scope (the one used for the discriminees) as unnamed.  This is fine because none of the names bound by the patterns are visible to the discriminees. *)
                 let newxctx, newnums = Matchscope.exts ab xctx in
@@ -2277,57 +2234,88 @@ let rec get_discriminees :
   | Term tm :: obs -> (Wrap [ Left (get_discriminee_window (Wrap tm)) ], obs)
   | _ -> invalid "match"
 
+(* A pattern, and whether it is enclosed in braces.  The top-level patterns of a matching abstraction can be in braces, making the abstraction over the variable they match against implicit.  (Braces inside a constructor pattern have a different meaning: a pattern for a face of the boundary of a higher-dimensional argument.)  In a match, the top-level patterns match against discriminees rather than abstracted variables, so they can't be in braces. *)
+let get_top_pattern : type lt ls rt rs.
+    lam:bool -> (lt, ls, rt, rs) parse located -> pattern * [ `Explicit | `Implicit ] =
+ fun ~lam tm ->
+  match tm.value with
+  | Notn ((Braces, _), n) when lam -> (
+      match args n with
+      | [ Token (LBrace, _); Term pat; Token (RBrace, _) ] ->
+          (Postprocess.get_pattern pat, `Implicit)
+      | _ -> invalid "braces")
+  | _ -> (Postprocess.get_pattern tm, `Explicit)
+
 let rec get_patterns : type n.
+    lam:bool ->
     n Fwn.t ->
     observation list ->
-    (pattern, n) Vec.t
+    (pattern * [ `Explicit | `Implicit ], n) Vec.t
     * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
     * observation list =
- fun n obs ->
+ fun ~lam n obs ->
   match (n, obs) with
   | _, [] | Zero, _ -> invalid "match"
   | Suc Zero, Term tm :: Token (Mapsto, (_, loc)) :: obs ->
-      ([ Postprocess.get_pattern tm ], `Normal loc, obs)
+      ([ get_top_pattern ~lam tm ], `Normal loc, obs)
   | Suc Zero, Term tm :: Token (DblMapsto, (_, loc)) :: obs ->
-      ([ Postprocess.get_pattern tm ], `Cube [ locate (ref false) loc ], obs)
+      ([ get_top_pattern ~lam tm ], `Cube [ locate (ref false) loc ], obs)
   | Suc Zero, Term _ :: Term tm :: _ ->
       fatal ?loc:tm.loc (Parse_error "too many match pattern variables")
   | Suc Zero, Term tm :: _ -> fatal ?loc:tm.loc (Parse_error "invalid match pattern")
   | Suc (Suc _ as n), Term tm :: Token (Op ",", _) :: obs ->
-      let pats, cube, obs = get_patterns n obs in
-      (Postprocess.get_pattern tm :: pats, cube, obs)
+      let pats, cube, obs = get_patterns ~lam n obs in
+      (get_top_pattern ~lam tm :: pats, cube, obs)
   | Suc (Suc _), Term tm :: _ -> fatal ?loc:tm.loc Wrong_number_of_patterns
   | _ -> invalid "match"
 
-let rec get_branches : type a n. a Matchscope.t -> n Fwn.t -> observation list -> (a, n) branch list
-    =
- fun ctx n obs ->
+(* Get the branches of a match or matching abstraction.  For a matching abstraction, we are given the implicitness of its abstractions, determined by the first branch, and each branch must agree with it. *)
+let rec get_branches : type a n.
+    ?implicits:([ `Explicit | `Implicit ], n) Vec.t ->
+    a Matchscope.t ->
+    n Fwn.t ->
+    observation list ->
+    (a, n) branch list =
+ fun ?implicits ctx n obs ->
   match obs with
   | [ Token (RBracket, _) ] -> []
   | Token (Op "|", _) :: obs -> (
-      let pats, cube, obs = get_patterns n obs in
+      let pats, cube, obs = get_patterns ~lam:(Option.is_some implicits) n obs in
+      (match implicits with
+      | Some implicits ->
+          Vec.miter
+            (fun [ ((pat, i) : pattern * _); first ] ->
+              if i <> first then
+                fatal ?loc:(pattern_loc pat)
+                  (Unexpected_implicitness
+                     ( i,
+                       "pattern",
+                       "all the branches of a matching abstraction must have the same patterns in braces"
+                     )))
+            [ pats; implicits ]
+      | None -> ());
       match obs with
       | Term body :: obs ->
-          let branches = get_branches ctx n obs in
-          (ctx, pats, cube, Wrap body) :: branches
+          let branches = get_branches ?implicits ctx n obs in
+          (ctx, Vec.mmap (fun [ (pat, _) ] -> pat) [ pats ], cube, Wrap body) :: branches
       | _ -> invalid "match")
   | _ -> invalid "match"
 
-(* A version of get_patterns that doesn't require a specific number of patterns in advance. *)
+(* A version of get_patterns that doesn't require a specific number of patterns in advance, used only for the first branch of a matching abstraction. *)
 let rec get_any_patterns :
     observation list ->
-    pattern Vec.wrapped
+    (pattern * [ `Explicit | `Implicit ]) Vec.wrapped
     * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
     * observation list =
  fun obs ->
   match obs with
   | Term tm :: Token (Mapsto, (_, loc)) :: obs ->
-      (Wrap [ Postprocess.get_pattern tm ], `Normal loc, obs)
+      (Wrap [ get_top_pattern ~lam:true tm ], `Normal loc, obs)
   | Term tm :: Token (DblMapsto, (_, loc)) :: obs ->
-      (Wrap [ Postprocess.get_pattern tm ], `Cube [ locate (ref false) loc ], obs)
+      (Wrap [ get_top_pattern ~lam:true tm ], `Cube [ locate (ref false) loc ], obs)
   | Term tm :: Token (Op ",", _) :: obs ->
       let Wrap pats, cube, obs = get_any_patterns obs in
-      (Wrap (Postprocess.get_pattern tm :: pats), cube, obs)
+      (Wrap (get_top_pattern ~lam:true tm :: pats), cube, obs)
   | _ -> invalid "match"
 
 let rec pp_patterns accum obs =
@@ -2523,6 +2511,10 @@ let () =
               let sort =
                 match args n with
                 | [ Term vars; Token (Mapsto, _); Term { value = Placeholder _; _ } ] ->
+                    (* This form only counts its variables, so it is deprecated in favor of a bare placeholder, which doesn't need the right number of them (or the braces for implicit indices and boundaries that an explicit motive needs). *)
+                    emit ?loc:motive.loc
+                      (Deprecated
+                         "'match M return _ ↦ _' for a non-dependent match: use 'match M return _'");
                     (* TODO: Should not be ascribed, and especially not modal *)
                     let (Extctx (mn, _, _, _)) = get_vars (Matchscope.names ctx) vars in
                     `Nondep
@@ -2555,13 +2547,15 @@ let () =
           match strip_gen_attributes obs with
           | Token (LBracket, _) :: Token (Op "|", _) :: obs | Token (LBracket, _) :: obs -> (
               (* We get the *number* of patterns from the first branch. *)
-              let Wrap pats, cube, obs = get_any_patterns obs in
+              let Wrap patsi, cube, obs = get_any_patterns obs in
+              let pats = Vec.mmap (fun [ (pat, _) ] -> pat) [ patsi ] in
+              let implicits = Vec.mmap (fun [ (_, i) ] -> i) [ patsi ] in
               match obs with
               | Term body :: obs ->
                   let n = Vec.length pats in
                   let (Bplus an) = Raw.Indexed.bplus n in
                   let ctx, xs = Matchscope.exts an (Matchscope.make ctx) in
-                  let branches = get_branches ctx n obs in
+                  let branches = get_branches ~implicits ctx n obs in
                   let mtch, highers =
                     process_branches ctx
                       (Vec.mmap (fun [ i ] -> Either.Right (disc_var i)) [ xs ])
@@ -2574,8 +2568,8 @@ let () =
                         locate_opt mtch.loc (Synth (Match { data with highers }))
                     | _, [] -> mtch
                     | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match") in
-                  (* NB: Raw.lams produces only explicit lambdas.  Pattern-matching lambdas can't be used for implicit ones. *)
-                  Raw.lams an (Vec.init (fun () -> (unlocated None, ())) n ()) mtch loc
+                  (* The abstractions are implicit where the patterns are in braces. *)
+                  Raw.lams an (Vec.mmap (fun [ i ] -> (unlocated None, i)) [ implicits ]) mtch loc
               | _ -> invalid "match")
           | _ -> invalid "match");
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "matching abstraction"));
@@ -2981,7 +2975,7 @@ let rec process_tel : type a.
           (* The type is shared by all the fields in the group, so we process it only once, in the scope outside all of them. *)
           let ty = process ctx ty in
           let (Any_tel tel) = process_tel_same (Bwv.snoc ctx (Some name)) seen names obs in
-          Any_tel (Ext (Some name, locate_opt None [], ty, tel))
+          Any_tel (Ext (Some name, `Explicit, locate_opt None [], ty, tel))
       | _ -> fatal ?loc:tm.loc (Parse_error "invalid record field name"))
   | _ -> invalid "record"
 
@@ -3160,35 +3154,46 @@ let rec data_constrs bar_ok =
              ]);
     }
 
-(* Extract all the typed arguments of a constructor given before its colon. *)
+(* Extract all the typed arguments of a constructor given before its colon, with their implicitness: an argument set in braces is implicit. *)
 let rec constr_tel :
     observation ->
-    (string option list * string located list located * wrapped_parse) list ->
-    Constr.t located * (string option list * string located list located * wrapped_parse) list =
+    (string option list * [ `Explicit | `Implicit ] * string located list located * wrapped_parse)
+    list ->
+    Constr.t located
+    * (string option list * [ `Explicit | `Implicit ] * string located list located * wrapped_parse)
+      list =
  fun tel accum ->
   match tel with
   (* Found all the arguments and reached the constructor. *)
   | Term { value = Constr (c, _); loc } -> ({ value = Constr.intern c; loc }, accum)
-  (* Each argument set is given with its type in parentheses. *)
+  (* Each argument set is given with its type in parentheses, or in braces if it is implicit. *)
   | Term { value = App { fn; arg = { value = Notn ((AscVar, _), n); loc = _ }; _ }; loc = _ } -> (
+      let implicit_of (ldelim : Token.t) (rdelim : Token.t) =
+        match (ldelim, rdelim) with
+        | LParen, RParen -> `Explicit
+        | LBrace, RBrace -> `Implicit
+        | _ -> fatal (Parse_error "invalid braces") in
       match args n with
-      | [ Token (LParen, _); Term xs; Token (Colon, _); Term ty; Token (RParen, _) ] -> (
+      | [ Token (ldelim, _); Term xs; Token (Colon, _); Term ty; Token (rdelim, _) ] -> (
+          let implicit = implicit_of ldelim rdelim in
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((var_names vars, locate_opt None [], Wrap ty) :: accum)
+              constr_tel (Term fn) ((var_names vars, implicit, locate_opt None [], Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | [
-       Token (LParen, _);
+       Token (ldelim, _);
        Term xs;
        Token (Colon, _);
        Term modality;
        Token (Op "|", _);
        Term ty;
-       Token (RParen, _);
+       Token (rdelim, _);
       ] -> (
+          let implicit = implicit_of ldelim rdelim in
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((var_names vars, get_modality fst modality, Wrap ty) :: accum)
+              constr_tel (Term fn)
+                ((var_names vars, implicit, get_modality fst modality, Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | _ -> invalid "tel")
   | Term { loc; _ } -> fatal ?loc (Parse_error "invalid constructor")
@@ -3196,13 +3201,14 @@ let rec constr_tel :
 
 let rec process_dataconstr : type n.
     (string option, n) Bwv.t ->
-    (string option list * string located list located * wrapped_parse) list ->
+    (string option list * [ `Explicit | `Implicit ] * string located list located * wrapped_parse)
+    list ->
     wrapped_parse option ->
     n Raw.dataconstr =
  fun ctx tel_args ty ->
   match (tel_args, ty) with
-  | (vars, modality, argty) :: tel_args, _ ->
-      process_dataconstr_vars ctx vars (Some (modality, argty)) tel_args ty
+  | (vars, implicit, modality, argty) :: tel_args, _ ->
+      process_dataconstr_vars ctx vars (Some (implicit, modality, argty)) tel_args ty
   | [], Some (Wrap ty) -> (
       (* A constructor whose type is an ordinary pi-type takes the domains of that pi-type as its arguments.  We find them in the parse tree, rather than processing the pi-type and taking it apart, so that a group of variables sharing a type, such as "(x y : A) → B", becomes the same telescope as the arguments "(x y : A)" would. *)
       match ty.value with
@@ -3220,11 +3226,9 @@ let rec process_dataconstr : type n.
               List.filter_map
                 (function
                   | Dep { vars = []; _ } -> None
-                  | Dep { vars; modality; ty; implicit = `Explicit; _ } ->
-                      Some (var_names vars, modality, ty)
-                  | Dep { implicit = `Implicit; _ } ->
-                      fatal (Unimplemented "general implicit function-types")
-                  | Nondep { ty; _ } -> Some ([ None ], locate_opt None [], ty))
+                  | Dep { vars; modality; ty; implicit; _ } ->
+                      Some (var_names vars, implicit, modality, ty)
+                  | Nondep { ty; _ } -> Some ([ None ], `Explicit, locate_opt None [], ty))
                 doms in
             process_dataconstr ctx tel_args (Some cod)
           else
@@ -3236,9 +3240,10 @@ let rec process_dataconstr : type n.
 and process_dataconstr_vars : type n.
     (string option, n) Bwv.t ->
     string option list ->
-    (* We only carry the modality and type if we are at the first variable in the list. *)
-    (string located list located * wrapped_parse) option ->
-    (string option list * string located list located * wrapped_parse) list ->
+    (* We only carry the implicitness, modality, and type if we are at the first variable in the list. *)
+    ([ `Explicit | `Implicit ] * string located list located * wrapped_parse) option ->
+    (string option list * [ `Explicit | `Implicit ] * string located list located * wrapped_parse)
+    list ->
     wrapped_parse option ->
     n Raw.dataconstr =
  fun ctx vars argty tel_args ty ->
@@ -3246,12 +3251,12 @@ and process_dataconstr_vars : type n.
   | [] -> process_dataconstr ctx tel_args ty
   | x :: xs -> (
       match argty with
-      | Some (modality, Wrap argty) ->
+      | Some (implicit, modality, Wrap argty) ->
           (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
           let arg = process ctx argty in
           let (Dataconstr (args, body)) =
             process_dataconstr_vars (Bwv.snoc ctx x) xs None tel_args ty in
-          Dataconstr (Ext (x, modality, arg, args), body)
+          Dataconstr (Ext (x, implicit, modality, arg, args), body)
       | None ->
           (* The remaining variables that share the type of the previous one. *)
           let (Dataconstr (args, body)) =
@@ -3520,6 +3525,25 @@ let () =
       is_case = (fun _ -> false);
     }
 
+(* The omission marker "⋯", which the unparser displays in place of a subterm too deep to fit in the display size, is parsed only so that we can give a helpful error message about it.  (The marker in a let-only with elided clauses is part of the let-only notation.) *)
+let () =
+  make Postprocess.omitted
+    {
+      name = "omitted";
+      tree = Closed_entry (eop Omitted (Done_closed Postprocess.omitted));
+      processor =
+        (fun _ _ loc ->
+          fatal ?loc (Display_only_syntax "'⋯', which marks a part of a term omitted from display"));
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "omitted"));
+      print_term =
+        Some
+          (function
+          | [ Token (Omitted, (ws, _)) ] -> (Token.pp Omitted, ws)
+          | _ -> invalid "omitted");
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
 (* ********************
    Generating the state
  ******************** *)
@@ -3567,6 +3591,8 @@ let install () =
     Situation.add coloneq;
     Situation.add comatch;
     Situation.add Postprocess.dot;
+    Situation.add Postprocess.ellipsis;
+    Situation.add Postprocess.omitted;
     Situation.add implicit_mtch;
     Situation.add explicit_mtch;
     Situation.add mtchlam;

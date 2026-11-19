@@ -29,6 +29,7 @@ type t =
   | Pluseq (* Both += and ⩲ *)
   | Dot (* . *)
   | Ellipsis (* ... and … *)
+  | Omitted (* .... and ⋯, which marks something omitted from display *)
   | String of string (* Double-quoted *)
   | Underscore (* _ *)
   | And
@@ -185,6 +186,7 @@ let to_string = function
   | Pluseq -> Display.alt_char "⩲" "+="
   | Dot -> "."
   | Ellipsis -> Display.alt_char "…" "..."
+  | Omitted -> Display.alt_char "⋯" "...."
   | String s -> "\"" ^ s ^ "\""
   | Underscore -> "_"
   | Axiom -> "axiom"
@@ -263,6 +265,7 @@ let word_like_edge (side : [ `Left | `Right ]) (tok : t) : bool =
   | Pluseq
   | Dot
   | Ellipsis
+  | Omitted
   | String _
   | Underscore
   | Superscript _

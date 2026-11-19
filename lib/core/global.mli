@@ -73,6 +73,59 @@ val set_meta :
   ('mode, 'b, 's) term ->
   unit
 
+val add_unif :
+  ('mode, 'a, 'b, kinetic) Meta.t ->
+  ('mode, 'b, kinetic) term option ref ->
+  ctx:('mode, 'a, 'b) Ctx.t ->
+  ty:('mode, 'b, kinetic) term ->
+  termctx:('mode, 'a, 'b) termctx Lazy.t ->
+  loc:Asai.Range.t option ->
+  err:Reporter.Code.t ->
+  delayed:bool ->
+  unit
+
+val unif_ctx : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'a, 'b) Ctx.t
+val unif_error : ('mode, 'a, 'b, kinetic) Meta.t -> Asai.Range.t option * Reporter.Code.t
+val unif_assignable : ('mode, 'a, 'b, kinetic) Meta.t -> bool
+val solve_unif : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'b, kinetic) term -> unit
+val release_unif : ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'b, kinetic) term -> unit
+
+val postpone :
+  blockers:Value.blocker list ->
+  attempt:(unit -> [ `Done | `Stuck of Value.blocker list ]) ->
+  report:(unit -> unit) ->
+  unit
+
+val retry_postponed : ?stale:bool -> unit -> bool
+val without_retries : (unit -> 'a) -> 'a
+val settle_unifs : unit -> unit
+val solve_count : unit -> int
+val unif_solution : ('mode, 'b, kinetic) term option ref -> ('mode, 'b, kinetic) term option
+val unsolved_unifs : unit -> bool
+
+type unsolved_unif_iter = {
+  it :
+    'mode 'a 'b.
+    ('mode, 'a, 'b, kinetic) Meta.t -> ('mode, 'a, 'b) Ctx.t -> ('mode, 'b, kinetic) term -> unit;
+}
+
+val iter_unsolved_unifs : unsolved_unif_iter -> unit
+val set_singleton_unif_solver : (unit -> unit) -> unit
+val solve_singleton_unifs : unit -> unit
+
+val delayed_unif_loc :
+  ('mode, 'a, 'b, kinetic) Meta.t ->
+  ('mode, 'b, kinetic) term option ref ->
+  Asai.Range.t option option
+
+val unif_solved : ('mode, 'b, kinetic) term option ref -> bool
+
+val meta_termctx :
+  ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'b, 's, 'e) meta_kind -> ('mode, 'a, 'b) termctx
+
+val meta_ty :
+  ('mode, 'a, 'b, 's) Meta.t -> ('mode, 'b, 's, 'e) meta_kind -> ('mode, 'b, kinetic) term
+
 val unsolved_holes : unit -> int
 val current_unsolved_holes : unit -> int
 val notify_holes : unit -> unit

@@ -124,7 +124,25 @@ module Code = struct
         why : Unequal.t;
       }
         -> t
+    | Undetermined_checking_type : printable -> t
+    | Undetermined_function_type : printable * printable -> t
+    | Undetermined_record_type :
+        printable * printable * [ `Name of string * int list | `Int of int ]
+        -> t
+    | Undetermined_synthesized_type : {
+        expected : printable;
+        got : printable;
+        why : Unequal.t;
+      }
+        -> t
     | Unequal_synthesized_boundary : {
+        face : ('a, 'b) sface;
+        got : printable;
+        expected : printable;
+        why : Unequal.t;
+      }
+        -> t
+    | Undetermined_synthesized_boundary : {
         face : ('a, 'b) sface;
         got : printable;
         expected : printable;
@@ -136,6 +154,8 @@ module Code = struct
     | Invalid_higher_letonly : string -> t
     | Invalid_nullary_application : t
     | Expected_nullary_application : t
+    | Invalid_ellipsis_application : t
+    | Invalid_face_argument : string -> t
     | Checking_tuple_at_degenerated_record : printable -> t
     | Missing_field_in_tuple : 'i Field.t * ('e, 'i, 'r) pbij option -> t
     | Missing_method_in_comatch : 'i Field.t * ('e, 'i, 'r) pbij option -> t
@@ -154,7 +174,6 @@ module Code = struct
     | Checking_tuple_at_nonrecord : printable -> t
     | Choice_mismatch : printable -> t
     | Calc_error : printable -> t
-    | No_implicit_goal_arg : printable * printable -> t
     | Comatching_at_noncodata : printable -> t
     | Comatching_at_degenerated_codata : printable -> t
     | No_such_constructor :
@@ -193,6 +212,13 @@ module Code = struct
         why : Unequal.t;
       }
         -> t
+    | Undetermined_boundary_argument : {
+        face : ('a, 'b) sface;
+        got : printable;
+        expected : printable;
+        why : Unequal.t;
+      }
+        -> t
     | Unbound_variable : string * (string list * string list) list -> t
     | Undefined_constant : printable -> t
     | Undefined_metavariable : printable -> t
@@ -208,12 +234,15 @@ module Code = struct
     | Matching_datatype_has_degeneracy : printable -> t
     | Wrong_number_of_arguments_to_pattern : Constr.t * int -> t
     | Wrong_boundary_of_pattern_variable : int -> t
+    | Invalid_dot_pattern : t
     | Wrong_number_of_arguments_to_motive : int -> t
     | No_such_constructor_in_match : printable * Constr.t -> t
     | Duplicate_constructor_in_match : Constr.t -> t
     | Duplicate_constructor_in_data : Constr.t -> t
     | Matching_on_nondatatype : printable -> t
     | Matching_wont_refine : string * printable option -> t
+    | Undetermined_match_refinement : [ `Index of printable | `Parameters of printable ] -> t
+    | Match_parameter_depends_on_index : printable -> t
     | Dimension_mismatch : string * 'a D.t * 'b D.t -> t
     | Mode_mismatch :
         [ `User | `Internal ]
@@ -257,6 +286,7 @@ module Code = struct
     | Notation_variable_used_twice : string -> t
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
+    | Invalid_notation_arguments : string -> t
     | Constant_assumed : { name : printable; parametric : bool; holes : int } -> t
     | Constant_defined : { names : printable list; parametric : bool; holes : int } -> t
     | Hole_solved : int -> t
@@ -331,6 +361,8 @@ module Code = struct
     | Dependent : string -> t
     | Fatalize : string -> t
     | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
+    | Unsolved_unification_meta : t
+    | Undetermined_implicit_argument : string option * printable -> t
     | Invalid_instant : string -> t
     | Oracle_failed : oracle_error -> t
     | Extern : { code : string; text : string; error : extern_error } -> t
@@ -364,12 +396,19 @@ module Code = struct
     | Noncube_abstraction_in_higher_dimensional_match _ -> Error
     | Type_not_fully_instantiated _ -> Error
     | Unequal_synthesized_type _ -> Error
+    | Undetermined_synthesized_type _ -> Error
+    | Undetermined_checking_type _ -> Error
+    | Undetermined_function_type _ -> Error
+    | Undetermined_record_type _ -> Error
     | Unequal_synthesized_boundary _ -> Error
+    | Undetermined_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
     | Invalid_higher_letonly _ -> Error
     | Invalid_nullary_application -> Error
     | Expected_nullary_application -> Error
+    | Invalid_ellipsis_application -> Error
+    | Invalid_face_argument _ -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
     | Missing_field_in_tuple _ -> Error
     | Missing_method_in_comatch _ -> Error
@@ -388,13 +427,13 @@ module Code = struct
     | Checking_tuple_at_nonrecord _ -> Error
     | Choice_mismatch _ -> Error
     | Calc_error _ -> Error
-    | No_implicit_goal_arg _ -> Error
     | Comatching_at_noncodata _ -> Error
     | Comatching_at_degenerated_codata _ -> Error
     | No_such_constructor _ -> Error
     | Missing_instantiation_constructor _ -> Error
     | Unequal_indices _ -> Error
     | Unequal_boundary_argument _ -> Error
+    | Undetermined_boundary_argument _ -> Error
     | Unbound_variable _ -> Error
     | Undefined_constant _ -> Bug
     | Undefined_metavariable _ -> Bug
@@ -417,12 +456,15 @@ module Code = struct
     | Matching_datatype_has_degeneracy _ -> Error
     | Wrong_number_of_arguments_to_pattern _ -> Error
     | Wrong_boundary_of_pattern_variable _ -> Error
+    | Invalid_dot_pattern -> Error
     | Wrong_number_of_arguments_to_motive _ -> Error
     | No_such_constructor_in_match _ -> Error
     | Duplicate_constructor_in_match _ -> Error
     | Duplicate_constructor_in_data _ -> Error
     | Matching_on_nondatatype _ -> Error
     | Matching_wont_refine _ -> Hint
+    | Undetermined_match_refinement _ -> Error
+    | Match_parameter_depends_on_index _ -> Error
     | Nonrefutable_modal_variable _ -> Hint
     | Dimension_mismatch _ -> Bug (* Sometimes Error? *)
     | Mode_mismatch (`Internal, _, _, _, _) -> Bug
@@ -456,6 +498,7 @@ module Code = struct
     | Notation_variable_used_twice _ -> Error
     | Unbound_variable_in_notation _ -> Error
     | Head_already_has_notation _ -> Warning
+    | Invalid_notation_arguments _ -> Error
     | Constant_assumed _ -> Info
     | Constant_defined _ -> Info
     | Notation_defined _ -> Info
@@ -522,6 +565,8 @@ module Code = struct
     | Dependent _ -> Error
     | Fatalize _ -> Error
     | No_holes_allowed _ -> Error
+    | Unsolved_unification_meta -> Error
+    | Undetermined_implicit_argument _ -> Error
     | Invalid_instant _ -> Bug
     | Wrong_dimension_of_field _ -> Error
     | Invalid_field_suffix _ -> Error
@@ -573,6 +618,10 @@ module Code = struct
     | Bare_case_tree_construct _ -> "H0403"
     | Invalid_synthesized_type _ -> "E0404"
     | Type_expected _ -> "E0405"
+    | Undetermined_synthesized_type _ -> "E0406"
+    | Undetermined_checking_type _ -> "E0407"
+    | Undetermined_function_type _ -> "E0408"
+    | Undetermined_record_type _ -> "E0409"
     (* Dimensions *)
     | Dimension_mismatch _ -> "E0500"
     | Not_enough_lambdas _ -> "E0501"
@@ -596,10 +645,13 @@ module Code = struct
     | Unexpected_implicitness _ -> "E0702"
     | Insufficient_dimension _ -> "E0703"
     | Unequal_synthesized_boundary _ -> "E0704"
+    | Undetermined_synthesized_boundary _ -> "E0710"
     | Not_enough_domains _ -> "E0705"
     | Invalid_higher_function _ -> "E0706"
     | Invalid_nullary_application -> "E0707"
     | Expected_nullary_application -> "E0708"
+    | Invalid_ellipsis_application -> "E0711"
+    | Invalid_face_argument _ -> "E0712"
     | Invalid_higher_letonly _ -> "E0709"
     (* Record fields *)
     | No_such_field _ -> "E0800"
@@ -618,11 +670,14 @@ module Code = struct
     | Missing_instantiation_constructor _ -> "E1002"
     | Unequal_indices _ -> "E1003"
     | Unequal_boundary_argument _ -> "E1004"
+    | Undetermined_boundary_argument _ -> "E1005"
     (* Matches *)
     (* - Match variable *)
     | Unnamed_variable_in_match -> "E1100"
     | Matching_wont_refine _ -> "E1101"
     | Nonrefutable_modal_variable _ -> "E1102"
+    | Undetermined_match_refinement _ -> "E1103"
+    | Match_parameter_depends_on_index _ -> "E1104"
     (* - Match type *)
     | Matching_on_nondatatype _ -> "E1200"
     | Matching_datatype_has_degeneracy _ -> "E1201"
@@ -632,6 +687,7 @@ module Code = struct
     | Duplicate_constructor_in_match _ -> "E1302"
     | Wrong_number_of_arguments_to_pattern _ -> "E1303"
     | Wrong_boundary_of_pattern_variable _ -> "E1310"
+    | Invalid_dot_pattern -> "E1311"
     | Duplicate_pattern_variable _ -> "E1304"
     | Wrong_number_of_patterns -> "E1305"
     | Inconsistent_patterns -> "E1306"
@@ -660,7 +716,6 @@ module Code = struct
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
-    | No_implicit_goal_arg _ -> "E1602"
     (* Modal type theory *)
     | Mode_mismatch _ -> "E1700"
     | Modality_mismatch _ -> "E1701"
@@ -683,6 +738,8 @@ module Code = struct
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
     | No_holes_allowed _ -> "E2002"
+    | Unsolved_unification_meta -> "E2004"
+    | Undetermined_implicit_argument _ -> "E2005"
     | Invalid_instant _ -> "E2003"
     (* def *)
     | Redefining_constant _ -> "E2100"
@@ -698,6 +755,7 @@ module Code = struct
     | Notation_variable_used_twice _ -> "E2207"
     | Unbound_variable_in_notation _ -> "E2208"
     | Head_already_has_notation _ -> "E2209"
+    | Invalid_notation_arguments _ -> "E2210"
     (* import *)
     | Circular_import _ -> "E2300"
     | Library_has_extension _ -> "W2301"
@@ -806,10 +864,37 @@ module Code = struct
                ~none:(fun _ () -> ())
                (fun ppf which -> fprintf ppf "@ (hint: %s boundaries are explicit)" which))
             which
+      | Undetermined_checking_type ty ->
+          textf
+            "@[<hv 0>can't check this term against type@;<1 2>%a@ since what kind of type it is depends on unsolved placeholders@]"
+            pp_printed (print ty)
+      | Undetermined_function_type (fn, ty) ->
+          textf
+            "@[<hv 0>can't apply/instantiate@;<1 2>%a@ of type@;<1 2>%a@ since what kind of type it is depends on unsolved placeholders@]"
+            pp_printed (print fn) pp_printed (print ty)
+      | Undetermined_record_type (tm, ty, fld) ->
+          textf
+            "@[<hv 0>can't project field %s from@;<1 2>%a@ of type@;<1 2>%a@ since what kind of type it is depends on unsolved placeholders@]"
+            (match fld with
+            | `Name (str, ints) -> str ^ string_of_ins_ints ints
+            | `Int n -> string_of_int n)
+            pp_printed (print tm) pp_printed (print ty)
+      | Undetermined_synthesized_type { got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
+          textf
+            "@[<hv 0>term synthesized type@;<1 2>%a@ and is being checked against type@;<1 2>%a@ but can't determine whether they are equal, since comparing %s@;<1 2>%a@ and@;<1 2>%a@ depends on unsolved placeholders@]"
+            pp_printed (print got) pp_printed (print expected) str pp_printed (print p1) pp_printed
+            (print p2)
       | Unequal_synthesized_boundary { face; got; expected; why } ->
           let str, p1, p2 = Unequal.printables why in
           textf
             "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
+      | Undetermined_synthesized_boundary { face; got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
+          textf
+            "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ and is being checked against type@;<1 2>%a@ but can't determine whether they are equal, since comparing %s@;<1 2>%a@ and@;<1 2>%a@ depends on unsolved placeholders@]"
             (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
             (print p1) pp_printed (print p2)
       | Not_enough_domains dim ->
@@ -818,6 +903,10 @@ module Code = struct
       | Invalid_higher_letonly str -> textf "invalid higher-dimensional let-only: %s" str
       | Invalid_nullary_application -> text "invalid nullary application"
       | Expected_nullary_application -> text "expected nullary application"
+      | Invalid_face_argument str -> textf "invalid face argument: %s" str
+      | Invalid_ellipsis_application ->
+          text
+            "nothing to insert or instantiate: ellipsis applied to a term whose type is neither an implicit function-type nor a higher-dimensional type of arity zero"
       | Checking_tuple_at_degenerated_record r ->
           textf "can't check a tuple against a record %a with a nonidentity degeneracy applied"
             pp_printed (print r)
@@ -851,9 +940,6 @@ module Code = struct
       | Choice_mismatch ty ->
           textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed (print ty)
       | Calc_error e -> textf "error in calc: %a" pp_printed (print e)
-      | No_implicit_goal_arg (fn, ty) ->
-          textf "@[<hv 0>can't take an implicit argument for@;<1 2>%a@ from type@;<1 2>%a@]"
-            pp_printed (print fn) pp_printed (print ty)
       | Comatching_at_noncodata ty ->
           textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed (print ty)
       | No_such_constructor (d, c) -> (
@@ -935,6 +1021,12 @@ module Code = struct
             "@[<hv 0>supplied %s-boundary argument@;<1 2>%a@ doesn't match the one determined by the type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
             (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
             (print p1) pp_printed (print p2)
+      | Undetermined_boundary_argument { face; got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
+          textf
+            "@[<hv 0>can't determine whether supplied %s-boundary argument@;<1 2>%a@ matches the one determined by the type@;<1 2>%a@ since comparing %s@;<1 2>%a@ and@;<1 2>%a@ depends on unsolved placeholders@]"
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
       | Unbound_variable (c, alt) -> (
           match alt with
           | [] -> textf "unbound variable: %s" c
@@ -992,6 +1084,8 @@ module Code = struct
           else
             textf "not enough arguments to constructor %s in match pattern (need %d more)"
               (Constr.to_string c) (abs n)
+      | Invalid_dot_pattern ->
+          text "a dot in a match pattern can only skip an implicit argument of the constructor"
       | Wrong_boundary_of_pattern_variable n ->
           if n > 0 then
             textf "too many boundary arguments for higher-dimensional pattern variable (%d extra)" n
@@ -1014,6 +1108,23 @@ module Code = struct
             (print d)
       | Matching_wont_refine (msg, None) ->
           textf "match will not refine the goal or context (%s)" msg
+      | Undetermined_match_refinement which ->
+          let which ppf () =
+            match which with
+            | `Index x ->
+                fprintf ppf "its index@;<1 2>%a@ depends on unsolved placeholders" pp_printed
+                  (print x)
+            | `Parameters ty ->
+                fprintf ppf
+                  "the parameters of its datatype@;<1 2>%a@ depend on unsolved placeholders that might involve its indices"
+                  pp_printed (print ty) in
+          textf
+            "@[<hv 0>can't tell whether this match can refine the goal and context, since %a.@ To match without refining, write \"match … return _ [ … ]\".@ If you intended a refining match, you may be able to get one by giving more arguments explicitly, so that the placeholders are solved before this match or not created at all.@]"
+            which ()
+      | Match_parameter_depends_on_index ty ->
+          textf
+            "@[<hv 0>this match refines the goal and context, so the parameters of its datatype@;<1 2>%a@ can't depend on its indices, but as placeholders were solved they turned out to.@ To match without refining, write \"match … return _ [ … ]\".@ If you intended a refining match, check that the placeholders were solved as you intended; giving more arguments explicitly, so that they are solved before this match or not created at all, may help.@]"
+            pp_printed (print ty)
       | Dimension_mismatch (op, a, b) ->
           textf "dimension mismatch in %s (%s ≠ %s)" op (string_of_dim0 a) (string_of_dim0 b)
       | Mode_mismatch (_, op, a, why, b) ->
@@ -1116,6 +1227,7 @@ module Code = struct
       | Head_already_has_notation name ->
           textf "replacing printing notation for %s (previous notation will still be parseable)"
             name
+      | Invalid_notation_arguments str -> textf "invalid arguments of notation head: %s" str
       | Constant_assumed { name; parametric; holes } ->
           let p = if parametric then "" else "nonparametric " in
           if holes > 1 then
@@ -1280,6 +1392,11 @@ module Code = struct
           | `File file -> textf "imported file '%s' cannot contain holes" file
           | `Other where -> textf "%s cannot contain holes" where)
       | Invalid_instant instant -> textf "invalid instant: %s" instant
+      | Unsolved_unification_meta -> textf "can't determine a value for this placeholder"
+      | Undetermined_implicit_argument (x, fn) -> (
+          match x with
+          | Some x -> textf "can't determine implicit argument %s of %a" x pp_printed (print fn)
+          | None -> textf "can't determine an implicit argument of %a" pp_printed (print fn))
       | Oracle_failed _ -> text "oracle failed"
       | Extern { text = t; _ } -> text t
       | Invalid_flags -> text "invalid combination of command-line flags"
@@ -1306,6 +1423,42 @@ end
 
 module Delegate = Asai.StructuredReporter.Make (Code)
 include Delegate
+
+(* A delayed metavariable (see Global.Unifdata) stands for a term whose type hasn't been checked yet.  When one is displayed in a message, we add a remark pointing to that term.  We don't display the term itself in place of the metavariable, since it may not have the type that would be expected there, which could lead to confusing messages such as two apparently identical terms being unequal.  The printer notices each delayed metavariable that it displays, by calling the function supplied by this reader effect with its displayed name and the location of its term.  Since messages are formatted when their diagnostic is constructed, in the state where the error occurred (see Code.default_text), we collect them there. *)
+module Delayed_metas = Algaeff.Reader.Make (struct
+  type t = string * Asai.Range.t option -> unit
+end)
+
+(* Notice a delayed metavariable being displayed.  When we aren't constructing a diagnostic, such as when displaying the result of a command, there is nothing to do. *)
+let notice_delayed_meta name loc =
+  match Delayed_metas.read () with
+  | exception Effect.Unhandled _ -> ()
+  | notice -> notice (name, loc)
+
+(* Construct a diagnostic, adding a remark for each delayed metavariable displayed in it. *)
+let diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  let delayed = ref Emp in
+  let notice (name, mloc) =
+    if not (Bwd.exists (fun (n, _) -> n = name) !delayed) then
+      delayed := Snoc (!delayed, (name, mloc)) in
+  let d =
+    Delayed_metas.run ~env:notice @@ fun () ->
+    Delegate.diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg in
+  let extra_remarks =
+    Bwd.fold_left
+      (fun remarks (name, loc) ->
+        Snoc
+          ( remarks,
+            Asai.Diagnostic.loctextf ?loc
+              "%s stands for this term, whose type hasn't been checked yet" name ))
+      d.extra_remarks !delayed in
+  { d with extra_remarks }
+
+let emit ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  emit_diagnostic (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+
+let fatal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  fatal_diagnostic (diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
 
 let ( <|> ) : type a. a option -> Code.t -> a =
  fun x e ->

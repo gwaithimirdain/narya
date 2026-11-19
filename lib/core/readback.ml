@@ -16,8 +16,69 @@ module Binding = Ctx.Binding
 
 (* The "Displaying" reader records whether we're reading back for printing to the user or for internal purposes.  For instance, when printing we do more eta-expansion if the user requested it.  Wrapping the "Displaying" module in another module called "Readback" and opening that module allows us to refer to the module as just "Displaying" here, but exports it as "Readback.Displaying" to other files even when they open this file. *)
 
+(* When reading back the solution of a unification metavariable, we record that metavariable and which levels are undefined in its renamed context because they are the image of more than one variable or of one with the wrong annotation (see renamed_ctx), as opposed to outside the image of its renaming altogether. *)
+type unifying = {
+  target : Meta.wrapped;
+  undefined : level -> bool;
+  under_rigid : bool;
+  (* The variables of the current context that the renaming sends to a part of a tuple or abstraction, rather than to a variable, and how to recover them from the variable of the renamed context that it sends there (see renamed_ctx). *)
+  inverted : level -> inversion option;
+  (* The variables of the current context that the renaming sends a variable to underneath nontrivial prekeys, and those prekeys (see renamed_ctx). *)
+  prekeyed : level -> prekey_data option;
+  (* The variables of the current context that are the image of more than one variable of the renamed context, or of more than one leaf of an inverted variable, or both, and those preimages, from which readback chooses one for each occurrence (see resolve_candidate). *)
+  candidates : level -> candidate list option;
+}
+
+(* A preimage of a variable of the current context: a variable of the renamed context, at its own level there, perhaps underneath prekeys; or a leaf of an inverted variable; or a preimage that we can't use and can't rule out, such as one with the wrong annotation. *)
+and candidate =
+  | Cand_var : { var : level; prekeys : prekey_data option } -> candidate
+  | Cand_inverted : inversion -> candidate
+  | Cand_opaque : candidate
+
+(* The prekeys that act on the value of a variable x of a metavariable's context when evaluating an occurrence of it in the environment, with the composite modality of the locks to its right in that context: those that restrict_keys collects when stripping off those locks, and those that lookup_cube collects on the way down to x in what remains (prewhiskered by the annotation of x).  Then the value of x itself, a variable y, may have a key, which acts first.  See readback_prekeyed. *)
+and prekey_data =
+  | Prekey_data :
+      ('a, 'm, 'n, 'b) Modalcell.t
+      * ('c, 'p, 'q, 'd) Modalcell.t
+      * ('e, 'l, 'f) Modality.t
+      * ('g, 'r, 's, 'h) Modalcell.t
+      -> prekey_data
+
+(* A variable y of the current context can occur in the environment of a metavariable as a component of a tuple, or in the body of an abstraction applied to the variables it binds (in any order), or a combination of these, as the value of a variable x of the metavariable's context.  Then y applied to arguments is the result of applying to x a path of projections and applications, each of the latter taking the argument of y in the position where y was applied to the variable bound by the corresponding abstraction; we also record the number of applications.  The leaf can also be a permutation of y; then y is the inverse permutation of the result of the path, which we record.  And the value of x in the environment can be acted on by prekeys, which we also record (see readback_inverted_head). *)
+and inversion = {
+  var : level;
+  path : inversion_step list;
+  napps : int;
+  inverse : any_deg option;
+  prekeys : prekey_data option;
+}
+
+(* A projection is at the dimension of the variable it is projected from, which doesn't change along the path (though a degeneracy acting on the recovered variable changes it everywhere).  A projection of a modal field also records the field's adjunction.  An application applies to the argument in the given position, with the modality of the abstraction, which differs from that of the argument of the recovered variable if there are later projections of modal fields (see invert_value). *)
+and inversion_step =
+  | Proj : D.zero Field.t * 'n D.t -> inversion_step
+  | Mproj : D.zero Field.t * 'n D.t * ('a, 'f, 'g, 'b) Modalcell.adjunction -> inversion_step
+  | Apply : int * ('a, 'mu, 'b) Modality.t -> inversion_step
+
 module Readback = struct
   module Displaying = Algaeff.Reader.Make (Bool)
+
+  (* The "Unifying" reader records whether we're reading back a value to be the solution of a unification metavariable, and if so which one.  In that case the readback must fail, by raising Unsolvable, if the value refers to a variable that isn't in the context (since the solution lives in the smaller context of the metavariable), or if it contains the metavariable itself, either directly or through the definition of some other metavariable.  To avoid the latter, we unfold all solved unification metavariables and all definition metavariables of the current origin (such as let-bound variables), failing if any of the latter don't have a value to unfold to. *)
+  (* This is consulted on every readback of a neutral, so rather than a reader effect, whose cost grows with the number of handlers installed, it is a reference set for a dynamic extent, with the same interface as a reader. *)
+  module Unifying = struct
+    let current : unifying option ref = ref None
+    let read () = !current
+
+    let run ~(env : unifying option) (f : unit -> 'a) : 'a =
+      let old = !current in
+      current := env;
+      Fun.protect ~finally:(fun () -> current := old) f
+
+    let scope (g : unifying option -> unifying option) (f : unit -> 'a) : 'a =
+      run ~env:(g !current) f
+  end
+
+  (* A readback failure is rigid if the value can't be the solution of the metavariable however any other metavariables are solved, because the metavariable itself or a variable outside the image of its renaming occurs in a rigid position: not inside a neutral that is stuck on a metavariable or that might unfold, and not at a singleton type, where it could be replaced by anything else.  Otherwise it is flexible. *)
+  exception Unsolvable of [ `Rigid | `Flexible ]
 end
 
 open Readback
@@ -48,7 +109,7 @@ let rec sort_of_ty : type mode a z.
     ?isfunc:bool -> (mode, z, a) Ctx.t -> mode View.view_type -> [ `Type | `Function | `Other ] =
  fun ?(isfunc = false) ctx -> function
   | Canonical (_, UU _, _, _) -> `Type
-  | Canonical (_, Pi { x = _; filter; doms; cods }, _, tyargs) -> (
+  | Canonical (_, Pi { x = _; filter; implicit = _; doms; cods }, _, tyargs) -> (
       match D.compare (TubeOf.inst tyargs) (BindCube.dim cods) with
       | Neq -> fatal (Dimension_mismatch ("sort_of_ty", TubeOf.inst tyargs, CubeOf.dim doms))
       | Eq ->
@@ -65,10 +126,38 @@ let sort_of_val : type mode. mode Mode.t -> (mode, kinetic) value -> [ `Type | `
   Reporter.discard_errors ~fallback:(fun () -> `Other) @@ fun () ->
   sort_of_ty (Ctx.empty mode) (view_type ty "sort_of_val")
 
+(* The shape of the arguments of a function of a given type, as far as it can be seen by descending through its pi-types (evaluating them, so that a definition that unfolds to a pi-type counts as one): the implicitness of each 0-dimensional pi-type, a higher-dimensional one (whose arguments are cubes, which we don't examine), or the end of the pi-types.  This is used to check the arguments in the definition of a notation against its head, and since that is only a check, if anything goes wrong we say we don't know (though internal errors are still reported).  As in sort_of_ty, we use the context only to create new variables. *)
+type arg_shape =
+  | Arg_pi of implicitness * (unit -> arg_shape)
+  | Arg_higher
+  | Arg_none
+  | Arg_unknown
+
+let rec arg_shape_of_ty : type mode a z. (mode, z, a) Ctx.t -> (mode, kinetic) value -> arg_shape =
+ fun ctx ty ->
+  Reporter.discard_errors ~fallback:(fun () -> Arg_unknown) @@ fun () ->
+  match view_type ty "arg_shape_of_ty" with
+  | Canonical (_, Pi { x = _; filter; implicit; doms; cods }, _, tyargs) -> (
+      match
+        (D.compare_zero (BindCube.dim cods), D.compare (TubeOf.inst tyargs) (BindCube.dim cods))
+      with
+      | Pos _, _ -> Arg_higher
+      | Zero, Neq ->
+          fatal (Dimension_mismatch ("arg_shape_of_ty", TubeOf.inst tyargs, BindCube.dim cods))
+      | Zero, Eq ->
+          Arg_pi
+            ( implicit,
+              fun () ->
+                Reporter.discard_errors ~fallback:(fun () -> Arg_unknown) @@ fun () ->
+                let args, newnfs = dom_vars ctx (Modality.filter_modality filter) doms in
+                let newctx = Ctx.invis ctx (Modality.filter_idempotent filter) newnfs in
+                arg_shape_of_ty newctx (tyof_app cods tyargs filter args) ))
+  | Canonical _ | Neutral _ -> Arg_none
+
 (* Whether a constant is defined to be a canonical type, possibly a family of them.  Such a constant is displayed with a superscript degeneracy rather than a name like "Id", even if the term in which it appears is not itself a type (e.g. a field projection out of a degenerated record type). *)
 let rec is_canonical_def : type mode a. (mode, a, potential) term -> bool = function
   | Canonical _ -> true
-  | Lam (_, _, _, body) -> is_canonical_def body
+  | Lam (_, _, _, _, body) -> is_canonical_def body
   | _ -> false
 
 let is_canonical_const : Constant.t -> [ `Canonical | `Other ] =
@@ -82,7 +171,7 @@ let is_canonical_const : Constant.t -> [ `Canonical | `Other ] =
 (* The same question for a term rather than a value, by looking at the head of its application spine.  This is used when annotating a degeneracy at typechecking time, so that a term displayed without being read back (e.g. by the "synth" command) is displayed the same way as one that is read back. *)
 let rec canonical_head : type mode a s. (mode, a, s) term -> [ `Canonical | `Other ] = function
   | Const c -> is_canonical_const c
-  | App (_, fn, _, _, _) -> canonical_head fn
+  | App (_, fn, _, _, _, _) -> canonical_head fn
   | Inst (_, tm, _) -> canonical_head tm
   | Act (_, tm, _, _) -> canonical_head tm
   | Key { tm; _ } -> canonical_head tm
@@ -128,21 +217,16 @@ let rec is_top_bindings : type mode n d dom modality k.
   | _ -> false
 
 (* Test whether a zero-dimensional environment for a metavariable's context is the identity environment of an ordered context (the one we are reading back in), i.e. whether the two contexts have the same shape and each entry of the environment is the value of the corresponding variable in that context.  If so, we return the resulting equality of checked lengths, built up entry by entry as we compare the shapes.  This is a conservative test: a free variable must appear literally, as a variable with the same level and no degeneracy, key, or arguments, while a let-bound variable must have its own value, up to physical equality.  Usually, though, the environment is (a weakening of) the context itself, which we can recognize entry by entry without looking anything up.  It is used to read back a metavariable whose environment is the identity as a plain Meta, rather than wrapped in a let-only. *)
-let rec is_identity_ordered_env : type mode a b c d.
-    (mode, a, b) Ctx.Ordered.t ->
-    (mode, D.zero, d) env ->
-    (mode, c, d) ordered_termctx ->
-    (b, d) Eq.t option =
+let rec is_identity_ordered_env : type mode a b d.
+    (mode, a, b) Ctx.Ordered.t -> (mode, D.zero, d) env -> (mode, d) Tctx.t -> (b, d) Eq.t option =
  fun ctx env envctx ->
   match (ctx, envctx) with
   (* Weakening entries and aliases contribute nothing to the checked length or the environment. *)
   | Weaken (ctx, _), _ -> is_identity_ordered_env ctx env envctx
-  | _, Weaken (envctx, _) -> is_identity_ordered_env ctx env envctx
   | Snoc (ctx, { vars = Alias; _ }, _), _ -> is_identity_ordered_env ctx env envctx
-  | _, Ext (envctx, { vars = Alias; _ }, _) -> is_identity_ordered_env ctx env envctx
-  | Emp _, Emp _ -> Some Eq
+  | Emp _, Path (Suc (Zero, Proj _), _) -> Some Eq
   (* Locks we test for equality and then remove from both contexts and the environment. *)
-  | Lock (ctx, g), Lock (envctx, g') -> (
+  | Lock (ctx, g), Path (Suc (envctx, Lock g'), o) -> (
       match Modality.Gen.compare g g' with
       | Neq -> None
       | Eq ->
@@ -151,16 +235,15 @@ let rec is_identity_ordered_env : type mode a b c d.
           in
           (* Any nonidentity prekey encountered in the environment means it is not an identity. *)
           if Modalcell.is_id pre then
-            match is_identity_ordered_env ctx env envctx with
+            match is_identity_ordered_env ctx env (Path (envctx, o)) with
             | Some Eq -> Some Eq
             | None -> None
           else None)
-  | Snoc (ctx, ({ vars = Vars; _ } as entry), _), Ext (envctx, ({ vars = Vars; _ } as tentry), _)
-    -> (
+  | Snoc (ctx, ({ vars = Vars; _ } as entry), _), Path (Suc (envctx, Dim (tk, tfilter)), o) -> (
       let modality = Ctx.modality_entry entry in
       let bindings = Ctx.bindings_entry entry in
       let k = CubeOf.dim bindings in
-      match (Modality.compare modality (modality_entry tentry), D.compare k (dim_entry tentry)) with
+      match (Modality.compare modality (Modality.filter_modality tfilter), D.compare k tk) with
       | Eq, Eq -> (
           let exception Not_identity in
           try
@@ -184,7 +267,10 @@ let rec is_identity_ordered_env : type mode a b c d.
                            if
                              not
                                (match (Binding.level b, Binding.value_opt b) with
-                               | Some level, _ -> is_plain_var level (act x s pre)
+                               (* A free variable's value is itself, except in a renamed context, where it may be a permutation of a variable (see renamed_var), and then a plain occurrence of that variable is not the same as the variable bound here. *)
+                               | Some level, Some v ->
+                                   is_plain_var level v.tm && is_plain_var level (act x s pre)
+                               | Some level, None -> is_plain_var level (act x s pre)
                                | None, Some v -> v.tm == act x s pre
                                | None, None -> false)
                            then raise_notrace Not_identity);
@@ -192,7 +278,7 @@ let rec is_identity_ordered_env : type mode a b c d.
                      xs bindings
                | _ -> raise_notrace Not_identity);
             (* If we get here, the top environment entry succeded in matching the context entry, so we recurse. *)
-            match is_identity_ordered_env ctx (remove_top env) envctx with
+            match is_identity_ordered_env ctx (remove_top env) (Path (envctx, o)) with
             | Some Eq -> Some Eq
             | None -> None
           with Not_identity -> None)
@@ -213,33 +299,32 @@ type (_, _, _) meta_readback =
       -> ('mode, 'd, 'b) meta_readback
 
 (* Test whether a zero-dimensional environment for a metavariable's context is the identity on that context weakened by some entries of the given ordered context, each of which may lie behind locks matching ones in the metavariable's context.  This is the same search as in find_meta_readback below, except that we don't look for variables let-bound to the metavariable. *)
-let rec is_weakened_identity : type mode a b c d.
-    (mode, a, b) Ctx.Ordered.t -> (mode, D.zero, d) env -> (mode, c, d) ordered_termctx -> bool =
+let rec is_weakened_identity : type mode a b d.
+    (mode, a, b) Ctx.Ordered.t -> (mode, D.zero, d) env -> (mode, d) Tctx.t -> bool =
  fun ctx env envctx ->
   Option.is_some (is_identity_ordered_env ctx env envctx)
   ||
   match (ctx, envctx) with
   | Snoc (rest, _, _), _ -> is_weakened_identity rest env envctx
   | Weaken (rest, _), _ -> is_weakened_identity rest env envctx
-  | Lock _, Weaken (envctx, _) -> is_weakened_identity ctx env envctx
-  | Lock (ctx, g), Lock (envctx, g') -> (
+  | Lock (ctx, g), Path (Suc (envctx, Lock g'), o) -> (
       match Modality.Gen.compare g g' with
       | Neq -> false
       | Eq ->
           let (Restrict_keys (env, pre)) =
             restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g)
           in
-          Modalcell.is_id pre && is_weakened_identity ctx env envctx)
+          Modalcell.is_id pre && is_weakened_identity ctx env (Path (envctx, o)))
   | _ -> false
 
 (* Test whether some face of a context entry is a variable that is let-bound to a given metavariable (whose full context is given) in an environment that is the identity, possibly weakened, on the context to its left locked by the modality of the variable, and whether the given environment for that metavariable (with the locks to the right of the variable stripped off) is also a weakened identity on the context to its left.  If so, return that face.  (The metavariable can be defined in a context shorter than the one to the left of the variable, as happens for the variables bound by a let-rec, whose metavariables all live in the context of the let-rec.) *)
-let let_var_of_meta : type mode a b bb c d x s mmode cfull dfull dom modality f k.
+let let_var_of_meta : type mode a b bb d x s mmode dfull dom modality f k.
     (mmode, x, dfull, s) Meta.t ->
-    (mmode, cfull, dfull) ordered_termctx ->
+    (mmode, dfull) Tctx.t ->
     (mode, a, b) Ctx.Ordered.t ->
     (dom, modality, mode, f, k, b, bb) Ctx.entry ->
     (mode, D.zero, d) env ->
-    (mode, c, d) ordered_termctx ->
+    (mode, d) Tctx.t ->
     k sface_of option =
  fun meta fullctx ctx entry env envctx ->
   let modality = Ctx.modality_entry entry in
@@ -247,7 +332,8 @@ let let_var_of_meta : type mode a b bb c d x s mmode cfull dfull dom modality f 
    fun b ->
     match (Binding.level b, Binding.value_opt b) with
     | ( None,
-        Some { tm = Neu { head = Live (Meta { meta = meta'; env = xenv; ins }); args = Emp; _ }; _ }
+        Some
+          { tm = Neu { head = Live (Meta { meta = meta'; env = xenv; ins; _ }); args = Emp; _ }; _ }
       ) -> (
         (* The variable is let-bound to a metavariable, so we compare it to our given one.  We also check whether its environment is 0-dimensional and it has no insertion. *)
         match (Meta.compare meta' meta, D.compare (dim_env xenv) D.zero, is_id_ins ins) with
@@ -269,12 +355,12 @@ let let_var_of_meta : type mode a b bb c d x s mmode cfull dfull dom modality f 
   !result
 
 (* Search for a way to read back a metavariable whose environment is the identity on the context we are reading back in, possibly weakened by some variables, each of which may lie behind locks. *)
-let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
+let rec find_meta_readback : type mode a b d x s mmode dfull.
     (mmode, x, dfull, s) Meta.t ->
-    (mmode, cfull, dfull) ordered_termctx ->
+    (mmode, dfull) Tctx.t ->
     (mode, a, b) Ctx.Ordered.t ->
     (mode, D.zero, d) env ->
-    (mode, c, d) ordered_termctx ->
+    (mode, d) Tctx.t ->
     (mode, d, b) meta_readback option =
  fun meta fullctx ctx env envctx ->
   let open Monad.Ops (Monad.Maybe) in
@@ -303,9 +389,8 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
                   Some (Let_var (plus_with_locks_dim newplus k filter, fa, f))
               | None -> None))
       | Weaken (rest, _), _ -> find_meta_readback meta fullctx rest env envctx
-      | Lock _, Weaken (envctx, _) -> find_meta_readback meta fullctx ctx env envctx
       (* If the context ends with a lock that matches one at the end of the metavariable's context, we remove both and search behind them. *)
-      | Lock (ctx, g), Lock (envctx, g') -> (
+      | Lock (ctx, g), Path (Suc (envctx, Lock g'), o) -> (
           match Modality.Gen.compare g g' with
           | Neq -> None
           | Eq ->
@@ -315,7 +400,7 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
               in
               (* If removing that lock encounters a prekey, then the environment is not a weakened identity.  Otherwise, we can try again with the locks removed, re-locking the result. *)
               if Modalcell.is_id pre then
-                match find_meta_readback meta fullctx ctx env envctx with
+                match find_meta_readback meta fullctx ctx env (Path (envctx, o)) with
                 | Some (Weakened_meta (plus, newplus)) ->
                     Some (Weakened_meta (plus_lock_suc plus g, plus_with_locks_lock newplus g))
                 | Some (Let_var (newplus, fa, filter)) ->
@@ -325,19 +410,21 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
       | _ -> None)
 
 (* Check whether the environment on a metavariable is a weakened identity on the context we are reading back in, possibly prekeyed (as happens when a let-bound variable whose value is the metavariable is used with a key).  If so, we can read it back as either a Term.Meta, or a Term.Var if there is a variable let-bound to it, with a Key.  Since this is only an optimization of display, any errors encountered just mean that the search fails. *)
-let readback_meta_at_idenv : type mode a b n c d x s.
+let readback_meta_at_idenv : type mode a b n d x s.
     (mode, a, b) Ctx.t ->
     (mode, x, d, s) Meta.t ->
+    (mode, d, s, kinetic) meta_kind ->
     (mode, n, d) env ->
-    (mode, c, d) termctx ->
     (mode, b, kinetic) term option =
- fun ctx meta env (Permute (_, envctx)) ->
+ fun ctx meta kind env ->
   let open Monad.Ops (Monad.Maybe) in
+  let envctx = Meta.tctx meta in
   let search : type a b.
       (mode, a, b) Ctx.t -> (mode, D.zero, d) env -> (mode, b, kinetic) term option =
    fun (Permute { ctx; _ }) env ->
     match find_meta_readback meta envctx ctx env envctx with
-    | Some (Weakened_meta (plus, newplus)) -> Some (weaken_gen plus (Meta (meta, Kinetic)) newplus)
+    | Some (Weakened_meta (plus, newplus)) ->
+        Some (weaken_gen plus (Meta (meta, kind, Kinetic)) newplus)
     | Some (Let_var (newplus, fa, filter)) -> (
         (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
         match
@@ -348,12 +435,13 @@ let readback_meta_at_idenv : type mode a b n c d x s.
     | None -> None in
   Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
   match (D.compare (dim_env env) D.zero, envctx) with
-  | Eq, Lock (_, g) ->
+  | Eq, Path (Suc (_, Lock g), _) ->
       let (Restrict_keys (lenv, pre)) =
         restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
       if Modalcell.is_id pre then search ctx env
       else
-        let (Remove_lock (kctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt pre) in
+        (* If the context doesn't have the locks that the prekey needs, which can happen when reading back the solution of a unification metavariable, then the search fails. *)
+        let* (Remove_lock (kctx, plus_tgt)) = Ctx.remove_lock_opt ctx (Modalcell.vtgt pre) in
         let (Locked (plus_src, kctx)) = Ctx.lock kctx (Modalcell.vsrc pre) in
         let* tm = search kctx (Lock (lenv, g)) in
         return (Key { tm; cell = pre; plus_tgt; plus_src })
@@ -361,12 +449,9 @@ let readback_meta_at_idenv : type mode a b n c d x s.
   | Neq, _ -> None
 
 (* Whether a term context has no checked variables, but only aliases and weakenings. *)
-let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mode emp) Eq.t option =
-  function
-  | Emp _ -> Some Eq
-  | Ext (ctx, { vars = Alias; _ }, _) -> no_checked_vars ctx
-  | Weaken (ctx, _) -> no_checked_vars ctx
-  | Ext _ | Lock _ -> None
+let no_checked_vars : type mode b. (mode, b) Tctx.t -> (b, mode emp) Eq.t option = function
+  | Path (Suc (Zero, Proj _), _) -> Some Eq
+  | _ -> None
 
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
@@ -374,6 +459,100 @@ let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mod
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta.
 
    In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible.  A case tree that is stuck, however, is not reconstructed: it is displayed as the application spine of the neutral whose value it is. *)
+
+(* Remove locks from a context during readback.  When reading back the solution of a unification metavariable, the context might not have the required locks, which means there is no solution. *)
+let remove_lock : type mode modality cod a bc.
+    (mode, a, bc) Ctx.t ->
+    (mode, modality, cod) Modality.t ->
+    (cod, modality, mode, bc) Ctx.remove_lock =
+ fun ctx modality ->
+  match Ctx.remove_lock_opt ctx modality with
+  | Some result -> result
+  | None when Option.is_some (Unifying.read ()) -> raise (Unsolvable `Flexible)
+  | None -> Ctx.remove_lock ctx modality
+
+(* ********** Display budget ********** *)
+
+(* A term that is read back to be displayed can be too large to display usefully, or even to construct: a value can be small, through sharing, but have an enormous normal form.  So a readback for display can be given a budget, the number of subterms it may produce.  If it would produce more, it is abandoned and read back again with its depth limited, the subterms below that depth being replaced by Overflow, at a depth where it fits.  Depth is counted so that it matches the displayed nesting: the codomain of a pi-type, and the body of an abstraction, are at the same depth as the pi-type or abstraction, since iterated ones are displayed as a single flat chain. *)
+type display_budget = {
+  (* The number of subterms that may still be produced. *)
+  mutable remaining : int;
+  (* Subterms deeper than this are replaced by Overflow. *)
+  cutoff : int;
+  mutable depth : int;
+  mutable max_depth : int;
+  (* The number of subterms produced at each depth, used to choose a depth after an overflow. *)
+  mutable counts : int array;
+  (* Whether readback_at has just counted a subterm that it is passing to readback_val, which shouldn't count it again. *)
+  mutable after_at : bool;
+}
+
+(* Raised when a budget is exhausted, with the greatest depth reached so far. *)
+exception Display_overflow of int
+
+(* The budget of the current readback, if any.  This is a reference rather than an effect, since it is consulted for every subterm. *)
+let display_budget : display_budget option ref = ref None
+
+let new_budget size cutoff =
+  { remaining = size; cutoff; depth = 0; max_depth = 0; counts = Array.make 16 0; after_at = false }
+
+(* Produce a subterm within a budget, or replace it by the result of [cut] if it is too deep.  If an exception escapes, the readback it belongs to is abandoned, so we don't need to restore the depth. *)
+let within_budget (b : display_budget) ~(at : bool) (cut : unit -> 'a) (f : unit -> 'a) : 'a =
+  if (not at) && b.after_at then (
+    b.after_at <- false;
+    f ())
+  else if b.depth >= b.cutoff then cut ()
+  else (
+    b.remaining <- b.remaining - 1;
+    if b.remaining < 0 then raise (Display_overflow b.max_depth);
+    b.depth <- b.depth + 1;
+    if b.depth > b.max_depth then b.max_depth <- b.depth;
+    if b.depth >= Array.length b.counts then (
+      let counts = Array.make (2 * b.depth) 0 in
+      Array.blit b.counts 0 counts 0 (Array.length b.counts);
+      b.counts <- counts);
+    b.counts.(b.depth) <- b.counts.(b.depth) + 1;
+    b.after_at <- at;
+    let result = f () in
+    b.depth <- b.depth - 1;
+    result)
+
+(* Read back a subterm at the same depth as its parent, rather than one deeper. *)
+let at_same_depth () =
+  match !display_budget with
+  | Some b -> b.depth <- b.depth - 1
+  | None -> ()
+
+let after_same_depth () =
+  match !display_budget with
+  | Some b -> b.depth <- b.depth + 1
+  | None -> ()
+
+(* Run a readback for display with a budget (None meaning unlimited), returning its result and whether it had to be truncated.  The first attempt is unlimited in depth, so a term that fits is read back only once.  If it overflows, we don't need the greatest depth at which it would fit, only some indication of what it looks like.  If the first attempt overflowed after reaching depth d, then all the subterms it produced lie within depth d, so it can't fit at depth d.  We guess a depth from the number of subterms the first attempt produced at each depth, as the greatest depth whose subterms so far fill at most half of the budget (since the first attempt only saw part of the term), and halve it until the term fits. *)
+let budgeted (size : int option) (f : unit -> 'a) : 'a * bool =
+  match size with
+  | None -> (f (), false)
+  | Some size -> (
+      let attempt b =
+        let saved = !display_budget in
+        display_budget := Some b;
+        Fun.protect ~finally:(fun () -> display_budget := saved) f in
+      let first = new_budget size max_int in
+      match attempt first with
+      | result -> (result, false)
+      | exception Display_overflow d ->
+          let rec guess c filled =
+            if c >= d then d - 1
+            else
+              let filled = filled + first.counts.(c) in
+              if filled > size / 2 then c - 1 else guess (c + 1) filled in
+          let rec descend c =
+            if c <= 0 then attempt (new_budget size 0)
+            else
+              match attempt (new_budget size c) with
+              | result -> result
+              | exception Display_overflow _ -> descend (c / 2) in
+          (descend (max 0 (guess 1 0)), true))
 
 (* ********** Primary readback functions ********** *)
 
@@ -386,6 +565,153 @@ type (_, _, _, _, _, _) readback_entry =
       -> ('mode, 'ax, 'bb, 'modality, 'dom, 'n) readback_entry
 
 (* These functions deal primarily with kinetic values, and with the value types that are shared between kinetic and potential values, but they include hooks to detect when readback of potential values is called for and pass off to those functions defined later. *)
+
+(* In a renamed context (see below), a variable of the metavariable's context may be sent to a permutation p of a variable y of the current context.  Inverting this, y is the inverse permutation of the variable of the metavariable's context, and so a degeneracy acting on y acts on that.  In any other context, the value of a free variable is that variable itself, so this does nothing. *)
+let renamed_deg : type mode s m n. (mode, s) value -> (m, n) deg -> any_deg =
+ fun value deg ->
+  match value with
+  | Neu { head = Live (Var { deg = p; _ }); args = Emp; _ } -> (
+      match (is_id_deg p, perm_of_deg p) with
+      | None, Some p ->
+          let (DegExt (_, _, deg)) = comp_deg_extending (deg_of_perm (perm_inv p)) deg in
+          Any_deg deg
+      | _ -> Any_deg deg)
+  | _ -> Any_deg deg
+
+(* When checking whether a value avoids some variables, we may want to know whether it does so up to the solutions of unsolved metavariables, i.e. whether its only occurrences of those variables are inside neutrals that are blocked on metavariables, whose solutions might eliminate them (see Check.check_var_match).  If so, this is set to a function to call with the blocker of such a neutral, which is then read back as a failed term, since the result of such a readback is discarded anyway. *)
+let blocked_dependence : (blocker -> unit) option ref = ref None
+
+(* When reading back the solution of a unification metavariable, how to recover a variable of the current context that its renaming sends to part of a tuple or abstraction, if it does. *)
+let inverted_var (level : level) : inversion option =
+  match Unifying.read () with
+  | Some { inverted; _ } -> inverted level
+  | None -> None
+
+(* When reading back the solution of a unification metavariable, the preimages of a variable of the current context that has more than one, if it does. *)
+let candidates_of (level : level) : candidate list option =
+  match Unifying.read () with
+  | Some { candidates; _ } -> candidates level
+  | None -> None
+
+(* Whether there is a unique way for something to fit: Unclear_fit means either that there is more than one, or that the mode theory can't tell us all the possibilities. *)
+type 'a fit = Unique_fit of 'a | No_fit | Unclear_fit
+
+(* The length of an application spine. *)
+let rec spine_length : type hmode mode any. (hmode, mode, any, live) apps -> int = function
+  | Emp -> 0
+  | Snoc (args, _) -> spine_length args + 1
+
+(* The value obtained by applying to a variable, as seen from behind its own modal annotation, the projections at the start of the path of an inverted variable (see inversion), until we reach an application or the end of the path, together with the modal annotation of the result, which a variable recovered there would have, and the rest of the path.  A modal field is projected from the variable keyed by the unit of its adjunction, as in readback at a record type, and its value lives behind a lock by the right adjoint. *)
+type any_cell = Any_cell : ('a, 'm, 'n, 'b) Modalcell.t -> any_cell
+
+(* Whether acting by a cell on a variable whose key is the identity on a modality gives that variable a given key, whose source is that modality.  This is how act_head acts on a variable: it postwhiskers the cell so that its source is the target of the variable's key, the given modality, and composes.  Since acting by a cell is the same as acting by any postwhiskering of it, and key_vcomp may omit identities that would postwhisker the other cell, this is the right way to compare a composite of keys with the key of a variable, rather than requiring their sources and targets to be equal. *)
+let acts_as : type a m n b c p q d. (a, m, n, b) Modalcell.t -> (c, p, q, d) Modalcell.t -> bool =
+ fun cell key ->
+  let ann = Modalcell.vsrc key in
+  match Mode.compare (Modalcell.hsrc cell) (Modality.src ann) with
+  | Neq -> false
+  | Eq -> (
+      match Modality.factor ann (Modalcell.vsrc cell) with
+      | Some (Factor (k, comp)) -> (
+          let (Wrap acted) = Modalcell.vcomp_extending k comp cell (Modalcell.id ann) in
+          match Modalcell.compare acted key with
+          | Eq -> true
+          | Neq -> false)
+      | None -> false)
+
+(* No prekeys, but a key on the value of the variable. *)
+let entry_key_only : type a m n b. (a, m, n, b) Modalcell.t -> prekey_data =
+ fun key ->
+  let mode = Modalcell.hsrc key in
+  Prekey_data (Modalcell.id2 mode, Modalcell.id2 mode, Modality.id mode, key)
+
+(* Prekeys, together with a key on the value of the variable that they act on, if it has one. *)
+let with_entry_key (prekeys : prekey_data option) (key : any_cell option) : prekey_data option =
+  match (prekeys, key) with
+  | None, None -> None
+  | None, Some (Any_cell key) -> Some (entry_key_only key)
+  | Some (Prekey_data (outer, inner, mlocks, _)), Some (Any_cell key) ->
+      Some (Prekey_data (outer, inner, mlocks, key))
+  | Some _, None -> prekeys
+
+type any_adj = Any_adj : ('a, 'f, 'g, 'b) Modalcell.adjunction -> any_adj
+type any_value = Any_value : 'm Mode.t * ('m, kinetic) value -> any_value
+
+(* The value of a variable recovered from an inverted one, as far as the first application in the path that recovers it, with the rest of the path (see readback_inverted_head). *)
+type inverted_value =
+  | Inverted_value : 'm Mode.t * ('m, kinetic) value * inversion_step list -> inverted_value
+
+(* A cube of arguments of an application spine, at some mode, and the dimension of the application. *)
+type arg_cube = Arg_cube : 'dom Mode.t * 'm D.t * ('n, 'dom normal) CubeOf.t -> arg_cube
+
+type _ inverted_prefix =
+  | Prefix :
+      ('m, 'a, 'b) Modality.t * ('m, kinetic) value * inversion_step list
+      -> 'b inverted_prefix
+
+let rec inverted_prefix : type m a b.
+    (m, a, b) Modality.t -> (m, kinetic) value -> inversion_step list -> b inverted_prefix =
+ fun ann v path ->
+  match path with
+  | Proj (fld, n) :: path ->
+      inverted_prefix ann (field_term (Modality.id (Modality.src ann)) v fld (ins_zero n)) path
+  | Mproj (fld, n, Adjunction { left; right; unit; _ }) :: path -> (
+      match Mode.compare (Modality.src left) (Modality.src ann) with
+      | Neq -> raise (Unsolvable `Flexible)
+      | Eq ->
+          let (Val c) = field left (act_value v (id_deg D.zero) unit) fld (ins_zero n) in
+          let (Comp comp) = Modality.comp right in
+          inverted_prefix (Modality.comp_out ann comp) c path)
+  | _ -> Prefix (ann, v, path)
+
+(* The projections at the start of an inverted path, before its first application, and the rest of it. *)
+let split_prefix (path : inversion_step list) : inversion_step list * inversion_step list =
+  let rec split acc = function
+    | ((Proj _ | Mproj _) as step) :: path -> split (step :: acc) path
+    | path -> (List.rev acc, path) in
+  split [] path
+
+(* Given the annotation A of the value of an inverted path before its first application (see inverted_prefix), the rest of the path, and the key k of an occurrence of the variable that the path recovers, compute the key with which to act on that value.  Keys commute with applications and ordinary projections, so without modal projections in the rest of the path this is k itself.  A modal projection (by ℓ ⊣ r, with unit η) changes the annotation from A to r;A (in diagrammatic order), so that k is a key r;A ⇒ Λ, and its argument lives behind a further lock by ℓ, so it is acted on by (ℓ;k) ∘ (η;A) : A ⇒ ℓ;r;A ⇒ ℓ;Λ.  This is the composite of the unit, which makes the value visible behind the locks of both adjoints, as when projecting a modal field from a variable in readback at a record type, with the key k prewhiskered by the lock that the projection adds, as restrict_keys would. *)
+let rec key_before : type m a b x y z w.
+    (m, a, b) Modality.t -> inversion_step list -> (x, y, z, w) Modalcell.t -> any_cell =
+ fun ann path key ->
+  match path with
+  | [] -> (
+      match Modality.compare (Modalcell.vsrc key) ann with
+      | Eq -> Any_cell key
+      | Neq -> raise (Unsolvable `Flexible))
+  | (Proj _ | Apply _) :: path -> key_before ann path key
+  | Mproj (_, _, Adjunction { left; right; unit; _ }) :: path -> (
+      match Mode.compare (Modality.src left) (Modality.src ann) with
+      | Neq -> raise (Unsolvable `Flexible)
+      | Eq -> (
+          let (Comp comp) = Modality.comp right in
+          let (Any_cell k) = key_before (Modality.comp_out ann comp) path key in
+          match Mode.compare (Modalcell.hsrc k) (Modality.tgt left) with
+          | Neq -> raise (Unsolvable `Flexible)
+          | Eq ->
+              let (Wrap k) = Modalcell.prewhisker_wrapped k left in
+              let (Wrap u) = Modalcell.postwhisker_wrapped ann unit in
+              let (Wrap c) = key_vcomp k u in
+              Any_cell c))
+
+(* Run a readback, calling the given function on the blocker of each blocked neutral that it can't read back because it refers to a variable not in the context. *)
+let with_blocked_dependence (f : blocker -> unit) (readback : unit -> 'a) : 'a =
+  let old = !blocked_dependence in
+  blocked_dependence := Some f;
+  Fun.protect ~finally:(fun () -> blocked_dependence := old) readback
+
+(* When reading back the solution of a unification metavariable, record that we are inside a rigid neutral or constructor. *)
+let rigidly (f : unit -> 'a) : 'a =
+  match Unifying.read () with
+  | Some ({ under_rigid = false; _ } as u) ->
+      Unifying.run ~env:(Some { u with under_rigid = true }) f
+  | _ -> f ()
+
+(* Whether a type is a singleton, which is defined downstream in Unify. *)
+type singleton = { test : 'mode 'a 'b. ('mode, 'a, 'b) Ctx.t -> ('mode, kinetic) value -> bool }
+
+let singleton : singleton ref = ref { test = (fun _ _ -> false) }
 
 (* To read back a normal form, we simply dispatch to type-directed readback at its stored type.  *)
 let rec readback_nf : type mode a z.
@@ -405,11 +731,37 @@ and readback_eval : type mode a z s.
   | Val v, _ -> readback_at ~eta status ctx v ty
   (* In the realize case the value is kinetic, so the stored self-term in the Potential status is discarded. *)
   | Realize v, _ -> Realize (readback_at ~eta Kinetic ctx v ty)
-  (* A stuck case tree is displayed as the application spine of the neutral that the status carries.  Only a potential readback can meet an Unrealized, so that neutral is always available. *)
-  | Unrealized, Potential neutral -> Realize (readback_val ctx neutral)
+  (* A stuck case tree is displayed as the application spine of the neutral that the status carries, whether it is stuck permanently or only on an unsolved unification metavariable.  Only a potential readback can meet an Unrealized or Blocked, so that neutral is always available. *)
+  | (Unrealized | Blocked _), Potential neutral -> Realize (readback_val ctx neutral)
 
 (* A failed term is read back as Failed, whatever its type.  And a term whose type is failed can't be eta-expanded, so we read it back without its type if possible. *)
 and readback_at : type mode a z s.
+    ?eta:bool ->
+    (mode, s) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (mode, s) value ->
+    (mode, kinetic) value ->
+    (mode, a, s) term =
+ fun ?eta status ctx tm ty ->
+  match !display_budget with
+  | None -> readback_at_unbudgeted ?eta status ctx tm ty
+  | Some b -> readback_at_budgeted b ?eta status ctx tm ty
+
+(* Kept separate from readback_at, so that the closures it allocates don't cost anything when there is no budget. *)
+and readback_at_budgeted : type mode a z s.
+    display_budget ->
+    ?eta:bool ->
+    (mode, s) readback_status ->
+    (mode, z, a) Ctx.t ->
+    (mode, s) value ->
+    (mode, kinetic) value ->
+    (mode, a, s) term =
+ fun b ?eta status ctx tm ty ->
+  within_budget b ~at:true
+    (fun () -> Overflow)
+    (fun () -> readback_at_unbudgeted ?eta status ctx tm ty)
+
+and readback_at_unbudgeted : type mode a z s.
     ?eta:bool ->
     (mode, s) readback_status ->
     (mode, z, a) Ctx.t ->
@@ -421,7 +773,13 @@ and readback_at : type mode a z s.
   | Neu { head = Failed _; _ }, _ -> Failed Kinetic
   | Neu { head = Live _; _ }, Neu { head = Failed _; _ } -> readback_val ctx tm
   | _, Neu { head = Failed _; _ } -> fatal (Dependent "reading back at a failed type")
-  | _ -> readback_at_type ?eta status ctx tm ty
+  | _ -> (
+      match Unifying.read () with
+      | None -> readback_at_type ?eta status ctx tm ty
+      (* A rigid failure at a singleton type isn't really rigid, since anything else of that type could be used instead. *)
+      | Some _ -> (
+          try readback_at_type ?eta status ctx tm ty
+          with Unsolvable `Rigid when !singleton.test ctx ty -> raise (Unsolvable `Flexible)))
 
 (* Readback is energy-polymorphic: it reads back a value of any energy 's into an ('a, 's) term.  In practice it is only ever called on a *potential* value for display (reading back the forced value of a neutral); in particular, that's the only way a comatch (a no-eta struct) reaches the readback-at-Codata branch.  All other callers read back only kinetic values, with neutral resulting in application spines. *)
 and readback_at_type : type mode a z s.
@@ -436,7 +794,8 @@ and readback_at_type : type mode a z s.
   let vty = view_type ty "readback_at" in
   match (vty, view) with
   (* Abstractions (kinetic or potential) are read back uniformly by extending the context using their pi-type. *)
-  | Canonical (_, Pi { x = _; filter; doms; cods }, ins, tyargs), Lam (x, filter2, body) -> (
+  | Canonical (_, Pi { x = _; filter; implicit; doms; cods }, ins, tyargs), Lam (x, filter2, body)
+    -> (
       let Eq = eq_of_ins_zero ins in
       (* The instantiation of the type, and the dimension of the binder, are both the *outer* (unfiltered) dimension of the pi-type; the variable cube and the domains live at the filtered dimension. *)
       let n = BindCube.dim cods in
@@ -460,12 +819,15 @@ and readback_at_type : type mode a z s.
           let (Plus af) = N.plus (NICubeOf.out N.zero xs) in
           let newctx = Ctx.vis ctx (Modality.filter_idempotent filter) m mn xs newnfs af in
           let output = tyof_app cods tyargs filter args in
+          at_same_depth ();
           let body =
             readback_eval ~eta (apply_status status filter args) newctx (apply tm filter args)
               output in
-          Term.Lam (x, n, filter, body))
+          after_same_depth ();
+          (* An abstraction is implicit exactly when its function-type is. *)
+          Term.Lam (x, n, filter, implicit, body))
   (* If eta-expansion of functions is enabled, we do an eta-expanding readback of any term at a pi-type. *)
-  | Canonical (_, Pi { x = name; filter; doms; cods }, ins, tyargs), tm when eta ->
+  | Canonical (_, Pi { x = name; filter; implicit; doms; cods }, ins, tyargs), tm when eta ->
       let modality = Modality.filter_modality filter in
       let Eq = eq_of_ins_zero ins in
       let name = View.fill_hints doms name in
@@ -477,6 +839,7 @@ and readback_at_type : type mode a z s.
         ( name,
           BindCube.dim cods,
           filter,
+          implicit,
           readback_eval ~eta
             (apply_status status filter newargs)
             newctx (apply tm filter newargs) output )
@@ -687,6 +1050,7 @@ and readback_at_type : type mode a z s.
           Constr
             ( xconstr,
               dim_env env,
+              rigidly @@ fun () ->
               readback_at_pi ctx (dim_env env) (lazy (force_eval_term fnty)) xargs tyarg_args ))
   (* Reading back canonical types themselves (data, codata, record), *at* a universe, happens only for potential terms. *)
   | ( Canonical
@@ -732,18 +1096,99 @@ and readback_at_type : type mode a z s.
 (* The synthesizing readback only ever applies to neutrals (a kinetic value).  Any other value reaching it (which can only be a potential value, since other callers pass kinetic neutrals) is an anomaly. *)
 and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
  fun ctx x ->
+  match !display_budget with
+  | None -> readback_val_unbudgeted ctx x
+  | Some b -> readback_val_budgeted b ctx x
+
+and readback_val_budgeted : type mode a z s.
+    display_budget -> (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
+ fun b ctx x ->
+  within_budget b ~at:false (fun () -> Overflow) (fun () -> readback_val_unbudgeted ctx x)
+
+and readback_val_unbudgeted : type mode a z s.
+    (mode, z, a) Ctx.t -> (mode, s) value -> (mode, a, s) term =
+ fun ctx x ->
   match x with
   (* A failed term is read back as Failed, without forcing its value (which would fail). *)
   | Neu { head = Failed _; _ } -> Failed Kinetic
-  | Neu { head = Live head; args; value; ty } -> (
-      match (force_eval value, Displaying.read ()) with
-      | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
-      | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
-      | _ -> readback_neu ~canonical:`Other ctx head args)
+  (* A variable that the renamed context recovers by applying another variable (see inversion) can only be read back when applied to enough arguments, so we eta-expand it if it isn't.  We expand only once here, without eta-expanding the body, since the body is again such a variable with one more argument, so that we expand only as many times as necessary. *)
+  | Neu { head = Live (Var { level; key; _ }); args; ty; _ }
+    when match inverted_occurrence ctx level key with
+         | Some { napps; _ } -> spine_length args < napps
+         | None -> false -> (
+      match view_type (Lazy.force ty) "readback_val" with
+      | Canonical (_, Pi { x = name; filter; implicit; doms; cods }, ins, tyargs) ->
+          let modality = Modality.filter_modality filter in
+          let Eq = eq_of_ins_zero ins in
+          let name = View.fill_hints doms name in
+          let newargs, newnfs = dom_vars ctx modality doms in
+          let (Any_ctx newctx) =
+            Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
+          let output = tyof_app cods tyargs filter newargs in
+          Term.Lam
+            ( name,
+              BindCube.dim cods,
+              filter,
+              implicit,
+              readback_eval Kinetic newctx (apply x filter newargs) output )
+      | _ -> raise (Unsolvable `Flexible))
+  | Neu { head = Live head; args; value; ty; acted = _ } -> (
+      match unfold_solved head value with
+      | Some v -> readback_at Kinetic ctx v (Lazy.force ty)
+      | None -> (
+          match (force_eval value, Displaying.read ()) with
+          | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
+          | Val (Canonical _), _ ->
+              rigidly @@ fun () -> readback_neu ~canonical:`Canonical ctx head args
+          (* A neutral that is permanently stuck is rigid, but one that is stuck on a metavariable or might unfold is not, since its arguments might go away. *)
+          | Unrealized, _ -> rigidly @@ fun () -> readback_neu ~canonical:`Other ctx head args
+          | Blocked b, _ when Option.is_some !blocked_dependence ->
+              Reporter.try_with
+                ~fatal:(fun d ->
+                  match d.message with
+                  | No_such_level _ ->
+                      Option.iter (fun f -> f b) !blocked_dependence;
+                      (Failed Kinetic : (_, _, kinetic) term)
+                  | _ -> Reporter.fatal_diagnostic d)
+                (fun () -> readback_neu ~canonical:`Other ctx head args)
+          | _ -> (
+              try readback_neu ~canonical:`Other ctx head args
+              with Unsolvable `Rigid -> raise (Unsolvable `Flexible))))
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
   | Canonical _ -> fatal (Anomaly "unexpected canonical type in synthesizing readback")
+
+(* A solved unification metavariable is always read back as its solution, since that is what it will become when the term is linked.  This matters because its environment contains its whole context, and thus might use variables that aren't in the context we are reading back in, even if the solution doesn't.  Moreover, when reading back the solution of another unification metavariable (see Unifying), decide whether a neutral with a given head must be unfolded to its value, which is then returned, or whether the readback fails. *)
+and unfold_solved : type hmode mode.
+    hmode head -> (mode, potential) lazy_eval -> (mode, kinetic) value option =
+ fun head value ->
+  match Unifying.read () with
+  | None -> (
+      match head with
+      | Meta { kind = Unif_meta unif; _ } when Global.unif_solved unif -> (
+          match force_eval value with
+          | Realize v -> Some v
+          | _ -> None)
+      | _ -> None)
+  | Some { target = Wrap target; _ } -> (
+      let unfold () =
+        match force_eval value with
+        | Realize v -> Some v
+        | _ -> raise (Unsolvable `Flexible) in
+      match head with
+      | Meta { meta; kind = Unif_meta unif; _ } -> (
+          match Meta.compare meta target with
+          (* The metavariable being solved can't occur in its solution.  This is rigid if the occurrence is strictly inside a rigid neutral or a constructor, since then the solution would have to be bigger than itself.  But an occurrence at the top of the value, perhaps under lambdas, tuples, or permutations, is not, since for instance the metavariable could be a symmetric square, or equal to its own eta-expansion. *)
+          | Eq ->
+              raise
+                (Unsolvable
+                   (if (Option.get (Unifying.read ())).under_rigid then `Rigid else `Flexible))
+          | Neq -> if Global.unif_solved unif then unfold () else None)
+      | Meta { meta; kind = Global_meta; _ }
+        when Option.is_some (Meta.sort_of meta) && Meta.origin meta = Origin.Origin.current () ->
+          unfold ()
+      | _ -> None)
 
 and readback_neu : type hmode mode a z any.
     ?canonical:[ `Canonical | `Other ] ->
@@ -754,65 +1199,471 @@ and readback_neu : type hmode mode a z any.
  fun ?(canonical = `Other) ctx head apps ->
   (* The degeneracies appearing on the spine of a neutral are all *permutations*, which are never displayed with a name like "refl" or "Id" that depends on the sort of their argument.  Thus the only place the sort matters is at the head, where it is computed from the type of the head itself (see readback_head).  Here we only pass along whether the whole neutral is a canonical type, which determines whether a reflexivity at the head is displayed as a superscript. *)
   let sort = (`Other, canonical) in
-  match (apps, head) with
-  | Emp, _ -> readback_head ~canonical ctx head
-  | Snoc (apps, Arg (filter, args, ins)), _ ->
-      let modality = Modality.filter_modality filter in
-      let (To p) = deg_of_ins ins in
-      let (Locked (plus, lctx)) = Ctx.lock ctx modality in
-      Term.Act
-        ( Kinetic,
-          App
-            ( Kinetic,
-              readback_neu ~canonical ctx head apps,
-              cod_left_ins ins,
-              filter,
-              Modal
-                ( modality,
-                  plus,
-                  CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ),
-          p,
-          sort )
-  | Snoc (apps, Field (filter, fld, fldplus, ins)), _ -> (
-      let fm = Modality.filter_modality filter in
-      let (To p) = deg_of_ins ins in
-      (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
-      let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
-      let t = cod_left_ins ins in
-      let inner = readback_neu ~canonical lctx head apps in
-      match Modality.filter_is_trivial t filter with
-      | Some Eq ->
-          (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
+  (* A variable that the renamed context recovers by applying another variable (see inversion) is read back with its first arguments in place of those applications, so we do that when we have peeled off the rest of the spine. *)
+  let inverted : (mode, a, kinetic) term option =
+    match head with
+    | Var { level; key; _ } -> (
+        match inverted_occurrence ctx level key with
+        | Some ({ napps; _ } as inversion) when napps > 0 ->
+            let n = spine_length apps in
+            (* A degeneracy acting on the variable acts on the part of the path before the first application (see readback_inverted_head). *)
+            if n < napps then raise (Unsolvable `Flexible)
+            else if n = napps then Some (readback_inverted_apps ctx head inversion apps)
+            else None
+        | _ -> None)
+    | _ -> None in
+  match inverted with
+  | Some tm -> tm
+  | None -> (
+      match (apps, head) with
+      | Emp, _ -> readback_head ~canonical ctx head
+      | Snoc (apps, Arg (filter, implicit, args, ins)), _ ->
+          let modality = Modality.filter_modality filter in
+          let (To p) = deg_of_ins ins in
+          let (Locked (plus, lctx)) = Ctx.lock ctx modality in
           Term.Act
-            (Kinetic, Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
-      | None ->
-          (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
-          let ft = Modality.filtered t filter in
-          let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
-          let fieldterm : (_, _, kinetic) Term.term =
-            Term.Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
-          let liftdeg = Modality.deg_of_filter t filter in
-          Term.Act (Kinetic, Term.Act (Kinetic, fieldterm, liftdeg, sort), p, sort))
-  | Snoc (Emp, Inst (_, args)), Pi _ when TubeOf.is_full args ->
-      (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
-      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
-      Inst (Kinetic, readback_head ~canonical ctx head, args)
-  | Snoc (apps, Inst (_, args)), _ ->
-      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-      Inst (Kinetic, readback_neu ~canonical ctx head apps, args)
+            ( Kinetic,
+              App
+                ( Kinetic,
+                  readback_neu ~canonical ctx head apps,
+                  cod_left_ins ins,
+                  filter,
+                  implicit,
+                  Modal
+                    ( modality,
+                      plus,
+                      CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ),
+              p,
+              sort )
+      | Snoc (apps, Field (filter, fld, fldplus, ins)), _ -> (
+          let fm = Modality.filter_modality filter in
+          let (To p) = deg_of_ins ins in
+          (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
+          let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
+          let t = cod_left_ins ins in
+          let inner = readback_neu ~canonical lctx head apps in
+          match Modality.filter_is_trivial t filter with
+          | Some Eq ->
+              (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
+              Term.Act
+                ( Kinetic,
+                  Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins t fldplus),
+                  p,
+                  sort )
+          | None ->
+              (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
+              let ft = Modality.filtered t filter in
+              let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
+              let fieldterm : (_, _, kinetic) Term.term =
+                Term.Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
+              let liftdeg = Modality.deg_of_filter t filter in
+              Term.Act (Kinetic, Term.Act (Kinetic, fieldterm, liftdeg, sort), p, sort))
+      | Snoc (Emp, Inst (_, args)), Pi _ when TubeOf.is_full args ->
+          (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
+          let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
+          Inst (Kinetic, readback_head ~canonical ctx head, args)
+      | Snoc (apps, Inst (_, args)), _ ->
+          let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
+          Inst (Kinetic, readback_neu ~canonical ctx head apps, args))
+
+(* Given the outer prekeys acting on a variable of a metavariable's context (see prekey_data), the locks to its right there, and the locks to its right in the current context, which extend those by the locks added during readback, prewhisker the prekeys by the added locks, the innermost one first, as restrict_keys would. *)
+and prewhisker_added : type a l b m n c e lm f e2.
+    (m, n, c, e) Modalcell.t -> (lm, f, e2) Modality.t -> (a, l, b) Modality.t -> a key_comp =
+ fun outer mlocks locks ->
+  if Modalcell.is_id outer then Wrap (Modalcell.id2 (Modality.src locks))
+  else if Modality.length locks <= Modality.length mlocks then
+    match
+      (Mode.compare (Modalcell.hsrc outer) (Modality.src locks), Modality.compare locks mlocks)
+    with
+    | Eq, Eq -> Wrap outer
+    | _ -> raise (Unsolvable `Flexible)
+  else
+    match locks with
+    | Path (Suc (rest, g), tgt) ->
+        let (Wrap outer) = prewhisker_added outer mlocks (Path (rest, tgt)) in
+        let (Wrap outer) = Modalcell.prewhisker_wrapped outer (Modality.of_gen g) in
+        Wrap outer
+    | Path (Zero, _) -> raise (Unsolvable `Flexible)
+
+(* Read back a variable y of the current context, with a degeneracy and key κ, that the renaming sends a variable x of the renamed context to underneath nontrivial prekeys.  Evaluating an occurrence x⟨κ'⟩ in the environment produces y with the key P ∘ κ' ∘ Q, where P is the prekeys that restrict_keys collects when stripping off the locks to the right of x, and Q is those that lookup_cube collects in what remains on the way down to x (prewhiskered by the annotation of x).  The locks to the right of x now include those of the metavariable's context, which we recorded with P and Q, followed by any that have been added during readback, which are passed by restrict_keys before the prekeys and so prewhisker them.  We look for κ' among all the cells from the annotation of x to the locks to its right, if the mode theory can enumerate them (see Modalcell.find_all), and use it if it is the only one for which P ∘ κ' ∘ Q acts as κ.  Since keyed variables are equal only if their keys are, the solution is then most general.  If the mode theory can't enumerate the cells, or more than one of them works, there is no solution that we can be sure is most general. *)
+and readback_prekeyed : type mode c z m n alpha nu cod.
+    ?canonical:[ `Canonical | `Other ] ->
+    (mode, z, c) Ctx.t ->
+    level ->
+    (m, n) deg ->
+    (mode, alpha, nu, cod) Modalcell.t ->
+    prekey_data ->
+    (mode, c, kinetic) term =
+ fun ?canonical ctx level deg key data ->
+  match prekeyed_key ctx level key data with
+  | Unique_fit (Any_cell key') -> (
+      match Mode.compare (Modalcell.hsrc key') (Ctx.mode ctx) with
+      | Eq -> readback_head ?canonical ~rekey:false ctx (Var { level; deg; key = key' })
+      | Neq -> raise (Unsolvable `Flexible))
+  | No_fit | Unclear_fit -> raise (Unsolvable `Flexible)
+
+(* Whether a leaf of an inverted variable fits an occurrence with a given key (see readback_inverted_head). *)
+and inverted_fit : type mode kmode z c alpha nu cod.
+    (mode, z, c) Ctx.t -> inversion -> (kmode, alpha, nu, cod) Modalcell.t -> unit fit =
+ fun ctx { var = level; path; prekeys; _ } key ->
+  match prekeys with
+  | Some data -> (
+      match inverted_prekeyed_key ctx level path key data with
+      | Unique_fit _ -> Unique_fit ()
+      | No_fit -> No_fit
+      | Unclear_fit -> Unclear_fit)
+  | None -> (
+      match Ctx.find_level ctx level with
+      | None -> No_fit
+      | Some (Lookup { value; modality; _ }) -> (
+          let x = var modality level (Lazy.force value.ty) in
+          match inverted_prefix modality x path with
+          | exception Unsolvable _ -> No_fit
+          | Prefix (ann, _, rest) -> (
+              match key_before ann rest key with
+              | exception Unsolvable _ -> No_fit
+              | _ -> Unique_fit ())))
+
+(* Choose the preimage of a variable of the current context with more than one (see Unifying) that an occurrence of it with a given key comes from: the only one that fits it, if none of them is unclear.  Since substituting the environment for the renamed context only sends variables (with keys) to variables (with keys), and inverted variables to the tuples and abstractions whose leaves they recover, an occurrence can only come from a preimage that fits it, so if there is only one, the solution is most general.  A preimage that isn't in the context doesn't fit, as when reading back the type of an earlier variable. *)
+and resolve_candidate : type mode kmode z c alpha nu cod.
+    (mode, z, c) Ctx.t -> candidate list -> (kmode, alpha, nu, cod) Modalcell.t -> candidate =
+ fun ctx cands key ->
+  let fit = function
+    | Cand_opaque -> Unclear_fit
+    | Cand_var { var; prekeys = None } -> (
+        match Ctx.find_level ctx var with
+        | None -> No_fit
+        | Some (Lookup { modality; _ }) -> (
+            match Modality.compare (Modalcell.vsrc key) modality with
+            | Eq -> Unique_fit ()
+            | Neq -> No_fit))
+    | Cand_var { var; prekeys = Some data } -> (
+        match prekeyed_key ctx var key data with
+        | Unique_fit _ -> Unique_fit ()
+        | No_fit -> No_fit
+        | Unclear_fit -> Unclear_fit)
+    | Cand_inverted inv -> inverted_fit ctx inv key in
+  let fits = List.map (fun c -> (c, fit c)) cands in
+  if List.exists (fun (_, f) -> f = Unclear_fit) fits then raise (Unsolvable `Flexible)
+  else
+    match List.filter (fun (_, f) -> f = Unique_fit ()) fits with
+    | [ (c, _) ] -> c
+    | _ -> raise (Unsolvable `Flexible)
+
+(* How to recover an occurrence of a variable of the current context, with a given key, that the renamed context recovers from another variable, if it does (see inversion), choosing among its preimages if it has more than one. *)
+and inverted_occurrence : type mode kmode z c alpha nu cod.
+    (mode, z, c) Ctx.t -> level -> (kmode, alpha, nu, cod) Modalcell.t -> inversion option =
+ fun ctx level key ->
+  match candidates_of level with
+  | None -> inverted_var level
+  | Some cands -> (
+      match resolve_candidate ctx cands key with
+      | Cand_inverted inv -> Some inv
+      | Cand_var _ | Cand_opaque -> None)
+
+(* The key κ' for readback_prekeyed. *)
+and prekeyed_key : type mode kmode c z alpha nu cod.
+    (mode, z, c) Ctx.t ->
+    level ->
+    (kmode, alpha, nu, cod) Modalcell.t ->
+    prekey_data ->
+    any_cell fit =
+ fun ctx level key (Prekey_data (outer, inner, mlocks, entry)) ->
+  match Ctx.find_level ctx level with
+  | None -> No_fit
+  | Some (Lookup { modality; plus = Plus_with_locks (_, locks); _ }) -> (
+      let locks = Locks.cod locks in
+      match Modalcell.find_all modality locks with
+      | None -> Unclear_fit
+      | Some Incompatible -> No_fit
+      | Some (All cells) -> (
+          match prewhisker_added outer mlocks locks with
+          | exception Unsolvable _ -> Unclear_fit
+          | Wrap outer -> (
+              match
+                ( Mode.compare (Modalcell.hsrc inner) (Modality.src modality),
+                  Mode.compare (Modalcell.hsrc entry) (Modality.src modality) )
+              with
+              | Neq, _ | _, Neq -> No_fit
+              | Eq, Eq -> (
+                  let works key' =
+                    let (Wrap image) = key_vcomp outer key' in
+                    let (Wrap image) = key_vcomp image inner in
+                    let (Wrap image) = key_vcomp image entry in
+                    acts_as image key in
+                  match List.filter works cells with
+                  | [ key' ] -> Unique_fit (Any_cell key')
+                  | [] -> No_fit
+                  | _ -> Unclear_fit))))
+
+(* Read back the application of a variable of the current context that the renamed context recovers by applying another variable (see inversion), given that variable as the head, how it is recovered, and exactly as many arguments as the path has applications.  We compute the rest of the path on the value of the part before the first application (see readback_inverted_head), applying it to the arguments, which are given at the modality of the variable's own arguments, with the modality of the abstraction instead, and read back the result.  Projections, both ordinary and modal, and applications commute with degeneracies, so they are at the dimension of the result of the degeneracy. *)
+and readback_inverted_apps : type hmode mode a z any.
+    (mode, z, a) Ctx.t ->
+    hmode head ->
+    inversion ->
+    (hmode, mode, any, live) apps ->
+    (mode, a, kinetic) term =
+ fun ctx head inversion apps ->
+  let flex () = raise (Unsolvable `Flexible) in
+  let rec args_of : type any. (hmode, mode, any, live) apps -> arg_cube list = function
+    | Emp -> []
+    | Snoc (apps, Arg (filter, _, args, ins)) -> (
+        match is_id_ins ins with
+        | Some _ ->
+            Arg_cube (Modality.src (Modality.filter_modality filter), cod_left_ins ins, args)
+            :: args_of apps
+        | None -> flex ())
+    | Snoc (_, Field _) | Snoc (_, Inst _) -> flex () in
+  let args = Array.of_list (List.rev (args_of apps)) in
+  match head with
+  | Var { deg; key; _ } -> (
+      let (Inverted_value (vmode, v, path)) = readback_inverted_head ctx inversion deg key in
+      (* A projection is at the dimension of the record type that the value belongs to. *)
+      let proj_dim : type m. (m, kinetic) value -> any_dim = function
+        | Neu { ty; _ } -> (
+            match view_type (Lazy.force ty) "readback_inverted_apps" with
+            | Canonical (_, Codata _, ins, _) when Option.is_some (is_id_ins ins) ->
+                Any (cod_left_ins ins)
+            | _ -> flex ())
+        | _ -> flex () in
+      let rec go : type m. m Mode.t -> (m, kinetic) value -> inversion_step list -> any_value =
+       fun mode v path ->
+        match path with
+        | [] -> Any_value (mode, v)
+        | Proj (fld, _) :: path ->
+            let (Any n) = proj_dim v in
+            go mode (field_term (Modality.id mode) v fld (ins_zero n)) path
+        | Mproj (fld, _, Adjunction { left; _ }) :: path -> (
+            match Mode.compare (Modality.src left) mode with
+            | Neq -> flex ()
+            | Eq ->
+                let (Any n) = proj_dim v in
+                let (Val v) = field left v fld (ins_zero n) in
+                go (Modality.tgt left) v path)
+        | Apply (i, mu) :: path -> (
+            let (Arg_cube (dom, n, xs)) = args.(i) in
+            match (Mode.compare (Modality.tgt mu) mode, Mode.compare (Modality.src mu) dom) with
+            | Eq, Eq -> (
+                let (Has_filter filter) = Modality.filter mu n in
+                match D.compare (Modality.filtered n filter) (CubeOf.dim xs) with
+                | Eq ->
+                    let (Val v) = apply v filter (val_of_norm_cube xs) in
+                    go mode v path
+                | Neq -> flex ())
+            | _ -> flex ()) in
+      let (Any_value (rmode, v)) = go vmode v path in
+      match Mode.compare rmode (Ctx.mode ctx) with
+      | Eq -> readback_val ctx v
+      | Neq -> flex ())
+  | _ -> fatal (Anomaly "inverted head isn't a variable")
+
+(* Compute the value of a variable of the current context, with a degeneracy and key, that the renamed context recovers from another variable (see inversion), as far as the first application in the path that recovers it, returning also the dimension of the result and the rest of the path.  We do this by computing that part of the path on the value of the other variable seen from behind its own annotation, and acting on the result by the degeneracy and the key that the key of the occurrence induces on it (see key_before). *)
+and readback_inverted_head : type mode kmode z c m n alpha nu cod.
+    (mode, z, c) Ctx.t ->
+    inversion ->
+    (m, n) deg ->
+    (kmode, alpha, nu, cod) Modalcell.t ->
+    inverted_value =
+ fun ctx { var = level; path; inverse; prekeys; _ } deg key ->
+  (* If the leaf was a permutation of the variable, then the degeneracy acting on the variable acts on the inverse permutation of the result, as in renamed_deg. *)
+  let (Any_deg deg) =
+    match inverse with
+    | None -> Any_deg deg
+    | Some (Any_deg inverse) ->
+        let (DegExt (_, _, deg)) = comp_deg_extending inverse deg in
+        Any_deg deg in
+  match prekeys with
+  | Some data -> readback_inverted_prekeyed ctx level path deg key data
+  | None -> (
+      match Ctx.find_level ctx level with
+      | None -> raise (Unsolvable `Flexible)
+      | Some (Lookup { value; modality; _ }) -> (
+          let x = var modality level (Lazy.force value.ty) in
+          let (Prefix (ann, v, path)) = inverted_prefix modality x path in
+          let (Any_cell c) = key_before ann path key in
+          match Mode.compare (Modalcell.hsrc c) (Modality.src ann) with
+          | Neq -> raise (Unsolvable `Flexible)
+          | Eq -> Inverted_value (Modality.src ann, act_value v deg c, path)))
+
+(* The same, when the value of the inverted variable x in the environment is acted on by nontrivial prekeys (see prekey_data).  Then we look for the key k of x among the cells from its annotation to the locks to its right inside all the modal projections in the path, if the mode theory can enumerate them, as the only one that gives the occurrence its key (see below), and compute the projections before the first application from x with that key; the rest of the path, including its modal projections, is computed on that without further keys.  Evaluating this in the environment produces the variable y with the key P ∘ c ∘ (Q ⋆ g), where P is the outer prekeys prewhiskered by the locks added during readback, Q is the inner prekeys prewhiskered by the right adjoints g of those modal fields, and c is obtained from k by applying c ↦ ε ∘ (c ⋆ g) for each of them, with ε the counit (by the triangle identities); and we check that this is the key of the occurrence of y.  Without modal fields, c is k itself.  A modal field after an application is no different, since a key acts on an abstraction as a prekey on its environment, just as it acts on the components of a tuple, while the variables it binds are unaffected (their keys are accounted for by invert_value). *)
+and readback_inverted_prekeyed : type mode kmode z c m n alpha nu cod.
+    (mode, z, c) Ctx.t ->
+    level ->
+    inversion_step list ->
+    (m, n) deg ->
+    (kmode, alpha, nu, cod) Modalcell.t ->
+    prekey_data ->
+    inverted_value =
+ fun ctx level path deg key data ->
+  let flex () = raise (Unsolvable `Flexible) in
+  let prefix, rest = split_prefix path in
+  match inverted_prekeyed_key ctx level path key data with
+  | Unique_fit (Any_cell k) -> (
+      match Ctx.find_level ctx level with
+      | None -> flex ()
+      | Some (Lookup { value; modality; _ }) -> (
+          (* The projections from x with key k. *)
+          let rec project : type m.
+              m Mode.t -> (m, kinetic) value -> inversion_step list -> any_value =
+           fun mode v path ->
+            match path with
+            | [] -> Any_value (mode, v)
+            | Proj (fld, n) :: path ->
+                project mode (field_term (Modality.id mode) v fld (ins_zero n)) path
+            | Mproj (fld, n, Adjunction { left; _ }) :: path -> (
+                match Mode.compare (Modality.src left) mode with
+                | Neq -> flex ()
+                | Eq ->
+                    let (Val v) = field left v fld (ins_zero n) in
+                    project (Modality.tgt left) v path)
+            | Apply _ :: _ -> flex () in
+          match Mode.compare (Modalcell.hsrc k) (Modality.src modality) with
+          | Neq -> flex ()
+          | Eq ->
+              let x = act_value (var modality level (Lazy.force value.ty)) (id_deg D.zero) k in
+              let (Any_value (vmode, v)) = project (Modality.src modality) x prefix in
+              Inverted_value (vmode, act_value v deg (Modalcell.id2 vmode), rest)))
+  | No_fit | Unclear_fit -> flex ()
+
+(* The key k for readback_inverted_prekeyed. *)
+and inverted_prekeyed_key : type mode kmode z c alpha nu cod.
+    (mode, z, c) Ctx.t ->
+    level ->
+    inversion_step list ->
+    (kmode, alpha, nu, cod) Modalcell.t ->
+    prekey_data ->
+    any_cell fit =
+ fun ctx level path key (Prekey_data (outer, inner, mlocks, entry)) ->
+  let exception Unclear in
+  let exception No in
+  let adjs =
+    List.filter_map
+      (function
+        | Mproj (_, _, adj) -> Some (Any_adj adj)
+        | _ -> None)
+      path in
+  (* The candidates for the key of x inside the modal projections: we lock the context by their left adjoints, the outermost projection's first. *)
+  let rec find_keys : type mode a b. (mode, a, b) Ctx.t -> any_adj list -> any_cell list =
+   fun ctx adjs ->
+    match adjs with
+    | [] -> (
+        match Ctx.find_level ctx level with
+        | Some (Lookup { modality; plus = Plus_with_locks (_, locks); _ }) -> (
+            match Modalcell.find_all modality (Locks.cod locks) with
+            | Some (All ks) -> List.map (fun k -> Any_cell k) ks
+            | Some Incompatible -> []
+            | None -> raise Unclear)
+        | None -> raise No)
+    | Any_adj (Adjunction { left; _ }) :: adjs -> (
+        match Mode.compare (Modality.tgt left) (Ctx.mode ctx) with
+        | Neq -> raise No
+        | Eq ->
+            let (Locked (_, lctx)) = Ctx.lock ctx left in
+            find_keys lctx adjs) in
+  (* The cell c, and the inner prekeys, transported through the modal projections. *)
+  let rec transport : type a m n b. (a, m, n, b) Modalcell.t -> any_adj list -> bool -> any_cell =
+   fun c adjs counit ->
+    match adjs with
+    | [] -> Any_cell c
+    | Any_adj (Adjunction { right; counit = eps; _ }) :: adjs -> (
+        match Mode.compare (Modalcell.hsrc c) (Modality.tgt right) with
+        | Neq -> raise No
+        | Eq ->
+            let (Wrap c) = Modalcell.prewhisker_wrapped c right in
+            if counit then
+              let (Wrap c) = key_vcomp eps c in
+              transport c adjs counit
+            else transport c adjs counit) in
+  try
+    let keys = find_keys ctx (List.rev adjs) in
+    match Ctx.find_level ctx level with
+    | None -> No_fit
+    | Some (Lookup { plus = Plus_with_locks (_, locks); _ }) -> (
+        let (Any_cell inner) = transport inner adjs false in
+        match prewhisker_added outer mlocks (Locks.cod locks) with
+        | exception Unsolvable _ -> Unclear_fit
+        | Wrap outer -> (
+            (* Whether a candidate key k gives the occurrence its key. *)
+            let works (Any_cell k) =
+              match transport k adjs true with
+              | exception No -> false
+              | Any_cell c -> (
+                  match
+                    ( Mode.compare (Modalcell.hsrc c) (Modalcell.hsrc outer),
+                      Mode.compare (Modalcell.hsrc inner) (Modalcell.hsrc outer),
+                      Mode.compare (Modalcell.hsrc entry) (Modalcell.hsrc outer) )
+                  with
+                  | Eq, Eq, Eq ->
+                      let (Wrap image) = key_vcomp outer c in
+                      let (Wrap image) = key_vcomp image inner in
+                      let (Wrap image) = key_vcomp image entry in
+                      acts_as image key
+                  | _ -> false) in
+            match List.filter works keys with
+            | [ k ] -> Unique_fit k
+            | [] -> No_fit
+            | _ -> Unclear_fit))
+  with
+  | Unclear -> Unclear_fit
+  | No -> No_fit
 
 and readback_head : type mode c z.
-    ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
-    =
- fun ?(canonical = `Other) ctx h ->
+    ?canonical:[ `Canonical | `Other ] ->
+    ?rekey:bool ->
+    (mode, z, c) Ctx.t ->
+    mode head ->
+    (mode, c, kinetic) term =
+ fun ?(canonical = `Other) ?(rekey = true) ctx h ->
   match h with
+  (* A variable with more than one preimage is read back as the one that the occurrence comes from (see resolve_candidate). *)
+  | Var { level; deg; key } when Option.is_some (candidates_of level) -> (
+      match resolve_candidate ctx (Option.get (candidates_of level)) key with
+      | Cand_var { var; prekeys = None } ->
+          readback_head ~canonical ~rekey:false ctx (Var { level = var; deg; key })
+      | Cand_var { var; prekeys = Some data } -> readback_prekeyed ~canonical ctx var deg key data
+      | Cand_inverted inversion -> (
+          match readback_inverted_head ctx inversion deg key with
+          | Inverted_value (vmode, v, []) -> (
+              match Mode.compare vmode (Ctx.mode ctx) with
+              | Eq -> readback_val ctx v
+              | Neq -> raise (Unsolvable `Flexible))
+          | _ -> raise (Unsolvable `Flexible))
+      | Cand_opaque -> raise (Unsolvable `Flexible))
+  (* A variable that the renamed context recovers by projecting from another variable (see inversion) is read back as those projections.  If it has to be applied as well, it can't be read back on its own. *)
+  | Var { level; deg; key } when Option.is_some (inverted_var level) -> (
+      match readback_inverted_head ctx (Option.get (inverted_var level)) deg key with
+      | Inverted_value (vmode, v, []) -> (
+          match Mode.compare vmode (Ctx.mode ctx) with
+          | Eq -> readback_val ctx v
+          | Neq -> raise (Unsolvable `Flexible))
+      | _ -> raise (Unsolvable `Flexible))
+  (* A variable that the renaming sends a variable of the renamed context to underneath nontrivial prekeys (see renamed_ctx) has to be read back with a key that those prekeys send to its key here (see readback_prekeyed). *)
+  | Var { level; deg; key }
+    when rekey
+         &&
+         match Unifying.read () with
+         | Some { prekeyed; _ } -> Option.is_some (prekeyed level)
+         | None -> false -> (
+      match Unifying.read () with
+      | Some { prekeyed; _ } -> (
+          match prekeyed level with
+          | Some data -> readback_prekeyed ~canonical ctx level deg key data
+          | None -> fatal (Anomaly "prekeyed variable disappeared"))
+      | None -> fatal (Anomaly "prekeyed variable outside unification"))
   | Var { level; deg; key } -> (
       (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context. *)
-      let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt key) in
+      let (Remove_lock (ctx, plus_tgt)) = remove_lock ctx (Modalcell.vtgt key) in
       (* Now we look for the level variable in the remaining context. *)
       let (Lookup
              { result; value; dirt = _; modality; filter; insert; plus = Plus_with_locks (c, _) }) =
-        Ctx.find_level ctx level <|> No_such_level (PLevel level) in
+        match Ctx.find_level ctx level with
+        | Some lookup -> lookup
+        (* When reading back the solution of a unification metavariable, a variable not in its context means there is no solution. *)
+        | None -> (
+            match Unifying.read () with
+            | Some { undefined; _ } ->
+                raise (Unsolvable (if undefined level then `Flexible else `Rigid))
+            | None -> fatal (No_such_level (PLevel level))) in
       (* We check that (1) the modality annotating that variable is the source of the key, and (2) there are no more locks remaining to its right in the context. *)
       match (Modality.compare (Modalcell.vsrc key) modality, result, c) with
       | Eq, `Var (_, fa), Zero -> (
@@ -820,6 +1671,7 @@ and readback_head : type mode c z.
           let (Has_plus_lock plus_src) = plus_lock modality in
           (* If there's a nontrivial degeneracy, we act by it; otherwise we leave it off. *)
           let iplus = plus_with_locks_of_plus_lock plus_src in
+          let (Any_deg deg) = renamed_deg value.tm deg in
           let tm =
             match is_id_deg deg with
             | Some _ -> Term.Var (Index (insert, fa, filter, iplus))
@@ -832,6 +1684,9 @@ and readback_head : type mode c z.
           match (Modality.compare_id modality, plus_src, plus_tgt) with
           | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm
           | _ -> Key { tm; cell = key; plus_tgt; plus_src })
+      (* When reading back the solution of a unification metavariable, the variable might have been found in the wrong modal position in the metavariable's context, which means there is no solution. *)
+      | Neq, _, _ when Option.is_some (Unifying.read ()) -> raise (Unsolvable `Flexible)
+      | _, _, Suc _ when Option.is_some (Unifying.read ()) -> raise (Unsolvable `Flexible)
       | Neq, _, _ ->
           fatal (Modality_mismatch (`Internal, "reading back var", Modalcell.vsrc key, modality))
       | _, _, Suc _ -> fatal (Anomaly "reading back var: key has insufficient codomain")
@@ -853,8 +1708,8 @@ and readback_head : type mode c z.
             | `Canonical -> `Canonical
             | `Other -> canonical in
           Act (Kinetic, Const name, deg, (sort, canonical)))
-  | Meta { meta; env; ins } -> (
-      let { termctx; ty; _ } : _ Metadef.t = Global.find_meta meta in
+  | Meta { meta; kind; env; ins } -> (
+      let ty = Global.meta_ty meta kind in
       let with_perm (tm : (mode, c, kinetic) term) : (mode, c, kinetic) term =
         match is_id_ins ins with
         | Some _ -> tm
@@ -862,17 +1717,19 @@ and readback_head : type mode c z.
             (* A degeneracy on a metavariable with a zero-dimensional environment is always a permutation, whose display doesn't depend on the sort. *)
             let (To perm) = deg_of_ins ins in
             Act (Kinetic, tm, perm, (`Other, canonical)) in
+      (* We only need the context of the metavariable if we have to bind its variables, which may be expensive to compute for a unification metavariable, so we don't ask for it otherwise. *)
       let letonly () =
-        Letonly { termctx; env = readback_env ctx env termctx; tm = Meta (meta, Kinetic); ty } in
+        let termctx = Global.meta_termctx meta kind in
+        Letonly { termctx; env = readback_env ctx env termctx; tm = Meta (meta, kind, Kinetic); ty }
+      in
       (* If the environment is the identity, possibly weakened, we can omit it. *)
-      match readback_meta_at_idenv ctx meta env termctx with
+      match readback_meta_at_idenv ctx meta kind env with
       | Some tm -> with_perm tm
       | None -> (
-          let (Permute (_, octx)) = termctx in
-          match no_checked_vars octx with
+          match no_checked_vars (Meta.tctx meta) with
           (* If the context of the metavariable has no variables, an environment for it of positive dimension carries no information, so the metavariable is just degenerated, possibly with a permutation. *)
           | Some Eq -> (
-              match readback_meta_at_idenv ctx meta (Emp (Ctx.mode ctx, D.zero)) termctx with
+              match readback_meta_at_idenv ctx meta kind (Emp (Ctx.mode ctx, D.zero)) with
               | Some tm -> (
                   let (To perm) = deg_of_ins ins in
                   let (DegExt (_, _, deg)) = comp_deg_extending (deg_zero (cod_left_ins ins)) perm in
@@ -887,7 +1744,7 @@ and readback_head : type mode c z.
 
 and readback_pi : type c z dom modality mode k n.
     (mode, z, c) Ctx.t -> (dom, modality, mode, k, n) pi_args -> (mode, c, kinetic) term =
- fun ctx { x; filter; doms; cods } ->
+ fun ctx { x; filter; implicit; doms; cods } ->
   let n = BindCube.dim cods in
   let modality = Modality.filter_modality filter in
   let x = View.fill_hints doms x in
@@ -902,11 +1759,15 @@ and readback_pi : type c z dom modality mode k n.
         (sub_variables fb x) (CubeOf.subcube fb newnfs) in
     let sargs = CubeOf.subcube fb args in
     let (BindFam b) = BindCube.find cods fa in
-    Cod (kfilter, readback_val sctx (apply_binder_term b kfilter sargs)) in
+    at_same_depth ();
+    let cod = readback_val sctx (apply_binder_term b kfilter sargs) in
+    after_same_depth ();
+    Cod (kfilter, cod) in
   Term.Pi
     {
       x;
       filter;
+      implicit;
       doms =
         Modal
           (modality, plus, CubeOf.mmap { map = (fun _ [ dom ] -> readback_val lctx dom) } [ doms ]);
@@ -920,13 +1781,14 @@ and readback_at_pi : type mode n c b z.
     (mode, kinetic) value Lazy.t ->
     ((n, mode, kinetic) modal_value_cube, b) Vec.t ->
     ((D.zero, n, n, (mode, kinetic) modal_value) TubeOf.t, b) Vec.t ->
-    (n, mode, c, kinetic) any_modal_term_cube list =
+    ((n, mode, c, kinetic) any_modal_term_cube * implicitness) list =
  fun ctx n fnty xs tyargs ->
   match (xs, tyargs) with
   | [], [] -> []
   | Modal (xfilter, x) :: xs, tyargs :: tyargs_rest -> (
       (* The constructor's function-type value must be a pi-type; we read back the argument at its domain (instantiated at the corresponding arguments of the lower-dimensional constructors, which are also read back to form the boundary of the argument cube) and continue with the codomain applied to the argument cube. *)
-      let (Viewed_pi { x = _; filter; doms; cods }) = view_pi "readback_at_pi" n (Lazy.force fnty) in
+      let (Viewed_pi { x = _; filter; implicit; doms; cods }) =
+        view_pi "readback_at_pi" n (Lazy.force fnty) in
       let pimod = Modality.filter_modality filter in
       let xmodality = Modality.filter_modality xfilter in
       match Modality.compare xmodality pimod with
@@ -940,10 +1802,11 @@ and readback_at_pi : type mode n c b z.
           let ity = inst (CubeOf.find_top doms) tyarg in
           let argcube = TubeOf.plus_cube (val_of_norm_tube tyarg) (CubeOf.singleton x) in
           let (BindFam b) = BindCube.find_top cods in
-          Modal
-            ( xfilter,
-              cplus,
-              TubeOf.plus_cube tms (CubeOf.singleton (readback_at Kinetic lctx x ity)) )
+          ( Modal
+              ( xfilter,
+                cplus,
+                TubeOf.plus_cube tms (CubeOf.singleton (readback_at Kinetic lctx x ity)) ),
+            implicit )
           :: readback_at_pi ctx n (lazy (apply_binder_term b filter argcube)) xs tyargs_rest)
 
 (* To readback an environment, since readback is type-directed we need the types of *all* the terms in it, which is to say its codomain context.  We store this as a Termctx since we need to evaluate and instantiate the types at the previous terms in the environment as we go. *)
@@ -1028,13 +1891,13 @@ and readback_ordered_env : type mode n a b c d.
         restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
       if Modalcell.is_id pre then
         (* If there is no prekey action, we just remove the lock from the context we're reading back *into*, and read back the residual environment as a locked term environment. *)
-        let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modality.of_gen g) in
+        let (Remove_lock (ctx, plus_tgt)) = remove_lock ctx (Modality.of_gen g) in
         Term.Lock { env = readback_ordered_env ctx env envctx; gen = g; plus_tgt }
       else
         (* A prekey action mediates between a context locked by its vertical source (where the keyed value was created, e.g. behind a key or a parametric locker's locks) and one locked by its vertical target (the actual ambient context, e.g. after the locker's counit discharged those locks).  So before removing the lock, we remove the target of the prekey from the context and re-lock it with the prekey's source, recording both in the term-level Prekey. *)
-        let (Remove_lock (ctx, pre_tgt)) = Ctx.remove_lock ctx (Modalcell.vtgt pre) in
+        let (Remove_lock (ctx, pre_tgt)) = remove_lock ctx (Modalcell.vtgt pre) in
         let (Locked (pre_src, ctx)) = Ctx.lock ctx (Modalcell.vsrc pre) in
-        let (Remove_lock (ctx, plus_tgt)) = Ctx.remove_lock ctx (Modality.of_gen g) in
+        let (Remove_lock (ctx, plus_tgt)) = remove_lock ctx (Modality.of_gen g) in
         Prekey
           {
             env = Term.Lock { env = readback_ordered_env ctx env envctx; gen = g; plus_tgt };
@@ -1093,12 +1956,12 @@ and readback_ordered_ctx : type mode a b. (mode, a, b) Ctx.Ordered.t -> (mode, a
               fields in
           let vis = Vis { dim; plusdim; names; hasfields; fields; fplus } in
           Ext (rest, { plus_lock; bindings; filter; vis; vars }, af)
-      | Invis ->
+      | Invis name ->
           (* Invisible variables are anonymous, but we can still record display hints from their types, since after readback the types are terms and the hints can no longer be computed on demand.  Since this only affects display, if anything goes wrong computing the type we just skip the hints (though internal errors are still reported). *)
           let hints =
             Reporter.discard_errors ~fallback:(fun () -> no_hints) @@ fun () ->
             View.hints_of_ty (Lazy.force top.ty) in
-          Ext (rest, { plus_lock; bindings; filter; vis = Invis { hints }; vars }, af))
+          Ext (rest, { plus_lock; bindings; filter; vis = Invis { hints; name }; vars }, af))
   | Lock (ctx, lock) -> Lock (readback_ordered_ctx ctx, lock)
   | Weaken (ctx, code) -> Weaken (readback_ordered_ctx ctx, code)
 
@@ -1128,6 +1991,7 @@ and readback_data : type mode a b m j ij.
           t,
           dim,
           Modality.filter_id mode dim,
+          `Explicit,
           Modal
             ( Modality.id mode,
               plus_no_lock mode,
@@ -1174,12 +2038,12 @@ and readback_constr_function : type mode lev e n.
     (mode, lev, e) Ctx.t ->
     n D.t ->
     Constr.t ->
-    (n, mode, kinetic) modal_value_cube Bwd.t ->
+    ((n, mode, kinetic) modal_value_cube * implicitness) Bwd.t ->
     (mode, kinetic) value ->
     (mode, e, kinetic) term =
  fun ctx n c args ft ->
   match view_type ft "readback_constr_function" with
-  | Canonical (_, Pi { x; filter; doms; cods }, ins, tyargs) -> (
+  | Canonical (_, Pi { x; filter; implicit; doms; cods }, ins, tyargs) -> (
       (* Walk the pi-type exactly as in the eta-expanding readback of a term at a pi-type (readback_at, ~eta case), introducing a cube of fresh variables for each argument.  We accumulate those variables as we go. *)
       let Eq = eq_of_ins_zero ins in
       match D.compare (BindCube.dim cods) n with
@@ -1192,17 +2056,22 @@ and readback_constr_function : type mode lev e n.
             Ctx.variables_vis ctx (Modality.filter_idempotent filter) name newnfs in
           let output = tyof_app cods tyargs filter newargs in
           let body =
-            readback_constr_function newctx n c (Snoc (args, Modal (filter, newargs))) output in
-          Term.Lam (name, n, filter, body))
+            readback_constr_function newctx n c
+              (Snoc (args, (Modal (filter, newargs), implicit)))
+              output in
+          Term.Lam (name, n, filter, implicit, body))
   | _ ->
       (* ft is now the datatype instance; the constructor applied to all the abstracted argument variables, read back at this fully-extended context.   We read back the accumulated argument variables at the fully-extended context to form the constructor's argument spine. *)
       let cargs =
         Bwd_extra.to_list_map
-          (fun (arg : (n, mode, kinetic) modal_value_cube) ->
+          (fun ((arg : (n, mode, kinetic) modal_value_cube), implicit) ->
             let (Modal (filter, argcube)) = arg in
             let (Locked (plus, lctx)) = Ctx.lock ctx (Modality.filter_modality filter) in
-            Term.Modal
-              (filter, plus, CubeOf.mmap { map = (fun _ [ v ] -> readback_val lctx v) } [ argcube ]))
+            ( Term.Modal
+                ( filter,
+                  plus,
+                  CubeOf.mmap { map = (fun _ [ v ] -> readback_val lctx v) } [ argcube ] ),
+              implicit ))
           args in
       Term.Constr (c, n, cargs)
 
@@ -1438,7 +2307,7 @@ and readback_permuted_codata : type mode a b m k mk e n.
 and uninstantiate : type mode. mode Mode.t -> (mode, kinetic) value -> mode normal =
  fun mode ty ->
   match view_term ty with
-  | Neu { head; args = Snoc (base_args, Inst (_, insargs)); value; ty = instty } -> (
+  | Neu { head; args = Snoc (base_args, Inst (_, insargs)); value; ty = instty; acted = _ } -> (
       match view_type (Lazy.force instty) "uninstantiate" with
       | Canonical (_, UU (_, umk), uins, uargs) -> (
           let Eq = eq_of_ins_zero uins in
@@ -1455,7 +2324,15 @@ and uninstantiate : type mode. mode Mode.t -> (mode, kinetic) value -> mode norm
               let boundary = TubeOf.plus_tube (TubeOf.plus insargs) outer inner in
               let uty = lazy (inst (universe mode (TubeOf.out insargs)) boundary) in
               {
-                tm = Neu { head; args = base_args; value = uninstantiate_value value; ty = uty };
+                tm =
+                  Neu
+                    {
+                      head;
+                      args = base_args;
+                      value = uninstantiate_value value;
+                      ty = uty;
+                      acted = [];
+                    };
                 ty = uty;
               })
       | _ -> fatal (Anomaly "uninstantiating a type whose type is not a universe"))
@@ -1491,5 +2368,928 @@ let rec readback_about : type mode a b.
       | Val v -> Some (readback_at (Potential value) ctx v (Lazy.force ty))
       (* Under glued evaluation, a constant whose definition is an ordinary term rather than a case tree is a neutral whose value realizes that term.  It has no potential value of its own, but the neutral it realizes to may, so we look there. *)
       | Realize v -> readback_about ctx v
-      | Unrealized -> None)
+      | Unrealized | Blocked _ -> None)
   | _ -> None
+
+(* ********** Solutions of unification metavariables ********** *)
+
+(* A unification metavariable with context mctx, occurring with a zero-dimensional environment menv in a context cctx, can be solved easily if menv is a *renaming*: it sends the free variables of mctx to plain variables of cctx.  Then we don't need to compute an inverse substitution: a context that has the same shape as mctx, but in which each variable has the level of the variable of cctx that menv sends it to, already acts as that inverse.  Reading back a value of cctx in such a context finds each variable in menv's image by its level, producing a term in mctx, and fails if it encounters any other variable (see Readback.Unifying).
+
+   The renaming need not be injective, nor preserve modal annotations.  A variable of cctx that is the image of more than one variable of mctx, or of a variable with a different annotation, is "undefined": it has no inverse, so if the value contains it we fail.  But if the value doesn't contain it, then the resulting solution is most general.  This is because substituting variables for variables can't trigger any computation, so if some solution of the metavariable used a variable of mctx sent to such a variable, then the value would contain that variable too.  (This argument doesn't apply if the image is not a plain variable, so in that case we don't have a renaming at all.)
+
+   The image of a variable can also be a variable with a nonidentity key, which then composes with the key that the variable of mctx is read back with (see readback_prekeyed).  The image of a variable can also be a permutation of a plain variable.  Since permutations are invertible, and a permutation of a variable is still neutral, this is no different: the corresponding variable of mctx has that permuted variable as its value, and readback inverts the permutation when it finds that variable (see renamed_deg).
+
+   The metavariable can also be applied to arguments, as long as they are also plain variables or permutations of them.  We treat these like further entries of its environment, so that the renamed context extends it by one entry for each argument (whose types we don't need to know, since they are only for readback), and the solution is then an abstraction over them.
+
+   We prefer eta-short solutions, so if the value being compared with the metavariable ends with some of the same arguments, we first try to omit them from both, since a solution of ?f =? g is also one of ?f y =? g y.  We only do this if nothing is undefined, since otherwise we could change the problem: ?f x x =? g x has no most general solution, but ?f x =? g does.
+
+   The environment can also contain prekeys, such as the counit of an adjunction after projecting a modal field, or a key acting on the captured environment of a closure, which act on the values of all the entries below them.  Then a variable of mctx sent to a variable y is really sent to y with some key, and an occurrence of y in the value has to be read back with a key for that variable that the prekeys send to its key there.  We record the prekeys that act on each variable, and readback computes their action on a candidate key and checks that it gives the key of y (see readback_prekeyed).  For a tuple or abstraction underneath prekeys, readback does the same for the variable it recovers its leaves from (see readback_inverted_prekeyed).
+
+   A variable of mctx sent to an undefined variable can't be used in the solution.  But this is not enough to make the solution well-typed: the type of another variable of mctx, or of the metavariable, might depend on it.  Thus we also treat any variable whose type contains an undefined variable as undefined itself, and the caller must check that the type of the metavariable doesn't contain one either.  Since menv is a renaming, it suffices to read back the types obtained by substitution with menv, which we already have.
+
+   More generally, a variable x of mctx (or argument), including any face of a cube of them, can be sent to a tuple, or an abstraction, or a combination of these, whose leaves are variables y of cctx applied to exactly the variables bound by the abstractions above them, in any order (see invert_value), such as (y, z) or (w ↦ y w) or (w ↦ (y w, z w)) or (u v ↦ y v u), or their higher-dimensional versions, where an abstraction binds a cube of variables.  The faces of cubes are treated as separate variables, both in mctx and in cctx.  A leaf can also be a permutation of a variable, which is then recovered by the inverse permutation.  The variable can have a modal annotation, the abstractions can be modal, and the tuples can have modal fields, whose components live behind a lock by the right adjoint; the leaves must have the annotation of x composed with those right adjoints, with identity keys, as for a renaming.  A modal field (by ℓ ⊣ r) can also occur inside an abstraction over w, whose variables are then seen through the lock of r; the leaf must apply them through the unit of the adjunction with the modality of the abstraction composed with ℓ, such as (w ↦ (fst ≔ y w)) with y :♯| (_ :♭| B) → A for a ♭-field fst, so that y can be recovered as (w ↦ (x w :♭| _) .fst), since by the triangle identities the counit undoes the unit.  Then each y can be recovered from x, as some projections and applications of it such as x .fst or (w ↦ x w .snd) or (v u ↦ x u v), and every value of x is the eta-expansion of what it is sent to with these inverses substituted.  So menv is still invertible up to eta, and substituting it still can't discard anything: it only triggers projections from those tuples and applications of those abstractions, which produce the leaves.  In this case the variable x of the renamed context gets a fresh level, and we record the paths that recover the y's in a table consulted by readback (see Unifying and inversion), which computes the projections on the value of x, acts on the result by the degeneracy of the occurrence of y and the key that its key induces there, computes the applications and further projections on that, and reads back the result.  Its type in cctx, which we need for the abstractions and for checking definedness, is its type in mctx substituted by menv. *)
+type (_, _) renamed_ctx =
+  | Renamed_ctx : {
+      ctx : ('mode, 'a, 'bc) Ctx.t;
+      check_type : bool;
+      (* Whether a level of the current context is in the image of the renaming, though possibly undefined. *)
+      in_image : level -> bool;
+      (* How readback recovers the variables of the current context that are leaves of a tuple or abstraction in the environment or arguments. *)
+      inverted : level -> inversion option;
+      (* The variables of the current context that are sent to underneath nontrivial prekeys, and those prekeys. *)
+      prekeyed : level -> prekey_data option;
+      (* The variables of the current context with more than one preimage, and those preimages. *)
+      candidates : level -> candidate list option;
+      wrap : ('mode, 'bc, kinetic) term -> ('mode, 'b, kinetic) term;
+      contracted : (unit -> ('mode, 'b, kinetic) term option) list;
+    }
+      -> ('mode, 'b) renamed_ctx
+
+type (_, _) renamed_ordered =
+  | Renamed_ordered : ('mode, 'a, 'b) Ctx.Ordered.t -> ('mode, 'b) renamed_ordered
+
+(* A value in an environment that is a permutation of a plain variable, and whether it has the annotation of the corresponding variable in the metavariable's context. *)
+type 'mode renamed_var = {
+  var : level;
+  deg : any_deg;
+  normal : 'mode normal;
+  annotated : bool;
+  (* A nonidentity key on the variable, which readback has to take into account (see readback_prekeyed). *)
+  key : any_cell option;
+}
+
+exception Not_renaming
+
+let renamed_var : type dom modality mode.
+    (dom, modality, mode) Modality.t -> (dom, kinetic) value -> dom renamed_var =
+ fun modality v ->
+  match view_term v with
+  | Neu { head = Live (Var { level; deg; key }); args = Emp; ty; _ } as tm -> (
+      match perm_of_deg deg with
+      | Some _ ->
+          (* A variable with an identity key must have the annotation of the variable it is the value of; with a nonidentity key, the key mediates between them. *)
+          if Modalcell.is_id key then
+            let annotated =
+              match Modality.compare (Modalcell.vsrc key) modality with
+              | Eq -> true
+              | Neq -> false in
+            { var = level; deg = Any_deg deg; normal = { tm; ty }; annotated; key = None }
+          else
+            {
+              var = level;
+              deg = Any_deg deg;
+              normal = { tm; ty };
+              annotated = true;
+              key = Some (Any_cell key);
+            }
+      | None -> raise_notrace Not_renaming)
+  | _ -> raise_notrace Not_renaming
+
+(* A variable of the current context that occurs in a tuple or abstraction in the environment, how to recover it from the variable of the metavariable's context that is sent there, and whether it has the annotation of that variable. *)
+type inverted_leaf = { leaf : level; inversion : inversion; leaf_annotated : bool }
+
+(* A cube of variables bound by an abstraction in a value being inverted, with the modality ν with which a leaf must be applied to it, and the key κ that each of its faces must have there.  Directly inside an abstraction with modality μ, these are μ and the identity.  Inside a modal field (by ℓ ⊣ r, with unit η) they become ν;ℓ and (ν;η;R) ∘ κ (in diagrammatic order), where R is the composite of the right adjoints of the modal fields entered since the abstraction, behind whose locks the leaf lives, so that κ : μ ⇒ ν;R.  This is the transpose of the identity of ν;ℓ, so that a leaf applied this way can be recovered by applying the inverted variable to an argument with modality μ and the identity key, underneath the lock of ℓ (see key_before). *)
+type lam_binder =
+  | Binder : {
+      vars : level list;
+      dims : any_dim * any_dim;
+      arg : ('d, 'nu, 'n) Modality.t;
+      locks : ('n, 'r, 'm) Modality.t;
+      key : ('d, 'mu, 'k, 'm) Modalcell.t;
+    }
+      -> lam_binder
+
+let lam_binder : type d mu m. level list -> any_dim * any_dim -> (d, mu, m) Modality.t -> lam_binder
+    =
+ fun vars dims mu ->
+  Binder { vars; dims; arg = mu; locks = Modality.id (Modality.tgt mu); key = Modalcell.id mu }
+
+(* Move a binder inside a modal field, given the field's adjunction, failing if the modes don't match. *)
+let binder_into : type a f g b. (a, f, g, b) Modalcell.adjunction -> lam_binder -> lam_binder =
+ fun (Adjunction { left; right; unit; _ }) (Binder { vars; dims; arg; locks; key }) ->
+  match
+    ( Mode.compare (Modality.tgt arg) (Modality.src left),
+      Mode.compare (Modality.src locks) (Modality.src left) )
+  with
+  | Eq, Eq -> (
+      let (Comp nu_left) = Modality.comp arg in
+      let (Comp right_locks) = Modality.comp right in
+      let (Wrap step) = Modalcell.prewhisker_wrapped unit arg in
+      let (Wrap step) = Modalcell.postwhisker_wrapped locks step in
+      match Modality.compare (Modalcell.vsrc step) (Modalcell.vtgt key) with
+      | Eq ->
+          Binder
+            {
+              vars;
+              dims;
+              arg = Modality.comp_out left nu_left;
+              locks = Modality.comp_out locks right_locks;
+              key = Modalcell.vcomp step key;
+            }
+      | Neq -> raise_notrace Not_renaming)
+  | _ -> raise_notrace Not_renaming
+
+(* A cube of variables that an application spine applies to, listed in the order of its faces, with the dimensions of the application and of the cube, the modality of the application, and the keys of the variables. *)
+type applied_cube =
+  | Applied_cube :
+      level list * (any_dim * any_dim) * ('a, 'm, 'b) Modality.t * any_cell list
+      -> applied_cube
+
+(* A variable with no degeneracy or arguments, and its key. *)
+let keyed_var : type mode s. (mode, s) value -> (level * any_cell) option = function
+  | Neu { head = Live (Var { level; deg; key }); args = Emp; _ } when Option.is_some (is_id_deg deg)
+    -> Some (level, Any_cell key)
+  | _ -> None
+
+(* The cubes of variables that an application spine applies to, last first, if that is all it consists of. *)
+let rec applied_vars : type hmode mode any.
+    (hmode, mode, any, live) apps -> applied_cube list option = function
+  | Emp -> Some []
+  | Snoc (args, Arg (filter, _, xs, ins)) -> (
+      match is_id_ins ins with
+      | Some _ -> (
+          let faces = ref [] in
+          match
+            CubeOf.miter
+              {
+                it =
+                  (fun _ [ (x : _ normal) ] ->
+                    match keyed_var x.tm with
+                    | Some face -> faces := face :: !faces
+                    | None -> raise_notrace Not_renaming);
+              }
+              [ xs ]
+          with
+          | () ->
+              let faces = List.rev !faces in
+              Option.map
+                (fun cubes ->
+                  Applied_cube
+                    ( List.map fst faces,
+                      (Any (cod_left_ins ins), Any (CubeOf.dim xs)),
+                      Modality.filter_modality filter,
+                      List.map snd faces )
+                  :: cubes)
+                (applied_vars args)
+          | exception Not_renaming -> None)
+      | _ -> None)
+  | Snoc (_, Field _) | Snoc (_, Inst _) -> None
+
+(* Whether two pairs of dimensions are equal. *)
+let same_dims ((Any a, Any b) : any_dim * any_dim) ((Any c, Any d) : any_dim * any_dim) : bool =
+  match (D.compare a c, D.compare b d) with
+  | Eq, Eq -> true
+  | _ -> false
+
+(* If an application spine applies to exactly the given cubes of distinct variables, in some order, each at the dimension of its abstraction and with the modality and key required by its binder, return the position in the spine of each of them.  We compare the dimensions as well as the variables, since a cube doesn't determine its dimension at arity 0, where it has only one face: for instance, an abstraction over a cube x of dimension e can apply an ordinary function f to x, as in (x ↦ f x) : (x : Id A .) →⁽ᵉ⁾ Id B ., and recovering f by applying the abstraction to its argument would apply it at the wrong dimension, while contracting that application would give it the wrong type. *)
+let leaf_positions : type hmode mode any.
+    lam_binder list -> (hmode, mode, any, live) apps -> int list option =
+ fun binders args ->
+  match applied_vars args with
+  | None -> None
+  | Some applied ->
+      (* Since the variables are distinct, if there are as many cubes as arguments and each is one of the arguments, then the arguments are a permutation of them. *)
+      let applied = List.rev applied in
+      if List.length applied <> List.length binders then None
+      else
+        let positions =
+          List.map
+            (fun (Binder { vars; dims; arg; key; _ }) ->
+              let rec find i = function
+                | [] -> None
+                | Applied_cube (ys, ydims, modality, keys) :: yss ->
+                    if ys = vars then
+                      match Modality.compare modality arg with
+                      | Eq
+                        when same_dims ydims dims
+                             && List.for_all
+                                  (fun (Any_cell k) ->
+                                    match Modalcell.compare k key with
+                                    | Eq -> true
+                                    | Neq -> false)
+                                  keys -> Some i
+                      | _ -> None
+                    else find (i + 1) yss in
+              find 0 applied)
+            binders in
+        if List.for_all Option.is_some positions then Some (List.map Option.get positions) else None
+
+(* Invert a value in the environment or arguments of a metavariable, of a given type, that is sent to a variable of the metavariable's context with a given modal annotation and level in the renamed context.  The value must be built out of tuples (of records with eta, at any dimension) and abstractions (over a cube of variables of any dimension, possibly modal), where every leaf is a variable of the current context applied to exactly all the cubes of variables bound by the abstractions above it, in some order, each at the dimension of its abstraction, or a permutation of such a variable.  Then every leaf can be recovered from the variable of the metavariable's context, and every such value is the eta-expansion of that variable applied to the inverse.  The variables bound by the abstractions are given fresh levels, at least base.
+
+   A leaf has the right annotation if it is that of the variable, composed with the right adjoints of the modal fields we have passed into, behind whose locks their components live.  Inside a modal field, the variables bound by enclosing abstractions are seen through its lock, so a leaf must apply them with the modality and key that make them recoverable (see lam_binder). *)
+let invert_value : type dom modality b.
+    (dom, modality, b) Modality.t ->
+    base:int ->
+    fresh:(unit -> int) ->
+    level ->
+    (dom, kinetic) value ->
+    (dom, kinetic) value ->
+    inverted_leaf list =
+ fun modality ~base ~fresh x v ty ->
+  let rec go : type m a.
+      (m, a, b) Modality.t ->
+      inversion_step list ->
+      int ->
+      lam_binder list ->
+      (m, kinetic) value ->
+      (m, kinetic) value ->
+      inverted_leaf list ->
+      inverted_leaf list =
+   fun ann path napps lams v ty acc ->
+    let mode = Modality.src ann in
+    match view_term v with
+    | Neu { head = Live (Var { level; deg; key }); args; _ } ->
+        if fst level >= base then raise_notrace Not_renaming;
+        (* A leaf can be a permutation of a variable, which is invertible.  If it is applied, then the variable is the inverse permutation of the abstraction of the rest of the path over the arguments, and since permutations commute with projections and applications, this is the result of acting by the inverse permutation on the part of the path before the first application, followed by the rest of the path (see readback_inverted_head). *)
+        let inverse =
+          match (is_id_deg deg, perm_of_deg deg) with
+          | Some _, _ -> None
+          | None, Some p -> Some (Any_deg (deg_of_perm (perm_inv p)))
+          | None, None -> raise_notrace Not_renaming in
+        (* The position among the leaf's arguments of each cube of variables bound by the abstractions, in the order they were bound. *)
+        let positions =
+          match leaf_positions (List.rev lams) args with
+          | Some positions -> Array.of_list positions
+          | None -> raise_notrace Not_renaming in
+        (* A leaf with a nonidentity key is recovered with whatever key the readback finds that composes with it to give the key of the occurrence (see readback_inverted_prekeyed). *)
+        let leaf_annotated =
+          (not (Modalcell.is_id key))
+          ||
+          match Modality.compare (Modalcell.vsrc key) ann with
+          | Eq -> true
+          | Neq -> false in
+        let prekeys = if Modalcell.is_id key then None else Some (entry_key_only key) in
+        (* The applications in the path, in order, take the arguments in those positions. *)
+        let count = ref 0 in
+        let path =
+          List.map
+            (function
+              | Apply (_, mu) ->
+                  let i = !count in
+                  count := i + 1;
+                  Apply (positions.(i), mu)
+              | step -> step)
+            (List.rev path) in
+        (* Applications at the end of the path that take the last arguments in order are eta-contracted. *)
+        let rec contract path napps =
+          match path with
+          | Apply (i, _) :: path when i = napps - 1 -> contract path (napps - 1)
+          | _ -> (path, napps) in
+        let path, napps = contract (List.rev path) napps in
+        {
+          leaf = level;
+          inversion = { var = x; path = List.rev path; napps; inverse; prekeys };
+          leaf_annotated;
+        }
+        :: acc
+    | Struct { fields; ins; eta = Eta; _ } -> (
+        match (is_id_ins ins, view_type ty "invert_value") with
+        | Some _, Canonical (_, Codata { eta = Eta; env; _ }, tyins, _)
+          when Option.is_some (is_id_ins tyins) ->
+            let n = cod_left_ins ins in
+            Bwd.fold_left
+              (fun acc
+                   (Value.StructfieldAbwd.Entry (fld, sf) :
+                     (m * _ * kinetic * _) Value.StructfieldAbwd.entry) ->
+                match sf with
+                | Lower ((Adjunction { left; right; unit; _ } as adj), lev, _) -> (
+                    let (Val c) = force_eval lev in
+                    match Modalcell.compare_adjunction_id adj with
+                    | Eq ->
+                        go ann
+                          (Proj (fld, n) :: path)
+                          napps lams c
+                          (tyof_field (Modality.id mode) v ty fld (ins_zero (dim_env env)))
+                          acc
+                    | Neq ->
+                        (* The component of a modal field lives behind a lock by the right adjoint, and its type is computed from the struct keyed by the unit, as in readback at a record type.  The variables bound by enclosing abstractions are then seen through that lock (see lam_binder). *)
+                        let lams = List.map (binder_into adj) lams in
+                        let vu = act_value v (id_deg D.zero) unit in
+                        let tyu = act_ty v ty (id_deg D.zero) unit in
+                        let (Comp comp) = Modality.comp right in
+                        go (Modality.comp_out ann comp)
+                          (Mproj (fld, n, adj) :: path)
+                          napps lams c
+                          (tyof_field left vu tyu fld (ins_zero (dim_env env)))
+                          acc))
+              acc fields
+        | _ -> raise_notrace Not_renaming)
+    | Lam _ -> (
+        match view_type ty "invert_value" with
+        | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) ->
+            let Eq = eq_of_ins_zero ins in
+            (* The fresh variables, one for each face, are created by dom_vars in a context that exists only to supply their level. *)
+            let args, _ =
+              dom_vars
+                (Ctx.of_ordered ~level:(fresh ()) (Ctx.Ordered.empty mode))
+                (Modality.filter_modality filter) doms in
+            let zs = ref [] in
+            CubeOf.miter
+              {
+                it =
+                  (fun _ [ z ] ->
+                    match z with
+                    | Neu { head = Live (Var { level; _ }); _ } -> zs := level :: !zs
+                    | _ -> fatal (Anomaly "fresh variable isn't a variable"));
+              }
+              [ args ];
+            let (Val body) = apply v filter args in
+            let mu = Modality.filter_modality filter in
+            go ann
+              (Apply (0, mu) :: path)
+              (napps + 1)
+              (lam_binder (List.rev !zs) (Any (BindCube.dim cods), Any (CubeOf.dim args)) mu :: lams)
+              body
+              (tyof_app cods tyargs filter args)
+              acc
+        | _ -> raise_notrace Not_renaming)
+    | _ -> raise_notrace Not_renaming in
+  go modality [] 0 [] v ty []
+
+(* An application spine consisting only of function arguments has the same mode at both ends. *)
+let rec arg_spine : type hmode mode any. (hmode, mode, any, live) apps -> (hmode, mode) Eq.t option
+    = function
+  | Emp -> Some Eq
+  | Snoc (args, Arg _) -> arg_spine args
+  | Snoc (_, Field _) | Snoc (_, Inst _) -> None
+
+(* The result of extending a renamed context by the arguments of a metavariable, including the type of the metavariable applied to those arguments, if known. *)
+type (_, _) renamed_args =
+  | Renamed_args :
+      ('mode, 'a, 'bc) Ctx.Ordered.t
+      * (('mode, 'bc, kinetic) term -> ('mode, 'b, kinetic) term)
+      * ('mode, kinetic) value option
+      -> ('mode, 'b) renamed_args
+
+(* The head and a prefix of the spine of a neutral value that could be an eta-contracted solution of a metavariable applied to arguments. *)
+type _ contractible =
+  | Contractible : 'hmode head * ('hmode, 'mode, 'any, live) apps -> 'mode contractible
+
+(* A prefix of a neutral doesn't have a stored value, so we can only contract neutrals whose readback doesn't need to look at it (see unfold_solved). *)
+let contractible : type mode. (mode, kinetic) value -> mode contractible option = function
+  | Neu { head = Live (Var _ as head); args; _ } -> Some (Contractible (head, args))
+  | Neu { head = Live (Const _ as head); args; _ } -> Some (Contractible (head, args))
+  | Neu { head = Live (Meta { kind = Unif_meta unif; _ } as head); args; _ }
+    when not (Global.unif_solved unif) -> Some (Contractible (head, args))
+  | _ -> None
+
+(* Whether a value is literally the variable with a given level and degeneracy, with no key or arguments. *)
+let is_var_with_deg : type mode s m n. level -> (m, n) deg -> (mode, s) value -> bool =
+ fun var deg x ->
+  match x with
+  | Neu { head = Live (Var { level; deg = xdeg; key }); args = Emp; _ } ->
+      level = var && Modalcell.is_id key && Option.is_some (deg_equiv deg xdeg)
+  | _ -> false
+
+(* Whether an argument of a metavariable, which is a cube of permutations of plain variables, is the same as the last argument of another neutral. *)
+let same_arg : type dom1 modality1 n1 m1 dom2 modality2 n2 m2 mode x1 y1 x2 y2.
+    (dom1, modality1, mode, n1, m1) Modality.filter_dim ->
+    (n1, dom1 normal) CubeOf.t ->
+    (x1, m1, y1) insertion ->
+    (dom2, modality2, mode, n2, m2) Modality.filter_dim ->
+    (n2, dom2 normal) CubeOf.t ->
+    (x2, m2, y2) insertion ->
+    bool =
+ fun filter1 xs1 ins1 filter2 xs2 ins2 ->
+  let modality1 = Modality.filter_modality filter1 in
+  match
+    ( Modality.compare modality1 (Modality.filter_modality filter2),
+      D.compare (CubeOf.dim xs1) (CubeOf.dim xs2),
+      D.compare (cod_left_ins ins1) (cod_left_ins ins2),
+      is_id_ins ins2 )
+  with
+  | Eq, Eq, Eq, Some _ ->
+      let same = ref true in
+      CubeOf.miter2
+        {
+          it2 =
+            (fun _ (x1 : _ normal) (x2 : _ normal) ->
+              (* An argument that is inverted (see invert_value) rather than a variable isn't the same as anything. *)
+              match renamed_var modality1 x1.tm with
+              | { var; deg = Any_deg deg; key = None; _ } ->
+                  if not (is_var_with_deg var deg (view_term x2.tm)) then same := false
+              | { key = Some _; _ } -> same := false
+              | exception Not_renaming -> same := false);
+        }
+        xs1 xs2;
+      !same
+  | _ -> false
+
+(* Determine the variables to use for abstracting over an argument of a metavariable, from the function-type of the metavariable if we can, and also the codomain of that function-type applied to the argument.  This is only for display, so if anything goes wrong we just use anonymous variables. *)
+let renamed_binder : type dom modality mode n m.
+    (mode, kinetic) value option ->
+    (dom, modality, mode, n, m) Modality.filter_dim ->
+    m D.t ->
+    (n, dom normal) CubeOf.t ->
+    n variables * (mode, kinetic) value option =
+ fun ty filter m xs ->
+  let anon () = (singleton_variables (CubeOf.dim xs) (`Anon no_hints), None) in
+  match ty with
+  | None -> anon ()
+  | Some ty -> (
+      Reporter.discard_errors ~fallback:anon @@ fun () ->
+      match view_type ~severity:Asai.Diagnostic.Error ty "renamed_binder" with
+      | Canonical (_, Pi { x; filter = pifilter; implicit = _; doms; cods }, ins, tyargs) -> (
+          let Eq = eq_of_ins_zero ins in
+          match
+            ( Modality.compare (Modality.filter_modality filter) (Modality.filter_modality pifilter),
+              D.compare m (BindCube.dim cods) )
+          with
+          | Eq, Eq ->
+              let Eq = Modality.filter_uniq filter pifilter in
+              (View.fill_hints doms x, Some (tyof_app cods tyargs filter (val_of_norm_cube xs)))
+          | _ -> anon ())
+      | _ -> anon ())
+
+(* Look up the cube of values of a cube of variables in an environment, ignoring any prekeys that would act on them, and say whether there were any. *)
+let renamed_values : type dom modality mode b k.
+    (mode, D.zero, (b, (modality, k) dim_entry) snoc) env ->
+    (dom, modality, mode) Modality.t ->
+    k D.t ->
+    (k, (dom, kinetic) value) CubeOf.t * bool =
+ fun env modality k ->
+  let (Looked_up { act; op; entry = xs; pre }) =
+    lookup_cube env (D.zero_plus k) modality Now (id_opt_op k) in
+  match is_id_opt_op op with
+  | Some Eq ->
+      let s = id_deg k in
+      let id = Modalcell.id2 (Modality.src modality) in
+      ( CubeOf.build k { build = (fun fa -> act (CubeOf.find xs fa) s id) },
+        not (Modalcell.is_id pre) )
+  | None -> raise_notrace Not_renaming
+
+(* Given a metavariable, the current context, the metavariable's environment, arguments, type, and context, and the value being compared with it, compute the renamed context, along with whether anything is undefined in it, a function wrapping a term in that context in abstractions over the arguments, and a list of eta-contracted solutions to try first, most contracted first; or return None if the environment and arguments aren't a renaming.  Since the entries of the new context have values and types in the current context, and all the levels of its variables are levels of the current context, new variables created in it are given levels above those of the current context. *)
+let renamed_ctx : type mode a b c d n x any.
+    (mode, x, d, kinetic) Meta.t ->
+    (mode, a, b) Ctx.t ->
+    (mode, n, d) env ->
+    (mode, mode, any, live) apps ->
+    (mode, d, kinetic) term ->
+    (mode, c, d) Ctx.t ->
+    (mode, kinetic) value ->
+    (mode, d) renamed_ctx option =
+ fun meta ctx env args mty (Permute { ctx = mctx; _ }) v ->
+  let level = Ctx.level ctx in
+  (* Inverted variables (see invert_value) and the variables bound by the abstractions they are sent to get fresh levels, above those of the current context, and the new variables created in the renamed context come after those. *)
+  let next_level = ref level in
+  let fresh () =
+    let l = !next_level in
+    next_level := l + 1;
+    l in
+  let counts : (level, int) Hashtbl.t = Hashtbl.create 20 in
+  let undefined = ref false in
+  let count_level var annotated =
+    let count = Option.value (Hashtbl.find_opt counts var) ~default:0 in
+    Hashtbl.replace counts var (count + 1);
+    if count > 0 || not annotated then undefined := true in
+  (* The inverses of the leaves that are defined, filled in as we build the context, and the fresh level and leaves of each inverted variable, computed when we first scan it: for the environment by the level of the variable in mctx, and for the arguments in order and then by face. *)
+  let inversions : (level, inversion) Hashtbl.t = Hashtbl.create 4 in
+  (* The variables of the current context that variables of mctx are sent to underneath nontrivial prekeys, with those prekeys; whether we have passed such a prekey in scanning the environment from the top, so that it may act on everything below; and how to compute the prekeys acting on a variable of mctx, given its level (set below, once we know the environment is zero-dimensional). *)
+  let prekeyed_vars : (level, prekey_data) Hashtbl.t = Hashtbl.create 4 in
+  let prekeyed_below = ref false in
+  let prekey_data : (level -> prekey_data option) ref = ref (fun _ -> None) in
+  let inverted_entries : (level, level * inverted_leaf list) Hashtbl.t = Hashtbl.create 4 in
+  (* The preimages of each variable of the current context, in case it has more than one: variables of mctx, identified by their level in mctx or their position among the arguments, and leaves of inverted variables.  Those of a variable with more than one become its candidates (see resolve_candidate), and then its preimages that are variables get fresh levels in the renamed context. *)
+  let preimages :
+      ( level,
+        ( [ `Entry of level | `Arg of int * any_sface ] * prekey_data option * bool,
+          inverted_leaf )
+        Either.t
+        list )
+      Hashtbl.t =
+    Hashtbl.create 20 in
+  let add_preimage var pre =
+    Hashtbl.replace preimages var (pre :: Option.value (Hashtbl.find_opt preimages var) ~default:[])
+  in
+  let candidates : (level, candidate list) Hashtbl.t = Hashtbl.create 4 in
+  let fresh_levels : ([ `Entry of level | `Arg of int * any_sface ], level) Hashtbl.t =
+    Hashtbl.create 4 in
+  let inverted_args : (any_sface, level * inverted_leaf list) Hashtbl.t Queue.t = Queue.create () in
+  (* Count a value that is a variable, or else invert it, at a type that we compute only then.  The faces of a cube are treated separately. *)
+  let count_or_invert : type dom modality mode.
+      ?prekeys:(unit -> prekey_data option) ->
+      [ `Entry of level | `Arg of int * any_sface ] ->
+      (dom, modality, mode) Modality.t ->
+      (dom, kinetic) value ->
+      (unit -> (dom, kinetic) value) ->
+      (level * inverted_leaf list) option =
+   fun ?(prekeys = fun () -> None) id modality v ty ->
+    match renamed_var modality v with
+    | { var; annotated; key; _ } ->
+        count_level var annotated;
+        let prekeys = with_entry_key (prekeys ()) key in
+        Option.iter (Hashtbl.replace prekeyed_vars var) prekeys;
+        add_preimage var (Either.Left (id, prekeys, annotated));
+        None
+    | exception Not_renaming ->
+        (* Underneath nontrivial prekeys, the leaves record them (see readback_inverted_prekeyed). *)
+        let prekeys = prekeys () in
+        let var = (fresh (), 0) in
+        let leaves =
+          List.map
+            (fun leaf ->
+              let key =
+                Option.map (fun (Prekey_data (_, _, _, key)) -> Any_cell key) leaf.inversion.prekeys
+              in
+              { leaf with inversion = { leaf.inversion with prekeys = with_entry_key prekeys key } })
+            (invert_value modality ~base:level ~fresh var v (ty ())) in
+        List.iter
+          (fun ({ leaf; leaf_annotated; _ } as l) ->
+            count_level leaf leaf_annotated;
+            add_preimage leaf (Either.Right l))
+          leaves;
+        Some (var, leaves) in
+  (* The type in the current context of a variable of mctx, given the part of mctx up to and including the cube containing it (whose earlier faces its type can refer to) and the corresponding part of the environment, is its own type substituted by the environment.  Like the variable, it lives behind a lock by its annotation. *)
+  let entry_type : type dom modality mode a d.
+      (dom, modality, mode) Modality.t ->
+      (mode, a, d) Ctx.Ordered.t ->
+      (mode, D.zero, d) env ->
+      dom Binding.t ->
+      (dom, kinetic) value =
+   fun modality mctx env b ->
+    Unifying.run ~env:None @@ fun () ->
+    let (Locked (plus_lock, lctx)) = Ctx.Ordered.lock mctx modality in
+    eval_term (lock_env env plus_lock)
+      (readback_val (Ctx.of_ordered lctx) (Lazy.force (Binding.value b).ty)) in
+  (* First we make a pass through the environment and arguments to check that they are a renaming and find out which variables are repeated, since the variables in the context we build have to be determined starting from the left. *)
+  let rec scan : type mode a d. (mode, a, d) Ctx.Ordered.t -> (mode, D.zero, d) env -> unit =
+   fun mctx env ->
+    match mctx with
+    | Emp _ -> ()
+    | Weaken (mctx, _) -> scan mctx env
+    | Lock (mctx, g) ->
+        let (Restrict_keys (env, pre)) =
+          restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
+        (* A nonidentity prekey encountered in the environment, such as the counit of an adjunction after projecting a modal field, acts on the values of the variables behind this lock, so readback has to take it into account (see readback_prekeyed). *)
+        if not (Modalcell.is_id pre) then prekeyed_below := true;
+        scan mctx env
+    | Snoc (mctx, entry, _) -> (
+        match entry.vars with
+        | Alias -> scan mctx env
+        | Vars ->
+            let modality = Ctx.modality_entry entry in
+            let bindings = Ctx.bindings_entry entry in
+            let values, pre = renamed_values env modality (CubeOf.dim bindings) in
+            (* A prekey above this entry also acts on all the entries below it. *)
+            if pre then prekeyed_below := true;
+            let cubectx = Ctx.Ordered.invis mctx (Ctx.filter_entry entry) bindings in
+            CubeOf.miter2
+              {
+                it2 =
+                  (fun _ v b ->
+                    (* A let-bound variable isn't part of the renaming: its value in the environment is determined by the rest of the environment. *)
+                    match Binding.level b with
+                    | None -> ()
+                    | Some l -> (
+                        let prekeys () = if !prekeyed_below then !prekey_data l else None in
+                        match
+                          count_or_invert ~prekeys (`Entry l) modality v (fun () ->
+                              entry_type modality cubectx env b)
+                        with
+                        | None -> ()
+                        | Some inv -> Hashtbl.add inverted_entries l inv));
+              }
+              values bindings;
+            scan mctx (remove_top env)) in
+  let rec scan_args : type any. (mode, mode, any, live) apps -> int = function
+    | Emp -> 0
+    | Snoc (args, Arg (filter, _, xs, ins)) ->
+        (* A degeneracy on the application isn't part of a renaming. *)
+        if Option.is_none (is_id_ins ins) then raise_notrace Not_renaming;
+        let pos = scan_args args in
+        let modality = Modality.filter_modality filter in
+        let inverted = Hashtbl.create 1 in
+        CubeOf.miter
+          {
+            it =
+              (fun fa [ (x : _ normal) ] ->
+                match
+                  count_or_invert
+                    (`Arg (pos, Any_sface fa))
+                    modality x.tm
+                    (fun () -> Lazy.force x.ty)
+                with
+                | None -> ()
+                | Some inv -> Hashtbl.add inverted (Any_sface fa) inv);
+          }
+          [ xs ];
+        Queue.add inverted inverted_args;
+        pos + 1
+    | Snoc (_, Field _) | Snoc (_, Inst _) -> raise_notrace Not_renaming in
+  (* After scanning, the preimages of a variable with more than one become its candidates, and those that are variables get fresh levels. *)
+  let make_candidates () =
+    Hashtbl.iter
+      (fun var pres ->
+        if List.length pres > 1 then
+          Hashtbl.replace candidates var
+            (List.rev_map
+               (function
+                 | Either.Left (id, prekeys, annotated) ->
+                     if annotated then (
+                       let l = (fresh (), 0) in
+                       Hashtbl.replace fresh_levels id l;
+                       Cand_var { var = l; prekeys })
+                     else Cand_opaque
+                 | Either.Right { inversion; leaf_annotated; _ } ->
+                     if leaf_annotated then Cand_inverted inversion else Cand_opaque)
+               pres))
+      preimages in
+  (* Then we build the context from the left.  The bindings of a cube of variables are determined by the values in the environment, except that a let-bound variable has no level for readback to find.  The types of the variables in a cube can depend on the earlier ones, so we fill them in as we go.  We read back those types in the context locked by the modality of the variables. *)
+  let renamed_bindings : type dom modality mode a b k.
+      (mode, a, b) Ctx.Ordered.t ->
+      (dom, modality, mode, k, k) Modality.filter_dim ->
+      (k, (dom, kinetic) value) CubeOf.t ->
+      (k, bool) CubeOf.t ->
+      (k, (level * inverted_leaf list * (dom, kinetic) value Lazy.t) option) CubeOf.t ->
+      (k, level option) CubeOf.t ->
+      (k, dom Binding.t) CubeOf.t =
+   fun rest filter values free inverted rlevels ->
+    let modality = Modality.filter_modality filter in
+    let vbs = CubeOf.build (CubeOf.dim values) { build = (fun _ -> Binding.unknown ()) } in
+    let (Locked (_, lctx)) = Ctx.Ordered.lock (Ctx.Ordered.invis rest filter vbs) modality in
+    let tyctx = Ctx.of_ordered ~level:!next_level lctx in
+    let dom = Modality.src modality in
+    let failed_binding vb =
+      Binding.specify vb None
+        { tm = failed dom (lazy (failed_type dom)); ty = lazy (failed_type dom) } in
+    CubeOf.miter2
+      {
+        it2 =
+          (fun fa v vb ->
+            match CubeOf.find inverted fa with
+            (* An inverted variable is defined if its type is, and then so are its leaves that aren't repeated and have the right annotation. *)
+            | Some (var, leaves, ty) ->
+                if
+                  (not !undefined)
+                  ||
+                    try
+                      let _ = readback_val tyctx (Lazy.force ty) in
+                      true
+                    with Unsolvable _ -> false
+                then (
+                  List.iter
+                    (fun { leaf; inversion; leaf_annotated } ->
+                      if leaf_annotated && Hashtbl.find_opt counts leaf = Some 1 then
+                        Hashtbl.replace inversions leaf inversion)
+                    leaves;
+                  Binding.specify vb (Some var) { tm = v; ty })
+                else failed_binding vb
+            | None ->
+                if CubeOf.find free fa then
+                  let { var; normal; annotated; _ } = renamed_var modality v in
+                  (* A variable that is one of several preimages gets a fresh level, and is a candidate for its image (see resolve_candidate). *)
+                  let rlevel = CubeOf.find rlevels fa in
+                  let defined =
+                    (Option.is_some rlevel || Hashtbl.find_opt counts var = Some 1)
+                    && annotated
+                    && ((not !undefined)
+                       ||
+                         try
+                           let _ = readback_val tyctx (Lazy.force normal.ty) in
+                           true
+                         with Unsolvable _ -> false) in
+                  if defined then
+                    Binding.specify vb (Some (Option.value rlevel ~default:var)) normal
+                  else
+                    (* An undefined variable gets a failed value, rather than the one in the environment, so that it won't be recognized as part of an identity environment of some other metavariable. *)
+                    failed_binding vb
+                else
+                  (* Nothing ever looks at the type of the binding of a let-bound variable. *)
+                  Binding.specify vb None
+                    {
+                      tm = v;
+                      ty = lazy (fatal (Anomaly "type of let-bound variable in renamed context"));
+                    });
+      }
+      values vbs;
+    vbs in
+  (* Whether a variable of mctx, given the part of mctx up to and including its cube and the corresponding part of the environment, was inverted when we scanned it, and if so its fresh level, its leaves, and its type. *)
+  let inverted_entry : type dom modality mode a d.
+      (dom, modality, mode) Modality.t ->
+      (mode, a, d) Ctx.Ordered.t ->
+      (mode, D.zero, d) env ->
+      dom Binding.t ->
+      (level * inverted_leaf list * (dom, kinetic) value Lazy.t) option =
+   fun modality mctx env b ->
+    match Option.bind (Binding.level b) (Hashtbl.find_opt inverted_entries) with
+    | None -> None
+    | Some (var, leaves) -> Some (var, leaves, lazy (entry_type modality mctx env b)) in
+  (* Aliases and weakening entries contribute nothing to the checked length, the environment, or readback, so we omit them. *)
+  let rec go : type mode a d.
+      (mode, a, d) Ctx.Ordered.t -> (mode, D.zero, d) env -> (mode, d) renamed_ordered =
+   fun mctx env ->
+    match mctx with
+    | Emp mode -> Renamed_ordered (Emp mode)
+    | Weaken (mctx, _) -> go mctx env
+    | Lock (mctx, g) ->
+        let (Restrict_keys (env, _)) =
+          restrict_keys env (plus_with_locks_lock (plus_with_no_locks (Modality.Gen.tgt g)) g) in
+        let (Renamed_ordered mctx) = go mctx env in
+        Renamed_ordered (Lock (mctx, g))
+    | Snoc (mctx, entry, af) -> (
+        match entry.vars with
+        | Alias -> go mctx env
+        | Vars ->
+            let modality = Ctx.modality_entry entry in
+            let bindings = Ctx.bindings_entry entry in
+            let k = CubeOf.dim bindings in
+            let values, _ = renamed_values env modality k in
+            let (Renamed_ordered rest) = go mctx (remove_top env) in
+            let free =
+              CubeOf.build k
+                { build = (fun fa -> Option.is_some (Binding.level (CubeOf.find bindings fa))) }
+            in
+            let cubectx = Ctx.Ordered.invis mctx (Ctx.filter_entry entry) bindings in
+            let inverted =
+              CubeOf.build k
+                {
+                  build = (fun fa -> inverted_entry modality cubectx env (CubeOf.find bindings fa));
+                } in
+            let rlevels =
+              CubeOf.build k
+                {
+                  build =
+                    (fun fa ->
+                      Option.bind
+                        (Binding.level (CubeOf.find bindings fa))
+                        (fun l -> Hashtbl.find_opt fresh_levels (`Entry l)));
+                } in
+            let vbs = renamed_bindings rest (Ctx.filter_entry entry) values free inverted rlevels in
+            let (Plus a_x) = N.plus (N.plus_right af) in
+            Renamed_ordered (Snoc (rest, { entry with bindings = vbs }, a_x))) in
+  let contracted : (unit -> (mode, d, kinetic) term option) list ref = ref [] in
+  let rec go_args : type a any.
+      (mode, a, d) Ctx.Ordered.t ->
+      (mode, mode, any, live) apps ->
+      (mode, kinetic) value option ->
+      mode contractible option ->
+      (mode, d) renamed_args * int =
+   fun rest args ty vspine ->
+    match args with
+    | Emp -> (Renamed_args (rest, (fun tm -> tm), ty), 0)
+    | Snoc (args, Arg (filter, implicit, xs, ins)) ->
+        (* If the last arguments agree, we can continue to compare the rest of the arguments and try to omit this one. *)
+        let vprefix : mode contractible option =
+          match vspine with
+          | Some (Contractible (head, Snoc (vargs, Arg (vfilter, _, ys, vins))))
+            when same_arg filter xs ins vfilter ys vins -> Some (Contractible (head, vargs))
+          | _ -> None in
+        let Renamed_args (rest, wrap, ty), pos = go_args rest args ty vprefix in
+        (match vprefix with
+        | Some (Contractible (head, vargs)) ->
+            let rctx = Ctx.of_ordered ~level:!next_level rest in
+            let attempt () =
+              Displaying.run ~env:false @@ fun () ->
+              Unifying.run
+                ~env:
+                  (Some
+                     {
+                       target = Wrap meta;
+                       undefined = (fun _ -> false);
+                       under_rigid = false;
+                       inverted = Hashtbl.find_opt inversions;
+                       prekeyed = Hashtbl.find_opt prekeyed_vars;
+                       candidates = Hashtbl.find_opt candidates;
+                     })
+              @@ fun () ->
+              try Some (wrap (readback_neu rctx head vargs)) with Unsolvable _ -> None in
+            contracted := !contracted @ [ attempt ]
+        | None -> ());
+        let k = CubeOf.dim xs in
+        let ifilter = Modality.filter_idempotent filter in
+        let free = CubeOf.build k { build = (fun _ -> true) } in
+        let inverted =
+          let tbl = Queue.take inverted_args in
+          CubeOf.build k
+            {
+              build =
+                (fun fa ->
+                  Option.map
+                    (fun (var, leaves) -> (var, leaves, (CubeOf.find xs fa).ty))
+                    (Hashtbl.find_opt tbl (Any_sface fa)));
+            } in
+        let rlevels =
+          CubeOf.build k
+            { build = (fun fa -> Hashtbl.find_opt fresh_levels (`Arg (pos, Any_sface fa))) } in
+        let vbs = renamed_bindings rest ifilter (val_of_norm_cube xs) free inverted rlevels in
+        let dim = cod_left_ins ins in
+        let vars, ty = renamed_binder ty filter dim xs in
+        ( Renamed_args
+            ( Ctx.Ordered.invis rest ifilter vbs,
+              (* The abstraction over an argument is implicit exactly when the argument is, since both are determined by the type of the metavariable. *)
+              (fun tm -> wrap (Lam (vars, dim, filter, implicit, tm))),
+              ty ),
+          pos + 1 )
+    | Snoc (_, Field _) | Snoc (_, Inst _) -> raise_notrace Not_renaming in
+  match (env, args) with
+  (* If the environment is the identity environment of the metavariable's own context, and there are no arguments, that context itself is what we want.  It isn't enough for the environment to be the identity environment of *some* context, since that context might have let-bound some of the variables of the metavariable's context, e.g. a match that refines a variable to a constructor in a branch; then reading back in that context could find a solution that isn't the most general one. *)
+  | Ctx _, Emp when Option.is_some (is_identity_ordered_env mctx env (Meta.tctx meta)) ->
+      Some
+        (Renamed_ctx
+           {
+             ctx = Ctx.of_ordered ~level mctx;
+             check_type = false;
+             in_image = (fun _ -> false);
+             inverted = (fun _ -> None);
+             prekeyed = (fun _ -> None);
+             candidates = (fun _ -> None);
+             wrap = (fun tm -> tm);
+             contracted = [];
+           })
+  | _ -> (
+      match D.compare (dim_env env) D.zero with
+      | Neq -> None
+      | Eq -> (
+          Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
+          Displaying.run ~env:false @@ fun () ->
+          Unifying.run
+            ~env:
+              (Some
+                 {
+                   target = Wrap meta;
+                   undefined = Hashtbl.mem counts;
+                   under_rigid = false;
+                   inverted = Hashtbl.find_opt inversions;
+                   prekeyed = Hashtbl.find_opt prekeyed_vars;
+                   candidates = Hashtbl.find_opt candidates;
+                 })
+          @@ fun () ->
+          (* The prekeys acting on a variable of mctx are those that its evaluation in the environment would collect: restrict_keys collects some while stripping off the locks to its right, and lookup_cube collects the rest on the way down to it.  We record these together with the composite of those locks. *)
+          (prekey_data :=
+             fun l ->
+               match Ctx.Ordered.find_level mctx l with
+               | None -> None
+               | Some
+                   (Lookup
+                      {
+                        result = `Var (_, fa);
+                        modality;
+                        insert;
+                        plus = Plus_with_locks (_, locks) as plus;
+                        _;
+                      }) ->
+                   let (Restrict_keys (env1, outer)) = restrict_keys env plus in
+                   let (Plus n_k) = D.plus (cod_sface fa) in
+                   let (Looked_up { pre = inner; _ }) =
+                     lookup_cube env1 n_k modality insert
+                       (id_opt_op (D.plus_out (dim_env env1) n_k)) in
+                   if Modalcell.is_id outer && Modalcell.is_id inner then None
+                   else
+                     Some
+                       (Prekey_data
+                          (outer, inner, Locks.cod locks, Modalcell.id2 (Modalcell.hsrc outer)))
+               | Some (Lookup { result = `Field _; _ }) -> .);
+          try
+            scan mctx env;
+            let _ = scan_args args in
+            make_candidates ();
+            let (Renamed_ordered rest) = go mctx env in
+            let ty =
+              match args with
+              | Emp -> None
+              | _ -> Some (Norm.eval_term env mty) in
+            let vspine = if !undefined then None else contractible v in
+            let Renamed_args (rest, wrap, _), _ = go_args rest args ty vspine in
+            Some
+              (Renamed_ctx
+                 {
+                   ctx = Ctx.of_ordered ~level:!next_level rest;
+                   check_type = !undefined;
+                   in_image = Hashtbl.mem counts;
+                   inverted = Hashtbl.find_opt inversions;
+                   prekeyed = Hashtbl.find_opt prekeyed_vars;
+                   candidates = Hashtbl.find_opt candidates;
+                   wrap;
+                   contracted = !contracted;
+                 })
+          with Not_renaming -> None))
+
+(* Read back a value, at a type, as the solution of a unification metavariable in a renamed version of its context, or say why that's impossible: either rigidly, so that the value can't equal the metavariable however other metavariables are solved, or flexibly.  If anything is undefined in that context, the type can't contain it either; if it does, the failure is flexible, since other metavariables might be solved to remove it. *)
+let readback_unif_solution : type mode a b x y.
+    (mode, x, y, kinetic) Meta.t ->
+    (mode, a, b) Ctx.t ->
+    check_type:bool ->
+    in_image:(level -> bool) ->
+    inverted:(level -> inversion option) ->
+    prekeyed:(level -> prekey_data option) ->
+    candidates:(level -> candidate list option) ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value ->
+    ((mode, b, kinetic) term, [ `Rigid | `Flexible ]) Result.t =
+ fun meta ctx ~check_type ~in_image ~inverted ~prekeyed ~candidates v ty ->
+  Displaying.run ~env:false @@ fun () ->
+  Unifying.run
+    ~env:
+      (Some
+         {
+           target = Wrap meta;
+           undefined = in_image;
+           under_rigid = false;
+           inverted;
+           prekeyed;
+           candidates;
+         })
+  @@ fun () ->
+  match if check_type then ignore (readback_val ctx ty) with
+  | exception Unsolvable _ -> Error `Flexible
+  | () -> ( try Ok (readback_at Kinetic ctx v ty) with Unsolvable rigidity -> Error rigidity)

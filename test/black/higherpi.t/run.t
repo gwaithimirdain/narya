@@ -91,12 +91,9 @@
   
 
   $ narya higherpi.ny -e "echo {x₀ x₁ : A} {x₂ : refl A x₀ x₁} →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)"
-   ￫ error[E0702]
-   ￭ command-line exec string
-   1 | echo {x₀ x₁ : A} {x₂ : refl A x₀ x₁} →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
-     ^ unexpected implicit domain: the primary domain of a higher function-type must be explicit
+  {x₀ : A} {x₁ : A} {x₂ : Id A x₀ x₁} →⁽ᵉ⁾ Id B x₂ (f x₀) (g x₁)
+    : Type
   
-  [1]
 
   $ narya higherpi.ny -e "echo {x₀ x₁ : A} (x₂ : refl (B x₀) (f x₀) (f x₀)) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)"
    ￫ error[E0706]

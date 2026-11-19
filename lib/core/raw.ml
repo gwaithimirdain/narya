@@ -11,12 +11,21 @@ let locate_map f ({ value; loc } : 'a located) = locate_opt loc (f value)
 
 (* Raw (unchecked) terms, using intrinsically well-scoped De Bruijn indices, and separated into synthesizing terms and checking terms.  These match the user-facing syntax rather than the internal syntax.  In particular, applications, abstractions, and pi-types are all unary, there is only one universe, and the only operator actions are refl (including Id) and sym. *)
 
-(* Where an ImplicitApp gets its implicit first argument: the type being checked against itself, or the argument at the given (0-based) position of the constant that type is an application of, such as P in "forall ℕ P".  This is a stopgap until we have unification. *)
-type implicit_source = [ `Goal | `Goal_arg of int ]
+(* An argument in an application spine: a term; a term labelled by the face of the cube of arguments that it supplies, as in "{22 ≔ a}", which is always implicit; a dot ".", which inserts one cube of implicit arguments or instantiates one nullary dimension; or an ellipsis "…", which inserts all the leading implicit arguments or instantiates all the leading nullary dimensions (but not both), and must have at least one of these to do.  The last form is internal: it is what remains of an ellipsis that has done at least one of them, recording which, when its remaining work must be postponed, and it may have nothing left to do. *)
+type 'c app_arg =
+  [ `Arg of 'c
+  | `Face of string Asai.Range.located * 'c
+  | `Dot
+  | `Ellipsis
+  | `More_ellipsis of [ `Insert | `Instantiate ] ]
+
+(* An argument of a constructor: a term; a term labelled by the face of the cube of arguments that it supplies, which is always implicit; or a dot ".", which ends a cube of implicit arguments, leaving its remaining faces as placeholders. *)
+type 'c constr_arg = [ `Arg of 'c | `Face of string Asai.Range.located * 'c | `Dot ]
 
 module rec Make : functor (I : Indices) -> sig
   module Namevec : module type of Namevec (I)
   module Patternvars : module type of Patternvars (I)
+  module Patternitems : module type of Patternitems (I)
   include module type of Namevec.P
 
   type 'a index = 'a I.index * any_sface option
@@ -32,25 +41,29 @@ module rec Make : functor (I : Indices) -> sig
     | Key : 'a synth located * string list located -> 'a synth
     | Pi :
         ('a, 'b Fwn.suc, 'ab) Namevec.t
+        * [ `Explicit | `Implicit ]
         * string located list located
         * 'a check located
         * 'ab check located
         -> 'a synth
     | HigherPi :
         ('a, 'b Fwn.suc, 'ab) Namevec.t
+        * [ `Explicit | `Implicit ]
         * string located list located
         * 'a synth located
         * 'ab synth located
         -> 'a synth
-    | InstHigherPi :
-        'n D.pos * ('a, 'b, 'ab) tel * ('ab, 'c, 'abc) Namevec.t * 'abc check located
-        -> 'a synth
+    | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
     | App :
-        'a check located * 'a check option located * [ `Implicit | `Explicit ] located
+        'a check located * 'a check app_arg located * [ `Implicit | `Explicit ] located
         -> 'a synth
     | Asc : 'a check located * 'a check located -> 'a synth
     | AscLam :
-        I.name located * string located list located * 'a check located * 'a I.suc synth located
+        I.name located
+        * [ `Explicit | `Implicit ]
+        * string located list located
+        * 'a check located
+        * 'a I.suc synth located
         -> 'a synth
     | UU : 'mode Mode.t -> 'a synth
     | Let :
@@ -69,7 +82,6 @@ module rec Make : functor (I : Indices) -> sig
       }
         -> 'a synth
     | Fail : Reporter.Code.t -> 'a synth
-    | ImplicitSApp : 'a synth located * Asai.Range.t option * 'a synth located -> 'a synth
     | SFirst :
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
         * 'a synth option
@@ -83,7 +95,8 @@ module rec Make : functor (I : Indices) -> sig
     | Synth : 'a synth -> 'a check
     | Lam : {
         name : I.name located;
-        cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
+        cube :
+          [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal | `Generated ] located;
         implicit : [ `Explicit | `Implicit ];
         dom : (string located list located * 'a check located) option;
         body : 'a I.suc check located;
@@ -94,7 +107,7 @@ module rec Make : functor (I : Indices) -> sig
         * ((string * string list) option, [ `Normal | `Cube ] located * 'a check located) Abwd.t
         -> 'a check
     | Constr :
-        Constr.t located * ('a check located * [ `Implicit | `Explicit ] located) list
+        Constr.t located * ('a check constr_arg located * [ `Implicit | `Explicit ] located) list
         -> 'a check
     | Numeral : Q.t -> 'a check
     | Empty_co_match : 'a check
@@ -115,10 +128,8 @@ module rec Make : functor (I : Indices) -> sig
         num : int ref;
       }
         -> 'a check
+    | Unif : Reporter.Code.t option -> 'a check
     | Realize : 'a check -> 'a check
-    | ImplicitApp :
-        'a synth located * implicit_source * (Asai.Range.t option * 'a check located) list
-        -> 'a check
     | Embed : 'a I.embed -> 'a check
     | First :
         ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a check * bool) list
@@ -128,7 +139,7 @@ module rec Make : functor (I : Indices) -> sig
 
   and _ branch =
     | Branch :
-        ('a, 'b, 'ab) Patternvars.t located
+        ('a, 'ab) Patternitems.t located
         * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
         * 'ab check located
         -> 'a branch
@@ -152,7 +163,11 @@ module rec Make : functor (I : Indices) -> sig
   and (_, _, _) tel =
     | Emp : ('a, Fwn.zero, 'a) tel
     | Ext :
-        I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
+        I.name
+        * [ `Explicit | `Implicit ]
+        * string located list located
+        * 'a check located
+        * ('a I.suc, 'b, 'ab) tel
         -> ('a, 'b Fwn.suc, 'ab) tel
     | Same : I.name * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
 
@@ -179,6 +194,7 @@ functor
   struct
     module Namevec = Namevec (I)
     module Patternvars = Patternvars (I)
+    module Patternitems = Patternitems (I)
     include Namevec.P
 
     (* A raw De Bruijn index is a well-scoped (backwards) natural number (or, more generally, an element of I.index) together with a possible face.  During typechecking we will verify that the face, if given, is applicable to the variable as a "cube variable", and compile the combination into a more strongly well-scoped kind of index. *)
@@ -200,6 +216,7 @@ functor
       (* A pi-type binding one or more variables, all with the same domain, such as "(x y : A) → B".  The domain is stored only once, in the outer scope, so it is processed and typechecked only once. *)
       | Pi :
           ('a, 'b Fwn.suc, 'ab) Namevec.t
+          * [ `Explicit | `Implicit ]
           * string located list located
           * 'a check located
           * 'ab check located
@@ -207,22 +224,25 @@ functor
       (* Similarly, a higher pi-type can bind several variables with the same domain. *)
       | HigherPi :
           ('a, 'b Fwn.suc, 'ab) Namevec.t
+          * [ `Explicit | `Implicit ]
           * string located list located
           * 'a synth located
           * 'ab synth located
           -> 'a synth
-      (* An n-dimensional pi-type, fully instantiated, with all its domains supplied.  The dimension 'n is the outer (unfiltered) dimension; the domains form a telescope whose length must match the number of faces of the *filtered* dimension, which is not known until typechecking (since parsing the modality annotations requires knowing the modes).  The primary (last) domain can be shared by some further variables, such as y in "(x y : A) →⁽ᵉ⁾ B", each of which forms another such pi-type with that single domain.  This is only possible when the filtered dimension has only one face, i.e. when the arity is zero or the modality filters out the dimension, so that there are no boundary domains. *)
-      | InstHigherPi :
-          'n D.pos * ('a, 'b, 'ab) tel * ('ab, 'c, 'abc) Namevec.t * 'abc check located
-          -> 'a synth
+      (* A sequence of n-dimensional pi-types, fully instantiated, with all their domains supplied, as in "{x₀ : A} {x₁ : A} (x₂ : Id A x₀ x₁) →⁽ᵉ⁾ B".  The dimension 'n is the outer (unfiltered) dimension.  The domains of all the pi-types form one telescope, which is divided into the pi-types at typechecking time: each takes as many domains as the number of faces of its *filtered* dimension, which depends on its modality and hence isn't known until the modes are known.  Its boundary domains must be implicit, and it is implicit exactly when its primary (last) domain is.  A domain can share the type of the previous one, such as y in "(x y : A) →⁽ᵉ⁾ B"; this makes sense at the start of a pi-type only if it has a single domain, i.e. when the arity is zero or the modality filters out the dimension, so that there are no boundary domains. *)
+      | InstHigherPi : 'n D.pos * ('a, 'b, 'ab) tel * 'ab check located -> 'a synth
       (* The location of the implicitness flag is, in the implicit case, the location of the braces surrounding the implicit argument. *)
       | App :
-          'a check located * 'a check option located * [ `Implicit | `Explicit ] located
+          'a check located * 'a check app_arg located * [ `Implicit | `Explicit ] located
           -> 'a synth
       | Asc : 'a check located * 'a check located -> 'a synth
       (* Abstraction with ascribed variable and synthesizing body.  Currently can't be a cube or implicit.  *)
       | AscLam :
-          I.name located * string located list located * 'a check located * 'a I.suc synth located
+          I.name located
+          * [ `Explicit | `Implicit ]
+          * string located list located
+          * 'a check located
+          * 'a I.suc synth located
           -> 'a synth
       (* A universe knows its mode. *)
       | UU : 'mode Mode.t -> 'a synth
@@ -250,8 +270,6 @@ functor
         }
           -> 'a synth
       | Fail : Reporter.Code.t -> 'a synth
-      (* Pass the synthesized type of an argument as an implicit first argument of a function. *)
-      | ImplicitSApp : 'a synth located * Asai.Range.t option * 'a synth located -> 'a synth
       (* Try several terms, testing for each whether the synthesized type of the specified term has certain constructors or fields. *)
       | SFirst :
           ([ `Data of Constr.t list | `Codata of string list | `Any ] * 'a synth * bool) list
@@ -269,7 +287,9 @@ functor
       (* An abstraction knows whether it is a cube abstraction (⤇) or a normal one (↦).  In the former case it stores an optional dimension, so that multiple variables in the same abstraction (x y ⤇) can be enforced to be the same dimension, and the location of the previous variable that set the dimension. *)
       | Lam : {
           name : I.name located;
-          cube : [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal ] located;
+          (* A normal abstraction binds a variable for each face of the cube of the function-type it is checked against, while a cube abstraction binds one cube variable.  An abstraction generated by the parser, for instance for a matching abstraction, is a cube abstraction if the function-type is higher-dimensional and a normal one otherwise, since the user hasn't written any variables for its boundary. *)
+          cube :
+            [ `Cube of (D.wrapped * Asai.Range.t option) option ref | `Normal | `Generated ] located;
           implicit : [ `Explicit | `Implicit ];
           (* An abstraction can have its variable ascribed to a type.  If in addition the body is synthesizing, then it is a synthesizing term called AscLam.  If the body is only checking, then it's still a Lam, but with a "dom" supplied here. *)
           dom : (string located list located * 'a check located) option;
@@ -283,7 +303,7 @@ functor
           -> 'a check
       (* The arguments of a constructor application.  In the higher-dimensional case the user may optionally supply the redundant boundary arguments of each argument's cube, as implicit arguments preceding the explicit top-dimensional one; they are then checked against the boundary extracted from the type being checked against. *)
       | Constr :
-          Constr.t located * ('a check located * [ `Implicit | `Explicit ] located) list
+          Constr.t located * ('a check constr_arg located * [ `Implicit | `Explicit ] located) list
           -> 'a check
       | Numeral : Q.t -> 'a check
       (* "[]", which could be either an empty pattern-matching lambda or an empty comatch *)
@@ -310,12 +330,10 @@ functor
           num : int ref;
         }
           -> 'a check
+      (* A placeholder "_" in term position, to be filled by unification.  It creates a new unification metavariable, which must be solved by the end of the command. *)
+      | Unif : Reporter.Code.t option -> 'a check
       (* Force a leaf of the case tree *)
       | Realize : 'a check -> 'a check
-      (* Pass the type being checked against, or one of the arguments of the constant it is an application of, as the implicit first argument of a function. *)
-      | ImplicitApp :
-          'a synth located * implicit_source * (Asai.Range.t option * 'a check located) list
-          -> 'a check
       (* Embed an arbitrary object *)
       | Embed : 'a I.embed -> 'a check
       (* Try several terms, testing for each whether the goal type has certain constructors or fields. *)
@@ -330,7 +348,7 @@ functor
     (* The location of the pattern variables is that of the whole pattern.  The location of the cube flag is that of the mapsto. *)
     and _ branch =
       | Branch :
-          ('a, 'b, 'ab) Patternvars.t located
+          ('a, 'ab) Patternitems.t located
           (* The ref argument to `Cube records whether any of the matches in this ⤇ group are *actually* higher-dimensional, so we can raise an error if they're not. *)
           * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
           * 'ab check located
@@ -356,10 +374,15 @@ functor
     }
 
     (* An ('a, 'b, 'ab) tel is a raw telescope of length 'b in context 'a, with 'ab = 'a+'b the extended context. *)
+    (* A telescope, such as the parameters of a definition.  An entry records whether it is implicit, which matters only for parameters, and also for the domains of an instantiated higher function-type (see InstHigherPi), where the implicit ones are the boundary domains. *)
     and (_, _, _) tel =
       | Emp : ('a, Fwn.zero, 'a) tel
       | Ext :
-          I.name * string located list located * 'a check located * ('a I.suc, 'b, 'ab) tel
+          I.name
+          * [ `Explicit | `Implicit ]
+          * string located list located
+          * 'a check located
+          * ('a I.suc, 'b, 'ab) tel
           -> ('a, 'b Fwn.suc, 'ab) tel
       (* Another variable with the same modality and type as the previous entry, such as y in "(x y : A)".  The type is stored only once, in the scope outside all the variables that share it, so it is processed and typechecked only once.  This can only follow an Ext or another Same. *)
       | Same : I.name * ('a I.suc, 'b, 'ab) tel -> ('a, 'b Fwn.suc, 'ab) tel
@@ -382,7 +405,7 @@ functor
     (* The length of a telescope is a forwards nat. *)
     let rec fwn_of_tel : type a b c. (a, b, c) tel -> b Fwn.t = function
       | Emp -> Zero
-      | Ext (_, _, _, tel) -> Suc (fwn_of_tel tel)
+      | Ext (_, _, _, _, tel) -> Suc (fwn_of_tel tel)
       | Same (_, tel) -> Suc (fwn_of_tel tel)
 
     (* The modality annotations of the entries of a telescope. *)
@@ -391,7 +414,7 @@ functor
           string located list located option -> (a, b, c) tel -> string located list located list =
        fun prev -> function
          | Emp -> []
-         | Ext (_, modality, _, tel) -> modality :: go (Some modality) tel
+         | Ext (_, _, modality, _, tel) -> modality :: go (Some modality) tel
          | Same (_, tel) -> (
              match prev with
              | Some modality -> modality :: go prev tel
@@ -449,10 +472,8 @@ module Resolve (R : Resolver) = struct
      because module aliases are not preserved by functors: F(I1) will not be equal to F(R.I1). *)
 
   (* The result of renaming the pattern variables of a match branch: the renamed variables, in the target index type, along with the scope extended by them. *)
-  type (_, _, _) resolve_pv =
-    | Resolve_pv :
-        ('a2, 'b, 'ab2) R.T2.Patternvars.t * ('ab1, 'ab2) R.scope
-        -> ('a2, 'b, 'ab1) resolve_pv
+  type (_, _) resolve_pv =
+    | Resolve_pv : ('a2, 'ab2) R.T2.Patternitems.t * ('ab1, 'ab2) R.scope -> ('a2, 'ab1) resolve_pv
 
   (* The result of resolving the clauses of a let-only, along with the scope of its body. *)
   type (_, _) resolve_letonly =
@@ -500,29 +521,36 @@ module Resolve (R : Resolver) = struct
       | Const c -> Const c
       | Field (tm, fld, lock) -> Field (synth ctx tm, fld, lock)
       | Key (tm, parts) -> Key (synth ctx tm, parts)
-      | Pi (xs, modality, dom, cod) ->
+      | Pi (xs, implicit, modality, dom, cod) ->
           let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
-          Pi (renames ctx xs ab2, modality, check ctx dom, check (append ctx xs ab2) cod)
-      | HigherPi (xs, modality, dom, cod) ->
+          Pi (renames ctx xs ab2, implicit, modality, check ctx dom, check (append ctx xs ab2) cod)
+      | HigherPi (xs, implicit, modality, dom, cod) ->
           let (Bplus ab2) = R.T2.bplus (R.T1.Namevec.length xs) in
-          HigherPi (renames ctx xs ab2, modality, synth ctx dom, synth (append ctx xs ab2) cod)
-      | InstHigherPi (n, doms, xs, cod) ->
+          HigherPi
+            (renames ctx xs ab2, implicit, modality, synth ctx dom, synth (append ctx xs ab2) cod)
+      | InstHigherPi (n, doms, cod) ->
           let (Bplus ab) = R.T2.bplus (R.T1.fwn_of_tel doms) in
           let doms2, ctx2 = tel ctx doms ab in
-          let (Bplus ac2) = R.T2.bplus (R.T1.Namevec.length xs) in
-          InstHigherPi (n, doms2, renames ctx2 xs ac2, check (append ctx2 xs ac2) cod)
+          InstHigherPi (n, doms2, check ctx2 cod)
       | App (fn, arg, impl) ->
           let arg =
             match arg.value with
-            | Some x ->
+            | `Arg x ->
                 let arg = check ctx (locate_opt arg.loc x) in
-                locate_opt arg.loc (Some arg.value)
-            | None -> locate_opt arg.loc None in
+                locate_opt arg.loc (`Arg arg.value)
+            | `Face (label, x) ->
+                let x = check ctx (locate_opt arg.loc x) in
+                locate_opt arg.loc (`Face (label, x.value))
+            | (`Dot | `Ellipsis | `More_ellipsis _) as a -> locate_opt arg.loc a in
           App (check ctx fn, arg, impl)
       | Asc (tm, ty) -> Asc (check ctx tm, check ctx ty)
-      | AscLam (x, modality, dom, body) ->
+      | AscLam (x, implicit, modality, dom, body) ->
           AscLam
-            (locate_map (R.rename ctx) x, modality, check ctx dom, synth (R.snoc ctx x.value) body)
+            ( locate_map (R.rename ctx) x,
+              implicit,
+              modality,
+              check ctx dom,
+              synth (R.snoc ctx x.value) body )
       | UU mode -> UU mode
       | Let (x, modality, tm, body) ->
           Let (R.rename ctx x, modality, synth ctx tm, (check (R.snoc ctx x)) body)
@@ -546,7 +574,6 @@ module Resolve (R : Resolver) = struct
           let refutables = Option.map (refutables ctx) r in
           Match { tm; window; sort; branches; refutables; highers }
       | Fail e -> Fail e
-      | ImplicitSApp (fn, apploc, arg) -> ImplicitSApp (synth ctx fn, apploc, synth ctx arg)
       | SFirst (tms, arg) ->
           SFirst
             ( List.map (fun (t, x, b) -> (t, (synth ctx (locate_opt tm.loc x)).value, b)) tms,
@@ -577,7 +604,17 @@ module Resolve (R : Resolver) = struct
             }
       | Struct (eta, fields) ->
           Struct (eta, Abwd.map (fun (cube, tm) -> (cube, check ctx tm)) fields)
-      | Constr (c, args) -> Constr (c, List.map (fun (tm, i) -> (check ctx tm, i)) args)
+      | Constr (c, args) ->
+          let arg (a : _ constr_arg located) =
+            match a.value with
+            | `Arg x ->
+                let x = check ctx (locate_opt a.loc x) in
+                locate_opt x.loc (`Arg x.value)
+            | `Face (label, x) ->
+                let x = check ctx (locate_opt a.loc x) in
+                locate_opt a.loc (`Face (label, x.value))
+            | `Dot -> locate_opt a.loc `Dot in
+          Constr (c, List.map (fun (a, i) -> (arg a, i)) args)
       | Numeral x -> Numeral x
       | Empty_co_match -> Empty_co_match
       | Data (constrs, hints) -> Data (Abwd.map (locate_map (dataconstr ctx)) constrs, hints)
@@ -607,9 +644,8 @@ module Resolve (R : Resolver) = struct
           Record (locate_opt xs.loc xs2, fields2, opaq, hints)
       | Refute (args, sort) -> Refute (List.map (fun (tm, w) -> (synth ctx tm, w)) args, sort)
       | Hole { scope; loc; li; ri; num } -> Hole { scope = R.rescope ctx scope; loc; li; ri; num }
+      | Unif err -> Unif err
       | Realize x -> Realize (check ctx (locate_opt tm.loc x)).value
-      | ImplicitApp (fn, src, args) ->
-          ImplicitApp (synth ctx fn, src, List.map (fun (l, x) -> (l, check ctx x)) args)
       | Embed e -> (
           match R.embed ctx e with
           | Left x -> (check ctx (locate_opt tm.loc x)).value
@@ -629,21 +665,19 @@ module Resolve (R : Resolver) = struct
     let (Resolve_pv (xs2, ctx2)) = patternvars ctx xs.value in
     Branch (locate_opt xs.loc xs2, cube, check ctx2 body)
 
-  (* Renaming the pattern variables of a match branch, unlike a Namevec, doesn't have a bplus supplied by the caller, since the extended context depends on how many of the arguments have explicit boundaries.  So we compute the renamed pattern variables and the extended scope together, with the extended index existential. *)
-  and patternvars : type a1 a2 b ab1.
-      (a1, a2) R.scope -> (a1, b, ab1) R.T1.Patternvars.t -> (a2, b, ab1) resolve_pv =
+  (* Renaming the pattern variables of a match branch, unlike a Namevec, doesn't have a bplus supplied by the caller, so we compute the renamed pattern variables and the extended scope together, with the extended index existential. *)
+  and patternvars : type a1 a2 ab1.
+      (a1, a2) R.scope -> (a1, ab1) R.T1.Patternitems.t -> (a2, ab1) resolve_pv =
    fun ctx xs ->
     match xs with
     | [] -> Resolve_pv ([], ctx)
-    | Cube x :: xs ->
-        let x2 = R.rename ctx x in
-        let (Resolve_pv (xs2, ctx2)) = patternvars (R.snoc ctx x) xs in
-        Resolve_pv (Cube x2 :: xs2, ctx2)
-    | Boundary ns :: xs ->
-        let (Bplus ac) = R.T2.bplus (R.T1.Namevec.length ns) in
-        let ns2 = renames ctx ns ac in
-        let (Resolve_pv (xs2, ctx2)) = patternvars (append ctx ns ac) xs in
-        Resolve_pv (Boundary ns2 :: xs2, ctx2)
+    | (b, x) :: xs ->
+        let x2 = locate_opt x.loc (R.rename ctx x.value) in
+        let (Resolve_pv (xs2, ctx2)) = patternvars (R.snoc ctx x.value) xs in
+        Resolve_pv ((b, x2) :: xs2, ctx2)
+    | Dot (loc, xs) ->
+        let (Resolve_pv (xs2, ctx2)) = patternvars ctx xs in
+        Resolve_pv (Dot (loc, xs2), ctx2)
 
   and dataconstr : type a1 a2. (a1, a2) R.scope -> a1 R.T1.dataconstr -> a2 R.T2.dataconstr =
    fun ctx (Dataconstr (args, body)) ->
@@ -690,11 +724,11 @@ module Resolve (R : Resolver) = struct
     | Emp ->
         let Eq = R.T2.bplus_zero ab in
         (Emp, ctx)
-    | Ext (x, modality, ty, rest) ->
+    | Ext (x, implicit, modality, ty, rest) ->
         let ctx2 = R.snoc ctx x in
         let ab = R.T2.bplus_suc ab in
         let rest3, ctx3 = tel ctx2 rest ab in
-        (Ext (R.rename ctx x, modality, check ctx ty, rest3), ctx3)
+        (Ext (R.rename ctx x, implicit, modality, check ctx ty, rest3), ctx3)
     | Same (x, rest) ->
         let ctx2 = R.snoc ctx x in
         let ab = R.T2.bplus_suc ab in
@@ -719,21 +753,21 @@ let rec namevec_of_vec : type a b ab.
 (* Produces only explicit lambdas. *)
 let rec lams : type a b ab.
     (a, b, ab) Indexed.bplus ->
-    (string option located, b) Vec.t ->
+    (string option located * [ `Explicit | `Implicit ], b) Vec.t ->
     ab check located ->
     Asai.Range.t option ->
     a check located =
  fun ab xs tm loc ->
   match (ab, xs) with
   | Zero, [] -> tm
-  | Suc ab, name :: xs ->
+  | Suc ab, (name, implicit) :: xs ->
       {
         value =
           Lam
             {
               name;
-              cube = locate_opt None `Normal;
-              implicit = `Explicit;
+              cube = locate_opt None `Generated;
+              implicit;
               dom = None;
               body = lams ab xs tm loc;
             };
@@ -742,5 +776,5 @@ let rec lams : type a b ab.
 
 let rec bplus_of_tel : type a b c. (a, b, c) tel -> (a, b, c) Fwn.bplus = function
   | Emp -> Zero
-  | Ext (_, _, _, tel) -> Suc (bplus_of_tel tel)
+  | Ext (_, _, _, _, tel) -> Suc (bplus_of_tel tel)
   | Same (_, tel) -> Suc (bplus_of_tel tel)

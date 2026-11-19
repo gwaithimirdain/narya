@@ -34,6 +34,13 @@ type (_, _, _) identity +=
   | Parens : (closed, No.plus_omega, closed) identity
   | Braces : (closed, No.plus_omega, closed) identity
   | Dot : (closed, No.plus_omega, closed) identity
+  | (* Coloneq is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a labelled implicit argument "{22 ≔ a}". *)
+      Coloneq :
+      (No.strict opn, No.minus_omega, No.nonstrict opn) identity
+  | Ellipsis_arg : (closed, No.plus_omega, closed) identity
+  | (* The marker "⋯" of a subterm omitted from display, such as one too deep to fit in the display size, is parsed only to give an error.  It is defined in builtins.ml, but we declare its identity here so that the unparser can produce it. *)
+      Omitted :
+      (closed, No.plus_omega, closed) identity
   | (* AscVar is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a modal ascription "(x :f| _)" used as the head of a field projection. *)
       AscVar :
       (closed, No.plus_omega, closed) identity
@@ -41,6 +48,8 @@ type (_, _, _) identity +=
 let parens : (closed, No.plus_omega, closed) notation = (Parens, Outfix)
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
 let dot : (closed, No.plus_omega, closed) notation = (Dot, Outfix)
+let ellipsis : (closed, No.plus_omega, closed) notation = (Ellipsis_arg, Outfix)
+let omitted : (closed, No.plus_omega, closed) notation = (Omitted, Outfix)
 let ascvar : (closed, No.plus_omega, closed) notation = (AscVar, Outfix)
 
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
@@ -102,7 +111,7 @@ let rec process : type n lt ls rt rs.
   | Notn (n, d) -> (find n).processor ctx (args d) loc
   (* "Application" nodes in result trees are used for anything that syntactically *looks* like an application.  In addition to actual applications of functions, this includes applications of constructors and degeneracy operators, and also field projections.  *)
   | App { fn; arg; _ } -> process_spine ctx fn [ (Wrap arg, res.loc) ]
-  | Placeholder _ -> fatal (Unimplemented "unification arguments")
+  | Placeholder _ -> { value = Unif None; loc }
   | Ident (parts, _) ->
       Reporter.try_with
         (fun () -> process_ident ctx loc parts)
@@ -236,7 +245,7 @@ and process_apps_head : type n lt ls rt rs.
   | `Constr c ->
       let c = { value = c; loc = tm.loc } in
       let loc = ref None in
-      (* A constructor argument in braces is an implicit boundary argument of a higher-dimensional constructor, supplied redundantly as documentation; see Raw.Constr. *)
+      (* A constructor argument in braces is an implicit argument, or a boundary argument of a higher-dimensional one supplied redundantly as documentation, and it can be labelled by the face it supplies, as in "{0 ≔ a}"; a dot ends a cube of implicit arguments.  See Check.check_at_pi. *)
       let cargs =
         List.map
           (fun (Wrap x, l) ->
@@ -244,10 +253,28 @@ and process_apps_head : type n lt ls rt rs.
             match x.value with
             | Notn ((Braces, _), n) -> (
                 match notation_args n with
+                | [
+                 Token (LBrace, _); Term { value = Notn ((Coloneq, _), m); _ }; Token (RBrace, _);
+                ] -> (
+                    match notation_args m with
+                    | [
+                     Term { value = Ident ([ label ], _); loc = labelloc };
+                     Token (Coloneq, _);
+                     Term arg;
+                    ] ->
+                        let arg = process ctx arg in
+                        ( locate_opt arg.loc (`Face (locate_opt labelloc label, arg.value)),
+                          locate_opt x.loc `Implicit )
+                    | Term { loc; _ } :: _ -> fatal ?loc (Parse_error "invalid face label")
+                    | _ -> fatal (Anomaly "invalid notation arguments for colon-equals"))
                 | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
-                    (process ctx arg, locate_opt x.loc `Implicit)
+                    let arg = process ctx arg in
+                    (locate_opt arg.loc (`Arg arg.value), locate_opt x.loc `Implicit)
                 | _ -> fatal (Anomaly "invalid notation arguments for braces"))
-            | _ -> (process ctx x, locate_opt x.loc `Explicit))
+            | Notn ((Dot, _), _) -> (locate_opt x.loc `Dot, locate_opt x.loc `Explicit)
+            | _ ->
+                let arg = process ctx x in
+                (locate_opt arg.loc (`Arg arg.value), locate_opt x.loc `Explicit))
           args in
       { value = Raw.Constr (c, cargs); loc = !loc }
   | `Fn fn -> process_apply ctx fn args
@@ -293,26 +320,49 @@ and process_apply : type n.
       process_apply ctx { value = Synth (Key (fn, parts)); loc } args
   | (Wrap { value = Notn ((Braces, _), n); loc = braceloc }, loc) :: rest -> (
       match args n with
+      (* An argument in braces can be labelled by the face of the cube of arguments that it supplies, written like the suffix of a cube variable, as in "{22 ≔ a}". *)
+      | [ Token (LBrace, _); Term { value = Notn ((Coloneq, _), m); _ }; Token (RBrace, _) ] -> (
+          match args m with
+          | [ Term { value = Ident ([ label ], _); loc = labelloc }; Token (Coloneq, _); Term arg ]
+            ->
+              let arg = process ctx arg in
+              process_apply ctx
+                {
+                  value =
+                    Synth
+                      (App
+                         ( fn,
+                           locate_opt arg.loc (`Face (locate_opt labelloc label, arg.value)),
+                           locate_opt braceloc `Implicit ));
+                  loc;
+                }
+                rest
+          | Term { loc; _ } :: _ -> fatal ?loc (Parse_error "invalid face label")
+          | _ -> fatal (Anomaly "invalid notation arguments for colon-equals"))
       | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
           let arg = process ctx arg in
           process_apply ctx
             {
               value =
-                Synth (App (fn, locate_opt arg.loc (Some arg.value), locate_opt braceloc `Implicit));
+                Synth (App (fn, locate_opt arg.loc (`Arg arg.value), locate_opt braceloc `Implicit));
               loc;
             }
             rest
       | _ -> fatal (Anomaly "invalid notation arguments for braces"))
   | (Wrap { value = Notn ((Dot, _), _); loc = dotloc }, loc) :: rest ->
       process_apply ctx
-        { value = Synth (App (fn, locate_opt dotloc None, locate_opt None `Explicit)); loc }
+        { value = Synth (App (fn, locate_opt dotloc `Dot, locate_opt None `Explicit)); loc }
+        rest
+  | (Wrap { value = Notn ((Ellipsis_arg, _), _); loc = eloc }, loc) :: rest ->
+      process_apply ctx
+        { value = Synth (App (fn, locate_opt eloc `Ellipsis, locate_opt None `Explicit)); loc }
         rest
   | (Wrap arg, loc) :: args ->
       let arg = process ctx arg in
       process_apply ctx
         {
           value =
-            Synth (App (fn, locate_opt arg.loc (Some arg.value), locate_opt arg.loc `Explicit));
+            Synth (App (fn, locate_opt arg.loc (`Arg arg.value), locate_opt arg.loc `Explicit));
           loc;
         }
         args
@@ -343,16 +393,19 @@ let rec process_tel : type n. (string option, n) Bwv.t -> Parameter.t list -> n 
  fun ctx parameters ->
   match parameters with
   | [] -> Processed_tel (Emp, ctx, [])
-  | { names; modality; ty; _ } :: parameters ->
+  | { names; implicit; modality; ty; _ } :: parameters ->
       process_vars ctx names
-        (Some (locate_modality (List.map (fun x -> locate_opt x.loc (fst x.value)) modality), ty))
+        (Some
+           ( implicit,
+             locate_modality (List.map (fun x -> locate_opt x.loc (fst x.value)) modality),
+             ty ))
         parameters
 
 and process_vars : type n.
     (string option, n) Bwv.t ->
     (string option * Whitespace.t list) list ->
-    (* We only carry the modality and type if we are at the first variable in the list. *)
-    (string located list located * wrapped_parse) option ->
+    (* We only carry the implicitness, modality, and type if we are at the first variable in the list. *)
+    ([ `Explicit | `Implicit ] * string located list located * wrapped_parse) option ->
     Parameter.t list ->
     n processed_tel =
  fun ctx names argty parameters ->
@@ -360,12 +413,12 @@ and process_vars : type n.
   | [] -> process_tel ctx parameters
   | (name, w) :: names -> (
       match argty with
-      | Some (modality, Wrap ty) ->
+      | Some (implicit, modality, Wrap ty) ->
           (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
           let pty = process ctx ty in
           let (Processed_tel (tel, ctx, ws)) =
             process_vars (Bwv.snoc ctx name) names None parameters in
-          Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
+          Processed_tel (Ext (name, implicit, modality, pty, tel), ctx, w :: ws)
       | None ->
           (* The remaining variables that share the type of the previous one. *)
           let (Processed_tel (tel, ctx, ws)) =
@@ -389,21 +442,19 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
         | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern placeholder"))
     | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
     | App { fn; arg; _ } -> (
-        (* Since we accumulate the arguments from right to left, a boundary pattern is prepended to the boundary of the argument we've already seen. *)
+        (* An argument of a constructor pattern that's enclosed in braces is an implicit argument, or a pattern for a face of the boundary of a following higher-dimensional argument: the typechecker decides which.  A dot skips an implicit argument. *)
         match arg.value with
-        (* An argument of a constructor pattern that's enclosed in braces is an explicit pattern for a face of the boundary of the following higher-dimensional pattern variable. *)
+        | Notn ((Dot, _), _) ->
+            go fn
+              (locate_opt pats.loc
+                 (Dot arg.loc :: pats.value : (Matchpattern.arg, n Fwn.suc) Vec.t))
         | Notn ((Braces, _), n) -> (
             match args n with
-            | [ Token (LBrace, _); Term bdry; Token (RBrace, _) ] -> (
-                match pats.value with
-                | [] ->
-                    fatal ?loc:arg.loc
-                      (Parse_error "boundary pattern must be followed by the pattern it belongs to")
-                | { boundary; pat } :: rest ->
-                    let boundary = go bdry (locate_opt bdry.loc Vec.[]) :: boundary in
-                    go fn
-                      (locate_opt pats.loc
-                         ({ boundary; pat } :: rest : (Matchpattern.arg, n) Vec.t)))
+            | [ Token (LBrace, _); Term inner; Token (RBrace, _) ] ->
+                go fn
+                  (locate_opt pats.loc
+                     (Braced (go inner (locate_opt inner.loc Vec.[])) :: pats.value
+                       : (Matchpattern.arg, n Fwn.suc) Vec.t))
             | _ -> fatal (Anomaly "invalid notation arguments for braces"))
         | _ ->
             go fn

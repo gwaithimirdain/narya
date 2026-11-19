@@ -84,7 +84,10 @@ module rec Value : sig
       | Vis :
           ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
           -> ('dom, 'modality, 'mode, 'f, 'mn) visibility
-      | Invis : ('dom, 'modality, 'mode, N.zero, 'n) visibility
+      | Invis :
+          (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
+          string option
+          -> ('dom, 'modality, 'mode, N.zero, 'n) visibility
   end
 
   module Ordered_ctx : sig
@@ -117,6 +120,7 @@ module rec Value : sig
     | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
     | Meta : {
         meta : ('mode, 'a, 'b, 's) Meta.t;
+        kind : ('mode, 'b, 's, kinetic) meta_kind;
         env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }
@@ -131,6 +135,7 @@ module rec Value : sig
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;
     filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
+    implicit : implicitness;
     doms : ('n, ('dom, kinetic) value) CubeOf.t;
     cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
   }
@@ -144,6 +149,7 @@ module rec Value : sig
   and (_, _, _, _) apps_entry =
     | Arg :
         ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * implicitness
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
         -> ('mode, 'mode, 'any, noninst) apps_entry
@@ -173,6 +179,8 @@ module rec Value : sig
         args : ('hmode, 'mode, 'any, 'fail) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
+        (* The degeneracy actions already performed on this neutral (see Act.act_value). *)
+        mutable acted : 'mode action list;
       }
         -> ('mode, kinetic) value
     | Constr :
@@ -206,6 +214,10 @@ module rec Value : sig
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
     | Unrealized : ('mode, potential) evaluation
+    | Blocked : blocker -> ('mode, potential) evaluation
+
+  and blocker =
+    | Blocker : ('mode, 'a, 'b, kinetic) Meta.t * ('mode, 'b, kinetic) term option ref -> blocker
 
   and (_, _, _) canonical =
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
@@ -238,6 +250,15 @@ module rec Value : sig
         fnty : ('mode, kinetic) lazy_eval;
       }
         -> ('mode, 'm) dataconstr
+
+  and 'mode action =
+    | Acted : {
+        deg : ('m, 'n) deg;
+        cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
+        result : ('mode, kinetic) value;
+        generation : int;
+      }
+        -> 'mode action
 
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }
 
@@ -279,6 +300,7 @@ module rec Value : sig
     | Deferred : (unit -> ('mode, 's) evaluation) -> ('mode, 's) lazy_state
     | Applied : ('hmode, 's) lazy_eval * ('hmode, 'mode) lazy_app -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
+    | Blocked_on : blocker * ('mode, potential) lazy_state -> ('mode, potential) lazy_state
 
   and ('mode, 's) lazy_eval = ('mode, 's) lazy_state ref
 
@@ -375,7 +397,10 @@ end = struct
       | Vis :
           ('dom, 'modality, 'mode, 'b, 'bm, 'm, 'n, 'mn, 'f1, 'f2, 'f, 'fldty) vis_data
           -> ('dom, 'modality, 'mode, 'f, 'mn) visibility
-      | Invis : ('dom, 'modality, 'mode, N.zero, 'n) visibility
+      | Invis :
+          (* An invisible variable bound by a match pattern that omits an implicit argument of a constructor has a name, for display. *)
+          string option
+          -> ('dom, 'modality, 'mode, N.zero, 'n) visibility
   end
 
   (* An ordered context: a context without a permutation of its raw indices.  See Ctx for more explanation.  We define this in a submodule so that it can be included later in Ctx.Ordered. *)
@@ -414,6 +439,7 @@ end = struct
     (* A metavariable (i.e. flexible) head stores the metavariable along with a delayed substitution applied to it. *)
     | Meta : {
         meta : ('mode, 'a, 'b, 's) Meta.t;
+        kind : ('mode, 'b, 's, kinetic) meta_kind;
         env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }
@@ -432,6 +458,7 @@ end = struct
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;
     filter : ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim;
+    implicit : implicitness;
     doms : ('n, ('dom, kinetic) value) CubeOf.t;
     cods : ('m, 'mode * 'modality * 'dom) BindCube.t;
   }
@@ -449,6 +476,7 @@ end = struct
     (* m is the dimension of the function being applied, n is the dimension of the arguments *)
     | Arg :
         ('dom, 'modality, 'mode, 'n, 'm) Modality.filter_dim
+        * implicitness
         * ('n, 'dom normal) CubeOf.t
         * ('mk, 'm, 'k) insertion
         -> ('mode, 'mode, 'any, noninst) apps_entry
@@ -483,6 +511,8 @@ end = struct
         args : ('hmode, 'mode, 'any, 'fail) apps;
         value : ('mode, potential) lazy_eval;
         ty : ('mode, kinetic) value Lazy.t;
+        (* The degeneracy actions already performed on this neutral (see Act.act_value). *)
+        mutable acted : 'mode action list;
       }
         -> ('mode, kinetic) value
     (* A constructor has a name, a dimension, and a list of arguments of that dimension.  It must always be applied to the correct number of arguments (otherwise it can be eta-expanded).  It doesn't have an outer insertion because a primitive datatype is always 0-dimensional (it has higher-dimensional versions, but degeneracies can always be pushed inside these).  *)
@@ -524,6 +554,11 @@ end = struct
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
     | Unrealized : ('mode, potential) evaluation
+    (* Blocked is like Unrealized, but the case tree is stuck only because of an unsolved unification metavariable, so it may become unstuck when that metavariable is solved.  We record the metavariable along with its cell, so that we can tell whether it has been solved since. *)
+    | Blocked : blocker -> ('mode, potential) evaluation
+
+  and blocker =
+    | Blocker : ('mode, 'a, 'b, kinetic) Meta.t * ('mode, 'b, kinetic) term option ref -> blocker
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
   and (_, _, _) canonical =
@@ -574,6 +609,15 @@ end = struct
         -> ('mode, 'm) dataconstr
 
   (* A "normal form" is a value paired with its type.  The type is used for eta-expansion and equality-checking. *)
+  and 'mode action =
+    | Acted : {
+        deg : ('m, 'n) deg;
+        cell : ('mode, 'mu, 'nu, 'cod) Modalcell.t;
+        result : ('mode, kinetic) value;
+        generation : int;
+      }
+        -> 'mode action
+
   and 'mode normal = { tm : ('mode, kinetic) value; ty : ('mode, kinetic) value Lazy.t }
 
   (* The binding of one variable in an environment; see Ext below. *)
@@ -624,6 +668,8 @@ end = struct
     | Deferred : (unit -> ('mode, 's) evaluation) -> ('mode, 's) lazy_state
     | Applied : ('hmode, 's) lazy_eval * ('hmode, 'mode) lazy_app -> ('mode, 's) lazy_state
     | Ready : ('mode, 's) evaluation -> ('mode, 's) lazy_state
+    (* A result that was Blocked when it was computed, together with the state that computed it.  When forced again, if the blocking metavariable has been solved since, the computation is redone (see Norm.force_eval). *)
+    | Blocked_on : blocker * ('mode, potential) lazy_state -> ('mode, potential) lazy_state
 
   and ('mode, 's) lazy_eval = ('mode, 's) lazy_state ref
 
@@ -787,26 +833,140 @@ let apply_lazy : type dom modality mode m n s.
     (mode, s) lazy_eval ->
     m D.t ->
     (dom, modality, mode, n, m) Modality.filter_dim ->
+    implicitness ->
     (n, dom normal) CubeOf.t ->
     (mode, s) lazy_eval =
- fun lev m filter xs ->
+ fun lev m filter implicit xs ->
   match !lev with
   | Ready Unrealized -> lev
-  | _ -> ref (Applied (lev, Apps (Arg (filter, xs, ins_zero m))))
+  | _ -> ref (Applied (lev, Apps (Arg (filter, implicit, xs, ins_zero m))))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
+
+(* Hash-consing of neutrals.  Neutrals are constructed over and over again from the same parts: for instance, evaluating the same term in the same environment twice, or two derivations of the same spine, produce structurally equal but physically distinct neutrals.  So the constructions of neutrals that extend a spine, and of variables, look for an existing neutral built from physically the same parts, and return it instead of the new one.  This makes structurally equal neutrals tend to be physically equal, so that they share the work of forcing their (glued) values, and comparing them succeeds by physical equality.
+
+   The table (see Mode.WeakSet) holds its neutrals weakly, so that it doesn't keep them alive, and a mode supplies the type equality when one is found.  Since a neutral's value depends on the global definitions of constants and metavariables, the table is cleared whenever those change (see Norm).  OCaml can't hash by addresses, so neutrals are hashed by a shallow structural hash, and since neutrals that are structurally equal but not physically (because some part of them isn't hash-consed) all have the same hash, the number of them that are remembered is bounded. *)
+module Hashcons_set = Mode.WeakSet.Make (struct
+  type 'mode t = ('mode, kinetic) value
+end)
+
+let hashcons_table = Hashcons_set.create ~max:8 4096
+
+(* The current generation of remembered degeneracy actions, which ends whenever the hash-consing table is cleared and for the same reason. *)
+let action_generation = ref 0
+
+let hashcons_reset () =
+  Hashcons_set.clear hashcons_table;
+  incr action_generation
+
+(* Look for the result of an earlier action on a neutral by the same degeneracy and key cell, in the current generation.  The degeneracy must be exactly the same, not merely the same up to an identity extension, since a neutral's head remembers the degeneracy it was acted on by and uses it to display itself. *)
+let rec find_action : type mode a b mu1 mu2 cod.
+    mode action list ->
+    (a, b) deg ->
+    (mode, mu1, mu2, cod) Modalcell.t ->
+    (mode, kinetic) value option =
+ fun actions s c ->
+  match actions with
+  | [] -> None
+  | Acted { deg; cell; result; generation } :: rest -> (
+      if generation <> !action_generation || Option.is_none (deg_equal deg s) then
+        find_action rest s c
+      else
+        match Modalcell.compare cell c with
+        | Eq -> Some result
+        | Neq -> find_action rest s c)
+
+(* Remember the result of an action, forgetting any actions from earlier generations. *)
+let add_action : type mode a b mu1 mu2 cod.
+    mode action list ->
+    (a, b) deg ->
+    (mode, mu1, mu2, cod) Modalcell.t ->
+    (mode, kinetic) value ->
+    mode action list =
+ fun actions deg cell result ->
+  let generation = !action_generation in
+  Acted { deg; cell; result; generation }
+  :: List.filter (fun (Acted a) -> a.generation = generation) actions
+
+(* Shallow hashes for hash-consing: the identity of a head (but not of its type), and the head of a value. *)
+let hashcons_head_hash : type mode fail. (mode, fail) neu_head -> int = function
+  | Live (Var { level; _ }) -> Hashtbl.hash (0, level)
+  | Live (Const { name; _ }) -> Hashtbl.hash (1, name)
+  | Live (Meta { meta; _ }) -> Hashtbl.hash (2, Meta.name meta)
+  | Live (UU _) -> 3
+  | Live (Pi _) -> 4
+  | Failed _ -> 5
+
+(* The hash of a spine, from the hashes of the heads of its arguments, its field names, and its instantiation dimensions. *)
+let rec hashcons_apps_hash : type h mode any fail. (h, mode, any, fail) apps -> int = function
+  | Emp -> 0
+  | Snoc (rest, Arg (_, _, xs, _)) ->
+      Hashtbl.hash (hashcons_apps_hash rest, hashcons_arg_hash (CubeOf.find_top xs).tm)
+  | Snoc (rest, Field (_, fld, _, _)) -> Hashtbl.hash (hashcons_apps_hash rest, Field.to_string fld)
+  | Snoc (rest, Inst (_, args)) ->
+      Hashtbl.hash (hashcons_apps_hash rest, string_of_dim (TubeOf.inst args))
+
+(* The hash of an argument: the head of a neutral and the length of its spine. *)
+and hashcons_arg_hash : type mode s. (mode, s) value -> int = function
+  | Neu { head; args; _ } -> Hashtbl.hash (hashcons_head_hash head, hashcons_apps_length args)
+  | Lam (_, _, Bind { body; _ }) -> Hashtbl.hash (6, Hashtbl.hash_param 6 24 body)
+  | Struct _ -> 7
+  | Constr (c, _, _) -> Hashtbl.hash (8, c)
+  | Canonical _ -> 9
+
+and hashcons_apps_length : type h mode any fail. (h, mode, any, fail) apps -> int = function
+  | Emp -> 0
+  | Snoc (rest, _) -> 1 + hashcons_apps_length rest
+
+(* The hash of a neutral built from a head and a spine. *)
+let hashcons_neu_hash : type h mode any fail. (h, fail) neu_head -> (h, mode, any, fail) apps -> int
+    =
+ fun head args -> Hashtbl.hash (hashcons_head_hash head, hashcons_apps_hash args)
+
+let hashcons_value_hash : type mode s. (mode, s) value -> int = function
+  | Neu { head; _ } -> hashcons_head_hash head
+  | Lam (_, _, Bind { body; _ }) -> Hashtbl.hash (6, Hashtbl.hash_param 6 24 body)
+  | Struct _ -> 7
+  | Constr (c, _, _) -> Hashtbl.hash (8, c)
+  | Canonical _ -> 9
+
+(* Return an existing neutral of the given mode and hash satisfying [same] if there is one, or else [v], which is remembered. *)
+let hashcons : type mode.
+    mode Mode.t ->
+    int ->
+    ((mode, kinetic) value -> bool) ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value =
+ fun mode h same v -> Hashcons_set.merge hashcons_table mode h same v
 
 (* Given a mode, a De Bruijn level, and a type, build the variable of that mode and level having that type. *)
 let var : type dom modality mode.
     (dom, modality, mode) Modality.t -> level -> (dom, kinetic) value -> (dom, kinetic) value =
  fun modality level ty ->
-  Neu
-    {
-      head = Live (Var { level; deg = id_deg D.zero; key = Modalcell.id modality });
-      args = Emp;
-      value = ready Unrealized;
-      ty = Lazy.from_val ty;
-    }
+  let v =
+    Neu
+      {
+        head = Live (Var { level; deg = id_deg D.zero; key = Modalcell.id modality });
+        args = Emp;
+        value = ready Unrealized;
+        ty = Lazy.from_val ty;
+        acted = [];
+      } in
+  (* A variable is the same as an earlier one with the same level, (identity) key, and physically the same type, since the same level in different scopes is a different variable with a different type. *)
+  hashcons (Modality.src modality)
+    (Hashtbl.hash (0, level))
+    (function
+      | Neu { head = Live (Var { level = l; deg; key }); args = Emp; ty = t; _ } -> (
+          l = level
+          && Option.is_some (is_id_deg deg)
+          && Lazy.is_val t
+          && Lazy.force t == ty
+          &&
+          match Modalcell.compare key (Modalcell.id modality) with
+          | Eq -> true
+          | Neq -> false)
+      | _ -> false)
+    v
 
 (* Project out a cube or tube of values from a cube or tube of normals *)
 let val_of_norm_cube : type mode n. (n, mode normal) CubeOf.t -> (n, (mode, kinetic) value) CubeOf.t
@@ -938,7 +1098,14 @@ let rec universe : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
                   inst_fields = Some fields;
                 })) in
       let v =
-        Neu { head = Live (UU (mode, n)); args = Emp; value; ty = lazy (universe_ty mode n) } in
+        Neu
+          {
+            head = Live (UU (mode, n));
+            args = Emp;
+            value;
+            ty = lazy (universe_ty mode n);
+            acted = [];
+          } in
       universe_cache := Cached_universe (mode, n, v) :: !universe_cache;
       v
 
@@ -981,6 +1148,7 @@ and universe_ty : type mode n. mode Mode.t -> n D.t -> (mode, kinetic) value =
           args = Snoc (Emp, Inst (n', args));
           value;
           ty = lazy (universe mode D.zero);
+          acted = [];
         }
 
 (* A failed term with a given type (see Failed above).  Each call creates a new value. *)
@@ -992,6 +1160,7 @@ let failed : type mode. mode Mode.t -> (mode, kinetic) value Lazy.t -> (mode, ki
       args = Emp;
       value = defer (fun () -> fatal (Dependent "failed term"));
       ty;
+      acted = [];
     }
 
 (* A failed type, i.e. a failed term whose type is the universe.  This is also the type of a failed term whose type is unknown. *)
@@ -1069,7 +1238,7 @@ module Fwd_app = struct
       (hmode, mode2, noninst, live) apps =
    fun apps app ->
     match app with
-    | Arg (filter, arg, ins) -> Snoc (apps, Arg (filter, arg, ins))
+    | Arg (filter, implicit, arg, ins) -> Snoc (apps, Arg (filter, implicit, arg, ins))
     | Field (f, fld, plus, ins) -> Snoc (apps, Field (f, fld, plus, ins))
 
   let of_apps : type hmode mode any. (hmode, mode, any, live) apps -> (hmode, mode) fwd =

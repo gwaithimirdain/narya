@@ -46,6 +46,13 @@ type def = {
   tm : wrapped_parse;
 }
 
+(* An argument of the head in the definition of a notation can be explicit, implicit (in braces), or ascribed to a universe (in parentheses, such as "(_ : Type)"), which is allowed only for the operand of a degeneracy.  It can also be a dot, which is allowed only for the nullary instantiation of a degenerated type in arity 0.  We remember the whitespace inside the braces or parentheses, for reformatting: after the left brace and the variable, and after the left parenthesis, the variable, the colon, and the universe. *)
+type notation_arg =
+  [ `Explicit
+  | `Implicit of Whitespace.t list * Whitespace.t list
+  | `Typed of Whitespace.t list * Whitespace.t list * Whitespace.t list * string * Whitespace.t list
+  | `Dot ]
+
 module Command = struct
   type t =
     | Axiom of {
@@ -80,7 +87,8 @@ module Command = struct
         wscoloneq : Whitespace.t list;
         head : [ `Constr of string | `Constant of Trie.path ];
         wshead : Whitespace.t list;
-        args : (string * Whitespace.t list) list;
+        (* The arguments of the head, each a variable of the pattern, or a placeholder "_", possibly in braces (implicit) or ascribed to a universe (the operand of a degeneracy), or a dot (with no name). *)
+        args : ((string option * notation_arg) * Whitespace.t list) list;
       }
         -> t
     | Import of {
@@ -126,6 +134,7 @@ module Command = struct
           | `Unique_keys of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
           | `Degeneracy_names of Whitespace.t list * Whitespace.t list * int * Whitespace.t list
+          | `Size of Whitespace.t list * int option * Whitespace.t list
           | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
             `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
@@ -184,22 +193,25 @@ module Parse = struct
     | None -> return (None, w)
     | Some xs -> fatal ~loc:(Range.convert loc) (Invalid_variable xs)
 
-  let parameter =
-    let* wslparen = token LParen in
+  (* A group of parameters, in parentheses, or in braces if they are implicit. *)
+  let parameter_in (ldelim : Token.t) (rdelim : Token.t) implicit =
+    let* wslparen = token ldelim in
     let* name, names = one_or_more variable in
     let names = name :: names in
     let* wscolon = token Colon in
-    let* modality_or_ty = C.term [ RParen; Op "|" ] in
+    let* modality_or_ty = C.term [ rdelim; Op "|" ] in
     let* modality, wsbar, ty, wsrparen =
-      (let* wsrparen = token RParen in
+      (let* wsrparen = token rdelim in
        return ([], [], modality_or_ty, wsrparen))
       </> let* wsbar = token (Op "|") in
-          let* ty = C.term [ RParen ] in
-          let* wsrparen = token RParen in
+          let* ty = C.term [ rdelim ] in
+          let* wsrparen = token rdelim in
           let (Wrap modality) = modality_or_ty in
           let modality = (Builtins.get_modality Fun.id modality).value in
           return (modality, wsbar, ty, wsrparen) in
-    return ({ wslparen; names; wscolon; modality; wsbar; ty; wsrparen } : Parameter.t)
+    return ({ implicit; wslparen; names; wscolon; modality; wsbar; ty; wsrparen } : Parameter.t)
+
+  let parameter = parameter_in LParen RParen `Explicit </> parameter_in LBrace RBrace `Implicit
 
   let attribute : type a. a StringsMap.t -> a attribute option t =
    fun values ->
@@ -443,11 +455,35 @@ module Parse = struct
         | Constr (c, []) -> Some ((`Constr c, ws), state)
         | _ -> None)
 
+  (* An argument of the head of a notation: a variable of its pattern, or a placeholder. *)
+  let notation_var_name =
+    (let* loc, (x, ws) = located ident in
+     match x with
+     | [ x ] when Lexer.valid_var x -> return (Some x, ws)
+     | _ -> fatal ~loc:(Range.convert loc) (Invalid_variable x))
+    </> step "" (fun state _ (tok, ws) ->
+        match tok with
+        | Underscore -> Some ((None, ws), state)
+        | _ -> None)
+
+  (* An argument in braces is an implicit argument of the head.  An argument ascribed to a universe, like "(_ : Type)", is the operand of a degeneracy, and a dot is a nullary instantiation of it. *)
   let notation_var =
-    let* loc, (x, ws) = located ident in
-    match x with
-    | [ x ] when Lexer.valid_var x -> return (x, ws)
-    | _ -> fatal ~loc:(Range.convert loc) (Invalid_variable x)
+    (let* x, ws = notation_var_name in
+     return ((x, `Explicit), ws))
+    </> (let* ws = token Dot in
+         return ((None, `Dot), ws))
+    </> (let* wslbrace = token LBrace in
+         let* x, wsx = notation_var_name in
+         let* ws = token RBrace in
+         return ((x, `Implicit (wslbrace, wsx)), ws))
+    </> let* wslparen = token LParen in
+        let* x, wsx = notation_var_name in
+        let* wscolon = token Colon in
+        let* loc, (u, wsu) = located ident in
+        let* ws = token RParen in
+        match u with
+        | [ u ] -> return ((x, `Typed (wslparen, wsx, wscolon, u, wsu)), ws)
+        | _ -> fatal ~loc:(Range.convert loc) (Invalid_notation_arguments "expected a universe")
 
   let notation =
     let* wsnotation = token Notation in
@@ -659,6 +695,7 @@ module Parse = struct
           | Ident [ "implicits" ] -> Some ((`Implicits, ws), state)
           | Let -> Some ((`Lets, ws), state)
           | Ident [ "degeneracy" ] -> Some ((`Degeneracy, ws), state)
+          | Ident [ "size" ] -> Some ((`Size, ws), state)
           | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
@@ -694,6 +731,21 @@ module Parse = struct
         return
           (Display
              { wsdisplay; wscoloneq; what = `Degeneracy_names (wswhat, wsnames, number, wsnumber) })
+    | `Size ->
+        let* wscoloneq = token Coloneq in
+        step "" (fun state _ (tok, ws) ->
+            let size =
+              match tok with
+              | Ident [ ("∞" | "infinity") ] -> Some None
+              | Ident [ num ] -> (
+                  match int_of_string_opt num with
+                  | Some n when n > 0 -> Some (Some n)
+                  | _ -> None)
+              | _ -> None in
+            Option.map
+              (fun size ->
+                (Display { wsdisplay; wscoloneq; what = `Size (wswhat, size, ws) }, state))
+              size)
     | `Unique ->
         let* wsb = token (Ident [ "keys" ]) in
         let* wscoloneq = token Coloneq in
@@ -1034,10 +1086,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           let (Of_raw ctx) = ctx rtm in
           (* The term is checked with internal readback, like any other term, so that the contexts of any metavariables it creates are not read back for display.  Only the results are read back for display. *)
           let ctm, ety = Check.synth Kinetic ctx { value = stm; loc = rtm.loc } in
+          (* Any unification metavariables that can be solved at the end of the command, and any postponed constraints that can be decided then, we solve now, so that we know whether we are going to print anything. *)
+          Global.settle_unifs ();
           Readback.Displaying.run ~env:true @@ fun () ->
           let names = Names.of_ctx ctx in
           (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
-          let utm =
+          (* The displayed term and its type are each limited to the display size. *)
+          let utm, utm_truncated =
+            budgeted (Display.size ()) @@ fun () ->
             match mode with
             | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
             | `Echo ->
@@ -1055,8 +1111,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                        | Zero -> true
                        | Pos _ -> false -> (
                     match Global.find_const name with
-                    | Definition { tm = `Defined tree; _ } ->
-                        unparse Names.empty tree No.Interval.entire No.Interval.entire
+                    | Definition { tm = `Defined tree; mode; _ } ->
+                        unparse (Names.empty mode) tree No.Interval.entire No.Interval.entire
                     | Definition { tm = `Axiom; _ } ->
                         unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
                           No.Interval.entire)
@@ -1067,17 +1123,22 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                     | None ->
                         unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
                           No.Interval.entire)) in
-          let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
-          let uty = unparse names bty No.Interval.entire No.Interval.entire in
-          if not (moribund ()) then
+          let uty, uty_truncated =
+            budgeted (Display.size ()) @@ fun () ->
+            let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
+            unparse names bty No.Interval.entire No.Interval.entire in
+          (* If the command has already failed, or will fail at its end because of an unsolved unification metavariable, we don't print anything. *)
+          if not (moribund () || Global.unsolved_unifs ()) then
             !echo_output
               PPrint.(
                 hang 2
                   (pp_complete_term (Wrap utm) `None
+                  ^^ Print.pp_truncated utm_truncated
                   ^^ hardline
                   ^^ Token.pp Colon
                   ^^ blank 1
-                  ^^ pp_complete_term (Wrap uty) `None));
+                  ^^ pp_complete_term (Wrap uty) `None
+                  ^^ Print.pp_truncated uty_truncated));
           (None, fun _ -> None)
       | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
   | Notation { fixity; loc; pattern; head; args; _ } ->
@@ -1085,23 +1146,131 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
       let notation_name = [ "notations"; name ] in
       Scope.check_name notation_name loc;
-      let key =
+      let not_typed args =
+        List.iter
+          (function
+            | (_, `Typed _), _ ->
+                fatal
+                  (Invalid_notation_arguments
+                     "only the operand of a degeneracy can be ascribed to a universe")
+            | (_, `Dot), _ ->
+                fatal
+                  (Invalid_notation_arguments
+                     "a dot is allowed only to instantiate a degenerated type in arity 0")
+            | _ -> ())
+          args in
+      (* As in parsing a term, a degeneracy name takes precedence over a constant of the same name in the head of an application. *)
+      let key, deg_head =
         match head with
-        | `Constr c -> `Constr (Constr.intern c, List.length args)
+        | `Constr c ->
+            not_typed args;
+            (`Constr (Constr.intern c, List.length args), None)
+        | `Constant [ str ] when Option.is_some (deg_of_name str) -> (
+            let (Any_deg s) = Option.get (deg_of_name str) in
+            match args with
+            | [] -> fatal (Missing_argument_of_degeneracy str)
+            | ((x, operand), _) :: rest ->
+                let u =
+                  match (operand, x) with
+                  | `Typed (_, _, _, u, _), _ -> u
+                  | _, None ->
+                      fatal
+                        (Invalid_notation_arguments
+                           "the operand of a degeneracy must be ascribed to a universe, as in (_ : Type)")
+                  | _, Some _ ->
+                      fatal
+                        (Unimplemented
+                           "notations for degeneracies whose operand isn't ascribed to a universe")
+                in
+                if not (List.mem_assoc u (Modal.Mode.all ())) then
+                  fatal (Invalid_notation_arguments ("not a universe: " ^ u));
+                if
+                  D.length (dom_deg s) <> 1
+                  ||
+                  match D.compare_zero (cod_deg s) with
+                  | Zero -> false
+                  | Pos _ -> true
+                then
+                  fatal
+                    (Invalid_notation_arguments
+                       ("the degeneracy " ^ str ^ " can't be applied to a 0-dimensional type"));
+                (* The degenerated type must be fully instantiated, so that the notation can be displayed for exactly the instantiations it would produce.  In arity 0 that is a nullary instantiation, written with a dot (without which the notation would mean an uninstantiated 1-dimensional type). *)
+                let (Wrap arity) = Endpoints.wrapped () in
+                let arity = N.to_int (Endpoints.len arity) in
+                (match (arity, rest) with
+                | 0, [ ((_, `Dot), _) ] -> ()
+                | 0, _ ->
+                    fatal
+                      (Invalid_notation_arguments
+                         "in arity 0, a degenerated type must be instantiated by a single \".\"")
+                | _ ->
+                    not_typed rest;
+                    if List.exists (fun ((_, i), _) -> i <> `Explicit) rest then
+                      fatal
+                        (Invalid_notation_arguments
+                           "the arguments instantiating a degenerated type must be explicit");
+                    if List.length rest <> arity then
+                      fatal
+                        (Invalid_notation_arguments
+                           (Printf.sprintf "a degenerated type must be instantiated by %d arguments"
+                              arity)));
+                (`Deg (string_of_deg s, `Type u), Some (str, Any_deg s)))
         | `Constant c -> (
+            not_typed args;
             match Scope.lookup c with
-            | Some c -> `Constant c
+            | Some c -> (`Constant c, None)
             | None -> fatal (Invalid_notation_head (String.concat "." c))) in
+      (* The arguments of a constant must match a prefix of its arguments, as they would be elaborated: an explicit argument of the notation skips any implicit arguments of the constant, which would be inserted, while an implicit one must supply the next implicit argument.  We can't check a constructor this way, since its name doesn't determine its datatype. *)
+      (match key with
+      | `Constant c ->
+          let cname = String.concat "." (Scope.name_of c) in
+          let (Definition { ty; mode; _ }) = Global.find_const c in
+          let ctx = Ctx.empty mode in
+          let show (x, i) =
+            let x = Option.value x ~default:"_" in
+            match i with
+            | `Implicit _ -> "{" ^ x ^ "}"
+            | `Explicit | `Typed _ | `Dot -> x in
+          let rec go (shape : arg_shape) args =
+            match (args, shape) with
+            | [], _ | _, (Arg_higher | Arg_unknown) -> ()
+            (* These were rejected above for a constant. *)
+            | ((_, (`Typed _ | `Dot)), _) :: _, _ ->
+                fatal (Anomaly "typed or dot notation argument")
+            | (arg, _) :: _, Arg_none ->
+                fatal
+                  (Invalid_notation_arguments
+                     (Printf.sprintf "%s has no argument left for %s" cname (show arg)))
+            | ((_, `Explicit), _) :: _, Arg_pi (`Implicit, next) -> go (next ()) args
+            | ((_, `Explicit), _) :: args, Arg_pi (`Explicit, next)
+            | ((_, `Implicit _), _) :: args, Arg_pi (`Implicit, next) -> go (next ()) args
+            | (arg, _) :: _, Arg_pi (`Explicit, _) ->
+                fatal
+                  (Invalid_notation_arguments
+                     (Printf.sprintf
+                        "the next argument of %s is explicit, so it can't be given by the implicit argument %s"
+                        cname (show arg))) in
+          go (arg_shape_of_ty ctx (Norm.eval_term (Ctx.env ctx) ty)) args
+      | `Constr _ | `Deg _ -> ());
+      (* The dot of a nullary instantiation is not an argument of the notation; the processor supplies it (see User.make_user). *)
+      let args =
+        List.filter_map
+          (fun ((x, i), ws) ->
+            match i with
+            | `Dot -> None
+            | `Typed _ | `Explicit -> Some ((x, `Explicit), ws)
+            | `Implicit _ -> Some ((x, `Implicit), ws))
+          args in
       (* Find the "unbound" variables, if any, in the notation definition. *)
       let rec unbounds : type left right.
-          (string * Whitespace.t list) list ->
+          ((string option * [ `Explicit | `Implicit ]) * Whitespace.t list) list ->
           string list ->
           (left, right) User.Pattern.t ->
-          (string * Whitespace.t list) list =
+          ((string option * [ `Explicit | `Implicit ]) * Whitespace.t list) list =
        fun args seen pat ->
         let check_var x =
           if List.mem x seen then fatal (Duplicate_notation_variable x);
-          let found, rest = List.partition (fun (y, _) -> x = y) args in
+          let found, rest = List.partition (fun ((y, _), _) -> Some x = y) args in
           match found with
           | [ _ ] -> rest
           | [] -> fatal (Unused_notation_variable x)
@@ -1113,19 +1282,35 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
         | Op (_, pat) -> unbounds args seen pat
         | Op_nil _ -> args
         | Var_nil (_, (x, _)) -> check_var x in
-      (match unbounds args [] pattern with
+      (* Placeholders in the definition are not variables. *)
+      (match unbounds (List.filter (fun ((x, _), _) -> Option.is_some x) args) [] pattern with
       | [] -> ()
-      | _ :: _ as unbound -> fatal (Unbound_variable_in_notation (List.map fst unbound)));
+      | _ :: _ as unbound ->
+          fatal (Unbound_variable_in_notation (List.filter_map (fun ((x, _), _) -> x) unbound)));
       let user =
-        User { id = User.Id.make (); name; fixity; pattern; key; val_vars = List.map fst args }
-      in
+        User
+          {
+            id = User.Id.make ();
+            name;
+            fixity;
+            pattern;
+            key;
+            val_vars = List.map fst args;
+            deg_head;
+          } in
       let shadow = Scope.define_notation user ?loc notation_name in
       List.iter
         (fun key ->
           let keyname =
             match key with
             | `Constr (c, _) -> Constr.to_string c ^ "."
-            | `Constant c -> String.concat "." (Scope.name_of c) in
+            | `Constant c -> String.concat "." (Scope.name_of c)
+            | `Deg (s, `Type u) ->
+                let str =
+                  match deg_head with
+                  | Some (str, _) -> str
+                  | None -> s in
+                str ^ " (_ : " ^ u ^ ")" in
           emit (Head_already_has_notation keyname))
         shadow;
       (None, fun _ -> Some (Notation_defined name))
@@ -1288,7 +1473,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                     locate_opt None @@ outfix ~notn:Builtins.comatch ~inner)
             | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { ty; _ })); _ }, _, _)
               ->
-                let nargs = List.length (Term.pi_names ty) in
+                (* The implicit arguments of the constructor are inserted automatically. *)
+                let nargs =
+                  List.length (List.filter (fun i -> i = `Explicit) (Term.pi_implicits ty)) in
                 unparse_spine names (`Constr constr)
                   (Bwd.init nargs (fun _ -> { unparse = (fun li ri -> hole li ri) }))
                   No.Interval.entire No.Interval.entire
@@ -1320,24 +1507,28 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 k D.t ->
                 Variables.hints list ->
                 ?acc:unparser Bwd.t ->
-                string option list ->
+                (string option * Term.implicitness) list ->
                 unparser Bwd.t * Names.wrapped =
              fun names dim hints ?(acc = Emp) -> function
                | [] -> (acc, Wrap names)
-               | x :: args ->
+               | (x, implicit) :: args -> (
                    (* If the argument is anonymous, use any display hints from its type. *)
                    let hint, hints =
                      match hints with
                      | [] -> (Variables.no_hints, [])
                      | h :: hs -> (h, hs) in
-                   let name =
-                     match x with
-                     | Some x -> `Named x
-                     | None -> `Anon hint in
-                   let x, names = Names.add_cube dim names name in
-                   constr_args names dim hints
-                     ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
-                     args in
+                   match implicit with
+                   (* An implicit argument is omitted from the pattern, so that it is bound invisibly. *)
+                   | `Implicit -> constr_args names dim hints ~acc args
+                   | `Explicit ->
+                       let name =
+                         match x with
+                         | Some x -> `Named x
+                         | None -> `Anon hint in
+                       let x, names = Names.add_cube dim names name in
+                       constr_args names dim hints
+                         ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
+                         args) in
             let rec go = function
               | [] ->
                   let* higher = NameBranches.stateless (Branches.lift HigherBranch.get) in
@@ -1361,7 +1552,8 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             Reporter.discard_errors ~fallback:(fun () -> Emp) @@ fun () ->
                             Domvars.constr_arg_hints ctx env ty in
                           let cargs, newnames =
-                            constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in
+                            constr_args names dim (Bwd.to_list arg_hints)
+                              (List.combine (Term.pi_names ty) (Term.pi_implicits ty)) in
                           let* () = NameBranches.put newnames in
                           let first =
                             Term
@@ -1419,6 +1611,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Degeneracy_names (_, _, number, _) ->
           Display.modify (fun s -> { s with degeneracy_names = number });
           emit (Display_set ("degeneracy names", string_of_int number))
+      | `Size (_, size, _) ->
+          Display.modify (fun s -> { s with size });
+          emit (Display_set ("size", Option.fold ~none:"∞" ~some:string_of_int size))
       | `Variables (_, xs) ->
           let variables = List.map (fun (_, x, _) -> x) xs in
           Display.modify (fun s -> { s with variables });
@@ -1459,13 +1654,37 @@ let tightness_of_fixity : type left tight right. (left, tight, right) fixity -> 
   | Postfixl tight -> Some (No.to_string tight)
   | Outfix -> None
 
+(* An argument of the head of a notation, in braces if it is implicit. *)
+let pp_notation_var ((x, implicit) : string option * notation_arg) : PPrint.document =
+  match implicit with
+  | `Explicit -> pp_var x
+  (* As with parentheses and braces in terms, the contents are aligned after the opening one, which matters only if there are comments inside. *)
+  | `Implicit (wslbrace, wsx) ->
+      PPrint.(
+        Token.pp LBrace
+        ^^ align (pp_ws `None wslbrace ^^ pp_var x ^^ pp_ws `None wsx)
+        ^^ Token.pp RBrace)
+  | `Dot -> Token.pp Dot
+  | `Typed (wslparen, wsx, wscolon, u, wsu) ->
+      PPrint.(
+        Token.pp LParen
+        ^^ align
+             (pp_ws `None wslparen
+             ^^ pp_var x
+             ^^ pp_ws `Nobreak wsx
+             ^^ Token.pp Colon
+             ^^ pp_ws `Nobreak wscolon
+             ^^ utf8string u
+             ^^ pp_ws `None wsu)
+        ^^ Token.pp RParen)
+
 let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document * Whitespace.t list
     =
  fun prews params ->
   let open PPrint in
   match params with
   | [] -> (empty, prews)
-  | { wslparen; names; modality; wsbar; wscolon; ty; wsrparen } :: params ->
+  | { implicit; wslparen; names; modality; wsbar; wscolon; ty; wsrparen } :: params ->
       let pnames, wnames =
         List.fold_left
           (fun (accum, prews) (name, wsname) ->
@@ -1475,14 +1694,14 @@ let rec pp_parameters : Whitespace.t list -> Parameter.t list -> PPrint.document
       ( group
           (pp_ws `Break prews
           ^^ group
-               (Token.pp LParen
+               (Token.pp (if implicit = `Implicit then LBrace else LParen)
                ^^ pp_ws `None wslparen
                ^^ group pnames
                ^^ optional (pp_ws `Break) wnames)
           ^^ Token.pp Colon
           ^^ Builtins.pp_modality wscolon fst modality wsbar
           ^^ pp_complete_term ty `None
-          ^^ Token.pp RParen)
+          ^^ Token.pp (if implicit = `Implicit then RBrace else RParen))
         ^^ pparams,
         wparams )
 
@@ -1621,10 +1840,10 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
               let pargs, wargs =
                 List.fold_left
                   (fun (acc, prews) (arg, wsarg) ->
-                    (acc ^^ group (pp_ws `Break prews ^^ utf8string arg), wsarg))
+                    (acc ^^ group (pp_ws `Break prews ^^ pp_notation_var arg), wsarg))
                   (empty, wshead) args in
-              (pargs ^^ group (pp_ws `Break wargs ^^ utf8string last) ^^ pp_ws `None wslast, rest)
-        in
+              ( pargs ^^ group (pp_ws `Break wargs ^^ pp_notation_var last) ^^ pp_ws `None wslast,
+                rest ) in
         let ppat, wpat = User.pp_pattern pattern in
         let notn_tight, ws =
           match tightness_of_fixity fixity with
