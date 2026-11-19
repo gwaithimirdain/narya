@@ -161,6 +161,8 @@ module Specials = struct
       (* ⩲ *)
       (0x2026, Ellipsis);
       (* … *)
+      (0x22EF, Omitted);
+      (* ⋯ *)
     |]
 
   (* Any sequence consisting entirely of these characters is its own token. *)
@@ -217,6 +219,7 @@ let ascii_op : Token.t t =
   | "+=" -> return Pluseq
   | ":" -> return Colon
   | "..." -> return Ellipsis
+  | "...." -> return Omitted
   | _ -> return (Op op)
 
 (* A Unicode superscript is a string of Unicode superscript numbers and letters between superscript parentheses.  We don't ever want to fail lexing, so any string starting with a superscript left parenthesis that *doesn't* look like this, or a superscript right parenthesis occurring before a superscript left parenthesis, is lexed as an "invalid superscript". *)
@@ -408,6 +411,7 @@ let canonicalize (loc : Asai.Range.t) (parts : [ `Dots of int | `Atom of string 
         match parts with
         | [ `Dots 1 ] -> Dot
         | [ `Dots 3 ] -> Ellipsis
+        | [ `Dots 4 ] -> Omitted
         (* Simple field (allowed to be positional) *)
         | [ `Dots 1; `Atom fld ] when valid_field fld -> Field (fld, [])
         (* Higher field with one suffix (not allowed to be positional) *)

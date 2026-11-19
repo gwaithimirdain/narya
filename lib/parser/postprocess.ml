@@ -34,6 +34,9 @@ type (_, _, _) identity +=
   | Parens : (closed, No.plus_omega, closed) identity
   | Braces : (closed, No.plus_omega, closed) identity
   | Dot : (closed, No.plus_omega, closed) identity
+  | (* The marker "⋯" of a subterm omitted from display, such as one too deep to fit in the display size, is parsed only to give an error.  It is defined in builtins.ml, but we declare its identity here so that the unparser can produce it. *)
+      Omitted :
+      (closed, No.plus_omega, closed) identity
   | (* AscVar is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a modal ascription "(x :f| _)" used as the head of a field projection. *)
       AscVar :
       (closed, No.plus_omega, closed) identity
@@ -41,6 +44,7 @@ type (_, _, _) identity +=
 let parens : (closed, No.plus_omega, closed) notation = (Parens, Outfix)
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
 let dot : (closed, No.plus_omega, closed) notation = (Dot, Outfix)
+let omitted : (closed, No.plus_omega, closed) notation = (Omitted, Outfix)
 let ascvar : (closed, No.plus_omega, closed) notation = (AscVar, Outfix)
 
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)

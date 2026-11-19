@@ -575,9 +575,9 @@ let rec process_letonly_terms : type a e.
 
 let process_letonly ctx obs loc =
   match split_let obs with
-  | Some (_, _, Token (Only, _) :: Token (Ellipsis, _) :: _) ->
+  | Some (_, _, Token (Only, _) :: Token (Omitted, _) :: _) ->
       fatal ?loc
-        (Display_only_syntax "'let only … in'. Use 'display let := definitions' to print bindings")
+        (Display_only_syntax "'let only ⋯ in'. Use 'display let := definitions' to print bindings")
   | Some (_, sup, Token (Only, _) :: obs) -> (
       let (Letonly_terms (clauses, body)) =
         process_letonly_terms ctx No_clauses Emp (Token (And, ([], None)) :: obs) in
@@ -605,7 +605,7 @@ and letonly_clause () =
 
 and letonly_terms () = Inner (letonly_clause ())
 
-(* The first clause can also be an ellipsis "…", which is how a let-only is displayed with its clauses elided.  This is parsed only so that we can give a helpful error message about it. *)
+(* The first clause can also be the omission marker "⋯", which is how a let-only is displayed with its clauses elided.  This is parsed only so that we can give a helpful error message about it. *)
 let letonly_first_clause () =
   let clause = letonly_clause () in
   Inner
@@ -616,7 +616,7 @@ let letonly_first_clause () =
           [
             (Lock, letonly_rest ());
             (Keyword_key, letonly_rest ());
-            (Ellipsis, op In (Done_closed letonly));
+            (Omitted, op In (Done_closed letonly));
           ];
     }
 
@@ -660,9 +660,9 @@ let rec get_abslets heads obs =
               :: Term arg
               :: rest ->
                 (`Op ([ (plet, wslet); (Token.pp Only, wsonly) ], tok, wstok, Wrap arg), rest)
-            (* For display only, the clauses of a let-only can be elided entirely by an ellipsis. *)
-            | Token (Only, (wsonly, _)) :: Token (Ellipsis, (wsellipsis, _)) :: rest ->
-                ( `Elided [ (plet, wslet); (Token.pp Only, wsonly); (Token.pp Ellipsis, wsellipsis) ],
+            (* For display only, the clauses of a let-only can be elided entirely by an omission marker. *)
+            | Token (Only, (wsonly, _)) :: Token (Omitted, (wsomitted, _)) :: rest ->
+                ( `Elided [ (plet, wslet); (Token.pp Only, wsonly); (Token.pp Omitted, wsomitted) ],
                   rest )
             | Term x :: rest -> (`Var ([ (plet, wslet) ], Wrap x), rest)
             | _ -> invalid "let")
@@ -3520,6 +3520,25 @@ let () =
       is_case = (fun _ -> false);
     }
 
+(* The omission marker "⋯", which the unparser displays in place of a subterm too deep to fit in the display size, is parsed only so that we can give a helpful error message about it.  (The marker in a let-only with elided clauses is part of the let-only notation.) *)
+let () =
+  make Postprocess.omitted
+    {
+      name = "omitted";
+      tree = Closed_entry (eop Omitted (Done_closed Postprocess.omitted));
+      processor =
+        (fun _ _ loc ->
+          fatal ?loc (Display_only_syntax "'⋯', which marks a part of a term omitted from display"));
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "omitted"));
+      print_term =
+        Some
+          (function
+          | [ Token (Omitted, (ws, _)) ] -> (Token.pp Omitted, ws)
+          | _ -> invalid "omitted");
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
 (* ********************
    Generating the state
  ******************** *)
@@ -3567,6 +3586,7 @@ let install () =
     Situation.add coloneq;
     Situation.add comatch;
     Situation.add Postprocess.dot;
+    Situation.add Postprocess.omitted;
     Situation.add implicit_mtch;
     Situation.add explicit_mtch;
     Situation.add mtchlam;

@@ -183,6 +183,13 @@ let rec pp_term : type lt ls rt rs.
         | `Without_number -> utf8string "?"),
         ws )
 
+(* A notice following a displayed term that was too large, and was truncated (see Readback.budgeted). *)
+and pp_truncated truncated =
+  if truncated then
+    let size = Option.fold ~none:"∞" ~some:string_of_int (Display.size ()) in
+    break 1 ^^ utf8string ("(truncated: larger than display size " ^ size ^ ")")
+  else empty
+
 and pp_superscript str =
   match Display.chars () with
   | `Unicode ->

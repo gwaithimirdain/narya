@@ -301,7 +301,7 @@
     : B₂ a₂ (B₂ (A₂ .liftr a₀) .trl (f₁ (A₂ .trr a₀))) (f₁ a₁)
   
 
-  $ narya pi2.ny
+  $ narya -display-size ∞ pi2.ny
   B22 (A22 (A02 .liftl a01) (A12 .liftl a11) .liftl a21)
       (f02 (A02 .liftl a01)) (f12 (A12 .liftl a11))
     .trr (f20 (A22 (A02 .liftl a01) (A12 .liftl a11) .trl a21))

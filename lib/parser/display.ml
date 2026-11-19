@@ -7,7 +7,7 @@ type spacing = [ `Wide | `Narrow ]
 type show = [ `Show | `Hide ]
 type holes = [ `With_number | `Without_number ]
 
-(* How to display let-bound variables and holes (which are implemented as metavariables) when they appear in a context other than their own, e.g. after substitution.  With `Names, we display them by name, abbreviating the bindings of the variables in their context by an ellipsis, as in "let only … in x".  With `Environments, we display those bindings in full, but still the name in the body.  With `Definitions, we also display their definitions (if any) instead of their names, including when they appear in their own context. *)
+(* How to display let-bound variables and holes (which are implemented as metavariables) when they appear in a context other than their own, e.g. after substitution.  With `Names, we display them by name, abbreviating the bindings of the variables in their context by the omission marker, as in "let only ⋯ in x".  With `Environments, we display those bindings in full, but still the name in the body.  With `Definitions, we also display their definitions (if any) instead of their names, including when they appear in their own context. *)
 type lets = [ `Names | `Environments | `Definitions ]
 
 let string_of_lets : lets -> string = function
@@ -37,6 +37,8 @@ module Config = struct
     (* Degeneracies that are iterated reflexivities are displayed with iterated names, like "refl (refl x)" or "Id (Id X)", when the number of iterations is at most this value, and with a superscript otherwise. *)
     degeneracy_names : int;
     variables : string list;
+    (* The number of subterms a displayed term may have before it is truncated, or None for no limit (see Readback.budgeted). *)
+    size : int option;
   }
 end
 
@@ -52,6 +54,7 @@ let default : Config.t =
     unique_keys = `Hide;
     degeneracy_names = 1;
     variables = [ "𝑥"; "𝑦"; "𝑧"; "𝑤"; "𝑢"; "𝑣" ];
+    size = Some 2000;
   }
 
 module State = Util.State.Make (Config)
@@ -72,6 +75,7 @@ let holes () = (State.get ()).holes
 let lets () = (State.get ()).lets
 let variables () = (State.get ()).variables
 let degeneracy_names () = (State.get ()).degeneracy_names
+let size () = (State.get ()).size
 
 let alt_char uni asc =
   match (State.get ()).chars with

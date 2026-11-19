@@ -26,6 +26,7 @@ Formatting output
 - ``-show-unique-keys``: Display keys that are the unique one between their endpoints (see :ref:`Keys`)
 - ``-hide-unique-keys``: Hide keys that are the unique one between their endpoints (default)
 - ``-variables X,Y,Z``: Set the default variable names (see :ref:`Default names`)
+- ``-display-size N``: Truncate displayed terms at around ``N`` subterms (default 2000), or never if ``N=∞`` (see :ref:`Display`)
 
 Controlling parametricity
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -54,7 +55,7 @@ Execution
 
 When the Narya executable is run, it loads all the files given on its command line and any strings supplied on the command line with ``-e``.  As usual, the special filename ``-`` refers to standard input.  Files and strings are loaded in the order they are given on the command line; all files must have the extension ``.ny``.  Lastly, if ``-i`` was given anywhere on the command line, Narya enters interactive mode.
 
-In interactive mode, commands typed by the user are executed as they are entered.  Since many commands span multiple lines, Narya waits for a blank line before parsing and executing the command(s) being entered.  Make sure to enter a blank line before starting a new command; interactive commands must be entered and executed one at a time.  The result of the command is printed (more verbosely than is usual when loading a file) and then the user can enter more commands.  Type Control+D to exit interactive mode, or enter the command ``quit``.  In addition, in interactive mode you can enter a term instead of a command, and Narya will assume you mean to :ref:`echo<Echo/Synth>` it.
+In interactive mode, commands typed by the user are executed as they are entered.  Since many commands span multiple lines, Narya waits for a blank line before parsing and executing the command(s) being entered.  Make sure to enter a blank line before starting a new command; interactive commands must be entered and executed one at a time.  The result of the command is printed (more verbosely than is usual when loading a file) and then the user can enter more commands.  Type Control+D to exit interactive mode, or enter the command ``quit``.  In addition, in interactive mode you can enter a term instead of a command, and Narya will assume you mean to :ref:`echo<Echo/Synth/About>` it.
 
 
 Commands
@@ -69,7 +70,7 @@ Def
 
    def NAME [PARAMS] [: TYPE] ≔ TERM [and ...]
 
-Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see :ref:`Identifiers`), while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see :ref:`synth<Echo/Synth>`).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see :ref:`canonical types<Canonical types defined by case trees>`).
+Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see :ref:`Identifiers`), while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see :ref:`synth<Echo/Synth/About>`).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see :ref:`canonical types<Canonical types defined by case trees>`).
 
 The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the iterated function-type with these parameters as domain and ``TYPE`` (or the synthesized type of ``TERM``) as codomain, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.
 
@@ -210,27 +211,59 @@ Display
 
    display NAME ≔ VALUE
 
-Set one of the display settings (that are also set by command-line flags).  Possible display settings are
+Set one of the display settings (that are also set by command-line flags).  The possible display settings are:
    
 .. code-block:: none
 
     display chars ≔ unicode
     display chars ≔ ascii
     display chars ≔ toggle
+
+Some non-ASCII unicode characters have special meaning to Narya, but most of them also have ASCII equivalents, for instance ``→`` is equivalent to ``->``.  This setting controls whether unicode or ASCII characters are used when displaying terms; see :ref:`Tokens` for more information about character display.
+    
+.. code-block:: none
+
     display implicits ≔ on
     display implicits ≔ off
     display implicits ≔ toggle
+
+See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types.
+
+.. code-block:: none
+
     display unique keys ≔ on
     display unique keys ≔ off
     display unique keys ≔ toggle
+
+See :ref:`Keys` for more information about unique keys.
+
+.. code-block:: none
+
     display let ≔ names
     display let ≔ environments
     display let ≔ definitions
     display let ≔ cycle
+
+See :ref:`Matches in terms and case trees` for more information about the display of local definitions and holes.
+
+.. code-block:: none
+
     display degeneracy names ≔ N
+
+See :ref:`Symmetries and degeneracies` for more information about degeneracy names.
+
+.. code-block:: none
+
     display variables ≔ X,Y,Z
 
-See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, :ref:`Keys` for more information about unique keys, :ref:`Symmetries and degeneracies` for more information about degeneracy names, and :ref:`Matches in terms and case trees` for more information about the display of local definitions and holes with ``display let``.
+See :ref:`Default names` for more information about default variable names.
+
+.. code-block:: none
+
+    display size ≔ N
+    display size ≔ ∞
+
+This setting limits how large a displayed term can be, whether in an error message, the output of ``echo``, or the context and type of a hole.  A term with more than about ``N`` subterms is displayed only to a limited depth of subterm nesting, with omitted subterms shown as ``⋯`` (or ``....`` in ASCII).  A truncated term can't be copied into input, so if you need to do that, increase the display size and re-display it.  The default display size is 2000, and ``∞`` (or ``infinity``) means no limit.
 
 
 Chdir
