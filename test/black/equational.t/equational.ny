@@ -55,7 +55,7 @@ def xz' : Id A x z ≔ calc
   = y
       by p
   = z
-      by s ∎
+      by ← s ∎
 
 def xz'def
   : Id (Id A x z) xz'
