@@ -35,7 +35,7 @@ With "definitions", a local definition is displayed as its definition, except th
     : ℕ
   
 
-A stuck local definition that is degenerated is displayed with a higher-dimensional let-only.  But one that has been applied to more arguments after getting stuck is displayed as its definition applied to its arguments (for now).
+A stuck local definition that is degenerated is displayed with a higher-dimensional let-only.  One that has been applied to more arguments after getting stuck is displayed with those arguments applied outside the let-only.
 
   $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]' -e 'axiom a : ℕ' -e 'def k (z : ℕ) : ℕ ≔ let f : ℕ → ℕ → ℕ ≔ x ↦ y ↦ match y [ zero. ↦ x | suc. _ ↦ z ] in suc. (f a z)' -e 'def m (z : ℕ) : ℕ ≔ let g : ℕ → ℕ → ℕ ≔ [ zero. ↦ y ↦ y | suc. _ ↦ y ↦ z ] in g a z' -e 'display let ≔ definitions' -e 'echo k a' -e 'echo refl k (refl a)' -e 'echo m a'
   suc.
@@ -62,8 +62,9 @@ A stuck local definition that is degenerated is displayed with a higher-dimensio
             and y : ℕ ≔ a in
             (match #(gen) y [ suc. 𝑥 ↦ z | zero. ↦ x ] : ℕ)))
   
-  (let only z : ℕ ≔ a in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. 𝑦 ↦ y ↦ z | zero. ↦ y ↦ y ] : ℕ → ℕ → ℕ)) a a
+  (let only z : ℕ ≔ a
+   and 𝑥 : ℕ ≔ a in
+   (match #(gen) 𝑥 [ suc. 𝑦 ↦ y ↦ z | zero. ↦ y ↦ y ] : ℕ → ℕ)) a
     : ℕ
   
 

@@ -241,7 +241,12 @@ The ``about`` command can display a stuck match, but it has to take care: in gen
 
 Here ``𝑥`` is the name Narya generates for the unnamed variable of the matching abstraction.
 
-If a stuck match has been applied to further arguments, as when a function of two arguments is defined by matching on the first and then applied to two arguments, it can't be displayed in this way, and ``about`` falls back to displaying the application spine of the function, like ``echo``.
+If a stuck match has been applied to further arguments, as when a function of two arguments is defined by matching on the first and then applied to two arguments, those arguments are displayed applied to the ascribed match outside the ``let only``; and similarly for fields projected out of it.  For instance, if ``plus : ℕ → ℕ → ℕ`` is defined by matching on its first argument as ``[ zero. ↦ m ↦ m | suc. n ↦ m ↦ suc. (plus n m) ]`` and ``b : ℕ`` is an axiom, then ``about plus b 3`` displays
+
+.. code-block:: none
+
+   (let only 𝑥 : ℕ ≔ b in
+    (match 𝑥 [ suc. n ↦ m ↦ suc. (plus n m) | zero. ↦ m ↦ m ] : ℕ → ℕ)) 3
 
 In addition, if you give ``about`` a bare top-level named constant such as ``about neg1``, it simply looks up and displays the definition of that constant without needing to do any normalization.
 

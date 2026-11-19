@@ -408,6 +408,28 @@ let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mod
 
    In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible.  A case tree that is stuck on a match is displayed, if the match remembers where it got stuck, as a let-only around that match (see readback_stuck); otherwise it is displayed as the application spine of the neutral whose value it is. *)
 
+(* A way to read back the head of an application spine, in any context at the head's mode (which is locked by the modalities of any field projections in the spine). *)
+type ('hmode, 's) spine_head = { read : 'a 'z. ('hmode, 'z, 'a) Ctx.t -> ('hmode, 'a, 's) term }
+
+(* The result of replaying an application spine to find where a case tree got stuck: either the stuck point that a match remembers, with the rest of the spine that was applied after it, or the evaluation of the whole spine if no such point was found.  The second parameter records, as for apps, whether the spine ends with an instantiation. *)
+type (_, _) replayed =
+  | Stuck_at : 'm1 stuck * ('m1, 'mode, 'any, live) apps -> ('mode, 'any) replayed
+  | Not_stuck : ('mode, potential) evaluation -> ('mode, 'any) replayed
+
+(* Extend a replay by one more entry of the spine. *)
+let replay_entry : type m1 m2 any inst.
+    (m1, any) replayed -> (m1, m2, any, inst) apps_entry -> (m2, inst) replayed =
+ fun r e ->
+  match r with
+  | Stuck_at (stuck, rest) -> Stuck_at (stuck, Snoc (rest, e))
+  | Not_stuck ev -> (
+      let ev = app_eval_entry ev e in
+      match (ev, e) with
+      | Unrealized (Some stuck), Arg _ -> Stuck_at (stuck, Emp)
+      | Unrealized (Some stuck), Field _ -> Stuck_at (stuck, Emp)
+      (* Instantiating a stuck case tree forgets where it got stuck, so an instantiation can't be the stuck point. *)
+      | _ -> Not_stuck ev)
+
 (* ********** Primary readback functions ********** *)
 
 (* The result of reading back the bindings in the last entry of a context (see readback_entry): the bindings live in the whole context locked by the modality of the entry. *)
@@ -773,11 +795,19 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
   | Neu { head = Live head; args; value; ty } -> (
       match (force_eval value, Displaying.read ()) with
       | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
-      (* When displaying, a metavariable whose value is stuck on a match may be displayed as that stuck value, if the display settings call for it.  The stuck value remembers where it got stuck only if nothing more has been applied to it since, so it is always the value of the whole neutral. *)
+      (* When displaying, a metavariable whose value is stuck on a match may be displayed as that stuck value, if the display settings call for it.  If the value remembers where it got stuck, nothing more has been applied to it since, so it is the value of the whole neutral. *)
       | Unrealized (Some stuck), true -> (
           match head with
           | Meta { meta; _ } when !stuck_meta_shown_hook.shown meta ->
               Stuck_meta (meta, readback_stuck ctx stuck)
+          | _ -> readback_neu ~canonical:`Other ctx head args)
+      (* If more has been applied to it after it got stuck, we find the stuck point by replaying its spine. *)
+      | Unrealized None, true -> (
+          match (head, args) with
+          | Meta { meta; _ }, Snoc _ when !stuck_meta_shown_hook.shown meta -> (
+              match replay_stuck ctx head args with
+              | Stuck_at (stuck, rest) -> Stuck_meta (meta, readback_stuck_spine ctx stuck rest)
+              | Not_stuck _ -> readback_neu ~canonical:`Other ctx head args)
           | _ -> readback_neu ~canonical:`Other ctx head args)
       | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
       | _ -> readback_neu ~canonical:`Other ctx head args)
@@ -801,19 +831,38 @@ and readback_neu : type hmode mode a z any.
     (hmode, mode, any, live) apps ->
     (mode, a, kinetic) term =
  fun ?(canonical = `Other) ctx head apps ->
+  match (apps, head) with
+  | Snoc (Emp, Inst (_, args)), Pi _ when TubeOf.is_full args ->
+      (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
+      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
+      Inst (Kinetic, readback_head ~canonical ctx head, args)
+  | _ ->
+      readback_spine Kinetic canonical ctx
+        { read = (fun ctx -> readback_head ~canonical ctx head) }
+        apps
+
+(* Read back an application spine on top of a head that we know how to read back, with any energy.  A potential spine arises only for display, from a stuck case tree (see readback_stuck_spine). *)
+and readback_spine : type hmode mode a z any s.
+    s energy ->
+    [ `Canonical | `Other ] ->
+    (mode, z, a) Ctx.t ->
+    (hmode, s) spine_head ->
+    (hmode, mode, any, live) apps ->
+    (mode, a, s) term =
+ fun energy canonical ctx head apps ->
   (* The degeneracies appearing on the spine of a neutral are all *permutations*, which are never displayed with a name like "refl" or "Id" that depends on the sort of their argument.  Thus the only place the sort matters is at the head, where it is computed from the type of the head itself (see readback_head).  Here we only pass along whether the whole neutral is a canonical type, which determines whether a reflexivity at the head is displayed as a superscript. *)
   let sort = (`Other, canonical) in
-  match (apps, head) with
-  | Emp, _ -> readback_head ~canonical ctx head
-  | Snoc (apps, Arg (filter, args, ins)), _ ->
+  match apps with
+  | Emp -> head.read ctx
+  | Snoc (apps, Arg (filter, args, ins)) ->
       let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
       Term.Act
-        ( Kinetic,
+        ( energy,
           App
-            ( Kinetic,
-              readback_neu ~canonical ctx head apps,
+            ( energy,
+              readback_spine energy canonical ctx head apps,
               cod_left_ins ins,
               filter,
               Modal
@@ -822,33 +871,57 @@ and readback_neu : type hmode mode a z any.
                   CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ),
           p,
           sort )
-  | Snoc (apps, Field (filter, fld, fldplus, ins)), _ -> (
+  | Snoc (apps, Field (filter, fld, fldplus, ins)) -> (
       let fm = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
       (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
       let t = cod_left_ins ins in
-      let inner = readback_neu ~canonical lctx head apps in
+      let inner = readback_spine energy canonical lctx head apps in
       match Modality.filter_is_trivial t filter with
       | Some Eq ->
           (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
           Term.Act
-            (Kinetic, Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
+            (energy, Field (energy, Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
       | None ->
           (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
           let ft = Modality.filtered t filter in
           let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
-          let fieldterm : (_, _, kinetic) Term.term =
-            Term.Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
+          let fieldterm : (_, _, s) Term.term =
+            Term.Field (energy, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
           let liftdeg = Modality.deg_of_filter t filter in
-          Term.Act (Kinetic, Term.Act (Kinetic, fieldterm, liftdeg, sort), p, sort))
-  | Snoc (Emp, Inst (_, args)), Pi _ when TubeOf.is_full args ->
-      (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
-      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
-      Inst (Kinetic, readback_head ~canonical ctx head, args)
-  | Snoc (apps, Inst (_, args)), _ ->
+          Term.Act (energy, Term.Act (energy, fieldterm, liftdeg, sort), p, sort))
+  | Snoc (apps, Inst (_, args)) ->
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-      Inst (Kinetic, readback_neu ~canonical ctx head apps, args)
+      Inst (energy, readback_spine energy canonical ctx head apps, args)
+
+(* Replay the application spine of a neutral from its head, to find the point at which its case tree got stuck on a match, if the match remembers it, and the rest of the spine applied after that.  The value of a neutral can remember where it got stuck only if nothing more has been applied to it since, so this is how we find the stuck point of one that has.  We get the evaluation of the head by reading it back (internally, not for display) and evaluating it in the identity environment, in the context locked by the modalities of any field projections in the spine, so that we don't have to know how its value depends on the kind of head; and then we apply the entries of the spine to it one at a time, as app_eval_apps does.  Only a constant or metavariable can have a case tree to get stuck. *)
+and replay_stuck : type hmode mode a z any.
+    (mode, z, a) Ctx.t -> hmode head -> (hmode, mode, any, live) apps -> (mode, any) replayed =
+ fun ctx head apps ->
+  match apps with
+  | Emp -> (
+      match head with
+      | Const _ | Meta _ -> (
+          let tm = Displaying.run ~env:false @@ fun () -> readback_head ctx head in
+          match eval_term (Ctx.env ctx) tm with
+          | Neu { value; _ } -> (
+              match force_eval value with
+              | Unrealized (Some stuck) -> Stuck_at (stuck, Emp)
+              | ev -> Not_stuck ev)
+          | _ -> Not_stuck (Unrealized None))
+      | _ -> Not_stuck (Unrealized None))
+  | Snoc (rest, (Arg _ as e)) -> replay_entry (replay_stuck ctx head rest) e
+  | Snoc (rest, (Field (filter, _, _, _) as e)) ->
+      let (Locked (_, lctx)) = Ctx.lock ctx (Modality.filter_modality filter) in
+      replay_entry (replay_stuck lctx head rest) e
+  | Snoc (rest, (Inst _ as e)) -> replay_entry (replay_stuck ctx head rest) e
+
+(* Read back a case tree stuck on a match, with the rest of an application spine applied after it got stuck. *)
+and readback_stuck_spine : type m1 mode a z any.
+    (mode, z, a) Ctx.t -> m1 stuck -> (m1, mode, any, live) apps -> (mode, a, potential) term =
+ fun ctx stuck apps ->
+  readback_spine Potential `Other ctx { read = (fun ctx -> readback_stuck ctx stuck) } apps
 
 and readback_head : type mode c z.
     ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
@@ -1530,17 +1603,24 @@ and uninstantiate_value : type mode. (mode, potential) lazy_eval -> (mode, poten
               }))
   | _ -> value
 
-(* The "about" command reads back the *potential* value of a neutral, passing the neutral itself as readback's status so that a canonical type displays as its declaration and a comatch as itself; readback_at handles the rest, including descending through parameter abstractions.  None means the neutral has no potential value at all to display -- an axiom, or a permanently stuck case tree -- so the caller shows its normal form instead. *)
+(* The "about" command reads back the *potential* value of a neutral, passing the neutral itself as readback's status so that a canonical type displays as its declaration and a comatch as itself; readback_at handles the rest, including descending through parameter abstractions.  A case tree stuck on a match is displayed as a let-only around that match, with any spine applied after it got stuck put back on outside.  None means the neutral has no potential value at all to display -- an axiom, or a case tree stuck on something other than a match that remembers it, such as a hole -- so the caller shows its normal form instead. *)
 let rec readback_about : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) Value.value -> (mode, b, potential) Term.term option =
  fun ctx value ->
   match value with
-  | Neu { value = v; ty; _ } -> (
+  | Neu { head = Live head; args; value = v; ty } -> (
       match force_eval v with
       | Val v -> Some (readback_at (Potential value) ctx v (Lazy.force ty))
       (* Under glued evaluation, a constant whose definition is an ordinary term rather than a case tree is a neutral whose value realizes that term.  It has no potential value of its own, but the neutral it realizes to may, so we look there. *)
       | Realize v -> readback_about ctx v
       (* A case tree stuck on a match whose display data is stored can be displayed as a let-only around that match. *)
       | Unrealized (Some _) as ev -> Some (readback_eval (Potential value) ctx ev (Lazy.force ty))
-      | Unrealized None -> None)
+      (* If it has been applied to more arguments since it got stuck, we find the stuck point by replaying the spine, and put the rest of the spine back on outside. *)
+      | Unrealized None -> (
+          match args with
+          | Emp -> None
+          | Snoc _ -> (
+              match replay_stuck ctx head args with
+              | Stuck_at (stuck, rest) -> Some (readback_stuck_spine ctx stuck rest)
+              | Not_stuck _ -> None)))
   | _ -> None

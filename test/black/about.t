@@ -539,7 +539,7 @@ With a field of intrinsic dimension two, this happens even for an instance that 
   
 
 
-A match that has not reduced is displayed in the context it was checked in, as a let-only binding the variables of that context to the values they had when it got stuck, around the match ascribed with its type.  A degenerated one is displayed with a correspondingly higher-dimensional let-only.  But a stuck match that has been applied to further arguments can't be displayed this way, so it shows as the application spine of the neutral whose value it is, just as "echo" displays it.
+A match that has not reduced is displayed in the context it was checked in, as a let-only binding the variables of that context to the values they had when it got stuck, around the match ascribed with its type.  A degenerated one is displayed with a correspondingly higher-dimensional let-only.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def plus : N → N → N ≔ [ zero. ↦ m ↦ m | suc. n ↦ m ↦ suc. (plus n m) ]' -e 'axiom ax : N' -e 'about plus' -e 'about (plus ax)' -e 'about (plus 2)' -e 'about (refl plus)'
   𝑥 ↦ match 𝑥 [ suc. n ↦ m ↦ suc. (plus n m) | zero. ↦ m ↦ m ]
@@ -589,11 +589,77 @@ The match displayed is the one that got stuck, which may be a deep one reached a
     : ℕ
   
 
-A stuck match that has been applied to further arguments is displayed as its application spine.
+A stuck match that has been applied to further arguments, or had fields projected out of it, is displayed with those arguments and projections applied outside the let-only, including when it is degenerated.
 
-  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def plus : N → N → N ≔ [ zero. ↦ m ↦ m | suc. n ↦ m ↦ suc. (plus n m) ]' -e 'axiom ax : N' -e 'about plus ax 3'
-  plus ax 3
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def plus : N → N → N ≔ [ zero. ↦ m ↦ m | suc. n ↦ m ↦ suc. (plus n m) ]' -e 'axiom ax : N' -e 'about plus ax 3' -e 'about refl plus (refl ax) (refl (3 : N))' -e 'def P : Type ≔ sig (fst : N, snd : N)' -e 'def p (x : N) : P ≔ match x [ zero. ↦ (0,0) | suc. n ↦ (n,n) ]' -e 'about p ax .fst' -e 'def S : Type ≔ codata [ x .hd : N | x .tl : S ]' -e 'def q (x : N) : N → S ≔ match x [ zero. ↦ y ↦ [ .hd ↦ y | .tl ↦ q 0 y ] | suc. n ↦ y ↦ [ .hd ↦ n | .tl ↦ q n y ] ]' -e 'about q ax 2 .tl .hd'
+  (let only 𝑥 : N ≔ ax in
+   (match 𝑥 [ suc. n ↦ m ↦ suc. (plus n m) | zero. ↦ m ↦ m ] : N → N)) 3
     : N
+  
+  (let⁽ᵉ⁾ only 𝑥 : N ≔ refl ax in
+   (match 𝑥 [ suc. n ↦ m ↦ suc. (plus n m) | zero. ↦ m ↦ m ] : N → N)) {3}
+    {3} (refl 3)
+    : N⁽ᵉ⁾ (plus ax 3) (plus ax 3)
+  
+  (let only x : N ≔ ax in (match x [ suc. n ↦ (n, n) | zero. ↦ (0, 0) ] : P))
+    .fst
+    : N
+  
+  (let only x : N ≔ ax in
+   (match x [
+    | suc. n ↦ y ↦ [ .hd ↦ n | .tl ↦ q n y ]
+    | zero. ↦ y ↦ [ .hd ↦ y | .tl ↦ q 0 y ]]
+    : N → S)) 2
+    .tl
+    .hd
+    : N
+  
+
+This works also when the field projected is modal, in which case the let-only is displayed in the context locked by its modality.
+
+  $ narya -adjunction -fake-interact 'def □ (A :□| Type) : Disc ≔ codata [ (_ :△| _) .□ : A ] def box (A :□| Type) (a :□| A) : □ A ≔ [ .□ ↦ a ] def B : Disc ≔ data [ t. | f. ] def sel (A :□| Type) (a1 a2 :□| A) (b : B) : □ A ≔ match b [ t. ↦ box A a1 | f. ↦ box A a2 ] def T (A :△□| Type) (a1 a2 :△□| A) (b :△| B) : A ≔ ? about in 0 (sel A a1 a2 b :△| _) .□'
+   ￫ info[I0000]
+   ￮ constant □ defined
+  
+   ￫ info[I0000]
+   ￮ constant box defined
+  
+   ￫ info[I0000]
+   ￮ constant B defined
+  
+   ￫ info[I0000]
+   ￮ constant sel defined
+  
+   ￫ info[I0000]
+   ￮ constant T defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     A :△□| Type
+     a1 :△□| A
+     a2 :△□| A
+     b :△| B
+     ----------------------------------------------------------------------
+     A
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     A :△□| Type
+     a1 :△□| A
+     a2 :△□| A
+     b :△| B
+     ----------------------------------------------------------------------
+     A
+  
+  (let only A :□| Type ≔ A
+   and a1 :□| A ≔ a1
+   and a2 :□| A ≔ a2
+   and b : B ≔ b in
+   (match b [ f. ↦ box A a2 | t. ↦ box A a1 ] : □ A)
+   :△| _) .□
+    : A
   
 
 The boundary of a degenerate codatatype behaves like parameters, not like the indices that the boundary of a degenerate datatype behaves like: it is the *instantiated* form that one defines elements of by comatching.  So it is that form which displays as a codatatype, showing the types of the fields such a comatch must supply -- one instance of each higher field per partial bijection.  The uninstantiated form displays as a codatatype too, in terms of a self-variable cube whose faces the instantiation replaces.
