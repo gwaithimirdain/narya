@@ -71,7 +71,9 @@ A Narya source file is expected to be UTF-8 encoded and can contain arbitrary Un
 
 However, there are the following exceptions to this, where whitespace is not needed to separate tokens:
 
-- The characters ``( ) [ ] { } → ⇒ ↦ ⤇ ≔ ⩴ ⩲ … ⋯ ? ! ⁇ ¿ ʔ``, which either have built-in meaning or are reserved for future built-in meanings, are always treated as single tokens.  Thus, they do not need to be surrounded by whitespace.  This is the case for parentheses and braces in most languages, but in Narya you can also write, e.g., ``A→B`` without spaces.  Many of the non-ASCII characters in this group have ASCII-sequence substitutes that are completely interchangeable: ``-> => |-> |=> := ::= += ... ....``.  Additional characters may be added to this list in the future.
+- The characters ``( ) [ ] { } → ⇒ ↦ ⤇ ≔ ⩴ ⩲ … ⋯``, which either have built-in meaning or are reserved for future built-in meanings, are always treated as single tokens.  Thus, they do not need to be surrounded by whitespace.  This is the case for parentheses and braces in most languages, but in Narya you can also write, e.g., ``A→B`` without spaces.  Many of the non-ASCII characters in this group have ASCII-sequence substitutes that are completely interchangeable: ``-> => |-> |=> := ::= += ... ....``.  Additional characters may be added to this list in the future.
+
+- The characters ``? ! ⁇ ¿ ʔ`` are reserved for :ref:`Holes` and similar features, which are lexed specially (e.g. inside a hole with contents, even comment sequences are swallowed).  They should not be used anywhere else.
 
 - A nonempty string consisting of the characters ``~ @ # $ % & * / = + | , < > : ; - ^`` is always treated as a single token, and does not need to be surrounded by whitespace.  Moreover, such tokens may only be notation symbols, not identifiers.  Note that this is most of the non-alphanumeric characters that appear on a standard US keyboard except for those that already have another meaning (parentheses, backquote, double quote, curly braces) or are allowed in identifiers (period, underscore, and single quote).  In particular:
 

@@ -94,7 +94,7 @@ let dblquery = Uchar.of_int 0x2047 (* ⁇ *)
 let gelded_query = Uchar.of_int 0x0294 (* ʔ *)
 let is_digit c = String.exists (fun x -> x = c) "0123456789"
 
-(* A hole is either the single character ?, or a hole with contents that start with ¿ and ends with ʔ.  Even comment sequences inside of a hole are ignored.  Holes with contents can be nested. *)
+(* A hole is either the single character ?, or a hole with contents that start with ¿ and ends with ʔ, or ⁇ followed by a number.  Even comment sequences inside of a hole are ignored.  Holes with contents can be nested. *)
 let rec hole_contents () : string t =
   parenthesized
     (fun l m r -> return (l ^ m ^ r))
@@ -126,8 +126,10 @@ let hole : Token.t t =
          "numbered hole"
        </> return DblQuery)
   (* Grab other hole-like sequences, which won't parse but which we don't want the user to use elsewhere. *)
-  </> let* _ = uchar gelded_query in
-      return GeldedQuery
+  </> (let* _ = uchar gelded_query in
+       return GeldedQuery)
+  </> (let* _ = char '!' in
+       return Bang)
 
 module Specials = struct
   (* Any of these characters is always its own token. *)
@@ -167,9 +169,7 @@ module Specials = struct
 
   (* Any sequence consisting entirely of these characters is its own token. *)
   let default_ascii_symbols =
-    [|
-      '~'; '!'; '@'; '#'; '$'; '%'; '&'; '*'; '/'; '='; '+'; '|'; ','; '<'; '>'; ':'; ';'; '-'; '^';
-    |]
+    [| '~'; '@'; '#'; '$'; '%'; '&'; '*'; '/'; '='; '+'; '|'; ','; '<'; '>'; ':'; ';'; '-'; '^' |]
 
   module Data = struct
     type t = {

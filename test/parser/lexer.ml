@@ -42,7 +42,8 @@ let () =
         (Ident [ "OE" ], []);
         (RParen, []);
         (LParen, []);
-        (Op "@@!", []);
+        (Op "@@", []);
+        (Bang, []);
         (LParen, []);
         (RParen, []);
         (Op "#", []);
