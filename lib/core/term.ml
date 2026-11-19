@@ -167,6 +167,7 @@ module rec Term : sig
         env : ('mode, 'a, 'k, 'b) env;
         tm : ('mode, 'b, 's) term;
         ty : ('mode, 'b, kinetic) term;
+        abbreviable : bool;
       }
         -> ('mode, 'a, 's) term
     | Stuck_meta :
@@ -525,6 +526,8 @@ end = struct
         env : ('mode, 'a, 'k, 'b) env;
         tm : ('mode, 'b, 's) term;
         ty : ('mode, 'b, kinetic) term;
+        (* Whether the display settings may abbreviate this let-only, by displaying only the names of the variables it binds, or eliding its clauses entirely if its body is a named metavariable.  This is true only for a let-only produced by readback to display a term from another context with a substitution applied to it (a metavariable or a stuck match), not for one typechecked from a let-only that the user wrote, nor for one that the "about" command was asked to display. *)
+        abbreviable : bool;
       }
         -> ('mode, 'a, 's) term
     (* The stuck value of a metavariable, displayed in place of the metavariable (see Readback.readback_val): a potential term, usually a let-only around the match that the metavariable's definition is stuck on.  This is produced only by readback for display, and never evaluated.  We remember the metavariable so that unparsing can treat this as part of its definition, displaying recursive occurrences of it by name.  (Its mode is that of the head of the neutral, which might differ from that of the value if the spine projects modal fields, although in that case the value can't remember where it got stuck.) *)

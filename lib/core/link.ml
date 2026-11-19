@@ -42,8 +42,9 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Act (e, tm, s, sort) -> Act (e, term f tm, s, sort)
   | Key v -> Key { v with tm = term f v.tm }
   | Let (x, Modal (modality, al, v), body) -> Let (x, Modal (modality, al, term f v), term f body)
-  | Letonly { termctx = tc; env = e; tm = body; ty } ->
-      Letonly { termctx = termctx f tc; env = env f e; tm = term f body; ty = term f ty }
+  | Letonly { termctx = tc; env = e; tm = body; ty; abbreviable } ->
+      Letonly
+        { termctx = termctx f tc; env = env f e; tm = term f body; ty = term f ty; abbreviable }
   | Stuck_meta (v, tm) -> Stuck_meta (Meta.remake f v, term f tm)
   | Lam (x, p, filter, body) -> Lam (x, p, filter, term f body)
   | Struct { eta; dim; fields = flds; energy } ->
