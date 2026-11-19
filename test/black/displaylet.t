@@ -12,7 +12,7 @@ The "display let" option controls how local definitions (let-bound case trees) a
 By default, they are displayed by name, with the substitution elided.
 
   $ narya dl.ny -e 'echo sqdec z'
-  (let only … in sqdec._dec) ((let only … in sqdec._dec) z)
+  (let only ⋯ in sqdec._dec) ((let only ⋯ in sqdec._dec) z)
     : ℕ
   
   $ narya dl.ny -e 'display let ≔ environments' -e 'echo sqdec z'
@@ -27,7 +27,7 @@ By default, they are displayed by name, with the substitution elided.
     : ℕ
   
   $ narya dl.ny -ascii -e 'echo sqdec z'
-  (let only ... in sqdec._dec) ((let only ... in sqdec._dec) z)
+  (let only .... in sqdec._dec) ((let only .... in sqdec._dec) z)
     : ℕ
   
 
@@ -57,7 +57,7 @@ Holes have no definitions, so they are displayed by name with "definitions" too.
      ----------------------------------------------------------------------
      ℕ
   
-  let only … in ?0
+  let only ⋯ in ?0
     : ℕ
   
    ￫ info[I0101]
@@ -98,7 +98,7 @@ In a mutual block, the variables bound to the other local definitions are not di
   > EOF
 
   $ narya eo.ny -e 'echo eo (suc. k)' -e 'echo eo2'
-  (let only … in eo._odd) k
+  (let only ⋯ in eo._odd) k
     : bool
   
   eo2._odd
@@ -191,18 +191,18 @@ The body of a let-only around a displayed definition is ascribed unless it synth
 
 The elided form can't be re-entered, but gives a helpful error message.
 
-  $ narya dl.ny -e 'echo let only … in z'
+  $ narya dl.ny -e 'echo let only ⋯ in z'
    ￫ error[E0209]
    ￭ command-line exec string
-   1 | echo let only … in z
-     ^ display-only syntax can't be parsed: 'let only … in'. Use 'display let := definitions' to print bindings
+   1 | echo let only ⋯ in z
+     ^ display-only syntax can't be parsed: 'let only ⋯ in'. Use 'display let := definitions' to print bindings
   
   [1]
-  $ narya dl.ny -e 'echo sq (let only ... in sq) z'
+  $ narya dl.ny -e 'echo sq (let only .... in sq) z'
    ￫ error[E0209]
    ￭ command-line exec string
-   1 | echo sq (let only ... in sq) z
-     ^ display-only syntax can't be parsed: 'let only … in'. Use 'display let := definitions' to print bindings
+   1 | echo sq (let only .... in sq) z
+     ^ display-only syntax can't be parsed: 'let only ⋯ in'. Use 'display let := definitions' to print bindings
   
   [1]
 

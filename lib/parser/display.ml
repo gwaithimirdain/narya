@@ -7,7 +7,7 @@ type spacing = [ `Wide | `Narrow ]
 type show = [ `Show | `Hide ]
 type holes = [ `With_number | `Without_number ]
 
-(* How to display let-bound variables and holes (which are implemented as metavariables) when they appear in a context other than their own, e.g. after substitution.  With `Names, we display them by name, abbreviating the bindings of the variables in their context by an ellipsis, as in "let only … in x".  With `Environments, we display those bindings in full, but still the name in the body.  With `Definitions, we also display their definitions (if any) instead of their names, including when they appear in their own context. *)
+(* How to display let-bound variables and holes (which are implemented as metavariables) when they appear in a context other than their own, e.g. after substitution.  With `Names, we display them by name, abbreviating the bindings of the variables in their context by the omission marker, as in "let only ⋯ in x".  With `Environments, we display those bindings in full, but still the name in the body.  With `Definitions, we also display their definitions (if any) instead of their names, including when they appear in their own context. *)
 type lets = [ `Names | `Environments | `Definitions ]
 
 let string_of_lets : lets -> string = function

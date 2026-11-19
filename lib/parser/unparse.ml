@@ -702,7 +702,7 @@ let rec unparse : type mode n lt ls rt rs s.
     when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
       let inner =
         Multiple
-          (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Ellipsis), wstok In)
+          (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Omitted), wstok In)
       in
       match No.Interval.contains ri No.minus_omega_plus_one with
       | Some right_ok ->
