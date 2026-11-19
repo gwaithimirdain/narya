@@ -43,6 +43,12 @@ let set_degctx (impl : degctx_impl) = degctx_hook := impl
 let degctx : type mode a b k. (mode, a, b) Ctx.t -> k D.t -> (mode, a, b, k) degctx =
  fun ctx k -> !degctx_hook.degctx ctx k
 
+(* Whether a metavariable whose value is stuck is displayed as that stuck value rather than as itself (applied to its environment).  This is decided by the display settings, which live downstream in the parser, so it is a forward reference set by Unparse.  It is only consulted while displaying. *)
+type stuck_meta_shown = { shown : 'mode 'x 'b 's. ('mode, 'x, 'b, 's) Meta.t -> bool }
+
+let stuck_meta_shown_hook : stuck_meta_shown ref = ref { shown = (fun _ -> false) }
+let set_stuck_meta_shown (f : stuck_meta_shown) = stuck_meta_shown_hook := f
+
 (* Given a (viewed) type, compute whether its elements are type families, functions of another sort, or neither.  Right now, we do this by descending through Pi binders, extending the context. *)
 let rec sort_of_ty : type mode a z.
     ?isfunc:bool -> (mode, z, a) Ctx.t -> mode View.view_type -> [ `Type | `Function | `Other ] =
@@ -268,9 +274,9 @@ let let_var_of_meta : type mode a b bb c d x s mmode cfull dfull dom modality f 
     [ Ctx.bindings_entry entry ];
   !result
 
-(* Search for a way to read back a metavariable whose environment is the identity on the context we are reading back in, possibly weakened by some variables, each of which may lie behind locks. *)
+(* Search for a way to read back a metavariable whose environment is the identity on the context we are reading back in, possibly weakened by some variables, each of which may lie behind locks.  If no metavariable is given, we search only for a weakened identity, as for any other term living in the context of the environment. *)
 let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
-    (mmode, x, dfull, s) Meta.t ->
+    (mmode, x, dfull, s) Meta.t option ->
     (mmode, cfull, dfull) ordered_termctx ->
     (mode, a, b) Ctx.Ordered.t ->
     (mode, D.zero, d) env ->
@@ -292,7 +298,9 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
       | Snoc (rest, ({ vars = Vars; _ } as entry), _), _ -> (
           let k = Ctx.dim_entry entry in
           let filter = Ctx.filter_entry entry in
-          match let_var_of_meta meta fullctx rest entry env envctx with
+          match
+            Option.bind meta (fun meta -> let_var_of_meta meta fullctx rest entry env envctx)
+          with
           | Some (SFace_of fa) -> Some (Let_var (plus_with_no_locks mode, fa, filter))
           | None -> (
               (* If not, we remove it from the context and try again, weakening the result if successful. *)
@@ -324,28 +332,45 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
               else None)
       | _ -> None)
 
-(* Check whether the environment on a metavariable is a weakened identity on the context we are reading back in, possibly prekeyed (as happens when a let-bound variable whose value is the metavariable is used with a key).  If so, we can read it back as either a Term.Meta, or a Term.Var if there is a variable let-bound to it, with a Key.  Since this is only an optimization of display, any errors encountered just mean that the search fails. *)
-let readback_meta_at_idenv : type mode a b n c d x s.
+(* What we read back at an environment that might be a weakened identity: either a metavariable, which might also be read back as a variable let-bound to it, or any term living in the context of the environment. *)
+type (_, _, _) idenv_subject =
+  | Meta_subject : ('mode, 'x, 'd, 's) Meta.t -> ('mode, 'd, kinetic) idenv_subject
+  | Term_subject : ('mode, 'd, 'e) term -> ('mode, 'd, 'e) idenv_subject
+
+(* Check whether an environment for a term (such as a metavariable) is a weakened identity on the context we are reading back in, possibly prekeyed (as happens when a let-bound variable whose value is the metavariable is used with a key).  If so, we can read it back as the term itself with a Key, or for a metavariable possibly as a Term.Var if there is a variable let-bound to it.  Since this is only an optimization of display, any errors encountered just mean that the search fails. *)
+let readback_at_idenv : type mode a b n c d e.
     (mode, a, b) Ctx.t ->
-    (mode, x, d, s) Meta.t ->
     (mode, n, d) env ->
     (mode, c, d) termctx ->
-    (mode, b, kinetic) term option =
- fun ctx meta env (Permute (_, envctx)) ->
+    (mode, d, e) idenv_subject ->
+    (mode, b, e) term option =
+ fun ctx env (Permute (_, envctx)) subject ->
   let open Monad.Ops (Monad.Maybe) in
-  let search : type a b.
-      (mode, a, b) Ctx.t -> (mode, D.zero, d) env -> (mode, b, kinetic) term option =
+  let search : type a b. (mode, a, b) Ctx.t -> (mode, D.zero, d) env -> (mode, b, e) term option =
    fun (Permute { ctx; _ }) env ->
-    match find_meta_readback meta envctx ctx env envctx with
-    | Some (Weakened_meta (plus, newplus)) -> Some (weaken_gen plus (Meta (meta, Kinetic)) newplus)
-    | Some (Let_var (newplus, fa, filter)) -> (
+    let tm : (mode, d, e) term =
+      match subject with
+      | Meta_subject meta -> Meta (meta, Kinetic)
+      | Term_subject tm -> tm in
+    (* Without a metavariable, the search doesn't look for let-bound variables, so the (absent) metavariable's type parameters are irrelevant. *)
+    let found =
+      match subject with
+      | Meta_subject meta -> find_meta_readback (Some meta) envctx ctx env envctx
+      | Term_subject _ ->
+          find_meta_readback (None : (mode, unit, d, kinetic) Meta.t option) envctx ctx env envctx
+    in
+    match (found, subject) with
+    | Some (Weakened_meta (plus, newplus)), _ -> Some (weaken_gen plus tm newplus)
+    | Some (Let_var (newplus, fa, filter)), Meta_subject _ -> (
         (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
         match
           Modality.compare (Modality.filter_modality filter) (plus_with_locks_modality newplus)
         with
         | Eq -> Some (Var (Index (Now, fa, filter, newplus)))
         | Neq -> None)
-    | None -> None in
+    (* Only a metavariable can be let-bound to a variable. *)
+    | Some (Let_var _), Term_subject _ -> None
+    | None, _ -> None in
   Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
   match (D.compare (dim_env env) D.zero, envctx) with
   | Eq, Lock (_, g) ->
@@ -360,6 +385,14 @@ let readback_meta_at_idenv : type mode a b n c d x s.
   | Eq, _ -> search ctx env
   | Neq, _ -> None
 
+let readback_meta_at_idenv : type mode a b n c d x s.
+    (mode, a, b) Ctx.t ->
+    (mode, x, d, s) Meta.t ->
+    (mode, n, d) env ->
+    (mode, c, d) termctx ->
+    (mode, b, kinetic) term option =
+ fun ctx meta env termctx -> readback_at_idenv ctx env termctx (Meta_subject meta)
+
 (* Whether a term context has no checked variables, but only aliases and weakenings. *)
 let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mode emp) Eq.t option =
   function
@@ -373,7 +406,7 @@ let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mod
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta.
 
-   In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible.  A case tree that is stuck, however, is not reconstructed: it is displayed as the application spine of the neutral whose value it is. *)
+   In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible.  A case tree that is stuck on a match is displayed, if the match remembers where it got stuck, as a let-only around that match (see readback_stuck); otherwise it is displayed as the application spine of the neutral whose value it is. *)
 
 (* ********** Primary readback functions ********** *)
 
@@ -406,8 +439,7 @@ and readback_eval : type mode a z s.
   (* In the realize case the value is kinetic, so the stored self-term in the Potential status is discarded. *)
   | Realize v, _ -> Realize (readback_at ~eta Kinetic ctx v ty)
   (* A case tree stuck on a match that remembers where it got stuck is displayed as a let-only binding the variables of that match's context to the values they had there, around the match itself. *)
-  | ( Unrealized (Some (Stuck { env; tm; display = Match_display { termctx; ty = mty } })),
-      Potential _ ) -> Letonly { termctx; env = readback_env ctx env termctx; tm; ty = mty }
+  | Unrealized (Some stuck), Potential _ -> readback_stuck ctx stuck
   (* Any other stuck case tree is displayed as the application spine of the neutral that the status carries.  Only a potential readback can meet an Unrealized, so that neutral is always available. *)
   | Unrealized None, Potential neutral -> Realize (readback_val ctx neutral)
 
@@ -741,12 +773,26 @@ and readback_val : type mode a z s. (mode, z, a) Ctx.t -> (mode, s) value -> (mo
   | Neu { head = Live head; args; value; ty } -> (
       match (force_eval value, Displaying.read ()) with
       | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
+      (* When displaying, a metavariable whose value is stuck on a match may be displayed as that stuck value, if the display settings call for it.  The stuck value remembers where it got stuck only if nothing more has been applied to it since, so it is always the value of the whole neutral. *)
+      | Unrealized (Some stuck), true -> (
+          match head with
+          | Meta { meta; _ } when !stuck_meta_shown_hook.shown meta ->
+              Stuck_meta (meta, readback_stuck ctx stuck)
+          | _ -> readback_neu ~canonical:`Other ctx head args)
       | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
       | _ -> readback_neu ~canonical:`Other ctx head args)
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
   | Struct _ -> fatal (Anomaly "unexpected struct in synthesizing readback")
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
   | Canonical _ -> fatal (Anomaly "unexpected canonical type in synthesizing readback")
+
+(* Read back a case tree stuck on a match, as a let-only binding the variables of that match's context to the values they had when it got stuck, around the match itself (ascribed with its type). *)
+and readback_stuck : type mode a z. (mode, z, a) Ctx.t -> mode stuck -> (mode, a, potential) term =
+ fun ctx (Stuck { env; tm; display = Match_display { termctx; ty } }) ->
+  (* If the environment is the identity, possibly weakened, we can omit it, as for a metavariable. *)
+  match readback_at_idenv ctx env termctx (Term_subject tm) with
+  | Some tm -> tm
+  | None -> Letonly { termctx; env = readback_env ctx env termctx; tm; ty }
 
 and readback_neu : type hmode mode a z any.
     ?canonical:[ `Canonical | `Other ] ->

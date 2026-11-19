@@ -19,15 +19,51 @@ By default, they are displayed by name, with the substitution elided.
   (let only x : ℕ ≔ z in sqdec._dec) ((let only x : ℕ ≔ z in sqdec._dec) z)
     : ℕ
   
+With "definitions", a local definition is displayed as its definition, except that if it is stuck on a match after being applied to arguments, it is displayed as that match, in a let-only binding the variables of its context (including those bound to the arguments) to their values.
+
   $ narya dl.ny -e 'display let ≔ definitions' -e 'echo sqdec z'
-  (let only x : ℕ ≔ z in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ))
-    ((let only x : ℕ ≔ z in
-      (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ)) z)
+  let only x : ℕ ≔ z
+  and 𝑥 : ℕ ≔
+    let only x : ℕ ≔ z
+    and 𝑥 : ℕ ≔ z in
+    (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ) in
+  (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ)
     : ℕ
   
   $ narya dl.ny -ascii -e 'echo sqdec z'
   (let only ... in sqdec._dec) ((let only ... in sqdec._dec) z)
+    : ℕ
+  
+
+A stuck local definition that is degenerated is displayed with a higher-dimensional let-only.  But one that has been applied to more arguments after getting stuck is displayed as its definition applied to its arguments (for now).
+
+  $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]' -e 'axiom a : ℕ' -e 'def k (z : ℕ) : ℕ ≔ let f : ℕ → ℕ → ℕ ≔ x ↦ y ↦ match y [ zero. ↦ x | suc. _ ↦ z ] in suc. (f a z)' -e 'def m (z : ℕ) : ℕ ≔ let g : ℕ → ℕ → ℕ ≔ [ zero. ↦ y ↦ y | suc. _ ↦ y ↦ z ] in g a z' -e 'display let ≔ definitions' -e 'echo k a' -e 'echo refl k (refl a)' -e 'echo m a'
+  suc.
+    (let only z : ℕ ≔ a
+     and x : ℕ ≔ a
+     and y : ℕ ≔ a in
+     (match #(gen) y [ suc. 𝑥 ↦ z | zero. ↦ x ] : ℕ))
+    : ℕ
+  
+  suc.
+    (let⁽ᵉ⁾ only z : ℕ ≔ refl a
+     and x : ℕ ≔ refl a
+     and y : ℕ ≔ refl a in
+     (match #(gen) y [ suc. 𝑥 ↦ z | zero. ↦ x ] : ℕ))
+    : ℕ⁽ᵉ⁾
+        (suc.
+           (let only z : ℕ ≔ a
+            and x : ℕ ≔ a
+            and y : ℕ ≔ a in
+            (match #(gen) y [ suc. 𝑥 ↦ z | zero. ↦ x ] : ℕ)))
+        (suc.
+           (let only z : ℕ ≔ a
+            and x : ℕ ≔ a
+            and y : ℕ ≔ a in
+            (match #(gen) y [ suc. 𝑥 ↦ z | zero. ↦ x ] : ℕ)))
+  
+  (let only z : ℕ ≔ a in
+   (𝑥 ↦ match #(gen) 𝑥 [ suc. 𝑦 ↦ y ↦ z | zero. ↦ y ↦ y ] : ℕ → ℕ → ℕ)) a a
     : ℕ
   
 
@@ -76,8 +112,9 @@ Holes have no definitions, so they are displayed by name with "definitions" too.
 A recursive local definition refers to itself by name.
 
   $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  def bool : Type ≔ data [ true. | false. ]' -e 'display let ≔ definitions' -e 'def ev (m : ℕ) : bool ≔ let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ even n ] in even m' -e 'axiom k : ℕ' -e 'echo ev (suc. k)'
-  (let only m : ℕ ≔ suc. k in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ ev._even n | zero. ↦ true. ] : ℕ → bool)) k
+  let only m : ℕ ≔ suc. k
+  and 𝑥 : ℕ ≔ k in
+  (match #(gen) 𝑥 [ suc. n ↦ ev._even n | zero. ↦ true. ] : bool)
     : bool
   
 
@@ -112,9 +149,9 @@ In a mutual block, the variables bound to the other local definitions are not di
     : ℕ → bool
   
   $ narya eo.ny -e 'display let ≔ definitions' -e 'echo eo (suc. k)' -e 'echo eo2'
-  (let only m : ℕ ≔ suc. k in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ eo._even n | zero. ↦ false. ] : ℕ → bool))
-    k
+  let only m : ℕ ≔ suc. k
+  and 𝑥 : ℕ ≔ k in
+  (match #(gen) 𝑥 [ suc. n ↦ eo._even n | zero. ↦ false. ] : bool)
     : bool
   
   𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ eo2._even n | zero. ↦ false. ]
@@ -140,11 +177,12 @@ Variables bound to local definitions from other blocks, such as enclosing ones, 
     : bool
   
   $ narya nested.ny -e 'display let ≔ definitions' -e 'echo h k'
-  (let only m : ℕ ≔ k
-   and f : ℕ → bool ≔
-     let only m : ℕ ≔ k in
-     (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ h._f n | zero. ↦ true. ] : ℕ → bool) in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ h._g2 n | zero. ↦ h._g m ] : ℕ → bool)) k
+  let only m : ℕ ≔ k
+  and f : ℕ → bool ≔
+    let only m : ℕ ≔ k in
+    (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ h._f n | zero. ↦ true. ] : ℕ → bool)
+  and 𝑥 : ℕ ≔ k in
+  (match #(gen) 𝑥 [ suc. n ↦ h._g2 n | zero. ↦ h._g m ] : bool)
     : bool
   
 

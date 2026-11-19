@@ -744,7 +744,7 @@ The above-described defaults can be controlled with the interactive command ``di
    (let only x : ℕ ≔ z in sqdec2._dec) ((let only x : ℕ ≔ z in sqdec2._dec) z)
      : ℕ
 
-In this case the ``let only`` blocks are re-parseable, but the names such as ``sqdec2._dec`` still are not.  The third alternative ``display let ≔ definitions`` produces a fully re-parseable term with the *definitions* of local variables instead of their names:
+In this case the ``let only`` blocks are re-parseable, but the names such as ``sqdec2._dec`` still are not.  The third alternative ``display let ≔ definitions`` produces a fully re-parseable term with the *definitions* of local variables instead of their names.  Moreover, a local definition that has been applied to arguments and is stuck on a match is printed as that match, wrapped in a ``let only`` that binds the variables in its context (including the arguments it has been applied to) to their values:
 
 .. code-block:: none
 
@@ -752,11 +752,15 @@ In this case the ``let only`` blocks are re-parseable, but the names such as ``s
    
    echo sqdec2 z
    
-   (let only x : ℕ ≔ z in
-    (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ))
-     ((let only x : ℕ ≔ z in
-       (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ)) z)
+   let only x : ℕ ≔ z
+   and 𝑥 : ℕ ≔
+     let only x : ℕ ≔ z
+     and 𝑥 : ℕ ≔ z in
+     (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ) in
+   (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ)
      : ℕ
+
+Here the inner ``let only`` is the value of ``dec z``, which is stuck on the match against ``z``, and the outer one is the value of ``dec (dec z)``, stuck on the match against ``dec z``.
 
 Note that even in this case, the printed term will not re-parsee to the *same term*, because local case trees are generative: textually identical definitions given in two different places will produce unequal values.  To remind you of this, each outermost case-tree-only construct in the printed definition of a local case tree (such as a ``match``, a comatch, or a canonical type) is marked with the attribute ``#(gen)``: after the keyword of a construct that has one, as in ``match #(gen) 𝑥 [ … ]`` or ``data #(gen) [ … ]``, and otherwise after its opening bracket, as in ``[ #(gen) .head ↦ … ]``.  If you copy such a printed term and enter it again without editing, the attribute will produce a warning that the term is generative, so that it will not be equal to the original local case tree it was copied from.  This may cause typechecking errors elsewhere.
 

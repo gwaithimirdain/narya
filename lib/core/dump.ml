@@ -290,6 +290,7 @@ module F = struct
     | Key { tm; cell; _ } -> fprintf ppf "Key (%a, %s)" term tm (Modalcell.to_string cell)
     | Let (_, _, _) -> fprintf ppf "Let ?"
     | Letonly { tm; ty; _ } -> fprintf ppf "Letonly (?, ?, %a, %a)" term tm term ty
+    | Stuck_meta (_, tm) -> fprintf ppf "Stuck_meta (?, %a)" term tm
     | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"
     | Realize tm -> fprintf ppf "Realize (%a)" term tm

@@ -169,6 +169,9 @@ module rec Term : sig
         ty : ('mode, 'b, kinetic) term;
       }
         -> ('mode, 'a, 's) term
+    | Stuck_meta :
+        ('hmode, 'x, 'b, 's) Meta.t * ('mode, 'a, potential) term
+        -> ('mode, 'a, kinetic) term
     | Lam :
         'k variables
         * 'n D.t
@@ -523,6 +526,10 @@ end = struct
         ty : ('mode, 'b, kinetic) term;
       }
         -> ('mode, 'a, 's) term
+    (* The stuck value of a metavariable, displayed in place of the metavariable (see Readback.readback_val): a potential term, usually a let-only around the match that the metavariable's definition is stuck on.  This is produced only by readback for display, and never evaluated.  We remember the metavariable so that unparsing can treat this as part of its definition, displaying recursive occurrences of it by name.  (Its mode is that of the head of the neutral, which might differ from that of the value if the spine projects modal fields, although in that case the value can't remember where it got stuck.) *)
+    | Stuck_meta :
+        ('hmode, 'x, 'b, 's) Meta.t * ('mode, 'a, potential) term
+        -> ('mode, 'a, kinetic) term
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)
     | Lam :
         'k variables

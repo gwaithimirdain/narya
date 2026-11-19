@@ -309,6 +309,10 @@ let displayed_metadef : type mode x b s. (mode, x, b, s) Meta.t -> (mode, x, b, 
     | _ -> None
   else None
 
+(* A metavariable that would be displayed as its definition, but whose value in a given environment is stuck on a match, is displayed instead as that stuck value, which readback produces (see Readback.readback_val).  Occurrences inside its own definition don't arise there, since the stuck value is computed from the metavariable's definition rather than appearing in it. *)
+let () =
+  set_stuck_meta_shown { shown = (fun v -> Meta.is_bare v || Display.lets () = `Definitions) }
+
 (* The full name of a metavariable, using the name currently in scope for the constant that owns it. *)
 let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
  fun v -> Global.meta_name ~owner_name:(fun c -> String.concat "." (Scope.name_of c)) v
@@ -340,6 +344,8 @@ let rec synths : type mode n s. (mode, n, s) term -> bool =
           (* When asking whether the definition synthesizes, we assume temporarily that we're unparsing that metavariable, so it doesn't again get displayed as its definition. *)
           MetaDefs.while_unparsing v @@ fun () -> synths def
       | _ -> true)
+  (* The stuck value of a metavariable is unparsed as part of that metavariable's definition. *)
+  | Stuck_meta (v, tm) -> MetaDefs.while_unparsing v @@ fun () -> synths tm
   | Var _ | Const _ | Field _ | UU _ | Inst _ | Pi _ -> true
   (* A let-only always synthesizes, since its body is ascribed if necessary. *)
   | Letonly _ -> true
@@ -625,6 +631,8 @@ let rec unparse : type mode n lt ls rt rs s.
           | Some { tm = `Defined def; _ } ->
               MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
           | _ -> unparse_meta_name v))
+  (* The stuck value of a metavariable is unparsed as part of that metavariable's definition, so recursive occurrences of the metavariable are displayed by name, and the stuck match is marked as generative. *)
+  | Stuck_meta (v, tm) -> MetaDefs.while_unparsing v @@ fun () -> unparse vars tm li ri
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
