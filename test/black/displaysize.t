@@ -92,3 +92,13 @@ The marker of an omitted subterm, in either spelling, can't be re-entered, but g
      ^ display-only syntax can't be parsed: '⋯', which marks a part of a term omitted from display
   
   [1]
+
+Finding where a displayed local definition got stuck re-evaluates part of it, which is done outside the budget, so only the display is truncated.
+
+  $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]' -e 'axiom a : ℕ' -e 'def m (z : ℕ) : ℕ ≔ let g : ℕ → ℕ → ℕ ≔ [ zero. ↦ y ↦ y | suc. _ ↦ y ↦ z ] in g a z' -e 'display let ≔ definitions' -e 'display size ≔ 4' -e 'echo m (suc. (suc. (suc. (suc. (suc. a)))))'
+  (let only z : ℕ ≔ ⋯
+   and 𝑥 : ℕ ≔ ⋯ in
+   (match #(gen) 𝑥 [ suc. 𝑦 ↦ y ↦ z | zero. ↦ y ↦ y ] : ℕ → ℕ)) ⋯
+    (truncated: larger than display size 4)
+    : ℕ
+  

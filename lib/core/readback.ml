@@ -487,6 +487,12 @@ let after_same_depth () =
   | Some b -> b.depth <- b.depth + 1
   | None -> ()
 
+(* Run a readback whose result will be evaluated rather than displayed, such as when replaying a stuck spine (see replay_stuck), outside the budget of any display readback it happens during, since a term truncated for display can't be evaluated. *)
+let without_budget (f : unit -> 'a) : 'a =
+  let saved = !display_budget in
+  display_budget := None;
+  Fun.protect ~finally:(fun () -> display_budget := saved) f
+
 (* Run a readback for display with a budget (None meaning unlimited), returning its result and whether it had to be truncated.  The first attempt is unlimited in depth, so a term that fits is read back only once.  If it overflows, we don't need the greatest depth at which it would fit, only some indication of what it looks like.  If the first attempt overflowed after reaching depth d, then all the subterms it produced lie within depth d, so it can't fit at depth d.  We guess a depth from the number of subterms the first attempt produced at each depth, as the greatest depth whose subterms so far fill at most half of the budget (since the first attempt only saw part of the term), and halve it until the term fits. *)
 let budgeted (size : int option) (f : unit -> 'a) : 'a * bool =
   match size with
@@ -1018,7 +1024,7 @@ and readback_spine : type hmode mode a z any s.
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
       Inst (energy, readback_spine energy canonical ctx head apps, args)
 
-(* Replay the application spine of a neutral from its head, to find the point at which its case tree got stuck on a match, if the match remembers it, and the rest of the spine applied after that.  The value of a neutral can remember where it got stuck only if nothing more has been applied to it since, so this is how we find the stuck point of one that has.  We get the evaluation of the head by reading it back (internally, not for display) and evaluating it in the identity environment, in the context locked by the modalities of any field projections in the spine, so that we don't have to know how its value depends on the kind of head; and then we apply the entries of the spine to it one at a time, as app_eval_apps does.  Only a constant or metavariable can have a case tree to get stuck. *)
+(* Replay the application spine of a neutral from its head, to find the point at which its case tree got stuck on a match, if the match remembers it, and the rest of the spine applied after that.  The value of a neutral can remember where it got stuck only if nothing more has been applied to it since, so this is how we find the stuck point of one that has.  We get the evaluation of the head by reading it back (internally, not for display, and outside any display budget) and evaluating it in the identity environment, in the context locked by the modalities of any field projections in the spine, so that we don't have to know how its value depends on the kind of head; and then we apply the entries of the spine to it one at a time, as app_eval_apps does.  Only a constant or metavariable can have a case tree to get stuck. *)
 and replay_stuck : type hmode mode a z any.
     (mode, z, a) Ctx.t -> hmode head -> (hmode, mode, any, live) apps -> (mode, any) replayed =
  fun ctx head apps ->
@@ -1026,7 +1032,9 @@ and replay_stuck : type hmode mode a z any.
   | Emp -> (
       match head with
       | Const _ | Meta _ -> (
-          let tm = Displaying.run ~env:false @@ fun () -> readback_head ctx head in
+          let tm =
+            without_budget @@ fun () ->
+            Displaying.run ~env:false @@ fun () -> readback_head ctx head in
           match eval_term (Ctx.env ctx) tm with
           | Neu { value; _ } -> (
               match force_eval value with
