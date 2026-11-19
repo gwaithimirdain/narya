@@ -53,6 +53,18 @@ let speclist =
     ("-ascii", Arg.Clear unicode, "Display and reformat code using ASCII for built-ins");
     ("-hide-implicits", Arg.Clear show_implicits, "Hide implicit arguments (default)");
     ("-show-implicits", Arg.Set show_implicits, "Display implicit arguments");
+    ( "-display-size",
+      Arg.String
+        (fun n ->
+          display_size :=
+            match n with
+            | "∞" | "infinity" -> None
+            | _ -> (
+                match int_of_string_opt n with
+                | Some n when n > 0 -> Some n
+                | _ -> raise (Arg.Bad ("invalid display size: " ^ n)))),
+      "Truncate displayed terms with more than this many subterms (default 2000), or ∞ for no limit"
+    );
     ( "-hide-unique-keys",
       Arg.Clear show_unique_keys,
       "Hide keys that are the unique one between their endpoints (default)" );

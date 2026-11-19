@@ -376,6 +376,8 @@ let rec synths : type mode n s. (mode, n, s) term -> bool =
               | Failed_branch -> false)
             branches
       | `Implicit -> false)
+  (* An omitted subterm prints as an atom. *)
+  | Overflow -> true
 
 (* If the insertion on a field is (1,0,1), we omit the numeric annotation. *)
 let show_ins : type nk n k. (nk, n, k) insertion -> int list =
@@ -708,7 +710,7 @@ let rec unparse : type mode n lt ls rt rs s.
     when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
       let inner =
         Multiple
-          (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Ellipsis), wstok In)
+          (dimtok Let (dim_term_env tmenv), Snoc (Snoc (Emp, mktok Only), mktok Omitted), wstok In)
       in
       match No.Interval.contains ri No.minus_omega_plus_one with
       | Some right_ok ->
@@ -841,6 +843,8 @@ let rec unparse : type mode n lt ls rt rs s.
   | Shift _ -> fatal (Unimplemented "unparsing shifts")
   (* A failed component can only be displayed in an error message of the command whose checking failed, and that message is then a consequence of the failure. *)
   | Failed _ -> fatal (Dependent "unparsing failed component")
+  (* A subterm omitted from a term too large to display. *)
+  | Overflow -> unparse_notation Postprocess.omitted [] (`Single Omitted) li ri
 
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
@@ -2213,18 +2217,19 @@ let () =
           pp_complete_term
             (Wrap (unparse (Names.of_ctx ctx) tm No.Interval.entire No.Interval.entire))
             `None
+      (* A displayed value is limited to the display size. *)
       | PVal (ctx, tm) ->
+          let rtm, truncated = budgeted (Display.size ()) (fun () -> readback_val ctx tm) in
           pp_complete_term
-            (Wrap
-               (unparse (Names.of_ctx ctx) (readback_val ctx tm) No.Interval.entire
-                  No.Interval.entire))
+            (Wrap (unparse (Names.of_ctx ctx) rtm No.Interval.entire No.Interval.entire))
             `None
+          ^^ pp_truncated truncated
       | PNormal (ctx, tm) ->
+          let rtm, truncated = budgeted (Display.size ()) (fun () -> readback_nf ctx tm) in
           pp_complete_term
-            (Wrap
-               (unparse (Names.of_ctx ctx) (readback_nf ctx tm) No.Interval.entire
-                  No.Interval.entire))
+            (Wrap (unparse (Names.of_ctx ctx) rtm No.Interval.entire No.Interval.entire))
             `None
+          ^^ pp_truncated truncated
       | PConstant name -> utf8string (String.concat "." (Scope.name_of name))
       | PMeta v -> utf8string (meta_name v)
       | PHole (origin, vars, termctx, ty) ->
@@ -2233,7 +2238,9 @@ let () =
             Reporter.discard_errors ~fallback:(fun () -> (termctx, ty)) @@ fun () ->
             let ctx = Norm.eval_ctx termctx in
             let ety = Norm.eval_term (Ctx.env ctx) ty in
-            (readback_ctx ctx, readback_val ctx ety) in
+            (* They are displayed, so they are limited to the display size. *)
+            ( fst (budgeted (Display.size ()) (fun () -> readback_ctx ctx)),
+              fst (budgeted (Display.size ()) (fun () -> readback_val ctx ety)) ) in
           let run =
             match origin with
             (* If the hole comes from an earlier time, we rewind to that time before displaying, so that the correct notations and names will be in scope. *)

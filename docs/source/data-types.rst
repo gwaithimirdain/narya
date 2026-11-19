@@ -734,9 +734,9 @@ In addition, the behavior of an escaped local variable might depend on the value
 
 .. code-block:: none
 
-  (let only … in sqdec2._dec) ((let only … in sqdec2._dec) z)
+  (let only ⋯ in sqdec2._dec) ((let only ⋯ in sqdec2._dec) z)
 
-This form is also not re-parseable.  As noted above, like any other global constant defined by a case tree, ``sqdec2._dec`` does not evaluate at all unless it reaches a leaf of its case tree; thus this term does not reduce further since ``z`` is not a constructor.  (But ``sqdec2 (suc. z)`` will, of course, reduce once to ``(let only … in sqdec2._dec) z``.)
+This form is also not re-parseable.  As noted above, like any other global constant defined by a case tree, ``sqdec2._dec`` does not evaluate at all unless it reaches a leaf of its case tree; thus this term does not reduce further since ``z`` is not a constructor.  (But ``sqdec2 (suc. z)`` will, of course, reduce once to ``(let only ⋯ in sqdec2._dec) z``.)
 
 The above-described defaults can be controlled with the interactive command ``display let`` (or the key command ``C-c C-d C-l`` in ProofGeneral, which cycles between the three possible values).  The default behavior described above corresponds to ``display let ≔ names``.  The second alternative ``display let ≔ environments`` prints the substitution in full, but still with the name of the local definition in the body:
 
@@ -785,13 +785,13 @@ Note that even in this case, the printed term will not re-parsee to the *same te
       ^ term synthesized type
           Jd (ℕ → ℕ) dec1_is_dec2._dec dec1_is_dec2._dec
         but is being checked against type
-          Jd (ℕ → ℕ) dec1_is_dec2._dec (let only … in dec1_is_dec2._dec′)
+          Jd (ℕ → ℕ) dec1_is_dec2._dec (let only ⋯ in dec1_is_dec2._dec′)
         unequal head metavariables:
           dec1_is_dec2._dec
         does not equal
           dec1_is_dec2._dec′
 
-Here both local functions are named after ``dec``, their name when defined, but the second one has a prime to distinguish it, and they are unequal.  (The second one is printed with ``let only … in`` because it was defined in a context containing the earlier variables ``dec`` and ``dec1``.)
+Here both local functions are named after ``dec``, their name when defined, but the second one has a prime to distinguish it, and they are unequal.  (The second one is printed with ``let only ⋯ in`` because it was defined in a context containing the earlier variables ``dec`` and ``dec1``.)
 
 A match not occuring inside any ``let`` value doesn't have a user-assigned name like ``dec``, so it is always printed as its definition (wrapped in a ``let only`` if it has a nontrivial substitution), regardless of the setting of ``display let``.  For instance, ``echo sqdec3`` from above will print ``sq (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ])``.  The setting of ``display let`` still controls whether such matches display their entire environment in a ``let only``: it is displayed if ``display let ≔ definitions`` or ``environments`` and elided if ``display let ≔ names``.
 

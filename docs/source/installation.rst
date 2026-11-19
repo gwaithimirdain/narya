@@ -384,6 +384,7 @@ To select an input-mode, type ``C-\``, enter the name of the input-mode (see bel
   * For ≔, type ``\coloneq``
   * For ↦, type ``\mapsto``
   * For …, type ``\ldots``
+  * For ⋯, type ``\cdots``
   * For ℕ, type ``\Bbb{N}``, and similarly for ℤ, ℚ, ℝ, and so on.
   * For subscript characters, type ``_`` and then the ordinary character.
   * For superscript characters, type ``^`` and then the ordinary character.
