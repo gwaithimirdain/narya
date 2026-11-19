@@ -224,12 +224,16 @@ Set one of the display settings (that are also set by command-line flags).  Poss
     display unique keys ≔ on
     display unique keys ≔ off
     display unique keys ≔ toggle
+    display let ≔ names
+    display let ≔ environments
+    display let ≔ definitions
+    display let ≔ cycle
     display degeneracy names ≔ N
     display variables ≔ X,Y,Z
     display size ≔ N
     display size ≔ ∞
 
-See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, :ref:`Keys` for more information about unique keys, and :ref:`Symmetries and degeneracies` for more information about degeneracy names.
+See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types, :ref:`Keys` for more information about unique keys, :ref:`Symmetries and degeneracies` for more information about degeneracy names, and :ref:`Matches in terms and case trees` for more information about the display of local definitions and holes with ``display let``.
 
 The display size limits how large a displayed term can be, whether in an error message, the output of ``echo``, or the context and type of a hole.  A term whose normal form has more than about that many subterms is truncated: it is displayed only to some depth, with the omitted subterms shown as ``⋯`` (or ``....`` in ASCII), and followed by the notice ``(truncated: larger than display size N)``.  The point is to give an idea of what the term looks like, so the depth chosen is not necessarily the greatest that would fit; to see more of a term, increase the display size.  (A truncated term can't be entered again: ``⋯`` is parsed only to give an error saying that it marks an omitted part of a term.)  The default is 2000, and ``∞`` (or ``infinity``) means no limit.  Such large terms usually arise from normalizing, since a value can be small, by sharing, while its normal form is enormous.
 
@@ -333,6 +337,8 @@ Narya's ProofGeneral mode also defines the following additional key commands.
 - ``C-c C-y`` : Split in the hole under point based on its type.
 - ``C-c C-d C-u``: Toggle display of unicode characters.
 - ``C-c C-d C-i``: Toggle display of implicit arguments.
+- ``C-c C-d C-k``: Toggle display of unique keys.
+- ``C-c C-d C-l``: Cycle the display of local definitions and holes between names, environments, and definitions.
 - ``C-c C-d C-v``: Set the default variable names.
 - ``C-c C-d C-d``: Set the dimension up to which degeneracies are displayed with names.
 

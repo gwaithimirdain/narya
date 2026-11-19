@@ -77,6 +77,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
   Origin.run @@ fun () ->
   Parser.Builtins.install ();
   Parser.Scope.Mod.run @@ fun () ->
+  Unparse.MetaDefs.run_empty @@ fun () ->
   Display.run
     ~init:
       {
@@ -87,6 +88,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         implicits = (if !show_implicits then `Show else `Hide);
         unique_keys = (if !show_unique_keys then `Show else `Hide);
         degeneracy_names = Display.default.degeneracy_names;
+        lets = Display.default.lets;
         size = !display_size;
         holes = `Without_number;
         variables =
@@ -98,6 +100,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
   Core.Positivity.run @@ fun () ->
+  Core.Meta.run_owner @@ fun () ->
   (* A temporary Reporter.run to report these errors *)
   ( Reporter.run
       ~emit:(fun d ->

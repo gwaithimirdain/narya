@@ -44,6 +44,12 @@
    ￮ constant doublematch' defined
   
    ￫ info[I0000]
+   ￮ constant doublematch'' defined
+  
+   ￫ info[I0000]
+   ￮ constant contra' defined
+  
+   ￫ info[I0000]
    ￮ constant ⊤ defined
   
    ￫ info[I0000]
@@ -63,6 +69,12 @@
   
    ￫ info[I0000]
    ￮ constant idvec_nil_or_cons defined
+  
+   ￫ info[I0000]
+   ￮ constant vec_is_nil defined
+  
+  true.
+    : bool
   
 
   $ narya -v -parametric multi.ny
@@ -615,6 +627,13 @@ Boundary patterns must be followed by the pattern they belong to.
   
   [1]
 
+An argument of a constructor that is modally filtered down to dimension zero has only one face, so in a higher-dimensional match with ↦ it is named by a single variable, which is not a cube variable.
+
+  $ narya -parametric -discrete-coreflector -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]' -e 'def D : Type ≔ data [ c. (x :♭| ℕ) (y : ℕ) ]' -e 'def h (d0 d1 : D) (d2 : Id D d0 d1) : ℕ ≔ match d2 [ c. x {y0} {y1} y2 ↦ x ]' -e 'about h'
+  d0 d1 d2 ↦ match d2 [ c. x {y0} {y1} y2 ↦ x ]
+    : (d0 : D) (d1 : D) (d2 : D⁽ᵉ⁾ d0 d1) → ℕ
+  
+
 Boundary patterns are patterns, so they have the same restrictions on variable names as other patterns.
 
   $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m} {m} _ ↦ 0 ]'
@@ -658,5 +677,38 @@ And all the branches for a single constructor must name the same number of varia
    ￭ command-line exec string
    1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {zero.} {_} _ ↦ 1 | suc. {suc. k} _ ↦ k ]
      ^ inconsistent patterns in match
+  
+  [1]
+
+  $ narya -v nondep.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant Vec defined
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/nondep.ny
+   4 | def idvec (A : Type) (n : ℕ) (v : Vec A n) : Vec A n ≔ match v return _ [ nil. ↦ nil. | cons. m x xs ↦ cons. m x xs ]
+     ^ term synthesized type
+         Vec A 0
+       but is being checked against type
+         Vec A n
+       unequal terms:
+         0
+       does not equal
+         n
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/nondep.ny
+   4 | def idvec (A : Type) (n : ℕ) (v : Vec A n) : Vec A n ≔ match v return _ [ nil. ↦ nil. | cons. m x xs ↦ cons. m x xs ]
+     ^ term synthesized type
+         Vec A (suc. m)
+       but is being checked against type
+         Vec A n
+       unequal terms:
+         suc. m
+       does not equal
+         n
   
   [1]

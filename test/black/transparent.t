@@ -68,3 +68,40 @@ Transparency and translucency
     : prod2a_self
   
 
+
+Hole contexts are stored with internal readback, but displayed with display readback, so transparent elements in them are eta-expanded.
+
+  $ narya -v - <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > def prod : Type ≔ sig #(transparent) ( fst : A, snd : B)
+  > axiom x : prod
+  > def f (C : prod → Type) : Type ≔ let y : prod ≔ x in C ?
+  > EOF
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0000]
+   ￮ constant prod defined
+  
+   ￫ info[I0001]
+   ￮ axiom x assumed
+  
+   ￫ info[I0000]
+   ￮ constant f defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     C : prod → Type
+     y ≔ (fst ≔ x .fst, snd ≔ x .snd) : prod
+     ----------------------------------------------------------------------
+     prod
+  
+   ￫ error[E3002]
+   ￮ stdin contains open holes
+  
+  [1]

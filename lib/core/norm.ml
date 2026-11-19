@@ -7,6 +7,7 @@ open Dim
 open Tctx
 open Term
 open Value
+open Env
 open Act
 open Printable
 open View
@@ -261,9 +262,6 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
       | { ty; _ }, Kinetic ->
           Val (Neu { head; args = Emp; value = ready Unrealized; ty = lazy (make_ty meta ty) }))
-  | MetaEnv (meta, metaenv) ->
-      let (Plus m_n) = D.plus (dim_term_env metaenv) in
-      eval (eval_env env m_n metaenv) (Term.Meta (meta, Kinetic))
   | UU (mode, n) ->
       let m = dim_env env in
       let (Plus mn) = D.plus n in
@@ -528,7 +526,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            })
         body
   | Letonly { env = tmenv; tm = body; _ } ->
-      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment, as for MetaEnv. *)
+      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment. *)
       let (Plus m_n) = D.plus (dim_term_env tmenv) in
       eval (eval_env env m_n tmenv) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
@@ -602,10 +600,6 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | Shift (n, plusmap, tm) ->
       let (Plus mn) = D.plus n in
       eval (Unshift (env, mn, plusmap)) tm
-  | Weaken (plus, tm, newplus) ->
-      (* We strip off the locks, remove the weakened variable, put the locks back, and re-apply any prekey action stripped along the way. *)
-      let (Restrict_keys (env, pre)) = restrict_keys env (plus_with_locks_of_plus_lock newplus) in
-      eval (prekey_env (lock_env (remove_top env) plus) pre) tm
   (* A term that failed to typecheck has already reported its error, so it evaluates to a failed value, which fails silently if it is ever inspected.  We don't know its type, so that is failed too.  A failed case tree realizes to such a value. *)
   | Failed energy -> (
       let tm = failed_untyped (mode_env env) in
@@ -1578,15 +1572,14 @@ and app_eval_entry : type mode1 mode2 s any inst.
       | Unrealized -> Unrealized)
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the Locks on the end of the environment have already been stripped off by restrict_keys (which the type of the index ensures, since an insertion only passes dimension entries).  Any Prekeys inside are accumulated into a prekey action. *)
-and lookup_cube : type dom mu munu mode n a b k mk nk.
+and lookup_cube : type dom mu mode n a b k mk nk.
     (mode, n, b) env ->
     (n, k, nk) D.plus ->
     (dom, mu, mode) Modality.t ->
-    (dom, munu, mode) Modality.t ->
     (a, mu, k, b) insert ->
     (mk, nk) opt_op ->
     (dom, mk) looked_up_cube =
- fun env nk mu pretr v op ->
+ fun env nk mu v op ->
   let n = dim_env env in
   match env with
   (* Since there's an index, the environment can't be empty. *)
@@ -1597,16 +1590,16 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
   | Act (env, op') ->
       let (Plus lk) = D.plus (D.plus_right nk) in
       let op'k = opt_op_plus op' lk nk in
-      lookup_cube env lk mu pretr v (comp_opt_op op'k op)
+      lookup_cube env lk mu v (comp_opt_op op'k op)
   (* Since there's an index, which can only pass dimension entries, the environment can't end with a lock: restrict_keys has already stripped them all off. *)
   | Lock _ -> (
       match v with
       | _ -> .)
   (* A prekey doesn't change the codomain context, so it can appear between the values of an environment and thus not be stripped off by restrict_keys.  We accumulate its cell into the returned prekey action.  Since the prekey acts at the environment's mode, but the looked-up value is at its own (deeper) mode, we prewhisker the cell by the transport modality (the composite modality of the locks stripped by restrict_keys), moving its source to the value's mode so that it composes with the accumulated action there. *)
   | Prekey (env, cell) ->
-      let (Looked_up { act; op; entry; pre }) = lookup_cube env nk mu pretr v op in
-      let (Wrap cell) = Modalcell.prewhisker_wrapped cell pretr in
-      let (Prekey_action pre) = prekey_vcomp cell pre in
+      let (Looked_up { act; op; entry; pre }) = lookup_cube env nk mu v op in
+      let (Wrap cell) = Modalcell.prewhisker_wrapped cell mu in
+      let (Wrap pre) = key_vcomp cell pre in
       Looked_up { act; op; entry; pre }
   (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb) ->
@@ -1620,7 +1613,7 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
           (plus_opt_op n n_x n_y (opt_op_of_opt_sface (Modality.sface_of_filter x filter_y_x)))
       in
       let ny_k = D.plus_assocl n_y y_k n_xk in
-      lookup_cube yenv ny_k mu pretr v op
+      lookup_cube yenv ny_k mu v op
   | Unshift (env, n_x, xb) ->
       (* In this branch, n is renamed to n+x. *)
       let nx = n in
@@ -1634,16 +1627,16 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
       let n_yk = D.plus_assocr n_y y_k ny_k in
       let op' = plus_opt_op n n_y n_x (opt_op_of_deg (Modality.deg_of_filter x filter_y_x)) in
       let op'' = opt_op_plus op' ny_k nx_k in
-      lookup_cube env n_yk mu pretr v (comp_opt_op op'' op)
+      lookup_cube env n_yk mu v (comp_opt_op op'' op)
   (* If the environment is permuted, we apply the permutation to the index. *)
   | Permute (p, env) ->
       let (Permute_insert (v, _)) = permute_insert v p in
-      lookup_cube env nk mu pretr v op
+      lookup_cube env nk mu v op
   | Ext { env; plus = mk; values; filter = filter_m_n; filtered = filter_k_k } -> (
       let modality = Modality.filter_modality filter_m_n in
       match v with
       (* If we encounter a variable that isn't ours, we skip it and proceed. *)
-      | Later v -> lookup_cube env nk mu pretr v op
+      | Later v -> lookup_cube env nk mu v op
       (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
       | Now -> (
           let filter = Modality.filter_plus mk nk filter_m_n filter_k_k in
@@ -1657,6 +1650,27 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
               Looked_up
                 { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); op; entry; pre }
           | _, Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu))))
+  | Ctx ctx -> lookup_cube_ctx ctx nk mu v op
+
+(* In the identity environment of a context, we skip the variables that aren't ours without unfolding them, and unfold only the one that is. *)
+and lookup_cube_ctx : type dom mu mode a b k mk nk c.
+    (mode, c, b) Ordered_ctx.t ->
+    (D.zero, k, nk) D.plus ->
+    (dom, mu, mode) Modality.t ->
+    (a, mu, k, b) insert ->
+    (mk, nk) opt_op ->
+    (dom, mk) looked_up_cube =
+ fun ctx nk mu v op ->
+  match (ctx, v) with
+  | Snoc (ctx', { vars = Vars; _ }, _), Later v -> lookup_cube (Ctx ctx') nk mu v op
+  | Snoc (ctx', { bindings; filter; vars = Vars; _ }, _), Now ->
+      (* TODO: Factor out the Ext/Now case from lookup_cube so we don't have to go through env_ext here? *)
+      lookup_cube (env_ext (Ctx ctx') filter bindings) nk mu Now op
+  | Snoc (ctx', { vars = Alias; _ }, _), _ ->
+      (* An alias has no checked variables. *)
+      lookup_cube (Ctx ctx') nk mu v op
+  | Weaken (ctx, _), _ -> lookup_cube (Ctx ctx) nk mu v op
+  | Emp _, _ | Lock _, _ -> .
 
 and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
  fun env (Index (v, fa, _, (Plus_with_locks (_, locks) as plus))) ->
@@ -1665,17 +1679,13 @@ and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kineti
   (* We strip off the locks to the right of the variable, composing the prekeys encountered on the way out into a prekey action to be applied to the looked-up value.  The prekeys encountered inside the environment by lookup_cube are transported to the value's mode by prewhiskering with the composite modality of the locks. *)
   let (Restrict_keys (env, pre)) = restrict_keys env plus in
   let mu = Locks.cod locks in
-  match lookup_cube env n_k mu mu v (id_opt_op (D.plus_out n n_k)) with
+  match lookup_cube env n_k mu v (id_opt_op (D.plus_out n n_k)) with
   | Looked_up { act; op; entry; pre = inner_pre } -> (
       let (Plus x) = D.plus (dom_sface fa) in
       match op_of_opt (comp_opt_op op (plus_opt_op n n_k x (opt_op_of_sface fa))) with
       | Some (Op (f, s)) ->
-          (* We combine, into a single cell applied in one traversal, the identity on the composite of the variable's locks (innermost), then the prekey action from inside the environment, then the prekey action from the stripped-off extension (outermost). *)
-          let (Prekey_action c) =
-            if Modalcell.is_id inner_pre then Prekey_action (Modalcell.id mu)
-            else prekey_vcomp inner_pre (Modalcell.id mu) in
-          let (Prekey_action c) =
-            if Modalcell.is_id pre then Prekey_action c else prekey_vcomp pre c in
+          (* We combine the prekey actions from the stripped-off extension (outermost) and the further ones encountered before finding the variable (innermost). *)
+          let (Wrap c) = key_vcomp pre inner_pre in
           act (CubeOf.find entry f) s c
       (* This means that in the non-unary case, some dummy endpoints in an opt_sface didn't get canceled out by a degeneracy.  I think that could only happen if a non-unary mode theory has a 2-cell from a sharp parametric modality to a sharp non-parametric modality.  In all the models I know, the primary nonparametric modalities are *comonadic*, plus in the unary case *only* a left adjoint monad to it (which is also right adjoint if the parametricity is internal), and in the external non-unary case another non-monadic non-comonadic functor.  In the internal non-unary case there is a *right* adjoint to the nonparametric comonad, but it is not "nonparametric" in this sense: its parametricity is *codiscrete* rather than discrete; I haven't thought about how to enforce that for a tangible modality, although it comes naturally for a negative presentation that is right adjoint to a tangible discrete modality. *)
       | None -> fatal (Invalid_mode_theory "uncanceled dummy endpoints"))
@@ -1972,18 +1982,22 @@ let eval_at : type mode m b.
 
 (* Evaluate a term context to produce a value context. *)
 
-let eval_bindings : type dom modality mode a b n bm.
+(* The bindings of a cube of variables live in the context extended by that cube, so that each can refer to the ones before it, which we arrange with a temporary invisible entry of unknown bindings that we specify as we go.  The bindings of an alias don't extend the context, so they can't refer to each other, and they must all be let-bound. *)
+let eval_bindings : type dom modality mode a b bb n bm.
+    (modality, n, b, bb) vars ->
     (mode, a, b) Ctx.Ordered.t ->
     (dom, modality, mode, n, n) Modality.filter_dim ->
-    ((b, (modality, n) dim_entry) snoc, mode, modality, dom, bm) plus_lock ->
+    (bb, mode, modality, dom, bm) plus_lock ->
     (n, (dom, bm) binding) CubeOf.t ->
     (n, dom Ctx.Binding.t) CubeOf.t =
- fun ctx filter al cbs ->
+ fun vars ctx filter al cbs ->
   let i = Ctx.Ordered.length ctx in
   let vbs = CubeOf.build (CubeOf.dim cbs) { build = (fun _ -> Ctx.Binding.unknown ()) } in
-  let ctx = Ctx.Ordered.invis ctx filter vbs in
   let modality = Modality.filter_modality filter in
-  let tempctx = Ctx.Ordered.lock_to ctx modality al in
+  let tempctx =
+    match vars with
+    | Vars -> Ctx.Ordered.lock_to (Ctx.Ordered.invis ctx filter vbs) modality al
+    | Alias -> Ctx.Ordered.lock_to ctx modality al in
   let argtbl = Hashtbl.create 10 in
   let j = ref 0 in
   let () =
@@ -1996,11 +2010,12 @@ let eval_bindings : type dom modality mode a b n bm.
             let level = (i, !j) in
             j := !j + 1;
             let lvl, v =
-              match ctm with
-              | None ->
+              match (ctm, vars) with
+              | None, Alias -> fatal (Anomaly "alias without a value")
+              | None, Vars ->
                   ( Some level,
                     ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal) )
-              | Some ctm ->
+              | Some ctm, _ ->
                   (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety })
             in
             Hashtbl.add argtbl (SFace_of fa) v;
@@ -2009,18 +2024,15 @@ let eval_bindings : type dom modality mode a b n bm.
       [ cbs; vbs ] in
   vbs
 
-let eval_entry : type dom modality mode a b f n bm.
+let eval_entry : type dom modality mode a b bb f n bm.
     (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, b, bm, f, n) entry ->
-    (dom, modality, mode, f, n) Ctx.entry =
- fun ctx e ->
-  match e with
-  | Vis { dim; plus_lock; filter; plusdim; vars; bindings; hasfields; fields; fplus } ->
-      let bindings = eval_bindings ctx filter plus_lock bindings in
-      let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
-      Vis { dim; filter; plusdim; vars; bindings; hasfields; fields; fplus }
-  | Invis { plus_lock; bindings; filter; _ } ->
-      Invis { filter; bindings = eval_bindings ctx filter plus_lock bindings }
+    (dom, modality, mode, f, n, b, bb, bm) entry ->
+    (dom, modality, mode, f, n, b, bb) Ctx.entry =
+ fun ctx { plus_lock; filter; bindings; vis; vars } ->
+  let bindings = eval_bindings vars ctx filter plus_lock bindings in
+  match vis with
+  | Vis v -> { filter; bindings; vis = Vis v; vars }
+  | Invis _ -> { filter; bindings; vis = Invis; vars }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function
@@ -2034,7 +2046,7 @@ let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode,
 let eval_ctx : type mode a b. (mode, a, b) termctx -> (mode, a, b) Ctx.t = function
   | Permute (perm, ctx) ->
       let ctx = eval_ordered_ctx ctx in
-      Permute { perm; env = Ctx.Ordered.env ctx; level = Ctx.Ordered.length ctx; ctx }
+      Permute { perm; level = Ctx.Ordered.length ctx; ctx }
 
 (* Evaluate a telescope (forwards context of terms) and append the result to a context. *)
 let rec eval_append : type mode a b c ac bc.
