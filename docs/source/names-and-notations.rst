@@ -35,7 +35,7 @@ The general form of the ``notation`` command is therefore:
 
    notation [(TIGHTNESS)] […] PATTERN […] ≔ HEAD ARGUMENTS
 
-We require the meaning (on the right side of the ``≔``) to have a special form: it must be a *head*, which is either a defined constant or a datatype constructor (see :ref:`Inductive datatypes and matching`), followed by a list of *exactly the same variables* that appear in the pattern, though perhaps in a different order.  This requirement enables Narya to *print* applications of the head by using the notation, in addition to *parsing* uses of the notation as applications of the head.  A constant can be associated to only one notation for printing it; if additional notations are declared later, they will all remain usable for parsing, but it is unpredictable which of them will be used for printing.  A constructor can be associated to one printing notation for each number of arguments it could be applied to, since the same constructor name could be used at different datatypes with different numbers of arguments.
+We require the meaning (on the right side of the ``≔``) to have a special form: it must be a *head*, which is either a defined constant or a datatype constructor (see :ref:`Inductive datatypes and matching`), followed by a list of *exactly the same variables* that appear in the pattern, though perhaps in a different order (or abstractions over some of them, for notations that bind variables; see :ref:`Binding notations`).  This requirement enables Narya to *print* applications of the head by using the notation, in addition to *parsing* uses of the notation as applications of the head.  A constant can be associated to only one notation for printing it; if additional notations are declared later, they will all remain usable for parsing, but it is unpredictable which of them will be used for printing.  A constructor can be associated to one printing notation for each number of arguments it could be applied to, since the same constructor name could be used at different datatypes with different numbers of arguments.
 
 Every notation is automatically also assigned a *name*, which is obtained from its pattern by replacing the variables with ``_``, concatenating them and the symbols (unquoted) separated by spaces, and surrounding it with guillemets ``«»`` so that it becomes an atomic identifier.  The notation is then associated to this name in the namespace ``notations`` (see :ref:`Importing notations`).
 
@@ -55,6 +55,33 @@ If tightness and associativity are not set correctly, this rule can give rise to
 
 In principle, it would be possible to also allow the dual situation of a *right*-open notation that is a prefix of one or more right-closed notations, but this would be more difficult to parse without backtracking, and I don't know of any important applications for it.
 
+
+Binding notations
+-----------------
+
+A notation can also *bind variables*, like the built-in notations for abstractions and pi-types.  This is specified by giving an argument of the head in the meaning of the notation as an *abstraction* over some of the variables of the pattern, in parentheses.  For example, if ``ex : (A → Type) → Type`` is an existential quantifier over ``A``, we can write
+
+.. code-block:: none
+
+   notation(0) "∃" x "," P … ≔ ex (x ↦ P)
+
+Then ``∃ x, B x`` means ``ex (x ↦ B x)``.  The variables to the left of the ``↦`` in the meaning are called *binders* of the notation, and the variable to the right of it is its *body*.  When the notation is used, a binder must be written as a variable or an underscore, and the term written in place of the body can refer to that variable.  A binder can also be written as a parenthesized ascription of a variable to a type, such as ``∃ (x : A), B x``, which then means the abstraction ``(x : A) ↦ B x`` with an ascribed domain.
+
+An abstraction in the meaning can bind more than one variable, as in ``(x y ↦ b)``, and the meaning can contain more than one abstraction.  Which variables are in scope in which arguments is determined only by the meaning, not by the order in the pattern; for instance, a binder can come after the body that it scopes over, as in ``notation(1) "∫" f "d" x ≔ integral (x ↦ f)``.  As usual, every variable of the pattern must be used exactly once in the meaning, either as an argument (possibly the body of an abstraction) or as a binder.
+
+A slot of the pattern can also be a *typed binder*, written without quotes as a parenthesized ascription of a variable to another variable.  For instance, for Σ-types we can write
+
+.. code-block:: none
+
+   notation(2) (x : A) "×" B … ≔ Σ A (x ↦ B)
+
+The variable ``x`` of a typed binder must be a binder of the notation, and its type ``A`` must be an argument.  When the notation is used, a typed binder is a single term position, at which you can write either a parenthesized ascription ``(x : A)``, which binds the variable ``x`` and gives ``A`` as the argument, or any other term ``A``, which is then the argument while the binder is anonymous.  Thus, as for the built-in pi-types, the same notation can be used both dependently, as in ``(x : A) × B x``, and non-dependently, as in ``A × C``.  (Note that the parentheses and colon of a typed binder are not notation symbols; parentheses can't be notation symbols at all.)
+
+A binder can only bind a single ordinary variable: it can't be written as a list of variables like ``(x y : A)``, an implicit variable in braces, or a modal ascription.  A notation with binders also can't be used in a match pattern, even if its head is a constructor.
+
+If the head of a binding notation is a constant, then each argument of it that is an abstraction must have a function-type with exactly as many arguments as the variables that it binds.  This is checked when the notation is defined (unfolding definitions, so that a type defined to be a function-type counts as one).  This can't be checked when the head is a constructor, since the datatype that it belongs to isn't determined by its name.
+
+When printing, an application of the head of a binding notation is displayed with the notation only if each of its arguments that should be an abstraction is syntactically an abstraction over that many variables, whose variable names are then displayed at the binders.  For instance, ``Σ A (x ↦ B x)`` is displayed as ``(x : A) × B x``, ``Σ A (_ ↦ C)`` as ``A × C``, but ``Σ A B`` as itself.
 
 Comments and strings
 --------------------

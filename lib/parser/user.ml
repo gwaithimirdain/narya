@@ -9,23 +9,40 @@ module StringMap = Map.Make (String)
 (* A user notation pattern is a nonempty sequence of operator symbols and variable names.  There must be at least one operator symbol, and any two variable names must be separated by at least one symbol.  It is left-closed if the first element is an operator symbol and left-open if the first element is a variable, and similarly for right-open and -closed and the last element.  The two opennesses in turn determine whether it is infix, prefix, postfix, or outfix, but not its associativity or tightness.  *)
 
 module Pattern = struct
+  (* A variable position of a pattern, or "slot", is usually a single variable.  It can also be a "typed binder" "(x : A)" for a notation that binds a variable, which is a single term position in the notation, but at which the user can write either an ascribed variable "(x : A)", binding x with type A, or just a term A, binding an anonymous variable with type A, as in a pi-type.  For a typed binder we remember the whitespace after the left parenthesis, the variable, the colon, and the type; that after the right parenthesis is stored along with the slot as for any other one. *)
+  type slot =
+    | Plain of string
+    | Typed of {
+        var : string;
+        ty : string;
+        wslparen : Whitespace.t list;
+        wsvar : Whitespace.t list;
+        wscolon : Whitespace.t list;
+        wsty : Whitespace.t list;
+      }
+
+  (* The variable names introduced by a slot. *)
+  let slot_names : slot -> string list = function
+    | Plain x -> [ x ]
+    | Typed { var; ty; _ } -> [ var; ty ]
+
   (* This type ensures statically that all the invariants mentioned above must hold, and is parametrized by the left- and right-openness.
-     Each symbol or variable is stored along with the type of space following it, except for those that occur last. *)
+     Each symbol or slot is stored along with the type of space following it, except for those that occur last. *)
   type (_, _) t =
     | Op_nil : Token.t * Whitespace.t list -> (closed, closed) t
-    (* If a pattern ends with a variable, that variable must be immediately preceded by an operator symbol, so we include that in the corresponding "nil". *)
+    (* If a pattern ends with a slot, that slot must be immediately preceded by an operator symbol, so we include that in the corresponding "nil". *)
     | Var_nil :
-        (Token.t * space * Whitespace.t list) * (string * Whitespace.t list)
+        (Token.t * space * Whitespace.t list) * (slot * Whitespace.t list)
         -> (closed, 's opn) t
     | Op : (Token.t * space * Whitespace.t list) * ('left, 'right) t -> (closed, 'right) t
-    | Var : (string * space * Whitespace.t list) * (closed, 'right) t -> ('s opn, 'right) t
+    | Var : (slot * space * Whitespace.t list) * (closed, 'right) t -> ('s opn, 'right) t
 
-  (* List the variable names used in a pattern. *)
-  let rec vars : type left right. (left, right) t -> string list = function
+  (* List the slots of a pattern. *)
+  let rec slots : type left right. (left, right) t -> slot list = function
     | Op_nil _ -> []
     | Var_nil (_, (x, _)) -> [ x ]
-    | Op (_, pat) -> vars pat
-    | Var ((x, _, _), pat) -> x :: vars pat
+    | Op (_, pat) -> slots pat
+    | Var ((x, _, _), pat) -> x :: slots pat
 
   let inner_symbols : type left right.
       (left, right) t ->
@@ -51,7 +68,7 @@ module Pattern = struct
 
   (* Cons a variable on the left of any pattern, raising an error if that would put two variables next to each other. *)
   let var : type left right s.
-      string * space * Whitespace.t list -> (left, right) t -> (s opn, right) t =
+      slot * space * Whitespace.t list -> (left, right) t -> (s opn, right) t =
    fun v pat ->
     match pat with
     | Op_nil _ as pat -> Var (v, pat)
@@ -66,6 +83,20 @@ module Pattern = struct
     | Var (_, rest) -> "_ " ^ to_string rest
 end
 
+(* Print a slot of a pattern the way the user would enter it. *)
+let pp_slot : Pattern.slot -> document = function
+  | Plain x -> utf8string x
+  | Typed { var; ty; wslparen; wsvar; wscolon; wsty } ->
+      Token.pp LParen
+      ^^ pp_ws `None wslparen
+      ^^ utf8string var
+      ^^ pp_ws `Break wsvar
+      ^^ Token.pp Colon
+      ^^ pp_ws `Nobreak wscolon
+      ^^ utf8string ty
+      ^^ pp_ws `None wsty
+      ^^ Token.pp RParen
+
 (* Print a *pattern* the way the user would enter it in a "notation" command, with quotes around the operator symbols. *)
 let pp_pattern : type left right. (left, right) Pattern.t -> document * Whitespace.t list =
  fun pattern ->
@@ -75,10 +106,10 @@ let pp_pattern : type left right. (left, right) Pattern.t -> document * Whitespa
     match pattern with
     | Var ((x, _, ws), pat) ->
         let ppat, wpat = go pat (Some ws) in
-        (group (optional (pp_ws `Break) prews ^^ utf8string x) ^^ ppat, wpat)
+        (group (optional (pp_ws `Break) prews ^^ pp_slot x) ^^ ppat, wpat)
     | Var_nil ((op, _, opws), (x, varws)) ->
         ( group (optional (pp_ws `Break) prews ^^ dquotes (Token.pp op))
-          ^^ group (pp_ws `Break opws ^^ utf8string x),
+          ^^ group (pp_ws `Break opws ^^ pp_slot x),
           varws )
     | Op ((op, _, ws), pat) ->
         let ppat, wpat = go pat (Some ws) in
@@ -117,26 +148,47 @@ end
 
 type key = [ `Constant of Core.Constant.t | `Constr of Core.Constr.t * int ]
 
+(* An argument of the head in the definition of a notation: either a variable of the pattern, or an abstraction "(x y ↦ b)" of a variable of the pattern over one or more others, which are thereby "binders" of the notation. *)
+type arg = Arg of string | Abs of string list * string
+
+let is_abs : arg -> bool = function
+  | Abs _ -> true
+  | Arg _ -> false
+
+(* The variables of the pattern that are binders. *)
+let binders_of_args (args : arg list) : string list =
+  List.concat_map
+    (function
+      | Arg _ -> []
+      | Abs (xs, _) -> xs)
+    args
+
 type ('left, 'tight, 'right) prenotation_data = {
   id : Id.t;
   name : string;
   fixity : ('left, 'tight, 'right) fixity;
   pattern : ('left, 'right) Pattern.t;
   key : key;
-  val_vars : string list;
+  val_args : arg list;
 }
 
 type prenotation = User : ('left, 'tight, 'right) prenotation_data -> prenotation
 
-(* Whereas a user "notation" has been compiled into a notation tree, but remembers the variables from the pattern and the definition, so as to implement the necessary permutation. *)
+(* Whereas a user "notation" has been compiled into a notation tree, but remembers the slots from the pattern and the arguments in the definition, so as to implement the necessary permutation and binding. *)
 
 type notation = {
   keys : key list;
   notn : Notation.t;
-  pat_vars : string list;
-  val_vars : string list;
+  pat_slots : Pattern.slot list;
+  val_args : arg list;
   inner_symbols : [ `Single of Token.t | `Multiple of Token.t * Token.t option list * Token.t ];
 }
+
+(* What was written at a binding position of a notation: a variable or underscore, or a parenthesized variable or underscore ascribed to a type; or a parenthesized ascription that can't be a binder (with an explanation), or something else. *)
+type binder_parse =
+  | Binder of string option * wrapped_parse option
+  | Invalid_binder of string
+  | Not_binder
 
 (* The global processing function isn't defined until postprocess.ml, but we need it before that here. *)
 
@@ -147,6 +199,7 @@ type global_processor = {
     ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located ->
     'n Raw.check Asai.Range.located;
   pattern : 'lt 'ls 'rt 'rs. ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located -> Matchpattern.t;
+  binder : 'lt 'ls 'rt 'rs. ('lt, 'ls, 'rt, 'rs) parse Asai.Range.located -> binder_parse;
 }
 
 let global_processor : global_processor ref =
@@ -154,7 +207,18 @@ let global_processor : global_processor ref =
     {
       process = (fun _ _ -> fatal (Anomaly "global_processor not set"));
       pattern = (fun _ -> fatal (Anomaly "global_processor not set"));
+      binder = (fun _ -> fatal (Anomaly "global_processor not set"));
     }
+
+(* Interpret what was written at a slot of a notation that is used as a binder: a plain slot must be a variable, possibly ascribed, while a typed slot can be an ascribed variable or any term, which is then the type of an anonymous variable. *)
+let get_binder (slot : Pattern.slot) (Wrap x : wrapped_parse) :
+    string option Asai.Range.located * wrapped_parse option =
+  match (slot, !global_processor.binder x) with
+  | _, Invalid_binder str -> fatal ?loc:x.loc (Parse_error str)
+  | Plain _, Binder (name, dom) -> ({ value = name; loc = x.loc }, dom)
+  | Plain _, Not_binder -> fatal ?loc:x.loc (Parse_error "invalid variable")
+  | Typed _, Binder (name, Some ty) -> ({ value = name; loc = x.loc }, Some ty)
+  | Typed _, (Binder (_, None) | Not_binder) -> ({ value = None; loc = x.loc }, Some (Wrap x))
 
 (* Compile a prenotation into a notation.  *)
 
@@ -163,7 +227,7 @@ let make_user : prenotation -> notation =
   let open Notation in
   let (User
          (type l t r)
-         ({ id = _; name; fixity; pattern; key; val_vars } : (l, t, r) prenotation_data)) =
+         ({ id = _; name; fixity; pattern; key; val_args } : (l, t, r) prenotation_data)) =
     notn in
   let module New = Make (struct
     type nonrec left = l
@@ -171,7 +235,8 @@ let make_user : prenotation -> notation =
     type nonrec right = r
   end) in
   let n = (New.User, fixity) in
-  let pat_vars = Pattern.vars pattern in
+  let pat_slots = Pattern.slots pattern in
+  let binders = binders_of_args val_args in
   let inner_symbols = Pattern.inner_symbols pattern in
   make n
     {
@@ -198,34 +263,80 @@ let make_user : prenotation -> notation =
          | Var_nil ((tok, _, _), _) -> Closed_entry (eop tok (Done_closed n)));
       processor =
         (fun ctx obs loc ->
-          let args =
+          (* Sort the terms written in the slots into those that are arguments (including the types of typed binders) and those that are binders. *)
+          let terms, binder_args =
             List.fold_left2
-              (fun acc k -> function
-                | (Wrap x : wrapped_parse) ->
-                    acc |> StringMap.add k (!global_processor.process ctx x))
-              StringMap.empty pat_vars
+              (fun (terms, binder_args) slot (x : wrapped_parse) ->
+                match slot with
+                | Pattern.Plain k when List.mem k binders ->
+                    (terms, binder_args |> StringMap.add k (get_binder slot x))
+                | Plain k -> (terms |> StringMap.add k x, binder_args)
+                | Typed { var; ty; _ } -> (
+                    match get_binder slot x with
+                    | name, Some ty' ->
+                        ( terms |> StringMap.add ty ty',
+                          binder_args |> StringMap.add var (name, None) )
+                    | _, None -> fatal (Anomaly "typed binder without type")))
+              (StringMap.empty, StringMap.empty)
+              pat_slots
               (List.filter_map
                  (function
                    | Term x -> Some (Wrap x : wrapped_parse)
                    | _ -> None)
                  obs) in
+          let process_term : type n.
+              (string option, n) Bwv.t -> string -> n Raw.check Asai.Range.located =
+           fun ctx k ->
+            match StringMap.find_opt k terms with
+            | Some (Wrap x) -> !global_processor.process ctx x
+            | None -> fatal (Anomaly "not found processing user") in
+          (* An abstraction binds its variables in its body, with the given ascriptions if any. *)
+          let rec process_abs : type n.
+              (string option, n) Bwv.t -> string list -> string -> n Raw.check Asai.Range.located =
+           fun ctx xs body ->
+            match xs with
+            | [] -> process_term ctx body
+            | x :: xs -> (
+                match StringMap.find_opt x binder_args with
+                | Some (name, dom) ->
+                    let dom =
+                      Option.map
+                        (fun (Wrap dom : wrapped_parse) ->
+                          (Asai.Range.locate_opt None [], !global_processor.process ctx dom))
+                        dom in
+                    let body = process_abs (Bwv.snoc ctx name.value) xs body in
+                    {
+                      value =
+                        Raw.Lam
+                          {
+                            name;
+                            cube = Asai.Range.locate_opt None `Normal;
+                            implicit = `Explicit;
+                            dom;
+                            body;
+                          };
+                      (* The binder can come after the body in the notation, so we can't merge their locations; instead we use that of the whole notation. *)
+                      loc;
+                    }
+                | None -> fatal (Anomaly "binder not found processing user")) in
+          let process_arg = function
+            | Arg k -> process_term ctx k
+            | Abs (xs, body) -> process_abs ctx xs body in
           let value =
             match key with
             | `Constant c ->
                 let spine =
                   List.fold_left
                     (fun acc k ->
-                      match StringMap.find_opt k args with
-                      | None -> fatal (Anomaly "not found processing user")
-                      | Some arg ->
-                          Raw.App
-                            ( { value = Synth acc; loc },
-                              { value = Some arg.value; loc = arg.loc },
-                              Asai.Range.locate_opt None `Explicit ))
-                    (Const c) val_vars in
+                      let arg = process_arg k in
+                      Raw.App
+                        ( { value = Synth acc; loc },
+                          { value = Some arg.value; loc = arg.loc },
+                          Asai.Range.locate_opt None `Explicit ))
+                    (Const c) val_args in
                 Raw.Synth spine
             | `Constr (c, _) ->
-                let args = List.map (fun k -> StringMap.find k args) val_vars in
+                let args = List.map process_arg val_args in
                 Raw.Constr
                   ( { value = c; loc },
                     List.map
@@ -235,23 +346,31 @@ let make_user : prenotation -> notation =
           { value; loc });
       pattern =
         (fun obs loc ->
-          let args =
-            Mlist.fold_left2
-              (fun (acc : Matchpattern.t StringMap.t) k (Wrap x : wrapped_parse) ->
-                acc |> StringMap.add k (!global_processor.pattern x))
-              StringMap.empty pat_vars
-              (List.filter_map
-                 (function
-                   | Term x -> Some (Wrap x : wrapped_parse)
-                   | _ -> None)
-                 obs) in
           match key with
           | `Constr (c, _) ->
+              (* A notation that binds variables can't be a pattern, so all its slots are plain. *)
+              if not (List.is_empty binders) then
+                fatal ?loc
+                  (Parse_error "a notation that binds variables can't be used in a pattern");
+              let args =
+                Mlist.fold_left2
+                  (fun (acc : Matchpattern.t StringMap.t) slot (Wrap x : wrapped_parse) ->
+                    match slot with
+                    | Pattern.Plain k -> acc |> StringMap.add k (!global_processor.pattern x)
+                    | Typed _ -> fatal (Anomaly "typed binder in pattern"))
+                  StringMap.empty pat_slots
+                  (List.filter_map
+                     (function
+                       | Term x -> Some (Wrap x : wrapped_parse)
+                       | _ -> None)
+                     obs) in
               (* A user notation's pattern variables are always ordinary (cube) ones; there is no way to give explicit boundaries for them. *)
-              let explicit k = Matchpattern.explicit (StringMap.find k args) in
-              let (Wrap args) = Vec.of_list_map explicit val_vars in
+              let explicit = function
+                | Arg k -> Matchpattern.explicit (StringMap.find k args)
+                | Abs _ -> fatal (Anomaly "abstraction in pattern") in
+              let (Wrap args) = Vec.of_list_map explicit val_args in
               Matchpattern.Constr ({ value = c; loc }, args)
-          | _ -> fatal (Anomaly "make_user"));
+          | `Constant _ -> fatal ?loc (Parse_error "invalid pattern"));
       (* We define this function inline here so that it can match against the constructor New.User that was generated above by the inline Make functor application.  The only way I can think of to factor this function out (and, for instance, put it in user.ml instead of this file) would be to pass it a first-class module as an argument.  At the moment, that seems like unnecessary complication. *)
       print_term =
         Some
@@ -286,4 +405,4 @@ let make_user : prenotation -> notation =
       print_case = None;
       is_case = (fun _ -> false);
     };
-  { keys = [ key ]; notn = Wrap n; pat_vars; val_vars; inner_symbols }
+  { keys = [ key ]; notn = Wrap n; pat_slots; val_args; inner_symbols }

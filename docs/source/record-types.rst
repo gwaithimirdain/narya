@@ -41,16 +41,11 @@ Like any definition, record types can have parameters.  For example, Σ-types ar
 
 However, we consider it better style in general to use specialized record types rather than generic Σ-types, as it provides better error-checking and documentation of the meaning of the fields.  It is also probably more efficient to use one record type with a lot of fields than an iterated Σ-type.  In the future we plan to implement metaprogramming-like capabilities for proving theorems about arbitrary record types, so that using them in preference to generic Σ-types does not entail a loss of expressivity.
 
-Currently user notations cannot bind variables, so it is not possible to define a binding notation such as ``(x : A) × B x`` for Σ-types.  But if we define a non-dependent product type, we can give it an infix notation:
+We can give Σ-types a notation that binds a variable (see :ref:`Binding notations`), which can be used both dependently, as in ``(x : A) × B x``, and non-dependently, as in ``A × C``:
 
 .. code-block:: none
 
-   def prod (A B : Type) : Type ≔ sig (
-      fst : A,
-      snd : B,
-      )
-
-   notation(2) A "×" B ≔ prod A B
+   notation(2) (x : A) "×" B … ≔ Σ A (x ↦ B)
 
 The fact that parameters can equivalently be abstracted over in the type and the term applies also to record type declarations.  That is, the above definition of Σ-types is entirely equivalent to
 
