@@ -78,6 +78,24 @@
    ￮ constant ℕ.plus_assoc defined
   
 
+An unmarked step is checked only in the forward orientation, with no fallback
+to the reversed one.
+
+  $ narya equational.ny -e "def xz_unmarked : Id A x z ≔ calc x = y by p = z by s ∎"
+   ￫ error[E0401]
+   ￭ command-line exec string
+   1 | def xz_unmarked : Id A x z ≔ calc x = y by p = z by s ∎
+     ^ term synthesized type
+         Id A z y
+       but is being checked against type
+         Id A y z
+       unequal head constants:
+         z
+       does not equal
+         y
+  
+  [1]
+
 A step marked with ← is checked only in the reversed orientation.
 
   $ narya equational.ny -e "def xy' : Id A x y ≔ calc x = y by ← p ∎"
