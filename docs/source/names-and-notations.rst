@@ -79,7 +79,7 @@ The variable ``x`` of a typed binder must be a binder of the notation, and its t
 
 A binder can only bind a single ordinary variable: it can't be written as a list of variables like ``(x y : A)``, an implicit variable in braces, or a modal ascription.  A notation with binders also can't be used in a match pattern, even if its head is a constructor.
 
-If the head of a binding notation is a constant, then each argument of it that is an abstraction must have a function-type with exactly as many arguments as the variables that it binds.  This is checked when the notation is defined (unfolding definitions, so that a type defined to be a function-type counts as one).  This can't be checked when the head is a constructor, since the datatype that it belongs to isn't determined by its name.
+If the head of a binding notation is a constant, then each argument of it that is an abstraction must have a function-type with at least as many arguments as the variables that it binds (if it has more, then the body of the notation is itself a function).  This is checked when the notation is defined (unfolding definitions, so that a type defined to be a function-type counts as one).  This can't be checked when the head is a constructor, since the datatype that it belongs to isn't determined by its name.
 
 When printing, an application of the head of a binding notation is displayed with the notation only if each of its arguments that should be an abstraction is syntactically an abstraction over that many variables, whose variable names are then displayed at the binders.  For instance, ``Σ A (x ↦ B x)`` is displayed as ``(x : A) × B x``, ``Σ A (_ ↦ C)`` as ``A × C``, but ``Σ A B`` as itself.
 

@@ -1196,18 +1196,19 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                      (Printf.sprintf "type '%s' of a typed binder can't be bound by an abstraction"
                         ty)))
         (User.Pattern.slots pattern);
-      (* If the head is a constant, each argument that is an abstraction must be given at a function-type with exactly as many (0-dimensional) arguments as the variables it binds.  We can't check a constructor this way, since its name doesn't determine its datatype. *)
+      (* If the head is a constant, each argument that is an abstraction must be given at a function-type with at least as many (0-dimensional) arguments as the variables it binds (if it has more, the body is itself a function).  We can't check a constructor this way, since its name doesn't determine its datatype. *)
       (match key with
       | `Constant c when List.exists User.is_abs val_args ->
           let cname = String.concat "." (Scope.name_of c) in
           let (Definition { ty; mode; _ }) = Global.find_const c in
           let ctx = Ctx.empty mode in
-          let rec arity cap n shape =
-            if n > cap then `More
+          (* Whether a function-type has at least k 0-dimensional arguments, and if not, how many it has. *)
+          let rec arity k n shape =
+            if n >= k then `Enough
             else
               match shape with
-              | Arg_pi { cod; _ } -> arity cap (n + 1) (cod ())
-              | Arg_none -> `Exactly n
+              | Arg_pi { cod; _ } -> arity k (n + 1) (cod ())
+              | Arg_none -> `Only n
               | Arg_higher -> `Higher
               | Arg_unknown -> `Unknown in
           let rec go shape args =
@@ -1227,16 +1228,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                       fatal
                         (Invalid_notation_binder
                            (Printf.sprintf
-                              "argument (%s ↦ %s) of %s must have a function-type with %d argument%s, but its type %s"
+                              "argument (%s ↦ %s) of %s must have a function-type with at least %d argument%s, but its type %s"
                               (String.concat " " xs) body cname k
                               (if k = 1 then "" else "s")
                               found)) in
                     match arity k 0 (dom ()) with
-                    | `Unknown -> ()
-                    | `Exactly n when n = k -> ()
-                    | `Exactly 0 -> fail "is not a function-type"
-                    | `Exactly n -> fail (Printf.sprintf "has %d" n)
-                    | `More -> fail "has more"
+                    | `Enough | `Unknown -> ()
+                    | `Only 0 -> fail "is not a function-type"
+                    | `Only n -> fail (Printf.sprintf "has only %d" n)
                     | `Higher -> fail "has a higher-dimensional argument"));
                 go (cod ()) args in
           go (arg_shape_of_ty ctx (Norm.eval_term (Ctx.env ctx) ty)) val_args

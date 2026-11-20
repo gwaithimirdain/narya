@@ -208,13 +208,13 @@ Errors when defining binding notations
 
   $ narya prelude.ny -e "notation(0) \"∀\" x \",\" y \",\" P ≔ ex (x y ↦ P)"
    ￫ error[E2211]
-   ￮ invalid binding in notation: argument (x y ↦ P) of ex must have a function-type with 2 arguments, but its type has 1
+   ￮ invalid binding in notation: argument (x y ↦ P) of ex must have a function-type with at least 2 arguments, but its type has only 1
   
   [1]
 
   $ narya prelude.ny -e "notation(0) \"∀\" x \",\" P ≔ Σ (x ↦ P)"
    ￫ error[E2211]
-   ￮ invalid binding in notation: argument (x ↦ P) of Σ must have a function-type with 1 argument, but its type is not a function-type
+   ￮ invalid binding in notation: argument (x ↦ P) of Σ must have a function-type with at least 1 argument, but its type is not a function-type
   
   [1]
 
@@ -226,19 +226,21 @@ Errors when defining binding notations
 
   $ narya prelude.ny -e "axiom F : Type → Type" -e "notation(0) \"∀\" x \",\" P ≔ F (x ↦ P)"
    ￫ error[E2211]
-   ￮ invalid binding in notation: argument (x ↦ P) of F must have a function-type with 1 argument, but its type is not a function-type
+   ￮ invalid binding in notation: argument (x ↦ P) of F must have a function-type with at least 1 argument, but its type is not a function-type
   
   [1]
 
-  $ narya prelude.ny -e "axiom G : (A → A → Type) → Type" -e "notation(0) \"∀\" x \",\" P ≔ G (x ↦ P)"
-   ￫ error[E2211]
-   ￮ invalid binding in notation: argument (x ↦ P) of G must have a function-type with 1 argument, but its type has more
+  $ narya prelude.ny -e "axiom G : (A → A → Type) → Type" -e "notation(0) \"∀\" x \",\" P ≔ G (x ↦ P)" -e "echo ∀ x, (y ↦ Id A x y)" -e "axiom R : A → A → Type" -e "echo G R"
+  ∀ x , (y ↦ Id A x y)
+    : Type
   
-  [1]
+  G R
+    : Type
+  
 
   $ narya prelude.ny -e "axiom H : (Fam : Type) → Fam → Type" -e "notation(0) \"∀\" F \",\" x \",\" P ≔ H F (x ↦ P)"
    ￫ error[E2211]
-   ￮ invalid binding in notation: argument (x ↦ P) of H must have a function-type with 1 argument, but its type is not a function-type
+   ￮ invalid binding in notation: argument (x ↦ P) of H must have a function-type with at least 1 argument, but its type is not a function-type
   
   [1]
 
