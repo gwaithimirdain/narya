@@ -397,10 +397,12 @@ let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mod
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta.
 
-   In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible.  A case tree that is stuck on a match is displayed, if the match remembers where it got stuck, as a let-only around that match (see readback_stuck); otherwise it is displayed as the application spine of the neutral whose value it is. *)
+   In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible. *)
 
-(* A way to read back the head of an application spine, in any context at the head's mode (which is locked by the modalities of any field projections in the spine). *)
-type ('hmode, 's) spine_head = { read : 'a 'z. ('hmode, 'z, 'a) Ctx.t -> ('hmode, 'a, 's) term }
+(* The head of an application spine, together with any additional information required to read it back. *)
+type (_, _) spine_head =
+  | Head : 'mode head * [ `Canonical | `Other ] -> ('mode, kinetic) spine_head
+  | Stuck : 'mode stuck * bool -> ('mode, potential) spine_head
 
 (* The result of replaying an application spine to find where a case tree got stuck: either the stuck point that a match remembers, with the rest of the spine that was applied after it, or the evaluation of the whole spine if no such point was found.  The second parameter records, as for apps, whether the spine ends with an instantiation. *)
 type (_, _) replayed =
@@ -958,10 +960,7 @@ and readback_neu : type hmode mode a z any.
       (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
       Inst (Kinetic, readback_head ~canonical ctx head, args)
-  | _ ->
-      readback_spine Kinetic canonical ctx
-        { read = (fun ctx -> readback_head ~canonical ctx head) }
-        apps
+  | _ -> readback_spine Kinetic canonical ctx (Head (head, canonical)) apps
 
 (* Read back an application spine on top of a head that we know how to read back, with any energy.  A potential spine arises only for display, from a stuck case tree (see readback_stuck_spine). *)
 and readback_spine : type hmode mode a z any s.
@@ -975,7 +974,10 @@ and readback_spine : type hmode mode a z any s.
   (* The degeneracies appearing on the spine of a neutral are all *permutations*, which are never displayed with a name like "refl" or "Id" that depends on the sort of their argument.  Thus the only place the sort matters is at the head, where it is computed from the type of the head itself (see readback_head).  Here we only pass along whether the whole neutral is a canonical type, which determines whether a reflexivity at the head is displayed as a superscript. *)
   let sort = (`Other, canonical) in
   match apps with
-  | Emp -> head.read ctx
+  | Emp -> (
+      match head with
+      | Head (head, canonical) -> readback_head ~canonical ctx head
+      | Stuck (stuck, abbreviable) -> readback_stuck ~abbreviable ctx stuck)
   | Snoc (apps, Arg (filter, args, ins)) ->
       let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
@@ -1049,9 +1051,7 @@ and readback_stuck_spine : type m1 mode a z any.
     (m1, mode, any, live) apps ->
     (mode, a, potential) term =
  fun ~abbreviable ctx stuck apps ->
-  readback_spine Potential `Other ctx
-    { read = (fun ctx -> readback_stuck ~abbreviable ctx stuck) }
-    apps
+  readback_spine Potential `Other ctx (Stuck (stuck, abbreviable)) apps
 
 and readback_head : type mode c z.
     ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
