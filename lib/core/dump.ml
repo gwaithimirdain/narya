@@ -15,7 +15,7 @@ open Raw
 type printable +=
   | Val : ('mode, 's) value -> printable
   | DeepVal : ('mode, 's) value * int -> printable
-  | Head : 'mode head -> printable
+  | Head : ('mode, 's) head -> printable
   | Binder : ('mode, 'modality, 'dom, 'b, 's) binder -> printable
   | Term : ('mode, 'b, 's) term -> printable
   | Tel : ('mode, 'a, 'b, 'ab) Telescope.t -> printable
@@ -190,7 +190,7 @@ module F = struct
     | Failed _ -> fprintf ppf "Failed"
     | Live h -> head ppf h
 
-  and head : type mode. formatter -> mode head -> unit =
+  and head : type mode s. formatter -> (mode, s) head -> unit =
    fun ppf h ->
     match h with
     | Var { level = l; key; _ } -> level ppf l key
@@ -209,6 +209,7 @@ module F = struct
           | `Named x -> x
           | `Anon _ -> "_")
           (cubeof value) doms binder b
+    | Stuck _ -> fprintf ppf "Stuck (?)"
 
   and binder : type mode modality dom b s. formatter -> (mode, modality, dom, b, s) binder -> unit =
    fun ppf (Bind { env = e; modality; filter = _; ins = i; body }) ->

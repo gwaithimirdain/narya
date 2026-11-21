@@ -399,14 +399,9 @@ let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mod
 
    In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible. *)
 
-(* The head of an application spine, together with any additional information required to read it back. *)
-type (_, _) spine_head =
-  | Head : 'mode head * [ `Canonical | `Other ] -> ('mode, kinetic) spine_head
-  | Stuck : 'mode stuck * bool -> ('mode, potential) spine_head
-
 (* The result of replaying an application spine to find where a case tree got stuck: either the stuck point that a match remembers, with the rest of the spine that was applied after it, or the evaluation of the whole spine if no such point was found.  The second parameter records, as for apps, whether the spine ends with an instantiation. *)
 type (_, _) replayed =
-  | Stuck_at : 'm1 stuck * ('m1, 'mode, 'any, live) apps -> ('mode, 'any) replayed
+  | Stuck_at : ('m1, potential) head * ('m1, 'mode, 'any, live) apps -> ('mode, 'any) replayed
   | Not_stuck : ('mode, potential) evaluation -> ('mode, 'any) replayed
 
 (* Extend a replay by one more entry of the spine. *)
@@ -543,7 +538,7 @@ and readback_eval : type mode a z s.
   (* In the realize case the value is kinetic, so the stored self-term in the Potential status is discarded. *)
   | Realize v, _ -> Realize (readback_at ~eta Kinetic ctx v ty)
   (* A case tree stuck on a match that remembers where it got stuck is displayed as a let-only binding the variables of that match's context to the values they had there, around the match itself. *)
-  | Unrealized (Some stuck), Potential _ -> readback_stuck ~abbreviable:false ctx stuck
+  | Unrealized (Some stuck), Potential _ -> readback_head ~abbreviable:false ctx stuck
   (* Any other stuck case tree is displayed as the application spine of the neutral that the status carries.  Only a potential readback can meet an Unrealized, so that neutral is always available. *)
   | Unrealized None, Potential neutral -> Realize (readback_val ctx neutral)
 
@@ -657,7 +652,7 @@ and readback_at_type : type mode a z s.
                (mode, m, n, a, et) codata_args),
            ins,
            _ ) :
-          hmode head
+          (hmode, kinetic) head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
@@ -859,7 +854,7 @@ and readback_at_type : type mode a z s.
   | ( Canonical
         (type hmode m n mn)
         ((_, UU (_, mk), ins0, boundary) :
-          hmode head
+          (hmode, kinetic) head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
@@ -921,7 +916,7 @@ and readback_val_unbudgeted : type mode a z s.
       | Unrealized (Some stuck), true -> (
           match head with
           | Meta { meta; _ } when !stuck_meta_shown_hook.shown meta ->
-              Stuck_meta (meta, readback_stuck ~abbreviable:true ctx stuck)
+              Stuck_meta (meta, readback_head ~abbreviable:true ctx stuck)
           | _ -> readback_neu ~canonical:`Other ctx head args)
       (* If more has been applied to it after it got stuck, we find the stuck point by replaying its spine. *)
       | Unrealized None, true -> (
@@ -929,7 +924,9 @@ and readback_val_unbudgeted : type mode a z s.
           | Meta { meta; _ }, Snoc _ when !stuck_meta_shown_hook.shown meta -> (
               match replay_stuck ctx head args with
               | Stuck_at (stuck, rest) ->
-                  Stuck_meta (meta, readback_stuck_spine ~abbreviable:true ctx stuck rest)
+                  Stuck_meta
+                    ( meta,
+                      readback_spine Potential ~canonical:`Other ~abbreviable:true ctx stuck rest )
               | Not_stuck _ -> readback_neu ~canonical:`Other ctx head args)
           | _ -> readback_neu ~canonical:`Other ctx head args)
       | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
@@ -939,19 +936,10 @@ and readback_val_unbudgeted : type mode a z s.
   | Constr _ -> fatal (Anomaly "unexpected constr in synthesizing readback")
   | Canonical _ -> fatal (Anomaly "unexpected canonical type in synthesizing readback")
 
-(* Read back a case tree stuck on a match, as a let-only binding the variables of that match's context to the values they had when it got stuck, around the match itself (ascribed with its type).  The let-only is abbreviable by the display settings if it appears inside a term (as the value of a metavariable), but not if it is what the "about" command was asked to display. *)
-and readback_stuck : type mode a z.
-    abbreviable:bool -> (mode, z, a) Ctx.t -> mode stuck -> (mode, a, potential) term =
- fun ~abbreviable ctx (Stuck { env; tm; display = termctx, ty }) ->
-  (* If the environment is the identity, possibly weakened, we can omit it, as for a metavariable. *)
-  match readback_at_idenv ctx env termctx (Term_subject tm) with
-  | Some tm -> tm
-  | None -> Letonly { termctx; env = readback_env ctx env termctx; tm; ty; abbreviable }
-
 and readback_neu : type hmode mode a z any.
     ?canonical:[ `Canonical | `Other ] ->
     (mode, z, a) Ctx.t ->
-    hmode head ->
+    (hmode, kinetic) head ->
     (hmode, mode, any, live) apps ->
     (mode, a, kinetic) term =
  fun ?(canonical = `Other) ctx head apps ->
@@ -960,24 +948,22 @@ and readback_neu : type hmode mode a z any.
       (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
       Inst (Kinetic, readback_head ~canonical ctx head, args)
-  | _ -> readback_spine Kinetic canonical ctx (Head (head, canonical)) apps
+  | _ -> readback_spine Kinetic ~canonical ctx head apps
 
 (* Read back an application spine on top of a head that we know how to read back, with any energy.  A potential spine arises only for display, from a stuck case tree (see readback_stuck_spine). *)
 and readback_spine : type hmode mode a z any s.
     s energy ->
-    [ `Canonical | `Other ] ->
+    canonical:[ `Canonical | `Other ] ->
+    ?abbreviable:bool ->
     (mode, z, a) Ctx.t ->
-    (hmode, s) spine_head ->
+    (hmode, s) head ->
     (hmode, mode, any, live) apps ->
     (mode, a, s) term =
- fun energy canonical ctx head apps ->
+ fun energy ~canonical ?(abbreviable = false) ctx head apps ->
   (* The degeneracies appearing on the spine of a neutral are all *permutations*, which are never displayed with a name like "refl" or "Id" that depends on the sort of their argument.  Thus the only place the sort matters is at the head, where it is computed from the type of the head itself (see readback_head).  Here we only pass along whether the whole neutral is a canonical type, which determines whether a reflexivity at the head is displayed as a superscript. *)
   let sort = (`Other, canonical) in
   match apps with
-  | Emp -> (
-      match head with
-      | Head (head, canonical) -> readback_head ~canonical ctx head
-      | Stuck (stuck, abbreviable) -> readback_stuck ~abbreviable ctx stuck)
+  | Emp -> readback_head ~canonical ~abbreviable ctx head
   | Snoc (apps, Arg (filter, args, ins)) ->
       let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
@@ -986,7 +972,7 @@ and readback_spine : type hmode mode a z any s.
         ( energy,
           App
             ( energy,
-              readback_spine energy canonical ctx head apps,
+              readback_spine energy ~canonical ~abbreviable ctx head apps,
               cod_left_ins ins,
               filter,
               Modal
@@ -1001,7 +987,7 @@ and readback_spine : type hmode mode a z any s.
       (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
       let t = cod_left_ins ins in
-      let inner = readback_spine energy canonical lctx head apps in
+      let inner = readback_spine energy ~canonical lctx head apps in
       match Modality.filter_is_trivial t filter with
       | Some Eq ->
           (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
@@ -1017,11 +1003,14 @@ and readback_spine : type hmode mode a z any s.
           Term.Act (energy, Term.Act (energy, fieldterm, liftdeg, sort), p, sort))
   | Snoc (apps, Inst (_, args)) ->
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-      Inst (energy, readback_spine energy canonical ctx head apps, args)
+      Inst (energy, readback_spine energy ~canonical ctx head apps, args)
 
 (* Replay the application spine of a neutral from its head, to find the point at which its case tree got stuck on a match, if the match remembers it, and the rest of the spine applied after that.  The value of a neutral can remember where it got stuck only if nothing more has been applied to it since, so this is how we find the stuck point of one that has.  We get the evaluation of the head by reading it back (internally, not for display, and outside any display budget) and evaluating it in the identity environment, in the context locked by the modalities of any field projections in the spine, so that we don't have to know how its value depends on the kind of head; and then we apply the entries of the spine to it one at a time.  Only a constant or metavariable can have a case tree to get stuck. *)
 and replay_stuck : type hmode mode a z any.
-    (mode, z, a) Ctx.t -> hmode head -> (hmode, mode, any, live) apps -> (mode, any) replayed =
+    (mode, z, a) Ctx.t ->
+    (hmode, kinetic) head ->
+    (hmode, mode, any, live) apps ->
+    (mode, any) replayed =
  fun ctx head apps ->
   match apps with
   | Emp -> (
@@ -1043,20 +1032,13 @@ and replay_stuck : type hmode mode a z any.
       replay_entry (replay_stuck lctx head rest) e
   | Snoc (rest, (Inst _ as e)) -> replay_entry (replay_stuck ctx head rest) e
 
-(* Read back a case tree stuck on a match, with the rest of an application spine applied after it got stuck. *)
-and readback_stuck_spine : type m1 mode a z any.
-    abbreviable:bool ->
-    (mode, z, a) Ctx.t ->
-    m1 stuck ->
-    (m1, mode, any, live) apps ->
-    (mode, a, potential) term =
- fun ~abbreviable ctx stuck apps ->
-  readback_spine Potential `Other ctx (Stuck (stuck, abbreviable)) apps
-
-and readback_head : type mode c z.
-    ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
-    =
- fun ?(canonical = `Other) ctx h ->
+and readback_head : type mode s c z.
+    ?canonical:[ `Canonical | `Other ] ->
+    ?abbreviable:bool ->
+    (mode, z, c) Ctx.t ->
+    (mode, s) head ->
+    (mode, c, s) term =
+ fun ?(canonical = `Other) ?(abbreviable = false) ctx h ->
   match h with
   | Var { level; deg; key } -> (
       (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context. *)
@@ -1145,6 +1127,12 @@ and readback_head : type mode c z.
           | None -> with_perm (letonly ())))
   | UU (mode, n) -> UU (mode, n)
   | Pi args -> readback_pi ctx args
+  (* Read back a case tree stuck on a match, as a let-only binding the variables of that match's context to the values they had when it got stuck, around the match itself (ascribed with its type).  The let-only is abbreviable by the display settings if it appears inside a term (as the value of a metavariable), but not if it is what the "about" command was asked to display. *)
+  | Stuck { env; tm; display = termctx, ty } -> (
+      (* If the environment is the identity, possibly weakened, we can omit it, as for a metavariable. *)
+      match readback_at_idenv ctx env termctx (Term_subject tm) with
+      | Some tm -> tm
+      | None -> Letonly { termctx; env = readback_env ctx env termctx; tm; ty; abbreviable })
 
 and readback_pi : type c z dom modality mode k n.
     (mode, z, c) Ctx.t -> (dom, modality, mode, k, n) pi_args -> (mode, c, kinetic) term =
@@ -1764,6 +1752,7 @@ let rec readback_about : type mode a b.
           | Snoc _ -> (
               match replay_stuck ctx head args with
               | Stuck_at (stuck, rest) ->
-                  Some (readback_stuck_spine ~abbreviable:false ctx stuck rest)
+                  Some
+                    (readback_spine Potential ~canonical:`Other ~abbreviable:false ctx stuck rest)
               | Not_stuck _ -> None)))
   | _ -> None

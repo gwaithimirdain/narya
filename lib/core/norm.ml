@@ -459,7 +459,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
         let (SFace_of_plus (ab, fa', fb')) = sface_of_plus k_l fab' in
         let subdoms, subcods = (CubeOf.subcube fab' doms, BindCube.subcube fab cods) in
         let subx = plus_variables (dom_sface fa') ab (sub_variables fb' x) in
-        let head : mode head = Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods } in
+        let head : (mode, kinetic) head =
+          Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods } in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         let fields : (mode * u * potential * no_eta) Value.StructfieldAbwd.t =
           match (is_id_sface fab, Fibrancy.PiValuesMap.find_opt modality !Fibrancy.pi) with
@@ -1134,7 +1135,7 @@ and tyof_field : type src f mode m s i.
            ({ env; fields; opacity = _; eta; hints = _ } : (src, m, n, a, et) codata_args),
          codatains,
          tyargs ) :
-        hmode head
+        (hmode, kinetic) head
         * (src, m, n) canonical
         * (mn, m, n) insertion
         * (D.zero, mn, mn, src normal) TubeOf.t) -> (
@@ -1164,7 +1165,7 @@ and tyof_field : type src f mode m s i.
 and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
     (src, f, mode) Modality.t ->
     (src, kinetic) value ->
-    hmode head ->
+    (hmode, kinetic) head ->
     (potential, et) eta ->
     (src, m, a) env ->
     (m, n, mn) D.plus ->

@@ -107,26 +107,32 @@ module rec Value : sig
         * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
         -> ('n, 'mode, 'a) modal_value_cube
 
-  type 'mode head =
+  type ('mode, 's) head =
     | Var : {
         level : level;
         deg : ('m, 'n) deg;
         key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
       }
-        -> 'mode head
-    | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
+        -> ('mode, kinetic) head
+    | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> ('mode, kinetic) head
     | Meta : {
         meta : ('mode, 'a, 'b, 's) Meta.t;
         env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }
-        -> 'mode head
-    | UU : 'mode Mode.t * 'n D.t -> 'mode head
-    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> 'mode head
+        -> ('mode, kinetic) head
+    | UU : 'mode Mode.t * 'n D.t -> ('mode, kinetic) head
+    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> ('mode, kinetic) head
+    | Stuck : {
+        env : ('mode, 'n, 'a) env;
+        tm : ('mode, 'a, potential) Term.term;
+        display : ('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term;
+      }
+        -> ('mode, potential) head
 
   and (_, _) neu_head =
     | Failed : 'mode Mode.t -> ('mode, failed) neu_head
-    | Live : 'mode head -> ('mode, live) neu_head
+    | Live : ('mode, kinetic) head -> ('mode, live) neu_head
 
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;
@@ -205,15 +211,7 @@ module rec Value : sig
   and (_, _) evaluation =
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    | Unrealized : 'mode stuck option -> ('mode, potential) evaluation
-
-  and 'mode stuck =
-    | Stuck : {
-        env : ('mode, 'n, 'a) env;
-        tm : ('mode, 'a, potential) Term.term;
-        display : ('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term;
-      }
-        -> 'mode stuck
+    | Unrealized : ('mode, potential) head option -> ('mode, potential) evaluation
 
   and (_, _, _) canonical =
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
@@ -408,34 +406,41 @@ end = struct
         * ('k, ('dom, 'a) Value.value) Dim.CubeOf.t
         -> ('n, 'mode, 'a) modal_value_cube
 
-  (* The head of an elimination spine is a variable, a constant, or a substituted metavariable.  *)
-  type 'mode head =
+  (* The head of an elimination spine.  Heads occurring in actual values are always kinetic; potential heads are stuck terms, used to unify certain code in readback. *)
+  type (_, _) head =
     (* A variable is determined by a De Bruijn LEVEL, and stores a neutral degeneracy applied to it, as well as a modal key 2-cell.  The vertical domain of the key is the modality annotating the variable in the context, and the vertical codomain is the composite of all the locks between that variable and the (rightmost) end of the context.  Accordingly, the horizontal codomain is the mode of the context at the time when the variable was added, and the horizontal domain is the mode of the current context. *)
     | Var : {
         level : level;
         deg : ('m, 'n) deg;
         key : ('mode, 'modality, 'lock, 'cod) Modalcell.t;
       }
-        -> 'mode head
+        -> ('mode, kinetic) head
     (* A constant also stores a dimension that it is substituted to and a neutral insertion applied to it.  Many constants are zero-dimensional, meaning that 'c' is zero, and hence a=b is just a dimension and the insertion is trivial.  The dimension of a constant is its dimension as a term standing on its own; so in particular if it has any parameters, then it belongs to an ordinary, 0-dimensional, pi-type and therefore is 0-dimensional, even if the eventual codomain of the pi-type is higher-dimensional.  Note also that when nonidentity insertions end up getting stored here, e.g. by Act, the dimension 'c gets extended as necessary; so it is always okay to create a constant with the (0,0,0) insertion to start with, even if you don't know what its actual dimension is. *)
-    | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> 'mode head
+    | Const : { name : Constant.t; ins : ('a, 'b, 'c) insertion } -> ('mode, kinetic) head
     (* A metavariable (i.e. flexible) head stores the metavariable along with a delayed substitution applied to it. *)
     | Meta : {
         meta : ('mode, 'a, 'b, 's) Meta.t;
         env : ('mode, 'm, 'b) env;
         ins : ('mn, 'm, 'n) insertion;
       }
-        -> 'mode head
+        -> ('mode, kinetic) head
     (* Universes are parametrized by a mode and a dimension. *)
-    | UU : 'mode Mode.t * 'n D.t -> 'mode head
+    | UU : 'mode Mode.t * 'n D.t -> ('mode, kinetic) head
     (* Pis must store not just the domain type but all its boundary types.  These domain and boundary types are not fully instantiated.  Note the codomains are stored in a cube of binders. *)
-    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> 'mode head
+    | Pi : ('dom, 'modality, 'mode, 'n, 'm) pi_args -> ('mode, kinetic) head
+    (* A case tree that is stuck on a match can remember the match term and the environment it was stuck in, along with the stored display data of that match, so that "about" can display it as a let-only around the match. *)
+    | Stuck : {
+        env : ('mode, 'n, 'a) env;
+        tm : ('mode, 'a, potential) Term.term;
+        display : ('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term;
+      }
+        -> ('mode, potential) head
 
   (* The head of a neutral is either an ordinary head, which can have an application spine, or Failed, which can't. *)
   and (_, _) neu_head =
     (* A failed term, i.e. one that failed to typecheck.  Its value raises a dependent error whenever it is forced, so that anything that needs to inspect it fails silently.  A failed value is unequal to every other value, including other failed values, since it doesn't remember the environment it would have been evaluated in; only physical equality makes it equal to itself. *)
     | Failed : 'mode Mode.t -> ('mode, failed) neu_head
-    | Live : 'mode head -> ('mode, live) neu_head
+    | Live : ('mode, kinetic) head -> ('mode, live) neu_head
 
   and ('dom, 'modality, 'mode, 'n, 'm) pi_args = {
     x : 'n variables;
@@ -531,16 +536,8 @@ end = struct
     (* When 's = potential, a Val means the case tree is not yet fully applied; while when 's = kinetic, it is the only possible kind of result.  Collapsing these two together seems to unify the code for Lam and Struct as much as possible. *)
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    | Unrealized : 'mode stuck option -> ('mode, potential) evaluation
-
-  (* A case tree that is stuck on a match can remember the match term and the environment it was stuck in, along with the stored display data of that match, so that "about" can display it as a let-only around the match.  This is dropped as soon as anything more is done to the stuck evaluation other than acting on it by a degeneracy or modal cell (which can be pushed into the environment); in that case to display it we recompute the stuck value along with the rest of the spine. *)
-  and 'mode stuck =
-    | Stuck : {
-        env : ('mode, 'n, 'a) env;
-        tm : ('mode, 'a, potential) Term.term;
-        display : ('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term;
-      }
-        -> 'mode stuck
+    (* A stuck case tree can remember its term and environment.  This is dropped as soon as anything more is done to the stuck evaluation other than acting on it by a degeneracy or modal cell (which can be pushed into the environment); in that case to display it we recompute the stuck value along with the rest of the spine. *)
+    | Unrealized : ('mode, potential) head option -> ('mode, potential) evaluation
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
   and (_, _, _) canonical =
@@ -1055,7 +1052,8 @@ let inst_of_apps : type hmode mode any.
   | Snoc (_, Field _) -> (apps, None)
 
 (* A head together with an application spine ending at a given mode, with the mode at the head end existentially quantified. *)
-type _ head_apps = Head_apps : 'hmode head * ('hmode, 'mode) any_apps -> 'mode head_apps
+type _ head_apps =
+  | Head_apps : ('hmode, kinetic) head * ('hmode, 'mode) any_apps -> 'mode head_apps
 
 (* Split off a given positive dimension's worth of instantiation, putting the rest back on the apps.  The argument must be a neutral, so the return value is just the head and apps part of a neutral (which suffices to read it back with readback_neu). *)
 let split_inst : type mode m.

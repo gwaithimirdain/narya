@@ -259,7 +259,7 @@ let rec single_face_boundaries : type a c ac.
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype.  Curiously, the only mode parameter that appears here is the *source* of the window modality, i.e. the mode at which the datatype and discriminee live. *)
 let merge_branches : type hmode dom window mode a m.
-    hmode head ->
+    (hmode, kinetic) head ->
     (dom, window, mode) Modality.t ->
     (Constr.t, a branch) Abwd.t ->
     (Constr.t, (dom, m) Value.dataconstr) Abwd.t ->
@@ -1133,7 +1133,8 @@ and check_constr : type mode a b s.
   | Canonical
       (type hmode mn m n)
       ((name, Data { dim; indices = Filled _ty_indices; constrs; _ }, ins, tyargs) :
-        hmode head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
+        (hmode, kinetic) head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t)
+    -> (
       let Eq = eq_of_ins_zero ins in
       (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
       match Abwd.find_opt constr constrs with
@@ -1818,7 +1819,7 @@ and check_match_branches : type dom window mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        hmode head
+        (hmode, kinetic) head
         * (dom, m, d_zero) canonical
         * (m', m, d_zero) insertion
         * (D.zero, m', m', dom normal) TubeOf.t) ->
@@ -2140,7 +2141,7 @@ and check_var_match : type dom modality mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
+        (hmode, kinetic) head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
       let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
@@ -2540,7 +2541,7 @@ and check_empty_match_lam : type mode a b.
            ({ x = _; filter; doms; cods } : (dom, domodality, mode, dd, k) pi_args),
          ins,
          tyargs ) :
-        hmode head
+        (hmode, kinetic) head
         * (mode, k, n) canonical
         * (kn, k, n) insertion
         * (D.zero, kn, kn, mode normal) TubeOf.t) -> (
@@ -3882,7 +3883,7 @@ and synth : type mode a b s.
             | Canonical
                 (type hmode m k km)
                 ((_, UU (_dmode, k), ins, edoms) :
-                  hmode head
+                  (hmode, kinetic) head
                   * (dom, k, m) canonical
                   * (km, k, m) insertion
                   * (D.zero, km, km, dom normal) TubeOf.t) -> (
@@ -3922,7 +3923,7 @@ and synth : type mode a b s.
                           | Canonical
                               (type hmode n2 m2 nm2)
                               ((_, UU (codmode, n), ins', ecodt) :
-                                hmode head
+                                (hmode, kinetic) head
                                 * (mode, n2, m2) canonical
                                 * (nm2, n2, m2) insertion
                                 * (D.zero, nm2, nm2, mode normal) TubeOf.t) -> (
