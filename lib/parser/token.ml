@@ -19,6 +19,7 @@ type t =
     }
   | GeldedQuery (* ʔ *)
   | DblQuery (* ⁇ *)
+  | Bang (* ! *)
   | Arrow (* Both -> and → *)
   | DblArrow (* Both => and ⇒ *)
   | Mapsto (* Both |-> and ↦ *)
@@ -176,6 +177,7 @@ let to_string = function
       Option.fold ~some:(fun n -> "⁇" ^ n) ~none:"" number ^ Option.value ~default:"?" contents
   | GeldedQuery -> "ʔ"
   | DblQuery -> "⁇"
+  | Bang -> "!"
   | Arrow -> Display.alt_char "→" "->"
   | DblArrow -> Display.alt_char "⇒" "=>"
   | Mapsto -> Display.alt_char "↦" "|->"
@@ -254,6 +256,7 @@ let word_like_edge (side : [ `Left | `Right ]) (tok : t) : bool =
   | RBrace
   | Hole _
   | GeldedQuery
+  | Bang
   | DblQuery
   | Arrow
   | DblArrow
