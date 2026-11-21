@@ -1516,11 +1516,10 @@ and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) va
   let (Val v) = force_eval v in
   v
 
-(* Apply a single entry of an 'apps' to something, calling either 'apply' or 'field' or 'inst' as appropriate. *)
+(* Apply a single entry of an 'apps' to something, calling either 'apply' or 'field' or 'inst' as appropriate.  Applying, projecting from, or instantiating a stuck evaluation leaves it stuck, but forgets where it got stuck (see Value.stuck): all Unrealizeds become None.  It may not be possible to reach here with a nontrivial stuck entry for an application or an instantiation, but it definitely is for a field projection, so we treat them all the same. *)
 and app_eval_entry : type mode1 mode2 s any inst.
     (mode1, s) evaluation -> (mode1, mode2, any, inst) apps_entry -> (mode2, s) evaluation =
  fun ev e ->
-  (* Applying, projecting from, or instantiating a stuck evaluation leaves it stuck, but forgets where it got stuck (see Value.stuck): all Unrealizeds become None.  However, for applications and instantiations, a nontrivial stuck evaluation should never be reached here, because apply_lazy and inst_lazy forget it themselves, and the only lazy values they don't handle themselves are already-forced ones ('apply' and 'inst' force the value with view_term first).  Only a field projection can meet a stuck evaluation here, since field_lazy may meet one that is still waiting for the action that pushes the field's insertion inside.  The other callers, app_eval_apps for fibrancy fields and the display-time replay of a spine, never apply an entry to a stuck evaluation that remembers where it got stuck: a fibrancy 'id' field is an abstraction over both its arguments, and a replay stops at the stuck point. *)
   match e with
   | Arg (filter, xs, ins) -> (
       let modality = Modality.filter_modality filter in
@@ -1548,9 +1547,7 @@ and app_eval_entry : type mode1 mode2 s any inst.
           let (Val v) =
             act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized None -> Unrealized None
-      | Unrealized (Some _) ->
-          fatal (Anomaly "applying a stuck match that remembers where it got stuck"))
+      | Unrealized _ -> Unrealized None)
   | Field (filter, fld, fldplus, ins) -> (
       let fm = Modality.filter_modality filter in
       let mode = Modality.tgt fm in
@@ -1571,9 +1568,7 @@ and app_eval_entry : type mode1 mode2 s any inst.
       match ev with
       | Val tm -> Val (inst tm args)
       | Realize tm -> Realize (inst tm args)
-      | Unrealized None -> Unrealized None
-      | Unrealized (Some _) ->
-          fatal (Anomaly "instantiating a stuck match that remembers where it got stuck"))
+      | Unrealized _ -> Unrealized None)
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the Locks on the end of the environment have already been stripped off by restrict_keys (which the type of the index ensures, since an insertion only passes dimension entries).  Any Prekeys inside are accumulated into a prekey action. *)
 and lookup_cube : type dom mu mode n a b k mk nk.
