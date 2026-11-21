@@ -211,7 +211,7 @@ module rec Value : sig
     | Stuck : {
         env : ('mode, 'n, 'a) env;
         tm : ('mode, 'a, potential) Term.term;
-        display : ('mode, 'a) Term.match_display;
+        display : ('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term;
       }
         -> 'mode stuck
 
@@ -539,7 +539,7 @@ end = struct
     | Stuck : {
         env : ('mode, 'n, 'a) env;
         tm : ('mode, 'a, potential) Term.term;
-        display : ('mode, 'a) Term.match_display;
+        display : ('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term;
       }
         -> 'mode stuck
 

@@ -187,7 +187,7 @@ module rec Term : sig
         dim : 'n D.t;
         motive : ('mode, 'a) match_motive;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
-        display : ('mode, 'a) match_display option;
+        display : (('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term) option;
       }
         -> ('mode, 'a, potential) term
     | Realize : ('mode, 'a, kinetic) term -> ('mode, 'a, potential) term
@@ -215,13 +215,6 @@ module rec Term : sig
   }
 
   and ('mode, 'a) match_motive = [ `Explicit of ('mode, 'a, kinetic) term | `Implicit | `Nondep ]
-
-  and ('mode, 'a) match_display =
-    | Match_display : {
-        termctx : ('mode, 'c, 'a) termctx;
-        ty : ('mode, 'a, kinetic) term;
-      }
-        -> ('mode, 'a) match_display
 
   and (_, _, _) branch =
     | Branch : {
@@ -551,7 +544,8 @@ end = struct
         (* How the match was typechecked: with an explicit motive supplied by the user (a type family over the datatype's indices and the datatype itself), implicitly dependently (refining a variable in the context and the goal), or non-dependently.  This is stored only for display: the explicit motive is displayed with a "return" clause, and whether the match synthesizes when redisplayed depends on how it was checked.  Evaluation never needs it, since the branch it selects carries its own body. *)
         motive : ('mode, 'a) match_motive;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
-        display : ('mode, 'a) match_display option;
+        (* The context of a match and the type it was checked at, stored only for display.  If the match is stuck when evaluated, its evaluation environment can be read back along this context, and the match displayed as a let-only around itself (ascribed with its type, since a match doesn't synthesize). *)
+        display : (('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term) option;
       }
         -> ('mode, 'a, potential) term
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)
@@ -585,14 +579,6 @@ end = struct
   (* A branch of a match binds a number of new variables.  If it is a higher-dimensional match, then each of those "variables" is actually a full cube of variables.  In addition, its context must be permuted to put those new variables before the existing variables that are now defined in terms of them.  Finally, each of the variables might be annotated by a different modality, so we include a list of such modalities and make it into a tctx extension that all have the same dimension. *)
   (* The pattern-variable display names are carried inside the "annotate" witness (one per variable, in VarAnnote/VarAnnotator), so unparse.ml can recover them when displaying a match branch ("about pred"). *)
   and ('mode, 'a) match_motive = [ `Explicit of ('mode, 'a, kinetic) term | `Implicit | `Nondep ]
-
-  (* The context of a match and the type it was checked at, stored only for display: if the match is stuck when evaluated, its evaluation environment can be read back along this context, and the match displayed as a let-only around itself (ascribed with its type, since a match doesn't synthesize).  Only the "about" command uses this.  *)
-  and ('mode, 'a) match_display =
-    | Match_display : {
-        termctx : ('mode, 'c, 'a) termctx;
-        ty : ('mode, 'a, kinetic) term;
-      }
-        -> ('mode, 'a) match_display
 
   and (_, _, _) branch =
     | Branch : {

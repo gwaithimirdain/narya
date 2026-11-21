@@ -949,7 +949,7 @@ and readback_val_unbudgeted : type mode a z s.
 (* Read back a case tree stuck on a match, as a let-only binding the variables of that match's context to the values they had when it got stuck, around the match itself (ascribed with its type).  The let-only is abbreviable by the display settings if it appears inside a term (as the value of a metavariable), but not if it is what the "about" command was asked to display. *)
 and readback_stuck : type mode a z.
     abbreviable:bool -> (mode, z, a) Ctx.t -> mode stuck -> (mode, a, potential) term =
- fun ~abbreviable ctx (Stuck { env; tm; display = Match_display { termctx; ty } }) ->
+ fun ~abbreviable ctx (Stuck { env; tm; display = termctx, ty }) ->
   (* If the environment is the identity, possibly weakened, we can omit it, as for a metavariable. *)
   match readback_at_idenv ctx env termctx (Term_subject tm) with
   | Some tm -> tm

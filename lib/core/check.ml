@@ -187,11 +187,6 @@ let spine : type a.
     | _ -> (tm, args) in
   spine tm []
 
-(* The display data stored with a match: its context and the type it is checked at, read back so that "about" can display the match as a let-only around itself if it is stuck when evaluated. *)
-let match_display : type mode a b.
-    (mode, a, b) Ctx.t -> (mode, kinetic) value -> (mode, b) Term.match_display option =
- fun ctx ty -> Some (Match_display { termctx = readback_ctx ctx; ty = readback_val ctx ty })
-
 (* Pull all the actions off of a term and compose them. *)
 let rec actions : type a. a check located option -> any_deg * a check located option =
  fun tm ->
@@ -1894,7 +1889,10 @@ and check_match_branches : type dom window mode a b bm.
         (fun b ->
           if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
         highers;
-      let display = Option.bind synthed_type (match_display ctx) in
+      let display =
+        match synthed_type with
+        | None -> None
+        | Some ty -> Some (readback_ctx ctx, readback_val ctx ty) in
       ( Term.Match { tm; window; plus_lock; dim; motive = motive_tm; branches; display },
         synthed_type )
   | _ ->
@@ -2403,7 +2401,7 @@ and check_var_match : type dom modality mode a b bm.
               dim;
               motive = `Implicit;
               branches;
-              display = match_display ctx motive;
+              display = Some (readback_ctx ctx, readback_val ctx motive);
             })
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in

@@ -71,11 +71,7 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
             | `Explicit motive -> `Explicit (term f motive)
             | (`Implicit | `Nondep) as motive -> motive);
           branches = Constr.Map.map (branch f) branches;
-          display =
-            Option.map
-              (fun (Match_display { termctx = tc; ty }) ->
-                Match_display { termctx = termctx f tc; ty = term f ty })
-              display;
+          display = Option.map (fun (tc, ty) -> (termctx f tc, term f ty)) display;
         }
   | Realize tm -> Realize (term f tm)
   | Canonical can -> Canonical (canonical f can)
