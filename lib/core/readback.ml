@@ -392,31 +392,17 @@ let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mod
   | Weaken (ctx, _) -> no_checked_vars ctx
   | Ext _ | Lock _ -> None
 
+(* The result of replaying an application spine to find where a case tree got stuck: either the stuck point that a match remembers, with the rest of the spine that was applied after it, or the evaluation of the whole spine if no such point was found.  The second parameter records, as for apps, whether the spine ends with an instantiation. *)
+type (_, _) replayed =
+  | Stuck_at : ('m1, potential) head * ('m1, 'mode, 'any, live) apps -> ('mode, 'any) replayed
+  | Not_stuck : ('mode, potential) evaluation -> ('mode, 'any) replayed
+
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta.
 
    In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible. *)
-
-(* The result of replaying an application spine to find where a case tree got stuck: either the stuck point that a match remembers, with the rest of the spine that was applied after it, or the evaluation of the whole spine if no such point was found.  The second parameter records, as for apps, whether the spine ends with an instantiation. *)
-type (_, _) replayed =
-  | Stuck_at : ('m1, potential) head * ('m1, 'mode, 'any, live) apps -> ('mode, 'any) replayed
-  | Not_stuck : ('mode, potential) evaluation -> ('mode, 'any) replayed
-
-(* Extend a replay by one more entry of the spine. *)
-let replay_entry : type m1 m2 any inst.
-    (m1, any) replayed -> (m1, m2, any, inst) apps_entry -> (m2, inst) replayed =
- fun r e ->
-  match r with
-  | Stuck_at (stuck, rest) -> Stuck_at (stuck, Snoc (rest, e))
-  | Not_stuck ev -> (
-      let ev = app_eval_entry ev e in
-      match (ev, e) with
-      | Unrealized (Some stuck), Arg _ -> Stuck_at (stuck, Emp)
-      | Unrealized (Some stuck), Field _ -> Stuck_at (stuck, Emp)
-      (* Instantiating a stuck case tree forgets where it got stuck, so an instantiation can't be the stuck point. *)
-      | _ -> Not_stuck ev)
 
 (* ********** Display budget ********** *)
 
@@ -1012,6 +998,19 @@ and replay_stuck : type hmode mode a z any.
     (hmode, mode, any, live) apps ->
     (mode, any) replayed =
  fun ctx head apps ->
+  (* Extend a replay by one more entry of the spine. *)
+  let replay_entry : type m1 m2 any inst.
+      (m1, any) replayed -> (m1, m2, any, inst) apps_entry -> (m2, inst) replayed =
+   fun r e ->
+    match r with
+    | Stuck_at (stuck, rest) -> Stuck_at (stuck, Snoc (rest, e))
+    | Not_stuck ev -> (
+        let ev = app_eval_entry ev e in
+        match (ev, e) with
+        | Unrealized (Some stuck), Arg _ -> Stuck_at (stuck, Emp)
+        | Unrealized (Some stuck), Field _ -> Stuck_at (stuck, Emp)
+        (* Instantiating a stuck case tree forgets where it got stuck, so an instantiation can't be the stuck point. *)
+        | _ -> Not_stuck ev) in
   match apps with
   | Emp -> (
       match head with
