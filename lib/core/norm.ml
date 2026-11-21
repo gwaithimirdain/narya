@@ -638,7 +638,7 @@ and eval_args : type mode m n mn a.
           eval_term (act_env env (opt_op_of_sface fa)) (CubeOf.find tms fb));
     }
 
-(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used by 'app_eval_apps', for a glued application spine being replayed. *)
+(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used by 'app_eval_entry', for a glued application spine being replayed. *)
 and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     mode Mode.t ->
     m D.t ->
@@ -832,7 +832,7 @@ and field : type src f mode n k nk s.
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
       | Neu { head = Live _ as head; args; value; ty } ->
           let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
-          (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
+          (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_entry to replay a filtered spine. *)
           let (Has_filter filter) = Modality.filter fm n in
           let args = Snoc (args, Field (filter, fld, fldplus, ins_zero n)) in
           (* We add the projection to the lazy value and return a glued neutral.  At this point we've already pushed the insertion inside by acting on the whole neutral above, so the remaining insertion to project from its value is "the identity" of appropriate dimensions. *)
@@ -1516,18 +1516,11 @@ and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) va
   let (Val v) = force_eval v in
   v
 
-(* Apply an 'apps' to something, one entry at a time. *)
-and app_eval_apps : type hmode mode s any.
-    (hmode, s) evaluation -> (hmode, mode, any, live) apps -> (mode, s) evaluation =
- fun ev x ->
-  match x with
-  | Emp -> ev
-  | Snoc (rest, e) -> app_eval_entry (app_eval_apps ev rest) e
-
-(* Apply a single entry of an 'apps' to something, calling either 'apply' or 'field' or 'inst' as appropriate.  Applying, projecting from, or instantiating a stuck evaluation leaves it stuck, but forgets where it got stuck (see Value.stuck).  Only a field projection can meet a stuck evaluation that remembers this: apply_lazy and inst_lazy forget it themselves, and the only lazy values they don't handle themselves are already-forced ones ('apply' and 'inst' force the value with view_term first), while field_lazy may meet one that is still waiting for the action that pushes the field's insertion inside.  The other callers, app_eval_apps for fibrancy fields and the display-time replay of a spine, never apply an entry to a stuck evaluation that remembers where it got stuck: a fibrancy 'id' field is an abstraction over both its arguments, and a replay stops at the stuck point. *)
+(* Apply a single entry of an 'apps' to something, calling either 'apply' or 'field' or 'inst' as appropriate. *)
 and app_eval_entry : type mode1 mode2 s any inst.
     (mode1, s) evaluation -> (mode1, mode2, any, inst) apps_entry -> (mode2, s) evaluation =
  fun ev e ->
+  (* Applying, projecting from, or instantiating a stuck evaluation leaves it stuck, but forgets where it got stuck (see Value.stuck): all Unrealizeds become None.  However, for applications and instantiations, a nontrivial stuck evaluation should never be reached here, because apply_lazy and inst_lazy forget it themselves, and the only lazy values they don't handle themselves are already-forced ones ('apply' and 'inst' force the value with view_term first).  Only a field projection can meet a stuck evaluation here, since field_lazy may meet one that is still waiting for the action that pushes the field's insertion inside.  The other callers, app_eval_apps for fibrancy fields and the display-time replay of a spine, never apply an entry to a stuck evaluation that remembers where it got stuck: a fibrancy 'id' field is an abstraction over both its arguments, and a replay stops at the stuck point. *)
   match e with
   | Arg (filter, xs, ins) -> (
       let modality = Modality.filter_modality filter in
@@ -1795,18 +1788,16 @@ and inst_fibrancy_fields : type mode m n mn.
               let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
               let v =
                 match
-                  app_eval_apps idfld
-                    (Snoc
-                       ( Snoc
-                           ( Emp,
-                             Arg
-                               ( Modality.filter_id mode (CubeOf.dim xcube),
-                                 xcube,
-                                 ins_zero (CubeOf.dim xcube) ) ),
-                         Arg
-                           ( Modality.filter_id mode (CubeOf.dim ycube),
-                             ycube,
-                             ins_zero (CubeOf.dim ycube) ) ))
+                  app_eval_entry
+                    (app_eval_entry idfld
+                       (Arg
+                          ( Modality.filter_id mode (CubeOf.dim xcube),
+                            xcube,
+                            ins_zero (CubeOf.dim xcube) )))
+                    (Arg
+                       ( Modality.filter_id mode (CubeOf.dim ycube),
+                         ycube,
+                         ins_zero (CubeOf.dim ycube) ))
                 with
                 | Val v -> Some v
                 | Realize (Neu { value; _ }) -> (
