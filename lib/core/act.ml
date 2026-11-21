@@ -324,11 +324,11 @@ module Act = struct
    fun tm s c ->
     match tm with
     | Unrealized None -> Unrealized None
-    (* A stuck match stays stuck in the acted environment, so we can push the action into it.  The environment of a stuck match has the dimension of the evaluation, but since evaluations aren't indexed by their dimension we have to check this.  The stuck data is used only for display, so if it ever failed we could just drop it. *)
+    (* A stuck match stays stuck in the acted environment, so we can push the action into it.  The environment of a stuck match has the dimension of the evaluation (Shift and Unshift change the dimension of the environment that the match itself is evaluated in, not just of its result), and an evaluation is only ever acted on by a degeneracy whose codomain is its dimension.  But since evaluations aren't indexed by their dimension we have to check this. *)
     | Unrealized (Some (Stuck { env; tm; display })) -> (
         match D.compare (cod_deg s) (dim_env env) with
         | Eq -> Unrealized (Some (Stuck { env = act_env_deg env s c; tm; display }))
-        | Neq -> Unrealized None)
+        | Neq -> fatal (Anomaly "acting on a stuck match by a degeneracy of the wrong dimension"))
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
 

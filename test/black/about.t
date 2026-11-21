@@ -724,6 +724,29 @@ A record type has no higher fields, so its instantiation is displayed with a sel
     : Type
   
 
+And when the field projected is higher and its suffix permutes the dimensions, so that the stuck match has to be acted on by that permutation before the field is projected.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def R2 : Type ≔ codata [ x .root.ee : N ]' -e 'def q (x : N) : R2 ≔ match x [ zero. ↦ [ .root.ee ↦ 0 ] | suc. n ↦ [ .root.ee ↦ n.00 ] ]' -e 'axiom a : N' -e 'axiom p : Id N a a' -e 'axiom s : Id (Id N a a) p p' -e 'echo q⁽ᵉᵉ⁾ s .root.21' -e 'about q⁽ᵉᵉ⁾ s .root.21'
+  q⁽ᵉᵉ⁾ (sym s) .root.12
+    : N
+  
+  (let⁽ᵉᵉ⁾ only x : N ≔ sym s in
+   (match x [ suc. n ↦ [ .root.ee ↦ n.00 ] | zero. ↦ [ .root.ee ↦ 0 ] ] : R2))
+    .root.12
+    : N
+  
+
+The type of a degenerated element of a type stuck on a match is that type degenerated and instantiated, so it forgets where it got stuck; the degenerated type itself remembers it.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom ax : Bool' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'axiom k : T ax' -e 'echo refl k' -e 'about refl (T ax)'
+  refl k
+    : Id T (refl ax) k k
+  
+  let⁽ᵉ⁾ only 𝑥 : Bool ≔ refl ax in
+  (match 𝑥 [ false. ↦ Bool | true. ↦ N ] : Type)
+    : Type⁽ᵉ⁾ (T ax) (T ax)
+  
+
 An explicit match keeps its "return" clause on the line of the "match" when it fits there.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom ax : Bool' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def k : T ax ≔ match ax return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'about k'
