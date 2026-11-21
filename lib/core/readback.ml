@@ -384,14 +384,6 @@ let readback_at_idenv : type mode a x b n c d e.
   | Eq, _ -> search ctx env
   | Neq, _ -> None
 
-let readback_meta_at_idenv : type mode a b n c d x s.
-    (mode, a, b) Ctx.t ->
-    (mode, x, d, s) Meta.t ->
-    (mode, n, d) env ->
-    (mode, c, d) termctx ->
-    (mode, b, kinetic) term option =
- fun ctx meta env termctx -> readback_at_idenv ctx env termctx (Meta_subject meta)
-
 (* Whether a term context has no checked variables, but only aliases and weakenings. *)
 let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mode emp) Eq.t option =
   function
@@ -1132,14 +1124,16 @@ and readback_head : type mode c z.
             abbreviable = true;
           } in
       (* If the environment is the identity, possibly weakened, we can omit it. *)
-      match readback_meta_at_idenv ctx meta env termctx with
+      match readback_at_idenv ctx env termctx (Meta_subject meta) with
       | Some tm -> with_perm tm
       | None -> (
           let (Permute (_, octx)) = termctx in
           match no_checked_vars octx with
           (* If the context of the metavariable has no variables, an environment for it of positive dimension carries no information, so the metavariable is just degenerated, possibly with a permutation. *)
           | Some Eq -> (
-              match readback_meta_at_idenv ctx meta (Emp (Ctx.mode ctx, D.zero)) termctx with
+              match
+                readback_at_idenv ctx (Emp (Ctx.mode ctx, D.zero)) termctx (Meta_subject meta)
+              with
               | Some tm -> (
                   let (To perm) = deg_of_ins ins in
                   let (DegExt (_, _, deg)) = comp_deg_extending (deg_zero (cod_left_ins ins)) perm in
