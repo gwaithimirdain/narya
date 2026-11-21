@@ -346,7 +346,7 @@ module Parse = struct
     | [ x ] when Lexer.valid_var x -> return (`Var (User.Pattern.Plain x, `Break, ws))
     | _ -> fatal ~loc:(Range.convert loc) (Invalid_variable x)
 
-  (* A typed binder "(x : A)" in a pattern. *)
+  (* A typed binder "(x : A)" or "(x :μ| A)" in a pattern. *)
   let pattern_typed =
     let* wslparen = token LParen in
     let valid_var =
@@ -356,10 +356,26 @@ module Parse = struct
       | _ -> fatal ~loc:(Range.convert loc) (Invalid_variable x) in
     let* var, wsvar = valid_var in
     let* wscolon = token Colon in
-    let* ty, wsty = valid_var in
+    (* After the colon come either the type, or a modality (a sequence of names) followed by a bar and the type. *)
+    let* first = valid_var in
+    let* rest = zero_or_more valid_var in
+    let* modality, wsbar, (ty, wsty) =
+      (let* wsbar = token (Op "|") in
+       let* ty = valid_var in
+       return (first :: rest, wsbar, ty))
+      </>
+      (* We bind a unit so that the failure is only raised if this alternative is reached. *)
+      let* () = return () in
+      match rest with
+      | [] -> return ([], [], first)
+      | _ -> fatal (Invalid_notation_pattern "invalid typed binder") in
     let* wsrparen = token RParen in
     (* As for an ordinary variable, we hard code a `Break space after a typed binder. *)
-    return (`Var (User.Pattern.Typed { var; ty; wslparen; wsvar; wscolon; wsty }, `Break, wsrparen))
+    return
+      (`Var
+         ( User.Pattern.Typed { var; ty; wslparen; wsvar; wscolon; modality; wsbar; wsty },
+           `Break,
+           wsrparen ))
 
   let pattern_ellipsis =
     let* ws = token Ellipsis in
@@ -1202,15 +1218,25 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           let cname = String.concat "." (Scope.name_of c) in
           let (Definition { ty; mode; _ }) = Global.find_const c in
           let ctx = Ctx.empty mode in
-          (* Whether a function-type has at least k 0-dimensional arguments, and if not, how many it has. *)
-          let rec arity k n shape =
-            if n >= k then `Enough
+          (* Whether a function-type has at least k 0-dimensional arguments, and if so the modalities of the first k of them, and if not how many it has. *)
+          let rec arity k n modalities shape =
+            if n >= k then `Enough (List.rev modalities)
             else
               match shape with
-              | Arg_pi { cod; _ } -> arity k (n + 1) (cod ())
+              | Arg_pi { modality; cod; _ } -> arity k (n + 1) (modality :: modalities) (cod ())
               | Arg_none -> `Only n
               | Arg_higher -> `Higher
               | Arg_unknown -> `Unknown in
+          (* The modality of each typed binder, which must be that of the corresponding argument. *)
+          let typed_modalities =
+            List.filter_map
+              (function
+                | User.Pattern.Typed { var; modality; _ } -> Some (var, List.map fst modality)
+                | Plain _ -> None)
+              (User.Pattern.slots pattern) in
+          let show_modality = function
+            | [] -> "no modality"
+            | m -> "modality " ^ String.concat " " m in
           let rec go shape args =
             match (args, shape) with
             | [], _ | _, (Arg_higher | Arg_unknown) -> ()
@@ -1219,7 +1245,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                   fatal
                     (Invalid_notation_binder
                        (Printf.sprintf "%s doesn't take enough arguments for this notation" cname))
-            | arg :: args, Arg_pi { dom; cod } ->
+            | arg :: args, Arg_pi { dom; cod; _ } ->
                 (match arg with
                 | User.Arg _ -> ()
                 | Abs (xs, body) -> (
@@ -1232,8 +1258,22 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                               (String.concat " " xs) body cname k
                               (if k = 1 then "" else "s")
                               found)) in
-                    match arity k 0 (dom ()) with
-                    | `Enough | `Unknown -> ()
+                    match arity k 0 [] (dom ()) with
+                    | `Enough modalities ->
+                        List.iter2
+                          (fun x m ->
+                            match List.assoc_opt x typed_modalities with
+                            | Some tm
+                              when not (User.same_modality (List.map (locate_opt None) tm) m) ->
+                                fatal
+                                  (Invalid_notation_binder
+                                     (Printf.sprintf
+                                        "typed binder %s has %s, but the type of argument (%s ↦ %s) of %s binds it with %s"
+                                        x (show_modality tm) (String.concat " " xs) body cname
+                                        (show_modality m)))
+                            | _ -> ())
+                          xs modalities
+                    | `Unknown -> ()
                     | `Only 0 -> fail "is not a function-type"
                     | `Only n -> fail (Printf.sprintf "has only %d" n)
                     | `Higher -> fail "has a higher-dimensional argument"));

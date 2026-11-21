@@ -249,6 +249,70 @@ Errors when defining binding notations
     : Type
   
 
+Modal binders
+
+  $ narya -spatial modal.ny
+  (x :♭| A) ⊗ B x
+    : Type
+  
+  A ⊗ C
+    : Type
+  
+  ∃ x , B x
+    : Type
+  
+  ∃ x , B x
+    : Type
+  
+  (x :♭♯| A) ⊠ B x
+    : Type
+  
+  (x :♭♯| A) ⊠ B x
+    : Type
+  
+
+  $ narya -spatial modalprelude.ny -e "echo (x : A) ⊗ B x"
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | echo (x : A) ⊗ B x
+     ^ parse error: this notation binds a variable here with modality ♭
+  
+  [1]
+
+  $ narya -spatial modalprelude.ny -e "echo (x :♯| A) ⊗ B x"
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | echo (x :♯| A) ⊗ B x
+     ^ parse error: this notation binds a variable here with modality ♭
+  
+  [1]
+
+  $ narya -spatial modalprelude.ny -e "echo ∃ (x : A), B x"
+   ￫ error[E1701]
+   ￭ command-line exec string
+   1 | echo ∃ (x : A), B x
+     ^ modality mismatch in checking ascribed lambda (id ≠ ♭)
+  
+  [1]
+
+  $ narya -spatial modalprelude.ny -e "notation(1) (x : X) \"⊗⊗\" Y ≔ S X (x ↦ Y)"
+   ￫ error[E2211]
+   ￮ invalid binding in notation: typed binder x has no modality, but the type of argument (x ↦ Y) of S binds it with modality ♭
+  
+  [1]
+
+  $ narya -spatial modalprelude.ny -e "notation(1) (x :♯| X) \"⊗⊗\" Y ≔ S X (x ↦ Y)"
+   ￫ error[E2211]
+   ￮ invalid binding in notation: typed binder x has modality ♯, but the type of argument (x ↦ Y) of S binds it with modality ♭
+  
+  [1]
+
+  $ narya -spatial modalprelude.ny -e "notation(1) (x :♭| X) \"⊗⊗\" Y ≔ T X (x ↦ Y)"
+   ￫ error[E2211]
+   ￮ invalid binding in notation: typed binder x has modality ♭, but the type of argument (x ↦ Y) of T binds it with modality ♭♯
+  
+  [1]
+
 Reformatting a notation command
 
   $ cat >reformat.ny <<'EOS'
@@ -269,3 +333,19 @@ Reformatting a notation command
   axiom curry : (A → A → A) → A
   
   notation(0) "λ²" x "," y "." b ≔ curry (x y ↦ b)
+
+  $ cat >reformat-modal.ny <<'EOS'
+  > axiom S : (X :♭| Type) → ((x :♭| X) → Type) → Type
+  > notation(1) ( x : ♭ | X ) "⊗" Y … ≔ S X (x ↦ Y)
+  > axiom T : (X :♭♯| Type) → ((x :♭♯| X) → Type) → Type
+  > notation(1) (x :♭ ♯|X) "⊠" Y … ≔ T X (x ↦ Y)
+  > EOS
+  $ narya -spatial reformat-modal.ny
+  $ cat reformat-modal.ny
+  axiom S : (X :♭| Type) → ((x :♭| X) → Type) → Type
+  
+  notation(1) (x :♭| X) "⊗" Y … ≔ S X (x ↦ Y)
+  
+  axiom T : (X :♭♯| Type) → ((x :♭♯| X) → Type) → Type
+  
+  notation(1) (x : ♭ ♯ | X) "⊠" Y … ≔ T X (x ↦ Y)

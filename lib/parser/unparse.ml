@@ -85,8 +85,30 @@ let get_notation : type mode n s. [> `Term of (mode, n, s) term | `Constr of Con
             | None ->
                 let { name; anon = _ } = find k binders in
                 { unparse = (fun _ _ -> var name); peel = no_peel })
-        | Typed { var = x; ty; _ } -> (
+        | Typed { var = x; ty; modality; _ } -> (
             let ty = find ty terms in
+            (* The modality of a typed binder is displayed as the modality it names would be, in particular with its generators run together if they are all single characters. *)
+            let modality =
+              let names =
+                List.map
+                  (fun (m : string located) -> m.value)
+                  (Modality.split_names (List.map (fun (m, _) -> unlocated m) modality)) in
+              let names =
+                if Modality.one_char () && names <> [] then [ String.concat "" names ] else names
+              in
+              List.map (fun m -> (m, ())) names in
+            let colon obs =
+              match modality with
+              | [] -> obs <: mktok Colon
+              | (m, _) :: ms ->
+                  let left_ok, right_ok = (No.le_refl No.plus_omega, No.le_refl No.plus_omega) in
+                  obs
+                  <: mktok Colon
+                  <: Term
+                       (List.fold_left
+                          (fun fn (m, _) -> unlocated (App { fn; arg = var m; left_ok; right_ok }))
+                          (var m) ms)
+                  <: mktok (Op "|") in
             match find x binders with
             (* A typed binder of an anonymous variable is displayed as just its type, like the domain of a non-dependent pi-type. *)
             | { anon = true; _ } -> ty
@@ -99,9 +121,7 @@ let get_notation : type mode n s. [> `Term of (mode, n, s) term | `Constr of Con
                            ~inner:
                              (Multiple
                                 ( wstok LParen,
-                                  Emp
-                                  <: Term (var name)
-                                  <: mktok Colon
+                                  colon (Emp <: Term (var name))
                                   <: Term (ty.unparse No.Interval.entire No.Interval.entire),
                                   wstok RParen ))));
                   peel = no_peel;

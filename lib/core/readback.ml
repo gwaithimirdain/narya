@@ -65,9 +65,9 @@ let sort_of_val : type mode. mode Mode.t -> (mode, kinetic) value -> [ `Type | `
   Reporter.discard_errors ~fallback:(fun () -> `Other) @@ fun () ->
   sort_of_ty (Ctx.empty mode) (view_type ty "sort_of_val")
 
-(* The shape of the arguments of a function of a given type, as far as it can be seen by descending through its pi-types (evaluating them, so that a definition that unfolds to a pi-type counts as one): for each 0-dimensional pi-type, the shape of its domain (if it is not modal) and of its codomain; a higher-dimensional pi-type, whose arguments are cubes that we don't examine; or the end of the pi-types.  This is used to check the definition of a notation against its head, and since that is only a check, if anything goes wrong we say we don't know (though internal errors are still reported).  As in sort_of_ty, we use the context only to create new variables. *)
+(* The shape of the arguments of a function of a given type, as far as it can be seen by descending through its pi-types (evaluating them, so that a definition that unfolds to a pi-type counts as one): for each 0-dimensional pi-type, the name of its modality and the shapes of its domain (if it is not modal) and of its codomain; a higher-dimensional pi-type, whose arguments are cubes that we don't examine; or the end of the pi-types.  This is used to check the definition of a notation against its head, and since that is only a check, if anything goes wrong we say we don't know (though internal errors are still reported).  As in sort_of_ty, we use the context only to create new variables. *)
 type arg_shape =
-  | Arg_pi of { dom : unit -> arg_shape; cod : unit -> arg_shape }
+  | Arg_pi of { modality : string list; dom : unit -> arg_shape; cod : unit -> arg_shape }
   | Arg_higher
   | Arg_none
   | Arg_unknown
@@ -87,6 +87,7 @@ let rec arg_shape_of_ty : type mode a z. (mode, z, a) Ctx.t -> (mode, kinetic) v
           let modality = Modality.filter_modality filter in
           Arg_pi
             {
+              modality = Modality.name modality;
               dom =
                 (fun () ->
                   match Modality.compare_id modality with

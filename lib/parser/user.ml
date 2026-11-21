@@ -9,7 +9,7 @@ module StringMap = Map.Make (String)
 (* A user notation pattern is a nonempty sequence of operator symbols and variable names.  There must be at least one operator symbol, and any two variable names must be separated by at least one symbol.  It is left-closed if the first element is an operator symbol and left-open if the first element is a variable, and similarly for right-open and -closed and the last element.  The two opennesses in turn determine whether it is infix, prefix, postfix, or outfix, but not its associativity or tightness.  *)
 
 module Pattern = struct
-  (* A variable position of a pattern, or "slot", is usually a single variable.  It can also be a "typed binder" "(x : A)" for a notation that binds a variable, which is a single term position in the notation, but at which the user can write either an ascribed variable "(x : A)", binding x with type A, or just a term A, binding an anonymous variable with type A, as in a pi-type.  For a typed binder we remember the whitespace after the left parenthesis, the variable, the colon, and the type; that after the right parenthesis is stored along with the slot as for any other one. *)
+  (* A variable position of a pattern, or "slot", is usually a single variable.  It can also be a "typed binder" "(x : A)" for a notation that binds a variable, which is a single term position in the notation, but at which the user can write either an ascribed variable "(x : A)", binding x with type A, or just a term A, binding an anonymous variable with type A, as in a pi-type.  A typed binder can also be modal, "(x :μ| A)", in which case an ascribed variable at that position must have the same modality.  For a typed binder we remember the whitespace after the left parenthesis, the variable, the colon, each name in the modality, the bar (if the modality is nonempty), and the type; that after the right parenthesis is stored along with the slot as for any other one. *)
   type slot =
     | Plain of string
     | Typed of {
@@ -18,6 +18,8 @@ module Pattern = struct
         wslparen : Whitespace.t list;
         wsvar : Whitespace.t list;
         wscolon : Whitespace.t list;
+        modality : (string * Whitespace.t list) list;
+        wsbar : Whitespace.t list;
         wsty : Whitespace.t list;
       }
 
@@ -86,13 +88,26 @@ end
 (* Print a slot of a pattern the way the user would enter it. *)
 let pp_slot : Pattern.slot -> document = function
   | Plain x -> utf8string x
-  | Typed { var; ty; wslparen; wsvar; wscolon; wsty } ->
+  | Typed { var; ty; wslparen; wsvar; wscolon; modality; wsbar; wsty } ->
       Token.pp LParen
       ^^ pp_ws `None wslparen
       ^^ utf8string var
       ^^ pp_ws `Break wsvar
       ^^ Token.pp Colon
-      ^^ pp_ws `Nobreak wscolon
+      (* As for modal ascriptions in terms, a single modality name is printed attached to the colon and bar, while a composite one is spaced out. *)
+      ^^ (match modality with
+        | [] -> pp_ws `Nobreak wscolon
+        | [ (m, wsm) ] ->
+            pp_ws `None wscolon
+            ^^ utf8string m
+            ^^ pp_ws `None wsm
+            ^^ Token.pp (Op "|")
+            ^^ pp_ws `Nobreak wsbar
+        | ms ->
+            pp_ws `Nobreak wscolon
+            ^^ concat_map (fun (m, wsm) -> utf8string m ^^ pp_ws `Break wsm) ms
+            ^^ Token.pp (Op "|")
+            ^^ pp_ws `Nobreak wsbar)
       ^^ utf8string ty
       ^^ pp_ws `None wsty
       ^^ Token.pp RParen
@@ -184,9 +199,10 @@ type notation = {
   inner_symbols : [ `Single of Token.t | `Multiple of Token.t * Token.t option list * Token.t ];
 }
 
-(* What was written at a binding position of a notation: a variable or underscore, or a parenthesized variable or underscore ascribed to a type; or a parenthesized ascription that can't be a binder (with an explanation), or something else. *)
+(* What was written at a binding position of a notation: a variable or underscore, or a parenthesized variable or underscore ascribed to a type, possibly with a modality; or a parenthesized ascription that can't be a binder (with an explanation), or something else. *)
 type binder_parse =
-  | Binder of string option * wrapped_parse option
+  | Binder of
+      string option * (string Asai.Range.located list Asai.Range.located * wrapped_parse) option
   | Invalid_binder of string
   | Not_binder
 
@@ -210,15 +226,32 @@ let global_processor : global_processor ref =
       binder = (fun _ -> fatal (Anomaly "global_processor not set"));
     }
 
-(* Interpret what was written at a slot of a notation that is used as a binder: a plain slot must be a variable, possibly ascribed, while a typed slot can be an ascribed variable or any term, which is then the type of an anonymous variable. *)
+(* Whether two modality names are the same, once split into generators. *)
+let same_modality (m1 : string Asai.Range.located list) (m2 : string list) : bool =
+  let split ms =
+    List.map (fun (m : string Asai.Range.located) -> m.value) (Modal.Modality.split_names ms) in
+  split m1 = split (List.map (Asai.Range.locate_opt None) m2)
+
+(* Interpret what was written at a slot of a notation that is used as a binder: a plain slot must be a variable, possibly ascribed (with any modality), which ascribes the domain of the abstraction.  A typed slot can be an ascribed variable with the slot's modality, or any other term, which is then the type of an anonymous variable; either way the type is an argument rather than the domain of the abstraction. *)
 let get_binder (slot : Pattern.slot) (Wrap x : wrapped_parse) :
-    string option Asai.Range.located * wrapped_parse option =
+    string option Asai.Range.located
+    * (string Asai.Range.located list Asai.Range.located * wrapped_parse) option =
   match (slot, !global_processor.binder x) with
   | _, Invalid_binder str -> fatal ?loc:x.loc (Parse_error str)
   | Plain _, Binder (name, dom) -> ({ value = name; loc = x.loc }, dom)
   | Plain _, Not_binder -> fatal ?loc:x.loc (Parse_error "invalid variable")
-  | Typed _, Binder (name, Some ty) -> ({ value = name; loc = x.loc }, Some ty)
-  | Typed _, (Binder (_, None) | Not_binder) -> ({ value = None; loc = x.loc }, Some (Wrap x))
+  | Typed { modality; _ }, Binder (name, Some (m, ty)) ->
+      let modality = List.map fst modality in
+      if not (same_modality m.value modality) then
+        fatal ?loc:x.loc
+          (Parse_error
+             (match modality with
+             | [] -> "this notation binds a variable here without a modality"
+             | _ ->
+                 "this notation binds a variable here with modality " ^ String.concat " " modality));
+      ({ value = name; loc = x.loc }, Some (m, ty))
+  | Typed _, (Binder (_, None) | Not_binder) ->
+      ({ value = None; loc = x.loc }, Some (Asai.Range.locate_opt None [], Wrap x))
 
 (* Compile a prenotation into a notation.  *)
 
@@ -273,7 +306,7 @@ let make_user : prenotation -> notation =
                 | Plain k -> (terms |> StringMap.add k x, binder_args)
                 | Typed { var; ty; _ } -> (
                     match get_binder slot x with
-                    | name, Some ty' ->
+                    | name, Some (_, ty') ->
                         ( terms |> StringMap.add ty ty',
                           binder_args |> StringMap.add var (name, None) )
                     | _, None -> fatal (Anomaly "typed binder without type")))
@@ -301,8 +334,8 @@ let make_user : prenotation -> notation =
                 | Some (name, dom) ->
                     let dom =
                       Option.map
-                        (fun (Wrap dom : wrapped_parse) ->
-                          (Asai.Range.locate_opt None [], !global_processor.process ctx dom))
+                        (fun (modality, (Wrap dom : wrapped_parse)) ->
+                          (modality, !global_processor.process ctx dom))
                         dom in
                     let body = process_abs (Bwv.snoc ctx name.value) xs body in
                     {

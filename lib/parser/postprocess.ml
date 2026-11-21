@@ -418,7 +418,7 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
     | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern") in
   go pat (locate_opt pat.loc Vec.[])
 
-(* Interpret a term written at a binding position of a user notation: a variable or an underscore, possibly ascribed in parentheses to a type.  Ascriptions of more than one variable, in braces, or with a modality are rejected, since a user notation's binder is a single ordinary explicit variable. *)
+(* Interpret a term written at a binding position of a user notation: a variable or an underscore, possibly ascribed in parentheses to a type, with or without a modality.  Ascriptions of more than one variable, or in braces, are rejected, since a user notation's binder is a single explicit variable. *)
 let get_binder : type lt ls rt rs. (lt, ls, rt, rs) parse located -> User.binder_parse =
  fun x ->
   let var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option option = function
@@ -428,13 +428,13 @@ let get_binder : type lt ls rt rs. (lt, ls, rt, rs) parse located -> User.binder
   match x.value with
   | Notn ((AscVar, _), n) -> (
       match notation_args n with
-      | [ Token (LParen, _); Term v; Token (Colon, _); Term ty; Token (RParen, _) ] -> (
-          match (var v, v.value) with
-          | Some name, _ -> Binder (name, Some (Wrap ty))
-          | None, App _ -> Invalid_binder "this notation binds only one variable here"
-          | None, _ -> Invalid_binder "invalid variable")
       | Token (LBrace, _) :: _ -> Invalid_binder "this notation can't bind an implicit variable"
-      | _ -> Invalid_binder "this notation can't bind a modal variable")
+      | obs -> (
+          let Wrap v, modality, ty = args_of_ascvar ?loc:x.loc obs in
+          match (var v, v.value) with
+          | Some name, _ -> Binder (name, Some (modality, ty))
+          | None, App _ -> Invalid_binder "this notation binds only one variable here"
+          | None, _ -> Invalid_binder "invalid variable"))
   | _ -> (
       match var x with
       | Some name -> Binder (name, None)
