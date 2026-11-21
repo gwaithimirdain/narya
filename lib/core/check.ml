@@ -259,7 +259,7 @@ let rec single_face_boundaries : type a c ac.
 
 (* This preprocesssing step pairs each user-provided branch with the corresponding constructor information from the datatype.  Curiously, the only mode parameter that appears here is the *source* of the window modality, i.e. the mode at which the datatype and discriminee live. *)
 let merge_branches : type hmode dom window mode a m.
-    hmode head ->
+    (hmode, kinetic) head ->
     (dom, window, mode) Modality.t ->
     (Constr.t, a branch) Abwd.t ->
     (Constr.t, (dom, m) Value.dataconstr) Abwd.t ->
@@ -1133,7 +1133,8 @@ and check_constr : type mode a b s.
   | Canonical
       (type hmode mn m n)
       ((name, Data { dim; indices = Filled _ty_indices; constrs; _ }, ins, tyargs) :
-        hmode head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t) -> (
+        (hmode, kinetic) head * _ * (mn, m, n) insertion * (D.zero, mn, mn, mode normal) TubeOf.t)
+    -> (
       let Eq = eq_of_ins_zero ins in
       (* We don't need the *types* of the parameters or indices, which are stored in the type of the constant name.  The variable ty_indices (defined above) contains the *values* of the indices of this instance of the datatype, while tyargs (defined by view_type, above) contains the instantiation arguments of this instance of the datatype.  We check that the dimensions agree, and find our current constructor in the datatype definition. *)
       match Abwd.find_opt constr constrs with
@@ -1532,7 +1533,8 @@ and synth_letonly : type mode a b k e.
   Annotate.ctx status bodyctx (locate_opt body.loc (Synth body.value));
   let sbody, sbodyty = synth status bodyctx body in
   let sbodyty = readback_val bodyctx sbodyty in
-  ( Letonly { termctx = readback_ctx bodyctx; env = tmenv; tm = sbody; ty = sbodyty },
+  ( Letonly
+      { termctx = readback_ctx bodyctx; env = tmenv; tm = sbody; ty = sbodyty; abbreviable = false },
     type_of_eval venv sbody sbodyty )
 
 (* Check the clauses of a let-only.  The ambient context given is that of the rightmost bound term.  To get the ambient context of the bound terms to the left of a lock or key clause, we peel locks off it as for a key applied to a term, so we recurse through the clauses from right to left; but the actual checking happens as the recursion returns, from left to right. *)
@@ -1817,7 +1819,7 @@ and check_match_branches : type dom window mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        hmode head
+        (hmode, kinetic) head
         * (dom, m, d_zero) canonical
         * (m', m, d_zero) insertion
         * (D.zero, m', m', dom normal) TubeOf.t) ->
@@ -1888,7 +1890,12 @@ and check_match_branches : type dom window mode a b bm.
         (fun b ->
           if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
         highers;
-      (Term.Match { tm; window; plus_lock; dim; motive = motive_tm; branches }, synthed_type)
+      let display =
+        match synthed_type with
+        | None -> None
+        | Some ty -> Some (readback_ctx ctx, readback_val ctx ty) in
+      ( Term.Match { tm; window; plus_lock; dim; motive = motive_tm; branches; display },
+        synthed_type )
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -2134,7 +2141,7 @@ and check_var_match : type dom modality mode a b bm.
              (_, _, j, ij) data_args),
          ins,
          inst_args ) :
-        hmode head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
+        (hmode, kinetic) head * (dom, m, n) canonical * (mn, m, n) insertion * _) -> (
       let Eq = eq_of_ins_zero ins in
       check_window_transparency window data_constrs recursive;
       let tyfam = nf_of_neu (force_eval_term tyfam) "check_var_match" in
@@ -2160,7 +2167,7 @@ and check_var_match : type dom modality mode a b bm.
         match view_term x.tm with
         | Neu { head = Live (Var { level; deg; key }); args = Emp; value; ty = _ } -> (
             match force_eval value with
-            | Unrealized ->
+            | Unrealized _ ->
                 (if Option.is_none (is_id_deg deg) then
                    let (Locked (_, lctx)) = Ctx.lock ctx window in
                    raise_notrace
@@ -2355,6 +2362,7 @@ and check_var_match : type dom modality mode a b bm.
                                                                dim;
                                                                motive = `Nondep;
                                                                branches = Constr.Map.empty;
+                                                               display = None;
                                                              })
                                                     else
                                                       s :=
@@ -2386,8 +2394,16 @@ and check_var_match : type dom modality mode a b bm.
               if not !(b.value) then mortal ?loc:b.loc (Zero_dimensional_cube_abstraction "match"))
             highers;
           (* A variable match refines the context in each branch rather than applying a motive, so there is no motive to store, but we record that it is implicitly dependent. *)
-          Match { window; plus_lock = plus; tm = Term.Var index; dim; motive = `Implicit; branches }
-      )
+          Match
+            {
+              window;
+              plus_lock = plus;
+              tm = Term.Var index;
+              dim;
+              motive = `Implicit;
+              branches;
+              display = Some (readback_ctx ctx, readback_val ctx motive);
+            })
   | _ ->
       let (Locked (_, lctx)) = Ctx.lock ctx window in
       fatal ?loc (Matching_on_nondatatype (PVal (lctx, varty)))
@@ -2468,7 +2484,7 @@ and make_match_status : type dom window mode annotations a am b ab c n x y z.
     | None -> (head, args) in
   let hyp tm =
     let branches = branches |> Constr.Map.add constr (Term.Branch { annotate; comp; perm; tm }) in
-    hyp (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches }) in
+    hyp (Term.Match { window; plus_lock; tm = newtm; dim; motive; branches; display = None }) in
   Potential (head, apps, hyp)
 
 (* Refute the first of the supplied terms whose type is an empty datatype, by matching against it with zero branches.  Here "empty" means literally declared as a datatype with no constructors: we don't perform additional matches to expose a term of empty type.  Each term carries its own optional window modality.  If none of them can be refuted, an implicit refutation reports the errors that matching against the first one with zero branches would produce. *)
@@ -2502,6 +2518,7 @@ and check_refute : type mode a b.
                 dim = cod_left_ins ins;
                 motive = `Nondep;
                 branches = Constr.Map.empty;
+                display = None;
               }
         | Canonical (_, Data { constrs = Snoc _ as constrs; _ }, _, _) ->
             go (err (`Missing (Bwd.map (fun (c, _) -> (c, ())) constrs))) tms
@@ -2524,7 +2541,7 @@ and check_empty_match_lam : type mode a b.
            ({ x = _; filter; doms; cods } : (dom, domodality, mode, dd, k) pi_args),
          ins,
          tyargs ) :
-        hmode head
+        (hmode, kinetic) head
         * (mode, k, n) canonical
         * (kn, k, n) insertion
         * (D.zero, kn, kn, mode normal) TubeOf.t) -> (
@@ -2583,6 +2600,7 @@ and check_empty_match_lam : type mode a b.
                   dim;
                   motive = `Nondep;
                   branches = Constr.Map.empty;
+                  display = None;
                 } )
       | None, `Notfirst ->
           Term.Lam (xs, outer_dim, filter, check_empty_match_lam newctx output `Notfirst)
@@ -2659,6 +2677,7 @@ and empty_witness_cube : type mode dom modality k n a c.
                dim;
                motive = `Nondep;
                branches = Constr.Map.empty;
+               display = None;
              })
 
 and check_data : type mode a b i.
@@ -3864,7 +3883,7 @@ and synth : type mode a b s.
             | Canonical
                 (type hmode m k km)
                 ((_, UU (_dmode, k), ins, edoms) :
-                  hmode head
+                  (hmode, kinetic) head
                   * (dom, k, m) canonical
                   * (km, k, m) insertion
                   * (D.zero, km, km, dom normal) TubeOf.t) -> (
@@ -3904,7 +3923,7 @@ and synth : type mode a b s.
                           | Canonical
                               (type hmode n2 m2 nm2)
                               ((_, UU (codmode, n), ins', ecodt) :
-                                hmode head
+                                (hmode, kinetic) head
                                 * (mode, n2, m2) canonical
                                 * (nm2, n2, m2) insertion
                                 * (D.zero, nm2, nm2, mode normal) TubeOf.t) -> (

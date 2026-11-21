@@ -309,6 +309,10 @@ let displayed_metadef : type mode x b s. (mode, x, b, s) Meta.t -> (mode, x, b, 
     | _ -> None
   else None
 
+(* A metavariable that would be displayed as its definition, but whose value in a given environment is stuck on a match, is displayed instead as that stuck value, which readback produces (see Readback.readback_val).  Occurrences inside its own definition don't arise there, since the stuck value is computed from the metavariable's definition rather than appearing in it. *)
+let () =
+  set_stuck_meta_shown { shown = (fun v -> Meta.is_bare v || Display.lets () = `Definitions) }
+
 (* The full name of a metavariable, using the name currently in scope for the constant that owns it. *)
 let meta_name : type mode x b s. (mode, x, b, s) Meta.t -> string =
  fun v -> Global.meta_name ~owner_name:(fun c -> String.concat "." (Scope.name_of c)) v
@@ -340,6 +344,8 @@ let rec synths : type mode n s. (mode, n, s) term -> bool =
           (* When asking whether the definition synthesizes, we assume temporarily that we're unparsing that metavariable, so it doesn't again get displayed as its definition. *)
           MetaDefs.while_unparsing v @@ fun () -> synths def
       | _ -> true)
+  (* The stuck value of a metavariable is unparsed as part of that metavariable's definition. *)
+  | Stuck_meta (v, tm) -> MetaDefs.while_unparsing v @@ fun () -> synths tm
   | Var _ | Const _ | Field _ | UU _ | Inst _ | Pi _ -> true
   (* A let-only always synthesizes, since its body is ascribed if necessary. *)
   | Letonly _ -> true
@@ -627,6 +633,8 @@ let rec unparse : type mode n lt ls rt rs s.
           | Some { tm = `Defined def; _ } ->
               MetaDefs.while_unparsing v @@ fun () -> unparse vars def li ri
           | _ -> unparse_meta_name v))
+  (* The stuck value of a metavariable is unparsed as part of that metavariable's definition, so recursive occurrences of the metavariable are displayed by name, and the stuck match is marked as generative. *)
+  | Stuck_meta (v, tm) -> MetaDefs.while_unparsing v @@ fun () -> unparse vars tm li ri
   (* A field projection's head has the same energy as the projection, and a potential one prints just like a kinetic one. *)
   | Field (_, Modal (fm, plus_lock, itm), fld, ins) -> (
       match Modality.compare_id fm with
@@ -697,8 +705,8 @@ let rec unparse : type mode n lt ls rt rs s.
   | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; _ } when letonly_empty ctx ->
       let _, bodyvars = unparse_letonly_clauses vars ctx tmenv in
       unparse bodyvars body li ri
-  (* A let-only whose body is a non-bare metavariable (that is, a let-bound or a hole) arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
-  | Letonly { env = tmenv; tm = Meta (v, _); _ }
+  (* An abbreviable let-only whose body is a non-bare metavariable (that is, a let-bound or a hole) arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
+  | Letonly { env = tmenv; tm = Meta (v, _); abbreviable = true; _ }
     when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
       let inner =
         Multiple
@@ -712,10 +720,11 @@ let rec unparse : type mode n lt ls rt rs s.
             (unlocated
                (prefix ~notn:letonly ~inner ~last:(unparse_meta_name v)
                   ~right_ok:No.minusomega_lt_minusomegaplusone)))
-  (* Otherwise, we unparse and display all the binding clauses of a let-only. *)
-  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty } -> (
+  (* Otherwise, we unparse and display all the binding clauses of a let-only.  But an abbreviable one whose body is displayed (such as the definition of a bare metavariable, or a stuck match) is displayed with "display let ≔ names" by only the names of the variables it binds, "let only x, y ≔ ⋯ in M", so that it's clear which variables in the body are bound by it, but without their types, values, or any locks or keys. *)
+  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty; abbreviable } -> (
+      let names_only = abbreviable && Display.lets () = `Names in
       (* The bound terms are unparsed in the ambient context, while the types and the body are unparsed in the context of only the bound variables. *)
-      let binding, bodyvars = unparse_letonly_clauses vars ctx tmenv in
+      let binding, bodyvars = unparse_letonly_clauses ~names_only vars ctx tmenv in
       (* The body must synthesize, so if it wouldn't after unparsing, we ascribe it with its stored type. *)
       let unparse_body : type rt rs. (rt, rs) No.iinterval -> (_, _, rt, rs) parse located =
        fun ri ->
@@ -729,14 +738,16 @@ let rec unparse : type mode n lt ls rt rs s.
                   ~inner:(Single (wstok Colon))
                   ~last ~left_ok:(No.le_refl No.minus_omega) ~right_ok:(No.le_refl No.minus_omega)))
       in
-      match No.Interval.contains ri No.minus_omega_plus_one with
-      | Some right_ok ->
+      match (binding, No.Interval.contains ri No.minus_omega_plus_one) with
+      (* If only locks or keys were elided, there are no variables to name, so we display just the body. *)
+      | Snoc (Emp, _), _ when names_only -> unparse bodyvars body li ri
+      | _, Some right_ok ->
           let body = unparse_body ri in
           unlocated
             (prefix ~notn:letonly
                ~inner:(Multiple (dimtok Let (dim_term_env tmenv), binding, wstok In))
                ~last:body ~right_ok)
-      | None ->
+      | _, None ->
           let body = unparse_body No.Interval.entire in
           let right_ok = No.minusomega_lt_minusomegaplusone in
           parenthesize
@@ -826,7 +837,7 @@ let rec unparse : type mode n lt ls rt rs s.
   | Realize tm -> unparse vars tm li ri
   | Canonical c -> unparse_canonical vars c li ri
   | Struct { eta = Noeta; dim; fields; energy = _ } -> unparse_comatch vars dim fields li ri
-  | Match { window = _; plus_lock; tm; dim; motive; branches } ->
+  | Match { window = _; plus_lock; tm; dim; motive; branches; display = _ } ->
       unparse_match vars plus_lock tm dim motive branches li ri
   (* An Unshift lifts its body from the ambient context 'b into the context 'b degenerated by 'n dimensions; that degenerated names-context is exactly what Names.degenerate produces (the same operation used for higher codata fields and comatches). *)
   | Unshift (n, plusmap, tm) -> unparse (Names.degenerate n plusmap vars) tm li ri
@@ -844,33 +855,45 @@ and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
 
 (* Unparse the clauses of a let-only, walking its body context and its environment of bound terms together, and returning also the names of the body context.  The bound terms are unparsed in the ambient context, while each type is unparsed in the body context up to its variable.  The ambient context of the bound terms to the left of a lock or key is obtained by splitting off the locks it stripped, as for a key applied to a term. *)
 and unparse_letonly_clauses : type mode n i k b.
+    ?names_only:bool ->
     n Names.t ->
     (mode, i, b) ordered_termctx ->
     (mode, n, k, b) env ->
     observation Bwd.t * b Names.t =
- fun vars ctx tmenv ->
-  let acc, pending, names = unparse_letonly_clauses_pending vars ctx tmenv in
+ fun ?(names_only = false) vars ctx tmenv ->
+  let acc, pending, names = unparse_letonly_clauses_pending ~names_only vars ctx tmenv in
   let acc =
-    match pending with
-    | None -> acc
-    | Some (Wrap modality) -> letonly_sep acc <: mktok Lock <: unparse_modality_name modality in
+    match (names_only, acc, pending) with
+    (* With only names, there are no lock clauses, and the names are followed by "≔ ⋯" if there are any. *)
+    | true, Snoc (Emp, _), _ -> acc
+    | true, _, _ -> acc <: mktok Coloneq <: mktok Omitted
+    | false, _, None -> acc
+    | false, _, Some (Wrap modality) ->
+        letonly_sep acc <: mktok Lock <: unparse_modality_name modality in
   (acc, names)
 
 (* Adjacent locks are displayed as a single lock clause by their composite modality, so while walking the clauses we keep track of the composite of the locks seen since the last other clause, whose source is the mode at which the walk has arrived. *)
 and unparse_letonly_clauses_pending : type mode n i k b.
+    names_only:bool ->
     n Names.t ->
     (mode, i, b) ordered_termctx ->
     (mode, n, k, b) env ->
     observation Bwd.t * mode Modality.tgt_wrapped option * b Names.t =
- fun vars ctx tmenv ->
+ fun ~names_only vars ctx tmenv ->
   match (ctx, tmenv) with
   | Emp _, Emp _ -> (Snoc (Emp, mktok Only), None, Names.empty)
   (* An alias has no checked variables, so it isn't substituted for.  (It was already substituted at typechecking time.) *)
-  | Ext (ctx, { vars = Alias; _ }, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
+  | Ext (ctx, { vars = Alias; _ }, _), _ ->
+      unparse_letonly_clauses_pending ~names_only vars ctx tmenv
   | ( Ext (ctx, { bindings; plus_lock; filter = _; vis; vars = Vars }, _),
       Ext { env; values = Modal (modality, plus, tms); _ } ) ->
       let top = CubeOf.find_top bindings in
-      let acc, names = unparse_letonly_clauses vars ctx env in
+      (* The clauses to the left are followed by any pending lock clause, except that with only names, locks are omitted. *)
+      let acc, names =
+        if names_only then
+          let acc, _, names = unparse_letonly_clauses_pending ~names_only vars ctx env in
+          (acc, names)
+        else unparse_letonly_clauses vars ctx env in
       let n = CubeOf.dim bindings in
       (* An invisible variable, which can occur in the context of a metavariable, is named from its hints. *)
       let name =
@@ -878,38 +901,50 @@ and unparse_letonly_clauses_pending : type mode n i k b.
         | Vis { names = xs; _ } -> NICubeOf.find_top xs
         | Invis { hints } -> `Anon hints in
       let x, names = Names.add_cube n names name in
-      let ty =
-        unparse (Names.add_lock names plus_lock) (uninst_letonly_type n top.ty) No.Interval.entire
-          No.Interval.entire in
-      let tm =
-        unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
-          No.Interval.entire in
-      let acc = letonly_sep acc <: Term (unparse_var x) <: mktok Colon in
-      let acc =
-        match Modality.compare_id modality with
-        | Eq -> acc
-        | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
-      (acc <: Term ty <: mktok Coloneq <: Term tm, None, names)
+      if names_only then
+        let acc =
+          match acc with
+          | Snoc (Emp, _) -> acc
+          | _ -> acc <: mktok (Op ",") in
+        (acc <: Term (unparse_var x), None, names)
+      else
+        let ty =
+          unparse (Names.add_lock names plus_lock) (uninst_letonly_type n top.ty) No.Interval.entire
+            No.Interval.entire in
+        let tm =
+          unparse (Names.add_lock vars plus) (CubeOf.find_top tms) No.Interval.entire
+            No.Interval.entire in
+        let acc = letonly_sep acc <: Term (unparse_var x) <: mktok Colon in
+        let acc =
+          match Modality.compare_id modality with
+          | Eq -> acc
+          | Neq -> acc <: unparse_modality_name modality <: mktok (Op "|") in
+        (acc <: Term ty <: mktok Coloneq <: Term tm, None, names)
   (* A weakening entry, which can occur in the context of a metavariable, contributes nothing. *)
-  | Weaken (ctx, _), _ -> unparse_letonly_clauses_pending vars ctx tmenv
+  | Weaken (ctx, _), _ -> unparse_letonly_clauses_pending ~names_only vars ctx tmenv
   | Lock (ctx, cgen), Lock { env; gen; plus_tgt = Plus_with_locks (comp, _) } ->
       let Eq = Modality.Gen.tgt_uniq cgen gen in
-      let acc, pending, names = unparse_letonly_clauses_pending (Names.split vars comp) ctx env in
+      let acc, pending, names =
+        unparse_letonly_clauses_pending ~names_only (Names.split vars comp) ctx env in
       let pending : mode Modality.tgt_wrapped option =
         match pending with
         | None -> Some (Wrap (Modality.of_gen gen))
         | Some (Wrap modality) -> Some (Wrap (Modality.suc modality gen)) in
       (acc, pending, Names.add_gen_lock names)
   | _, Prekey { env; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } ->
-      let acc, names =
-        unparse_letonly_clauses (Names.add_lock (Names.split vars comp) plus_src) ctx env in
-      (* A key is displayed as a sequence of key clauses, one for each piece of its vertical composite, innermost first.  An identity key is omitted, since without it the bound terms to its left would be checked in the same context except for some variables that they don't use. *)
-      ( List.fold_left
-          (fun acc parts ->
-            letonly_sep acc <: mktok Keyword_key <: Term (unlocated (Ident (parts, []))))
-          acc (Modalcell.name cell),
-        None,
-        names )
+      let vars = Names.add_lock (Names.split vars comp) plus_src in
+      if names_only then
+        let acc, _, names = unparse_letonly_clauses_pending ~names_only vars ctx env in
+        (acc, None, names)
+      else
+        let acc, names = unparse_letonly_clauses vars ctx env in
+        (* A key is displayed as a sequence of key clauses, one for each piece of its vertical composite, innermost first.  An identity key is omitted, since without it the bound terms to its left would be checked in the same context except for some variables that they don't use. *)
+        ( List.fold_left
+            (fun acc parts ->
+              letonly_sep acc <: mktok Keyword_key <: Term (unlocated (Ident (parts, []))))
+            acc (Modalcell.name cell),
+          None,
+          names )
 
 (* The first clause of a let-only directly follows "only", while the rest are preceded by "and". *)
 and letonly_sep (acc : observation Bwd.t) : observation Bwd.t =

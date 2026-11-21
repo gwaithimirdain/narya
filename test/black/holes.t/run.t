@@ -531,7 +531,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      J Type (codata #(gen) [ x .head : X | x .tail : ?4 ]) X
   
 
-If such a metavariable has a nontrivial environment, its definition is wrapped in a let-only binding the variables of its context.
+If such a metavariable has a nontrivial environment, its definition is wrapped in a let-only binding the variables of its context, which by default displays only their names.
 
   $ narya -v -fake-interact 'def B : Type ≔ data [ true. | false. ]  def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]
   > def t (b : B) : B ≔ ((y p ↦ true.) : (y : B) → J Type (match y [ true. ↦ B | false. ↦ Type ]) B → B) b ?
@@ -559,9 +559,8 @@ If such a metavariable has a nontrivial environment, its definition is wrapped i
      b : B
      ----------------------------------------------------------------------
      J Type
-       (let only b : B ≔ b
-        and y : B ≔ b in
-        (match #(gen) y [ false. ↦ Type | true. ↦ B ] : Type)) B
+       (let only b, y ≔ ⋯ in (match #(gen) y [ false. ↦ Type | true. ↦ B ] : Type))
+       B
   
    ￫ info[I0001]
    ￮ axiom u assumed
@@ -575,18 +574,18 @@ If such a metavariable has a nontrivial environment, its definition is wrapped i
    ￮ constant f defined
   
   J Type
-    (let only x : B ≔ u in
-     (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B
+    (let only x ≔ ⋯ in (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type))
+    B
     : Type
   
   J⁽ᵉ⁾ Type⁽ᵉ⁾
-    (let⁽ᵉ⁾ only x : B ≔ refl u in
+    (let⁽ᵉ⁾ only x ≔ ⋯ in
      (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B⁽ᵉ⁾
     : Type⁽ᵉ⁾
         (J Type
-           (let only x : B ≔ u in
+           (let only x ≔ ⋯ in
             (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
         (J Type
-           (let only x : B ≔ u in
+           (let only x ≔ ⋯ in
             (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
   

@@ -697,15 +697,7 @@
      y2 : √IdA× B0 B1 B2 x0 x1
      ----------------------------------------------------------------------
      eq.eq (√IdA× B0 B1 B2 x0 x1)
-       (let only B0 : Type ≔ B0
-        and B1 : Type ≔ B1
-        and B2 : Type⁽ᵖ⁾ B0 B1 ≔ B2
-        and x0 : √A× B0 ≔ x0
-        and x1 : √A× B1 ≔ x1
-        and x2 : √A×⁽ᵖ⁾ B2 x0 x1 ≔ [ #(gen)
-        | .root.p ↦ y2.2 .root
-        | .root.1 ↦ y2 .root1
-        | .else ↦ y2 .else] in
+       (let only B0, B1, B2, x0, x1, x2 ≔ ⋯ in
         ([ #(gen) .root.p ↦ x2.2 .root.2 | .root1 ↦ x2 .root | .else ↦ x2 .else ]
          : √IdA× B0 B1 B2 x0 x1)) y2
   
@@ -720,15 +712,7 @@
      x2 : √A×⁽ᵖ⁾ B2 x0 x1
      ----------------------------------------------------------------------
      eq.eq (√A×⁽ᵖ⁾ B2 x0 x1)
-       (let only B0 : Type ≔ B0
-        and B1 : Type ≔ B1
-        and B2 : Type⁽ᵖ⁾ B0 B1 ≔ B2
-        and x0 : √A× B0 ≔ x0
-        and x1 : √A× B1 ≔ x1
-        and y2 : √IdA× B0 B1 B2 x0 x1 ≔ [ #(gen)
-        | .root.p ↦ x2.2 .root.2
-        | .root1 ↦ x2 .root
-        | .else ↦ x2 .else] in
+       (let only B0, B1, B2, x0, x1, y2 ≔ ⋯ in
         ([ #(gen) .root.p ↦ y2.2 .root | .root.1 ↦ y2 .root1 | .else ↦ y2 .else ]
          : √A×⁽ᵖ⁾ B2 x0 x1)) x2
   

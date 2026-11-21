@@ -323,7 +323,8 @@ module Act = struct
       (mode, s) evaluation =
    fun tm s c ->
     match tm with
-    | Unrealized -> Unrealized
+    | Unrealized None -> Unrealized None
+    | Unrealized (Some stuck) -> Unrealized (Some (act_head stuck s c))
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
 
@@ -431,7 +432,7 @@ module Act = struct
           defer @@ fun () ->
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
-          | Unrealized -> Unrealized
+          | Unrealized _ -> Unrealized None
           | Val
               (Canonical { mode; canonical = c; tyargs = ctyargs; ins; fields = _; inst_fields = _ })
             -> (
@@ -510,8 +511,8 @@ module Act = struct
     | Live head -> Live (act_head head s c)
 
   (* Action on a head *)
-  and act_head : type mode mu1 mu2 cod a b.
-      mode head -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> mode head =
+  and act_head : type mode s mu1 mu2 cod a b.
+      (mode, s) head -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> (mode, s) head =
    fun ne s c ->
     match ne with
     (* To act on a variable, we accumulate the delayed actions, extending if necessary to match. *)
@@ -547,6 +548,11 @@ module Act = struct
         let (Of fa) = deg_plus_to s (BindCube.dim cods) ~on:"pi-type head" in
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa c in
         Pi { x = act_variables x fb; filter; doms; cods }
+    (* A stuck match stays stuck in the acted environment, so we can push the action into it.  The environment of a stuck match has the dimension of the evaluation (Shift and Unshift change the dimension of the environment that the match itself is evaluated in, not just of its result), and an evaluation is only ever acted on by a degeneracy whose codomain is its dimension.  But since evaluations aren't indexed by their dimension we have to check this. *)
+    | Stuck { env; tm; display } -> (
+        match D.compare (cod_deg s) (dim_env env) with
+        | Eq -> Stuck { env = act_env_deg env s c; tm; display }
+        | Neq -> fatal (Anomaly "acting on a stuck match by a degeneracy of the wrong dimension"))
 
   and act_pi : type dom modality mode mu1 mu2 cod m n k.
       (dom, modality, mode, k, n) Modality.filter_dim ->
@@ -707,5 +713,5 @@ let field_lazy : type src f mode s n t i.
   let (Has_filter filter) = Modality.filter f n in
   let lev = act_lazy_eval lev p (Modalcell.id2 src) in
   match !lev with
-  | Ready Unrealized -> ready Unrealized
+  | Ready (Unrealized _) -> ready (Unrealized None)
   | _ -> ref (Applied (lev, Apps (Field (filter, fld, nk, ins_zero n))))

@@ -43,6 +43,12 @@ let set_degctx (impl : degctx_impl) = degctx_hook := impl
 let degctx : type mode a b k. (mode, a, b) Ctx.t -> k D.t -> (mode, a, b, k) degctx =
  fun ctx k -> !degctx_hook.degctx ctx k
 
+(* Whether a metavariable whose value is stuck is displayed as that stuck value rather than as itself (applied to its environment).  This is decided by the display settings, which live downstream in the parser, so it is a forward reference set by Unparse.  It is only consulted while displaying. *)
+type stuck_meta_shown = { shown : 'mode 'x 'b 's. ('mode, 'x, 'b, 's) Meta.t -> bool }
+
+let stuck_meta_shown_hook : stuck_meta_shown ref = ref { shown = (fun _ -> false) }
+let set_stuck_meta_shown (f : stuck_meta_shown) = stuck_meta_shown_hook := f
+
 (* Given a (viewed) type, compute whether its elements are type families, functions of another sort, or neither.  Right now, we do this by descending through Pi binders, extending the context. *)
 let rec sort_of_ty : type mode a z.
     ?isfunc:bool -> (mode, z, a) Ctx.t -> mode View.view_type -> [ `Type | `Function | `Other ] =
@@ -268,9 +274,14 @@ let let_var_of_meta : type mode a b bb c d x s mmode cfull dfull dom modality f 
     [ Ctx.bindings_entry entry ];
   !result
 
-(* Search for a way to read back a metavariable whose environment is the identity on the context we are reading back in, possibly weakened by some variables, each of which may lie behind locks. *)
+(* What we read back at an environment that might be a weakened identity: either a metavariable, which might also be read back as a variable let-bound to it, or any term living in the context of the environment. *)
+type (_, _, _, _) idenv_subject =
+  | Meta_subject : ('mode, 'x, 'd, 's) Meta.t -> ('mode, 'x, 'd, kinetic) idenv_subject
+  | Term_subject : ('mode, 'd, 'e) term -> ('mode, 'x, 'd, 'e) idenv_subject
+
+(* Search for a way to read back a metavariable whose environment is the identity on the context we are reading back in, possibly weakened by some variables, each of which may lie behind locks.  If no metavariable is given, we search only for a weakened identity, as for any other term living in the context of the environment. *)
 let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
-    (mmode, x, dfull, s) Meta.t ->
+    (mmode, x, dfull, s) idenv_subject ->
     (mmode, cfull, dfull) ordered_termctx ->
     (mode, a, b) Ctx.Ordered.t ->
     (mode, D.zero, d) env ->
@@ -292,7 +303,11 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
       | Snoc (rest, ({ vars = Vars; _ } as entry), _), _ -> (
           let k = Ctx.dim_entry entry in
           let filter = Ctx.filter_entry entry in
-          match let_var_of_meta meta fullctx rest entry env envctx with
+          match
+            match meta with
+            | Meta_subject meta -> let_var_of_meta meta fullctx rest entry env envctx
+            | Term_subject _ -> None
+          with
           | Some (SFace_of fa) -> Some (Let_var (plus_with_no_locks mode, fa, filter))
           | None -> (
               (* If not, we remove it from the context and try again, weakening the result if successful. *)
@@ -324,27 +339,36 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
               else None)
       | _ -> None)
 
-(* Check whether the environment on a metavariable is a weakened identity on the context we are reading back in, possibly prekeyed (as happens when a let-bound variable whose value is the metavariable is used with a key).  If so, we can read it back as either a Term.Meta, or a Term.Var if there is a variable let-bound to it, with a Key.  Since this is only an optimization of display, any errors encountered just mean that the search fails. *)
-let readback_meta_at_idenv : type mode a b n c d x s.
+(* Check whether an environment for a term (such as a metavariable) is a weakened identity on the context we are reading back in, possibly prekeyed (as happens when a let-bound variable whose value is the metavariable is used with a key).  If so, we can read it back as the term itself with a Key, or for a metavariable possibly as a Term.Var if there is a variable let-bound to it.  Since this is only an optimization of display, any errors encountered just mean that the search fails. *)
+let readback_at_idenv : type mode a x b n c d e.
     (mode, a, b) Ctx.t ->
-    (mode, x, d, s) Meta.t ->
     (mode, n, d) env ->
     (mode, c, d) termctx ->
-    (mode, b, kinetic) term option =
- fun ctx meta env (Permute (_, envctx)) ->
+    (mode, x, d, e) idenv_subject ->
+    (mode, b, e) term option =
+ fun ctx env (Permute (_, envctx)) subject ->
   let open Monad.Ops (Monad.Maybe) in
-  let search : type a b.
-      (mode, a, b) Ctx.t -> (mode, D.zero, d) env -> (mode, b, kinetic) term option =
+  let search : type a b. (mode, a, b) Ctx.t -> (mode, D.zero, d) env -> (mode, b, e) term option =
    fun (Permute { ctx; _ }) env ->
-    match find_meta_readback meta envctx ctx env envctx with
-    | Some (Weakened_meta (plus, newplus)) -> Some (weaken_gen plus (Meta (meta, Kinetic)) newplus)
+    (* Without a metavariable, the search doesn't look for let-bound variables, so the (absent) metavariable's type parameters are irrelevant. *)
+    match find_meta_readback subject envctx ctx env envctx with
+    | Some (Weakened_meta (plus, newplus)) ->
+        let tm : (mode, d, e) term =
+          match subject with
+          | Meta_subject meta -> Meta (meta, Kinetic)
+          | Term_subject tm -> tm in
+        Some (weaken_gen plus tm newplus)
     | Some (Let_var (newplus, fa, filter)) -> (
-        (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
-        match
-          Modality.compare (Modality.filter_modality filter) (plus_with_locks_modality newplus)
-        with
-        | Eq -> Some (Var (Index (Now, fa, filter, newplus)))
-        | Neq -> None)
+        match subject with
+        | Meta_subject _ -> (
+            (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
+            match
+              Modality.compare (Modality.filter_modality filter) (plus_with_locks_modality newplus)
+            with
+            | Eq -> Some (Var (Index (Now, fa, filter, newplus)))
+            | Neq -> None)
+        (* Only a metavariable can be let-bound to a variable. *)
+        | Term_subject _ -> None)
     | None -> None in
   Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
   match (D.compare (dim_env env) D.zero, envctx) with
@@ -368,12 +392,17 @@ let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mod
   | Weaken (ctx, _) -> no_checked_vars ctx
   | Ext _ | Lock _ -> None
 
+(* The result of replaying an application spine to find where a case tree got stuck: either the stuck point that a match remembers, with the rest of the spine that was applied after it, or the evaluation of the whole spine if no such point was found.  The second parameter records, as for apps, whether the spine ends with an instantiation. *)
+type (_, _) replayed =
+  | Stuck_at : ('m1, potential) head * ('m1, 'mode, 'any, live) apps -> ('mode, 'any) replayed
+  | Not_stuck : ('mode, potential) evaluation -> ('mode, 'any) replayed
+
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
    2. When reading back a higher-dimensional pi-type, we eta-expand its instantiation arguments so that we can display it prettily.  This is controlled by the flag ~eta.
 
-   In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible.  A case tree that is stuck, however, is not reconstructed: it is displayed as the application spine of the neutral whose value it is. *)
+   In typechecking we only ever read back kinetic terms.  But reading back potential terms is useful for displaying definitions to the user, so we work as energy-polymorphically as possible. *)
 
 (* ********** Display budget ********** *)
 
@@ -432,6 +461,12 @@ let after_same_depth () =
   | Some b -> b.depth <- b.depth + 1
   | None -> ()
 
+(* Run a readback whose result will be evaluated rather than displayed, such as when replaying a stuck spine (see replay_stuck), outside the budget of any display readback it happens during, since a term truncated for display can't be evaluated. *)
+let without_budget (f : unit -> 'a) : 'a =
+  let saved = !display_budget in
+  display_budget := None;
+  Fun.protect ~finally:(fun () -> display_budget := saved) f
+
 (* Run a readback for display with a budget (None meaning unlimited), returning its result and whether it had to be truncated.  The first attempt is unlimited in depth, so a term that fits is read back only once.  If it overflows, we don't need the greatest depth at which it would fit, only some indication of what it looks like.  If the first attempt overflowed after reaching depth d, then all the subterms it produced lie within depth d, so it can't fit at depth d.  We guess a depth from the number of subterms the first attempt produced at each depth, as the greatest depth whose subterms so far fill at most half of the budget (since the first attempt only saw part of the term), and halve it until the term fits. *)
 let budgeted (size : int option) (f : unit -> 'a) : 'a * bool =
   match size with
@@ -488,8 +523,10 @@ and readback_eval : type mode a z s.
   | Val v, _ -> readback_at ~eta status ctx v ty
   (* In the realize case the value is kinetic, so the stored self-term in the Potential status is discarded. *)
   | Realize v, _ -> Realize (readback_at ~eta Kinetic ctx v ty)
-  (* A stuck case tree is displayed as the application spine of the neutral that the status carries.  Only a potential readback can meet an Unrealized, so that neutral is always available. *)
-  | Unrealized, Potential neutral -> Realize (readback_val ctx neutral)
+  (* A case tree stuck on a match that remembers where it got stuck is displayed as a let-only binding the variables of that match's context to the values they had there, around the match itself. *)
+  | Unrealized (Some stuck), Potential _ -> readback_head ~abbreviable:false ctx stuck
+  (* Any other stuck case tree is displayed as the application spine of the neutral that the status carries.  Only a potential readback can meet an Unrealized, so that neutral is always available. *)
+  | Unrealized None, Potential neutral -> Realize (readback_val ctx neutral)
 
 (* A failed term is read back as Failed, whatever its type.  And a term whose type is failed can't be eta-expanded, so we read it back without its type if possible. *)
 and readback_at : type mode a z s.
@@ -601,7 +638,7 @@ and readback_at_type : type mode a z s.
                (mode, m, n, a, et) codata_args),
            ins,
            _ ) :
-          hmode head
+          (hmode, kinetic) head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
@@ -803,7 +840,7 @@ and readback_at_type : type mode a z s.
   | ( Canonical
         (type hmode m n mn)
         ((_, UU (_, mk), ins0, boundary) :
-          hmode head
+          (hmode, kinetic) head
           * (mode, m, n) canonical
           * (mn, m, n) insertion
           * (D.zero, mn, mn, mode normal) TubeOf.t),
@@ -861,6 +898,23 @@ and readback_val_unbudgeted : type mode a z s.
   | Neu { head = Live head; args; value; ty } -> (
       match (force_eval value, Displaying.read ()) with
       | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
+      (* When displaying, a metavariable whose value is stuck on a match may be displayed as that stuck value, if the display settings call for it.  If the value remembers where it got stuck, nothing more has been applied to it since, so it is the value of the whole neutral. *)
+      | Unrealized (Some stuck), true -> (
+          match head with
+          | Meta { meta; _ } when !stuck_meta_shown_hook.shown meta ->
+              Stuck_meta (meta, readback_head ~abbreviable:true ctx stuck)
+          | _ -> readback_neu ~canonical:`Other ctx head args)
+      (* If more has been applied to it after it got stuck, we find the stuck point by replaying its spine. *)
+      | Unrealized None, true -> (
+          match (head, args) with
+          | Meta { meta; _ }, Snoc _ when !stuck_meta_shown_hook.shown meta -> (
+              match replay_stuck ctx head args with
+              | Stuck_at (stuck, rest) ->
+                  Stuck_meta
+                    ( meta,
+                      readback_spine Potential ~canonical:`Other ~abbreviable:true ctx stuck rest )
+              | Not_stuck _ -> readback_neu ~canonical:`Other ctx head args)
+          | _ -> readback_neu ~canonical:`Other ctx head args)
       | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
       | _ -> readback_neu ~canonical:`Other ctx head args)
   | Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing readback")
@@ -871,23 +925,40 @@ and readback_val_unbudgeted : type mode a z s.
 and readback_neu : type hmode mode a z any.
     ?canonical:[ `Canonical | `Other ] ->
     (mode, z, a) Ctx.t ->
-    hmode head ->
+    (hmode, kinetic) head ->
     (hmode, mode, any, live) apps ->
     (mode, a, kinetic) term =
  fun ?(canonical = `Other) ctx head apps ->
+  match (apps, head) with
+  | Snoc (Emp, Inst (_, args)), Pi _ when TubeOf.is_full args ->
+      (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
+      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
+      Inst (Kinetic, readback_head ~canonical ctx head, args)
+  | _ -> readback_spine Kinetic ~canonical ctx head apps
+
+(* Read back an application spine on top of a head that we know how to read back, with any energy.  A potential spine arises only for display, from a stuck case tree (see readback_stuck_spine). *)
+and readback_spine : type hmode mode a z any s.
+    s energy ->
+    canonical:[ `Canonical | `Other ] ->
+    ?abbreviable:bool ->
+    (mode, z, a) Ctx.t ->
+    (hmode, s) head ->
+    (hmode, mode, any, live) apps ->
+    (mode, a, s) term =
+ fun energy ~canonical ?(abbreviable = false) ctx head apps ->
   (* The degeneracies appearing on the spine of a neutral are all *permutations*, which are never displayed with a name like "refl" or "Id" that depends on the sort of their argument.  Thus the only place the sort matters is at the head, where it is computed from the type of the head itself (see readback_head).  Here we only pass along whether the whole neutral is a canonical type, which determines whether a reflexivity at the head is displayed as a superscript. *)
   let sort = (`Other, canonical) in
-  match (apps, head) with
-  | Emp, _ -> readback_head ~canonical ctx head
-  | Snoc (apps, Arg (filter, args, ins)), _ ->
+  match apps with
+  | Emp -> readback_head ~canonical ~abbreviable ctx head
+  | Snoc (apps, Arg (filter, args, ins)) ->
       let modality = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
       let (Locked (plus, lctx)) = Ctx.lock ctx modality in
       Term.Act
-        ( Kinetic,
+        ( energy,
           App
-            ( Kinetic,
-              readback_neu ~canonical ctx head apps,
+            ( energy,
+              readback_spine energy ~canonical ~abbreviable ctx head apps,
               cod_left_ins ins,
               filter,
               Modal
@@ -896,38 +967,77 @@ and readback_neu : type hmode mode a z any.
                   CubeOf.mmap { map = (fun _ [ tm ] -> readback_nf lctx tm) } [ args ] ) ),
           p,
           sort )
-  | Snoc (apps, Field (filter, fld, fldplus, ins)), _ -> (
+  | Snoc (apps, Field (filter, fld, fldplus, ins)) -> (
       let fm = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
       (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
       let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
       let t = cod_left_ins ins in
-      let inner = readback_neu ~canonical lctx head apps in
+      let inner = readback_spine energy ~canonical lctx head apps in
       match Modality.filter_is_trivial t filter with
       | Some Eq ->
           (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
           Term.Act
-            (Kinetic, Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
+            (energy, Field (energy, Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
       | None ->
           (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
           let ft = Modality.filtered t filter in
           let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
-          let fieldterm : (_, _, kinetic) Term.term =
-            Term.Field (Kinetic, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
+          let fieldterm : (_, _, s) Term.term =
+            Term.Field (energy, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
           let liftdeg = Modality.deg_of_filter t filter in
-          Term.Act (Kinetic, Term.Act (Kinetic, fieldterm, liftdeg, sort), p, sort))
-  | Snoc (Emp, Inst (_, args)), Pi _ when TubeOf.is_full args ->
-      (* When reading back a fully instantiated higher-dimensional pi-type, we eta-expand the instantiation arguments so that it can be printed with a nice notation. *)
-      let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ~eta:true ctx x) } [ args ] in
-      Inst (Kinetic, readback_head ~canonical ctx head, args)
-  | Snoc (apps, Inst (_, args)), _ ->
+          Term.Act (energy, Term.Act (energy, fieldterm, liftdeg, sort), p, sort))
+  | Snoc (apps, Inst (_, args)) ->
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
-      Inst (Kinetic, readback_neu ~canonical ctx head apps, args)
+      Inst (energy, readback_spine energy ~canonical ctx head apps, args)
 
-and readback_head : type mode c z.
-    ?canonical:[ `Canonical | `Other ] -> (mode, z, c) Ctx.t -> mode head -> (mode, c, kinetic) term
-    =
- fun ?(canonical = `Other) ctx h ->
+(* Replay the application spine of a neutral from its head, to find the point at which its case tree got stuck on a match, if the match remembers it, and the rest of the spine applied after that.  The value of a neutral can remember where it got stuck only if nothing more has been applied to it since, so this is how we find the stuck point of one that has.  We get the evaluation of the head by reading it back (internally, not for display, and outside any display budget) and evaluating it in the identity environment, in the context locked by the modalities of any field projections in the spine, so that we don't have to know how its value depends on the kind of head; and then we apply the entries of the spine to it one at a time.  Only a constant or metavariable can have a case tree to get stuck. *)
+and replay_stuck : type hmode mode a z any.
+    (mode, z, a) Ctx.t ->
+    (hmode, kinetic) head ->
+    (hmode, mode, any, live) apps ->
+    (mode, any) replayed =
+ fun ctx head apps ->
+  (* Extend a replay by one more entry of the spine. *)
+  let replay_entry : type m1 m2 any inst.
+      (m1, any) replayed -> (m1, m2, any, inst) apps_entry -> (m2, inst) replayed =
+   fun r e ->
+    match r with
+    | Stuck_at (stuck, rest) -> Stuck_at (stuck, Snoc (rest, e))
+    | Not_stuck ev -> (
+        let ev = app_eval_entry ev e in
+        match (ev, e) with
+        | Unrealized (Some stuck), Arg _ -> Stuck_at (stuck, Emp)
+        | Unrealized (Some stuck), Field _ -> Stuck_at (stuck, Emp)
+        (* Instantiating a stuck case tree forgets where it got stuck, so an instantiation can't be the stuck point. *)
+        | _ -> Not_stuck ev) in
+  match apps with
+  | Emp -> (
+      match head with
+      | Const _ | Meta _ -> (
+          let tm =
+            without_budget @@ fun () ->
+            Displaying.run ~env:false @@ fun () -> readback_head ctx head in
+          match eval_term (Ctx.env ctx) tm with
+          | Neu { value; _ } -> (
+              match force_eval value with
+              | Unrealized (Some stuck) -> Stuck_at (stuck, Emp)
+              | ev -> Not_stuck ev)
+          | _ -> Not_stuck (Unrealized None))
+      | _ -> Not_stuck (Unrealized None))
+  | Snoc (rest, (Arg _ as e)) -> replay_entry (replay_stuck ctx head rest) e
+  | Snoc (rest, (Field (filter, _, _, _) as e)) ->
+      let (Locked (_, lctx)) = Ctx.lock ctx (Modality.filter_modality filter) in
+      replay_entry (replay_stuck lctx head rest) e
+  | Snoc (rest, (Inst _ as e)) -> replay_entry (replay_stuck ctx head rest) e
+
+and readback_head : type mode s c z.
+    ?canonical:[ `Canonical | `Other ] ->
+    ?abbreviable:bool ->
+    (mode, z, c) Ctx.t ->
+    (mode, s) head ->
+    (mode, c, s) term =
+ fun ?(canonical = `Other) ?(abbreviable = false) ctx h ->
   match h with
   | Var { level; deg; key } -> (
       (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context. *)
@@ -986,16 +1096,25 @@ and readback_head : type mode c z.
             let (To perm) = deg_of_ins ins in
             Act (Kinetic, tm, perm, (`Other, canonical)) in
       let letonly () =
-        Letonly { termctx; env = readback_env ctx env termctx; tm = Meta (meta, Kinetic); ty } in
+        Letonly
+          {
+            termctx;
+            env = readback_env ctx env termctx;
+            tm = Meta (meta, Kinetic);
+            ty;
+            abbreviable = true;
+          } in
       (* If the environment is the identity, possibly weakened, we can omit it. *)
-      match readback_meta_at_idenv ctx meta env termctx with
+      match readback_at_idenv ctx env termctx (Meta_subject meta) with
       | Some tm -> with_perm tm
       | None -> (
           let (Permute (_, octx)) = termctx in
           match no_checked_vars octx with
           (* If the context of the metavariable has no variables, an environment for it of positive dimension carries no information, so the metavariable is just degenerated, possibly with a permutation. *)
           | Some Eq -> (
-              match readback_meta_at_idenv ctx meta (Emp (Ctx.mode ctx, D.zero)) termctx with
+              match
+                readback_at_idenv ctx (Emp (Ctx.mode ctx, D.zero)) termctx (Meta_subject meta)
+              with
               | Some tm -> (
                   let (To perm) = deg_of_ins ins in
                   let (DegExt (_, _, deg)) = comp_deg_extending (deg_zero (cod_left_ins ins)) perm in
@@ -1007,6 +1126,12 @@ and readback_head : type mode c z.
           | None -> with_perm (letonly ())))
   | UU (mode, n) -> UU (mode, n)
   | Pi args -> readback_pi ctx args
+  (* Read back a case tree stuck on a match, as a let-only binding the variables of that match's context to the values they had when it got stuck, around the match itself (ascribed with its type).  The let-only is abbreviable by the display settings if it appears inside a term (as the value of a metavariable), but not if it is what the "about" command was asked to display. *)
+  | Stuck { env; tm; display = termctx, ty } -> (
+      (* If the environment is the identity, possibly weakened, we can omit it, as for a metavariable. *)
+      match readback_at_idenv ctx env termctx (Term_subject tm) with
+      | Some tm -> tm
+      | None -> Letonly { termctx; env = readback_env ctx env termctx; tm; ty; abbreviable })
 
 and readback_pi : type c z dom modality mode k n.
     (mode, z, c) Ctx.t -> (dom, modality, mode, k, n) pi_args -> (mode, c, kinetic) term =
@@ -1607,15 +1732,26 @@ and uninstantiate_value : type mode. (mode, potential) lazy_eval -> (mode, poten
               }))
   | _ -> value
 
-(* The "about" command reads back the *potential* value of a neutral, passing the neutral itself as readback's status so that a canonical type displays as its declaration and a comatch as itself; readback_at handles the rest, including descending through parameter abstractions.  None means the neutral has no potential value at all to display -- an axiom, or a permanently stuck case tree -- so the caller shows its normal form instead. *)
+(* The "about" command reads back the *potential* value of a neutral, passing the neutral itself as readback's status so that a canonical type displays as its declaration and a comatch as itself; readback_at handles the rest, including descending through parameter abstractions.  A case tree stuck on a match is displayed as a let-only around that match, with any spine applied after it got stuck put back on outside.  None means the neutral has no potential value at all to display -- an axiom, or a case tree stuck on something other than a match that remembers it, such as a hole -- so the caller shows its normal form instead. *)
 let rec readback_about : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) Value.value -> (mode, b, potential) Term.term option =
  fun ctx value ->
   match value with
-  | Neu { value = v; ty; _ } -> (
+  | Neu { head = Live head; args; value = v; ty } -> (
       match force_eval v with
       | Val v -> Some (readback_at (Potential value) ctx v (Lazy.force ty))
       (* Under glued evaluation, a constant whose definition is an ordinary term rather than a case tree is a neutral whose value realizes that term.  It has no potential value of its own, but the neutral it realizes to may, so we look there. *)
       | Realize v -> readback_about ctx v
-      | Unrealized -> None)
+      (* A case tree stuck on a match whose display data is stored can be displayed as a let-only around that match. *)
+      | Unrealized (Some _) as ev -> Some (readback_eval (Potential value) ctx ev (Lazy.force ty))
+      (* If it has been applied to more arguments since it got stuck, we find the stuck point by replaying the spine, and put the rest of the spine back on outside. *)
+      | Unrealized None -> (
+          match args with
+          | Emp -> None
+          | Snoc _ -> (
+              match replay_stuck ctx head args with
+              | Stuck_at (stuck, rest) ->
+                  Some
+                    (readback_spine Potential ~canonical:`Other ~abbreviable:false ctx stuck rest)
+              | Not_stuck _ -> None)))
   | _ -> None
