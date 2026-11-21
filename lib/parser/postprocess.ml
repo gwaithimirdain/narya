@@ -418,5 +418,29 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
     | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern") in
   go pat (locate_opt pat.loc Vec.[])
 
+(* Interpret a term written at a binding position of a user notation: a variable or an underscore, possibly ascribed in parentheses to a type, with or without a modality.  Ascriptions of more than one variable, or in braces, are rejected, since a user notation's binder is a single explicit variable. *)
+let get_binder : type lt ls rt rs. (lt, ls, rt, rs) parse located -> User.binder_parse =
+ fun x ->
+  let var : type lt ls rt rs. (lt, ls, rt, rs) parse located -> string option option = function
+    | { value = Ident ([ x ], _); _ } when Lexer.valid_var x -> Some (Some x)
+    | { value = Placeholder _; _ } -> Some None
+    | _ -> None in
+  match x.value with
+  | Notn ((AscVar, _), n) -> (
+      match notation_args n with
+      | Token (LBrace, _) :: _ -> Invalid_binder "this notation can't bind an implicit variable"
+      | obs -> (
+          let Wrap v, modality, ty = args_of_ascvar ?loc:x.loc obs in
+          match (var v, v.value) with
+          | Some name, _ -> Binder (name, Some (modality, ty))
+          | None, App _ -> Invalid_binder "this notation binds only one variable here"
+          | None, _ -> Invalid_binder "invalid variable"))
+  | _ -> (
+      match var x with
+      | Some name -> Binder (name, None)
+      | None -> Not_binder)
+
 (* Now that we've defined these functions, we can pass them back to User. *)
-let () = User.global_processor := { process = (fun ctx x -> process ctx x); pattern = get_pattern }
+let () =
+  User.global_processor :=
+    { process = (fun ctx x -> process ctx x); pattern = get_pattern; binder = get_binder }

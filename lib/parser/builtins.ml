@@ -123,12 +123,18 @@ let get_modality : type lt ls rt rs a.
     | _ -> fatal (Parse_error "invalid modality") in
   locate_modality (Bwd.to_list (go m))
 
+(* Print a modality annotation between a colon and a bar.  A single name is attached to them, as is a composite one if all generators are single characters (in which case its names are run together too); otherwise the names of a composite are spaced out. *)
 let pp_modality =
  fun wscolon f m wsbar ->
   match m with
   | [] -> pp_ws `Nobreak wscolon ^^ pp_ws `None wsbar
   | [ (m : _ located) ] ->
       pp_ws `None wscolon ^^ utf8string (f m.value) ^^ Token.pp (Op "|") ^^ pp_ws `Nobreak wsbar
+  | ms when Modality.one_char () ->
+      pp_ws `None wscolon
+      ^^ concat_map (fun (x : _ located) -> utf8string (f x.value)) ms
+      ^^ Token.pp (Op "|")
+      ^^ pp_ws `Nobreak wsbar
   | ms ->
       group
         (pp_ws `Nobreak wscolon

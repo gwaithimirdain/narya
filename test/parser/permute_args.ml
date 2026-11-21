@@ -16,9 +16,9 @@ let () =
            id = User.Id.make ();
            name = "amp";
            fixity = Infix No.zero;
-           pattern = Var (("x", `Nobreak, []), Var_nil ((Op "&", `Break, []), ("y", [])));
+           pattern = Var ((Plain "x", `Nobreak, []), Var_nil ((Op "&", `Break, []), (Plain "y", [])));
            key = `Constant foo;
-           val_vars = [ "y"; "x" ];
+           val_args = [ Arg "y"; Arg "x" ];
          }) in
   assume "a" "A";
   assume "b" "A";
