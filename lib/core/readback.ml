@@ -274,9 +274,14 @@ let let_var_of_meta : type mode a b bb c d x s mmode cfull dfull dom modality f 
     [ Ctx.bindings_entry entry ];
   !result
 
+(* What we read back at an environment that might be a weakened identity: either a metavariable, which might also be read back as a variable let-bound to it, or any term living in the context of the environment. *)
+type (_, _, _, _) idenv_subject =
+  | Meta_subject : ('mode, 'x, 'd, 's) Meta.t -> ('mode, 'x, 'd, kinetic) idenv_subject
+  | Term_subject : ('mode, 'd, 'e) term -> ('mode, 'x, 'd, 'e) idenv_subject
+
 (* Search for a way to read back a metavariable whose environment is the identity on the context we are reading back in, possibly weakened by some variables, each of which may lie behind locks.  If no metavariable is given, we search only for a weakened identity, as for any other term living in the context of the environment. *)
 let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
-    (mmode, x, dfull, s) Meta.t option ->
+    (mmode, x, dfull, s) idenv_subject ->
     (mmode, cfull, dfull) ordered_termctx ->
     (mode, a, b) Ctx.Ordered.t ->
     (mode, D.zero, d) env ->
@@ -299,7 +304,9 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
           let k = Ctx.dim_entry entry in
           let filter = Ctx.filter_entry entry in
           match
-            Option.bind meta (fun meta -> let_var_of_meta meta fullctx rest entry env envctx)
+            match meta with
+            | Meta_subject meta -> let_var_of_meta meta fullctx rest entry env envctx
+            | Term_subject _ -> None
           with
           | Some (SFace_of fa) -> Some (Let_var (plus_with_no_locks mode, fa, filter))
           | None -> (
@@ -332,45 +339,37 @@ let rec find_meta_readback : type mode a b c d x s mmode cfull dfull.
               else None)
       | _ -> None)
 
-(* What we read back at an environment that might be a weakened identity: either a metavariable, which might also be read back as a variable let-bound to it, or any term living in the context of the environment. *)
-type (_, _, _) idenv_subject =
-  | Meta_subject : ('mode, 'x, 'd, 's) Meta.t -> ('mode, 'd, kinetic) idenv_subject
-  | Term_subject : ('mode, 'd, 'e) term -> ('mode, 'd, 'e) idenv_subject
-
 (* Check whether an environment for a term (such as a metavariable) is a weakened identity on the context we are reading back in, possibly prekeyed (as happens when a let-bound variable whose value is the metavariable is used with a key).  If so, we can read it back as the term itself with a Key, or for a metavariable possibly as a Term.Var if there is a variable let-bound to it.  Since this is only an optimization of display, any errors encountered just mean that the search fails. *)
-let readback_at_idenv : type mode a b n c d e.
+let readback_at_idenv : type mode a x b n c d e.
     (mode, a, b) Ctx.t ->
     (mode, n, d) env ->
     (mode, c, d) termctx ->
-    (mode, d, e) idenv_subject ->
+    (mode, x, d, e) idenv_subject ->
     (mode, b, e) term option =
  fun ctx env (Permute (_, envctx)) subject ->
   let open Monad.Ops (Monad.Maybe) in
   let search : type a b. (mode, a, b) Ctx.t -> (mode, D.zero, d) env -> (mode, b, e) term option =
    fun (Permute { ctx; _ }) env ->
-    let tm : (mode, d, e) term =
-      match subject with
-      | Meta_subject meta -> Meta (meta, Kinetic)
-      | Term_subject tm -> tm in
     (* Without a metavariable, the search doesn't look for let-bound variables, so the (absent) metavariable's type parameters are irrelevant. *)
-    let found =
-      match subject with
-      | Meta_subject meta -> find_meta_readback (Some meta) envctx ctx env envctx
-      | Term_subject _ ->
-          find_meta_readback (None : (mode, unit, d, kinetic) Meta.t option) envctx ctx env envctx
-    in
-    match (found, subject) with
-    | Some (Weakened_meta (plus, newplus)), _ -> Some (weaken_gen plus tm newplus)
-    | Some (Let_var (newplus, fa, filter)), Meta_subject _ -> (
-        (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
-        match
-          Modality.compare (Modality.filter_modality filter) (plus_with_locks_modality newplus)
-        with
-        | Eq -> Some (Var (Index (Now, fa, filter, newplus)))
-        | Neq -> None)
-    (* Only a metavariable can be let-bound to a variable. *)
-    | Some (Let_var _), Term_subject _ -> None
-    | None, _ -> None in
+    match find_meta_readback subject envctx ctx env envctx with
+    | Some (Weakened_meta (plus, newplus)) ->
+        let tm : (mode, d, e) term =
+          match subject with
+          | Meta_subject meta -> Meta (meta, Kinetic)
+          | Term_subject tm -> tm in
+        Some (weaken_gen plus tm newplus)
+    | Some (Let_var (newplus, fa, filter)) -> (
+        match subject with
+        | Meta_subject _ -> (
+            (* The variable can be referred to without a key only if the composite of the locks behind which it lies is its modal annotation. *)
+            match
+              Modality.compare (Modality.filter_modality filter) (plus_with_locks_modality newplus)
+            with
+            | Eq -> Some (Var (Index (Now, fa, filter, newplus)))
+            | Neq -> None)
+        (* Only a metavariable can be let-bound to a variable. *)
+        | Term_subject _ -> None)
+    | None -> None in
   Reporter.discard_errors ~fallback:(fun () -> None) @@ fun () ->
   match (D.compare (dim_env env) D.zero, envctx) with
   | Eq, Lock (_, g) ->
