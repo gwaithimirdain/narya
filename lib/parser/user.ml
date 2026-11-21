@@ -94,13 +94,12 @@ let pp_slot : Pattern.slot -> document = function
       ^^ utf8string var
       ^^ pp_ws `Break wsvar
       ^^ Token.pp Colon
-      (* As for modal ascriptions in terms, a single modality name is printed attached to the colon and bar, while a composite one is spaced out. *)
+      (* As for modal ascriptions in terms, a single modality name is printed attached to the colon and bar, as is a composite one if all generators are single characters (with its names run together, although we keep any comments between them), while otherwise a composite one is spaced out. *)
       ^^ (match modality with
         | [] -> pp_ws `Nobreak wscolon
-        | [ (m, wsm) ] ->
+        | ([ _ ] | _) when Modal.Modality.one_char () ->
             pp_ws `None wscolon
-            ^^ utf8string m
-            ^^ pp_ws `None wsm
+            ^^ concat_map (fun (m, wsm) -> utf8string m ^^ pp_ws `None wsm) modality
             ^^ Token.pp (Op "|")
             ^^ pp_ws `Nobreak wsbar
         | ms ->

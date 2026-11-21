@@ -339,8 +339,13 @@ Reformatting a notation command
   > notation(1) ( x : ♭ | X ) "⊗" Y … ≔ S X (x ↦ Y)
   > axiom T : (X :♭♯| Type) → ((x :♭♯| X) → Type) → Type
   > notation(1) (x :♭ ♯|X) "⊠" Y … ≔ T X (x ↦ Y)
+  > notation(1) (x :♭ {` comment `} ♯|X) "⊠⊠" Y … ≔ T X (x ↦ Y)
+  > axiom U : (X :♭ ♯| Type) → (x : ♭ ♯ | X) → Type
   > EOS
   $ narya -spatial reformat-modal.ny
+   ￫ warning[E2209]
+   ￮ replacing printing notation for T (previous notation will still be parseable)
+  
   $ cat reformat-modal.ny
   axiom S : (X :♭| Type) → ((x :♭| X) → Type) → Type
   
@@ -348,4 +353,8 @@ Reformatting a notation command
   
   axiom T : (X :♭♯| Type) → ((x :♭♯| X) → Type) → Type
   
-  notation(1) (x : ♭ ♯ | X) "⊠" Y … ≔ T X (x ↦ Y)
+  notation(1) (x :♭♯| X) "⊠" Y … ≔ T X (x ↦ Y)
+  
+  notation(1) (x :♭ {` comment `} ♯| X) "⊠⊠" Y … ≔ T X (x ↦ Y)
+  
+  axiom U : (X :♭♯| Type) → (x :♭♯| X) → Type
