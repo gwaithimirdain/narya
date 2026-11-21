@@ -533,8 +533,7 @@ end = struct
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
     | Unrealized : 'mode stuck option -> ('mode, potential) evaluation
 
-  (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
-  (* A case tree that is stuck on a match can remember the match term and the environment it was stuck in, along with the stored display data of that match, so that "about" can display it as a let-only around the match.  This is dropped as soon as anything more is done to the stuck evaluation other than acting on it by a degeneracy or modal cell (which can be pushed into the environment): further applications, field projections, or instantiations of it can't be represented in such a display. *)
+  (* A case tree that is stuck on a match can remember the match term and the environment it was stuck in, along with the stored display data of that match, so that "about" can display it as a let-only around the match.  This is dropped as soon as anything more is done to the stuck evaluation other than acting on it by a degeneracy or modal cell (which can be pushed into the environment); in that case to display it we recompute the stuck value along with the rest of the spine. *)
   and 'mode stuck =
     | Stuck : {
         env : ('mode, 'n, 'a) env;
@@ -543,6 +542,7 @@ end = struct
       }
         -> 'mode stuck
 
+  (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
   and (_, _, _) canonical =
     (* At present, we never produce these except as the values of their corresponding heads.  But in principle, we could allow universes and pi-types as potential terms, so that constants could be defined to "behave like" universes or pi-types without reducing to them. *)
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
