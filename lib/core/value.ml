@@ -211,7 +211,19 @@ module rec Value : sig
   and (_, _) evaluation =
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    | Unrealized : ('mode, potential) head option -> ('mode, potential) evaluation
+    | Unrealized : 'mode stuck option -> ('mode, potential) evaluation
+
+  and _ stuck =
+    | Stuck_neu : ('hmode, potential) head * ('hmode, 'mode, 'any) stuck_spine -> 'mode stuck
+
+  and (_, _, _) stuck_spine =
+    | Stuck_emp : ('mode, 'mode, noninst) stuck_spine
+    | Stuck_app :
+        ('hmode, 'mode1, 'any) stuck_spine * ('mode1, 'mode2, 'any, 'inst) apps_entry
+        -> ('hmode, 'mode2, 'inst) stuck_spine
+    | Stuck_act :
+        ('hmode, 'mode, 'any) stuck_spine * ('m, 'n) deg * ('mode, 'mu, 'nu, 'cod) Modalcell.t
+        -> ('hmode, 'mode, 'any) stuck_spine
 
   and (_, _, _) canonical =
     | UU : 'mode Mode.t * 'm D.t -> ('mode, 'm, D.zero) canonical
@@ -536,8 +548,22 @@ end = struct
     (* When 's = potential, a Val means the case tree is not yet fully applied; while when 's = kinetic, it is the only possible kind of result.  Collapsing these two together seems to unify the code for Lam and Struct as much as possible. *)
     | Val : ('mode, 's) value -> ('mode, 's) evaluation
     | Realize : ('mode, kinetic) value -> ('mode, potential) evaluation
-    (* A stuck case tree can remember its term and environment.  This is dropped as soon as anything more is done to the stuck evaluation other than acting on it by a degeneracy or modal cell (which can be pushed into the environment); in that case to display it we recompute the stuck value along with the rest of the spine. *)
-    | Unrealized : ('mode, potential) head option -> ('mode, potential) evaluation
+    (* A stuck case tree can remember where it got stuck, for display (see stuck). *)
+    | Unrealized : 'mode stuck option -> ('mode, potential) evaluation
+
+  (* A case tree stuck on a match remembers that match as a potential head (Stuck), together with everything that has been done to it since: a potential neutral.  Its spine is an ordinary application spine except that it can also contain delayed actions by degeneracies and modal cells.  Acting on an ordinary spine has to push the action through all its entries to the head, but acting on a stuck evaluation just adds a delayed action on the outside, so that the work of pushing it in is only done if the stuck evaluation is displayed (see Act.push_stuck).  The value of a stuck spine is that of applying its entries in order to the evaluation of its head, as app_eval_entry and act_evaluation do; in particular an entry's insertion is part of that entry, as in an ordinary spine. *)
+  and _ stuck =
+    | Stuck_neu : ('hmode, potential) head * ('hmode, 'mode, 'any) stuck_spine -> 'mode stuck
+
+  (* As for apps, the first two parameters are the modes at the head and of the whole spine, and the third is whether it ends with an instantiation, ignoring delayed actions. *)
+  and (_, _, _) stuck_spine =
+    | Stuck_emp : ('mode, 'mode, noninst) stuck_spine
+    | Stuck_app :
+        ('hmode, 'mode1, 'any) stuck_spine * ('mode1, 'mode2, 'any, 'inst) apps_entry
+        -> ('hmode, 'mode2, 'inst) stuck_spine
+    | Stuck_act :
+        ('hmode, 'mode, 'any) stuck_spine * ('m, 'n) deg * ('mode, 'mu, 'nu, 'cod) Modalcell.t
+        -> ('hmode, 'mode, 'any) stuck_spine
 
   (* A canonical type value is either a universe, a function-type, a datatype, or a codatatype/record.  It is parametrized by its dimension as a type, which might be larger than its evaluation dimension if it has an intrinsic dimension (e.g. Gel), and by that intrinsic dimension. *)
   and (_, _, _) canonical =
@@ -806,7 +832,7 @@ let apply_lazy : type dom modality mode m n s.
  fun lev m filter xs ->
   match !lev with
   | Ready (Unrealized None) -> lev
-  | Ready (Unrealized (Some _)) -> ready (Unrealized None)
+  (* A stuck evaluation that remembers where it got stuck is extended by app_eval_entry when forced. *)
   | _ -> ref (Applied (lev, Apps (Arg (filter, xs, ins_zero m))))
 
 (* We defer "field_lazy" to act.ml, since it requires pushing a permutation inside the apps. *)
@@ -1025,7 +1051,6 @@ let inst_lazy : type mode m n mn s.
  fun lev args ->
   match (D.compare_zero (TubeOf.inst args), !lev) with
   | Zero, _ | _, Ready (Unrealized None) -> lev
-  | _, Ready (Unrealized (Some _)) -> ready (Unrealized None)
   | Pos k, _ -> ref (Applied (lev, Apps (Inst (k, args))))
 
 let inst_tys : type mode. (mode, kinetic) value -> (mode, kinetic) value TubeOf.full = function

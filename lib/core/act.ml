@@ -11,6 +11,18 @@ open View
 
 (* Operator actions on values.  Unlike substitution, operator actions take a *value* as input (and produces another value). *)
 
+(* An action by a degeneracy and a modal cell that is being pushed into a stuck spine, if any. *)
+type _ pending_action =
+  | No_action : 'mode pending_action
+  | Pending : ('m, 'n) deg * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> 'mode pending_action
+
+(* A stuck spine with its final instantiation, if any, split off. *)
+type (_, _) stuck_split_inst =
+  | No_inst : ('hmode, 'mode, noninst) stuck_spine -> ('hmode, 'mode) stuck_split_inst
+  | Has_inst :
+      ('hmode, 'mode, noninst) stuck_spine * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
+      -> ('hmode, 'mode) stuck_split_inst
+
 (* Since values don't have a statically specified dimension, we have to act on them by an *arbitrary* degeneracy, which means that in many places we have to check dynamically that the dimensions either match or can be extended to match.  This function encapsulates that. *)
 let deg_plus_to : type m n nk. on:string -> ?err:dim_err -> (m, n) deg -> nk D.t -> nk deg_of =
  fun ~on ?err s nk ->
@@ -324,9 +336,72 @@ module Act = struct
    fun tm s c ->
     match tm with
     | Unrealized None -> Unrealized None
-    | Unrealized (Some stuck) -> Unrealized (Some (act_head stuck s c))
+    (* Acting on a stuck evaluation just delays the action (see Value.stuck). *)
+    | Unrealized (Some (Stuck_neu (head, spine))) ->
+        Unrealized (Some (Stuck_neu (head, stuck_act spine s c)))
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
+
+  (* Add a delayed action to the outside of a stuck spine, composing it with one that is already there. *)
+  and stuck_act : type hmode mode any mu1 mu2 cod m n.
+      (hmode, mode, any) stuck_spine ->
+      (m, n) deg ->
+      (mode, mu1, mu2, cod) Modalcell.t ->
+      (hmode, mode, any) stuck_spine =
+   fun spine s c ->
+    match (is_id_deg s, Modalcell.compare_id2 c) with
+    | Some _, Eq -> spine
+    | _ -> (
+        match spine with
+        | Stuck_act (spine, s', c') ->
+            let (DegExt (_, _, fa)) = comp_deg_extending s' s in
+            let (Wrap newc) = key_vcomp c c' in
+            Stuck_act (spine, fa, newc)
+        | _ -> Stuck_act (spine, s, c))
+
+  (* Split a final instantiation off a stuck spine, if there is one, pushing any action delayed outside it inside it. *)
+  and stuck_split_inst : type hmode mode any.
+      (hmode, mode, any) stuck_spine -> (hmode, mode) stuck_split_inst = function
+    | Stuck_emp -> No_inst Stuck_emp
+    | Stuck_app (_, Arg _) as spine -> No_inst spine
+    | Stuck_app (_, Field _) as spine -> No_inst spine
+    | Stuck_app (spine, Inst (k, args)) -> Has_inst (spine, k, args)
+    | Stuck_act (spine, s, c) -> (
+        match stuck_split_inst spine with
+        | No_inst spine -> No_inst (stuck_act spine s c)
+        | Has_inst (spine, k, args) ->
+            let (Acted_instargs (fa, args, None)) = act_instargs args s c None in
+            Has_inst (stuck_act spine fa c, k, args))
+
+  and stuck_uninst : type hmode mode any.
+      (hmode, mode, any) stuck_spine -> (hmode, mode, noninst) stuck_spine =
+   fun spine ->
+    match stuck_split_inst spine with
+    | No_inst spine -> spine
+    | Has_inst (spine, _, _) -> spine
+
+  (* Push all the delayed actions in a stuck spine through its entries into its head, giving an ordinary application spine.  The action being pushed in, if any, is the composite of all those delayed outside the current point. *)
+  and push_stuck_spine : type hmode mode any.
+      (hmode, potential) head ->
+      (hmode, mode, any) stuck_spine ->
+      mode pending_action ->
+      (hmode, potential) head * (hmode, mode, any, live) apps =
+   fun head spine pending ->
+    match (spine, pending) with
+    | Stuck_emp, No_action -> (head, Emp)
+    | Stuck_emp, Pending (s, c) -> (act_head head s c, Emp)
+    | Stuck_act (spine, s, c), No_action -> push_stuck_spine head spine (Pending (s, c))
+    | Stuck_act (spine, s', c'), Pending (s, c) ->
+        let (DegExt (_, _, fa)) = comp_deg_extending s' s in
+        let (Wrap newc) = key_vcomp c c' in
+        push_stuck_spine head spine (Pending (fa, newc))
+    | Stuck_app (spine, e), No_action ->
+        let head, apps = push_stuck_spine head spine No_action in
+        (head, Snoc (apps, e))
+    | Stuck_app (spine, e), Pending (s, c) ->
+        let Any_deg s, Wrap c, e = act_apps_entry e s c in
+        let head, apps = push_stuck_spine head spine (Pending (s, c)) in
+        (head, Snoc (apps, e))
 
   and act_env_deg : type mode m n b mu1 mu2 cod.
       (mode, n, b) env -> (m, n) deg -> (mode, mu1, mu2, cod) Modalcell.t -> (mode, m, b) env =
@@ -432,7 +507,14 @@ module Act = struct
           defer @@ fun () ->
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
-          | Unrealized _ -> Unrealized None
+          | Unrealized None -> Unrealized None
+          (* A stuck type is acted on in the same way as its spine: the part before its instantiation by fa, and then the new instantiation.  Its spine was built entry by entry along with that of the neutral, so it ends with an instantiation exactly when the neutral's does. *)
+          | Unrealized (Some (Stuck_neu (shead, spine))) -> (
+              let base = stuck_act (stuck_uninst spine) fa cell in
+              match D.compare_zero (TubeOf.inst new_inst_args) with
+              | Zero -> Unrealized (Some (Stuck_neu (shead, base)))
+              | Pos k ->
+                  Unrealized (Some (Stuck_neu (shead, Stuck_app (base, Inst (k, new_inst_args))))))
           | Val
               (Canonical { mode; canonical = c; tyargs = ctyargs; ins; fields = _; inst_fields = _ })
             -> (
@@ -549,10 +631,9 @@ module Act = struct
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa c in
         Pi { x = act_variables x fb; filter; doms; cods }
     (* A stuck match stays stuck in the acted environment, so we can push the action into it.  The environment of a stuck match has the dimension of the evaluation (Shift and Unshift change the dimension of the environment that the match itself is evaluated in, not just of its result), and an evaluation is only ever acted on by a degeneracy whose codomain is its dimension.  But since evaluations aren't indexed by their dimension we have to check this. *)
-    | Stuck { env; tm; display } -> (
-        match D.compare (cod_deg s) (dim_env env) with
-        | Eq -> Stuck { env = act_env_deg env s c; tm; display }
-        | Neq -> fatal (Anomaly "acting on a stuck match by a degeneracy of the wrong dimension"))
+    | Stuck { env; tm; display } ->
+        let (Of fa) = deg_plus_to s (dim_env env) ~on:"stuck match" in
+        Stuck { env = act_env_deg env fa c; tm; display }
 
   and act_pi : type dom modality mode mu1 mu2 cod m n k.
       (dom, modality, mode, k, n) Modality.filter_dim ->
@@ -589,8 +670,21 @@ module Act = struct
    fun apps s c ->
     match apps with
     | Emp -> (Any_deg s, Wrap c, Emp)
+    | Snoc (rest, e) ->
+        let Any_deg s, Wrap c, e = act_apps_entry e s c in
+        let new_s, new_c, new_rest = act_apps rest s c in
+        (new_s, new_c, Snoc (new_rest, e))
+
+  (* Action on a single entry of an application spine, returning the acted entry and the degeneracy and cell to push into the spine it extends. *)
+  and act_apps_entry : type mode1 mode2 mu1 mu2 cod a b any inst.
+      (mode1, mode2, any, inst) apps_entry ->
+      (a, b) deg ->
+      (mode2, mu1, mu2, cod) Modalcell.t ->
+      any_deg * mode1 Modalcell.cod2_wrapped * (mode1, mode2, any, inst) apps_entry =
+   fun e s c ->
+    match e with
     (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
-    | Snoc (rest, Arg (filter, args, ins)) ->
+    | Arg (filter, args, ins) ->
         (* In the function case, we also act on the arguments by factorization of dimensions and by whiskering of keys. *)
         let modality = Modality.filter_modality filter in
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
@@ -598,28 +692,24 @@ module Act = struct
         let new_arg =
           let (Wrap newc) = Modalcell.prewhisker_wrapped c modality in
           act_cube { act = (fun x s c -> act_normal x s c) } args fb newc in
-        let new_s, new_c, new_rest = act_apps rest fa c in
-        (new_s, new_c, Snoc (new_rest, Arg (arg_filter, new_arg, new_ins)))
-    | Snoc (rest, Field (filter, fld, fldplus, ins)) -> (
+        (Any_deg fa, Wrap c, Arg (arg_filter, new_arg, new_ins))
+    | Field (filter, fld, fldplus, ins) -> (
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* Note that we don't need to change the degeneracy on the outside, since it can be extended on the right as needed. *)
         let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
         (* The spine inside a modal field projection lives at the *filtered* dimension of the field's modality.  So we factor the degeneracy fa (pushed past the outer insertion) through the filter with filter_deg: this yields the smaller degeneracy fb that acts on the filtered inner spine, and the new filter for the acted result. *)
         let (Filter_deg (fb, new_filter)) = Modality.filter_deg filter fa in
         let modality = Modality.filter_modality filter in
+        let e = Field (new_filter, fld, new_fldplus, new_ins) in
         (* Crossing a modal field projection, the cell is prewhiskered by the left adjoint, since the spine inside lives behind a lock by it.  For ordinary fields the left adjoint is the identity and the cell passes through unchanged. *)
         match Modality.compare_id modality with
-        | Eq ->
-            let new_s, new_c, new_rest = act_apps rest fb c in
-            (new_s, new_c, Snoc (new_rest, Field (new_filter, fld, new_fldplus, new_ins)))
+        | Eq -> (Any_deg fb, Wrap c, e)
         | Neq ->
             let (Wrap c) = Modalcell.prewhisker_wrapped c modality in
-            let new_s, new_c, new_rest = act_apps rest fb c in
-            (new_s, new_c, Snoc (new_rest, Field (new_filter, fld, new_fldplus, new_ins))))
-    | Snoc (rest, Inst (dim, args)) ->
+            (Any_deg fb, Wrap c, e))
+    | Inst (dim, args) ->
         let (Acted_instargs (fa, new_args, None)) = act_instargs args s c None in
-        let new_s, new_c, new_rest = act_apps rest fa c in
-        (new_s, new_c, Snoc (new_rest, Inst (dim, new_args)))
+        (Any_deg fa, Wrap c, Inst (dim, new_args))
 
   and act_instargs : type mode mu1 mu2 cod a b n j nj p.
       (n, j, nj, mode normal) TubeOf.t ->
@@ -713,5 +803,17 @@ let field_lazy : type src f mode s n t i.
   let (Has_filter filter) = Modality.filter f n in
   let lev = act_lazy_eval lev p (Modalcell.id2 src) in
   match !lev with
-  | Ready (Unrealized _) -> ready (Unrealized None)
+  | Ready (Unrealized None) -> ready (Unrealized None)
+  (* A stuck evaluation that remembers where it got stuck is extended by app_eval_entry when forced. *)
   | _ -> ref (Applied (lev, Apps (Field (filter, fld, nk, ins_zero n))))
+
+(* The ordinary application spine of a stuck evaluation, with all its delayed actions pushed into its head. *)
+type _ pushed_stuck =
+  | Pushed_stuck : ('hmode, potential) head * ('hmode, 'mode, 'any, live) apps -> 'mode pushed_stuck
+
+let stuck_split_inst = Act.stuck_split_inst
+
+let push_stuck : type mode. mode stuck -> mode pushed_stuck =
+ fun (Stuck_neu (head, spine)) ->
+  let head, apps = Act.push_stuck_spine head spine No_action in
+  Pushed_stuck (head, apps)

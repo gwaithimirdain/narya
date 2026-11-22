@@ -736,7 +736,7 @@ And when the field projected is higher and its suffix permutes the dimensions, s
     : N
   
 
-The type of a degenerated element of a type stuck on a match is that type degenerated and instantiated, so it forgets where it got stuck; the degenerated type itself remembers it.
+The type of a degenerated element of a type stuck on a match is that type degenerated and instantiated.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom ax : Bool' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'axiom k : T ax' -e 'echo refl k' -e 'about refl (T ax)'
   refl k
@@ -747,7 +747,7 @@ The type of a degenerated element of a type stuck on a match is that type degene
     : Type⁽ᵉ⁾ (T ax) (T ax)
   
 
-When that type is a bare metavariable (here an implicit let-binding of a match outside a case tree), it is displayed as the stuck match.  The match has no variables to bind, so it is displayed without a let-only, but still degenerated, with a name depending on its sort.
+When that type is a bare metavariable (here an implicit let-binding of a match outside a case tree), it is displayed as the stuck match, so the type of the degenerated element remembers where it got stuck.  The match has no variables to bind, so it is displayed without a let-only, but still degenerated, with a name depending on its sort.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom ax : Bool' -e 'axiom k : (match ax [ true. ↦ N | false. ↦ Bool ])' -e 'echo refl k' -e 'echo k⁽ᵉᵉ⁾' -e 'def f : Bool → Bool ≔ match ax [ true. ↦ x ↦ x | false. ↦ x ↦ true. ]' -e 'about refl f' 2>/dev/null
   refl k

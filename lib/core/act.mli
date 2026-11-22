@@ -61,3 +61,16 @@ val field_lazy :
   'i Field.t ->
   ('n, 't, 'i) insertion ->
   ('mode, 's) lazy_eval
+
+type _ pushed_stuck =
+  | Pushed_stuck : ('hmode, potential) head * ('hmode, 'mode, 'any, live) apps -> 'mode pushed_stuck
+
+val push_stuck : 'mode stuck -> 'mode pushed_stuck
+
+type (_, _) stuck_split_inst =
+  | No_inst : ('hmode, 'mode, noninst) stuck_spine -> ('hmode, 'mode) stuck_split_inst
+  | Has_inst :
+      ('hmode, 'mode, noninst) stuck_spine * 'k D.pos * ('n, 'k, 'nk, 'mode normal) TubeOf.t
+      -> ('hmode, 'mode) stuck_split_inst
+
+val stuck_split_inst : ('hmode, 'mode, 'any) stuck_spine -> ('hmode, 'mode) stuck_split_inst
