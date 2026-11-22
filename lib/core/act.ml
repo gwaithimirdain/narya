@@ -11,11 +11,6 @@ open View
 
 (* Operator actions on values.  Unlike substitution, operator actions take a *value* as input (and produces another value). *)
 
-(* An action by a degeneracy and a modal cell that is being pushed into a stuck spine, if any. *)
-type _ pending_action =
-  | No_action : 'mode pending_action
-  | Pending : ('m, 'n) deg * ('mode, 'mu, 'nu, 'cod) Modalcell.t -> 'mode pending_action
-
 (* A stuck spine with its final instantiation, if any, split off. *)
 type (_, _) stuck_split_inst =
   | No_inst : ('hmode, 'mode, noninst) stuck_spine -> ('hmode, 'mode) stuck_split_inst
@@ -381,26 +376,26 @@ module Act = struct
     | Has_inst (spine, _, _) -> spine
 
   (* Push all the delayed actions in a stuck spine through its entries into its head, giving an ordinary application spine.  The action being pushed in, if any, is the composite of all those delayed outside the current point. *)
-  and push_stuck_spine : type hmode mode any.
+  and push_stuck_spine : type hmode mode any a b mu1 mu2 cod.
       (hmode, potential) head ->
       (hmode, mode, any) stuck_spine ->
-      mode pending_action ->
+      ((a, b) deg * (mode, mu1, mu2, cod) Modalcell.t) option ->
       (hmode, potential) head * (hmode, mode, any, live) apps =
    fun head spine pending ->
     match (spine, pending) with
-    | Stuck_emp, No_action -> (head, Emp)
-    | Stuck_emp, Pending (s, c) -> (act_head head s c, Emp)
-    | Stuck_act (spine, s, c), No_action -> push_stuck_spine head spine (Pending (s, c))
-    | Stuck_act (spine, s', c'), Pending (s, c) ->
+    | Stuck_emp, None -> (head, Emp)
+    | Stuck_emp, Some (s, c) -> (act_head head s c, Emp)
+    | Stuck_act (spine, s, c), None -> push_stuck_spine head spine (Some (s, c))
+    | Stuck_act (spine, s', c'), Some (s, c) ->
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
         let (Wrap newc) = key_vcomp c c' in
-        push_stuck_spine head spine (Pending (fa, newc))
-    | Stuck_app (spine, e), No_action ->
-        let head, apps = push_stuck_spine head spine No_action in
+        push_stuck_spine head spine (Some (fa, newc))
+    | Stuck_app (spine, e), None ->
+        let head, apps = push_stuck_spine head spine None in
         (head, Snoc (apps, e))
-    | Stuck_app (spine, e), Pending (s, c) ->
+    | Stuck_app (spine, e), Some (s, c) ->
         let Any_deg s, Wrap c, e = act_apps_entry e s c in
-        let head, apps = push_stuck_spine head spine (Pending (s, c)) in
+        let head, apps = push_stuck_spine head spine (Some (s, c)) in
         (head, Snoc (apps, e))
 
   and act_env_deg : type mode m n b mu1 mu2 cod.
@@ -815,5 +810,5 @@ let stuck_split_inst = Act.stuck_split_inst
 
 let push_stuck : type mode. mode stuck -> mode pushed_stuck =
  fun (Stuck_neu (head, spine)) ->
-  let head, apps = Act.push_stuck_spine head spine No_action in
+  let head, apps = Act.push_stuck_spine head spine None in
   Pushed_stuck (head, apps)
