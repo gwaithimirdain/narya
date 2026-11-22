@@ -4586,18 +4586,10 @@ and synth : type mode a b s.
                                        Field.intern "trl" Hott.dim,
                                        id_ins D.zero (D.zero_plus Hott.dim) ))
                                   idm (plus_no_lock mode) xeqy ) in
+                            (* A step is checked only in the orientation it is marked with: forwards unless marked as reversed. *)
                             match dir with
-                            (* A step marked as reversed is checked only in the reversed orientation. *)
                             | `Reversed -> reversed ()
-                            | `Plain -> (
-                                match Control.capture forward with
-                                | Ok result -> result
-                                (* If that didn't work, we backtrack and try reversing the equality and checking that instead. *)
-                                | Error errs -> (
-                                    match Control.capture reversed with
-                                    | Ok result -> result
-                                    (* But if that also fails, we report only the errors from the forwards direction (unless the reversed check hit a bug, which [capture] passes through). *)
-                                    | Error _ -> Reporter.replay errs)))
+                            | `Plain -> forward ())
                         | None -> (
                             with_loc z.loc @@ fun () ->
                             match equal_at ctx ny.tm ez ty with

@@ -80,7 +80,7 @@ In HOTT mode, elements of ``Id`` are equalities, hence in particular are not jus
      = w
          by ← r ∎
 
-To apply a reason backwards, write ``by ← r`` (or ``by <- r``).  Narya then checks ``r`` only against the reversed equality.  Since ``←`` is an identifier-constituent, it needs a space afterwards if ``r`` starts with an identifier.  With an unmarked reason ``by r``, Narya first tries the forward direction, then the reverse direction if the forward check fails; but a failed check can be expensive when the types are large.
+An unmarked reason ``by r`` is checked against the forward equality, from the previous term to the next one.  To apply a reason backwards, write ``by ← r`` (or ``by <- r``); Narya then checks ``r`` against the reversed equality.  Since ``←`` is an identifier-constituent, it needs a space afterwards if ``r`` starts with an identifier.
 
 Apply congruences explicitly, for example with ``refl``.  If two subsequent terms are definitionally equal, you can omit the ``by`` clause.
 

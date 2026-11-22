@@ -180,7 +180,7 @@ section qinv ≔
     ≔ calc
     x
     = eq .fro (e x)
-        by eq .fro_to x
+        by ← eq .fro_to x
     = eq .fro (e y)
         by ap (eq .fro) p
     = y
@@ -286,7 +286,7 @@ section is_contr ≔
     contract ≔ b ↦ calc
       b
       = e (eq .fro b)
-          by eq .to_fro b
+          by ← eq .to_fro b
       = e (cA .center)
           by refl e (cA .contract (eq .fro b)) ∎)
 
