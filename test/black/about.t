@@ -747,6 +747,20 @@ The type of a degenerated element of a type stuck on a match is that type degene
     : Type⁽ᵉ⁾ (T ax) (T ax)
   
 
+When that type is a bare metavariable (here an implicit let-binding of a match outside a case tree), it is displayed as the stuck match.  The match has no variables to bind, so it is displayed without a let-only, but still degenerated, with a name depending on its sort.
+
+  $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom ax : Bool' -e 'axiom k : (match ax [ true. ↦ N | false. ↦ Bool ])' -e 'echo refl k' -e 'echo k⁽ᵉᵉ⁾' -e 'def f : Bool → Bool ≔ match ax [ true. ↦ x ↦ x | false. ↦ x ↦ true. ]' -e 'about refl f' 2>/dev/null
+  refl k
+    : Id (match #(gen) ax [ false. ↦ Bool | true. ↦ N ]) k k
+  
+  k⁽ᵉᵉ⁾
+    : match #(gen) ax [ false. ↦ Bool | true. ↦ N ]⁽ᵉᵉ⁾ (refl k) (refl k)
+        (refl k) (refl k)
+  
+  ap (match ax [ false. ↦ x ↦ true. | true. ↦ x ↦ x ])
+    : {𝑥₀ : Bool} {𝑥₁ : Bool} (𝑥₂ : Bool⁽ᵉ⁾ 𝑥₀ 𝑥₁) →⁽ᵉ⁾ Bool⁽ᵉ⁾ (f 𝑥₀) (f 𝑥₁)
+  
+
 An explicit match keeps its "return" clause on the line of the "match" when it fits there.
 
   $ narya -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Bool : Type ≔ data [ true. | false. ]' -e 'axiom ax : Bool' -e 'def T : Bool → Type ≔ [ true. ↦ N | false. ↦ Bool ]' -e 'def k : T ax ≔ match ax return x ↦ T x [ true. ↦ zero. | false. ↦ true. ]' -e 'about k'

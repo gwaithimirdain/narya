@@ -326,6 +326,16 @@ let unparse_meta_name : type mode x b s lt ls rt rs.
     (mode, x, b, s) Meta.t -> (lt, ls, rt, rs) parse located =
  fun v -> unlocated (Ident ([ meta_var_name v ], []))
 
+(* Whether the elements of a type, given as a term, are type families, functions of another sort, or neither, as for Readback.sort_of_ty but without evaluating anything. *)
+let rec sort_of_type_term : type mode a.
+    ?isfunc:bool -> (mode, a, kinetic) term -> [ `Type | `Function | `Other ] =
+ fun ?(isfunc = false) -> function
+  | UU _ -> `Type
+  | Pi { cods; _ } ->
+      let (Cod (_, cod)) = CodCube.find_top cods in
+      sort_of_type_term ~isfunc:true cod
+  | _ -> if isfunc then `Function else `Other
+
 (* Whether the context of a let-only has no clauses to display, because it contains only aliases and weakenings. *)
 let rec letonly_empty : type mode i b. (mode, i, b) ordered_termctx -> bool = function
   | Emp _ -> true
@@ -701,10 +711,10 @@ let rec unparse : type mode n lt ls rt rs s.
                (prefix ~notn:letin
                   ~inner:(Multiple (wstok Let, binding, wstok In))
                   ~last:body ~right_ok)))
-  (* If a let-only has no clauses to display, we display just its body, without its ascription. *)
-  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; _ } when letonly_empty ctx ->
+  (* If a let-only has no clauses to display, we display just its body, without its ascription, degenerated to the dimension of the let-only. *)
+  | Letonly { termctx = Permute (_, ctx); env = tmenv; tm = body; ty; _ } when letonly_empty ctx ->
       let _, bodyvars = unparse_letonly_clauses vars ctx tmenv in
-      unparse bodyvars body li ri
+      unparse_letonly_body vars bodyvars body ty tmenv li ri
   (* An abbreviable let-only whose body is a non-bare metavariable (that is, a let-bound or a hole) arises from reading back a metavariable with a nontrivial environment.  With "display let ≔ names", it is displayed compactly by eliding its clauses. *)
   | Letonly { env = tmenv; tm = Meta (v, _); abbreviable = true; _ }
     when (not (Meta.is_bare v)) && Display.lets () = `Names -> (
@@ -739,8 +749,8 @@ let rec unparse : type mode n lt ls rt rs s.
                   ~last ~left_ok:(No.le_refl No.minus_omega) ~right_ok:(No.le_refl No.minus_omega)))
       in
       match (binding, No.Interval.contains ri No.minus_omega_plus_one) with
-      (* If only locks or keys were elided, there are no variables to name, so we display just the body. *)
-      | Snoc (Emp, _), _ when names_only -> unparse bodyvars body li ri
+      (* If only locks or keys were elided, there are no variables to name, so we display just the body, degenerated to the dimension of the let-only. *)
+      | Snoc (Emp, _), _ when names_only -> unparse_letonly_body vars bodyvars body ty tmenv li ri
       | _, Some right_ok ->
           let body = unparse_body ri in
           unlocated
@@ -852,6 +862,20 @@ let rec unparse : type mode n lt ls rt rs s.
 (* The master unparsing function can easily be delayed. *)
 and make_unparser : type mode n s. n Names.t -> (mode, n, s) term -> unparser =
  fun vars tm -> { unparse = (fun li ri -> unparse vars tm li ri) }
+
+(* The body of a let-only displayed without its clauses.  A let-only of positive dimension degenerates its body, so then we display the body acted on by the degeneracy from dimension zero, named according to the sort of its type. *)
+and unparse_letonly_body : type mode n k b s lt ls rt rs.
+    n Names.t ->
+    b Names.t ->
+    (mode, b, s) term ->
+    (mode, b, kinetic) term ->
+    (mode, n, k, b) env ->
+    (lt, ls) No.iinterval ->
+    (rt, rs) No.iinterval ->
+    (lt, ls, rt, rs) parse located =
+ fun vars bodyvars body ty tmenv li ri ->
+  let body = { unparse = (fun li ri -> unparse bodyvars body li ri) } in
+  unparse_act ~sort:(sort_of_type_term ty, `Other) vars body (deg_zero (dim_term_env tmenv)) li ri
 
 (* Unparse the clauses of a let-only, walking its body context and its environment of bound terms together, and returning also the names of the body context.  The bound terms are unparsed in the ambient context, while each type is unparsed in the body context up to its variable.  The ambient context of the bound terms to the left of a lock or key is obtained by splitting off the locks it stripped, as for a key applied to a term. *)
 and unparse_letonly_clauses : type mode n i k b.
