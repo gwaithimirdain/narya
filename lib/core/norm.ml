@@ -829,9 +829,10 @@ and field : type src f mode n k nk s.
       let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
       let (Plus fldplus) = D.plus k in
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
-      match act_value viewed_tm p (Modalcell.id2 src) with
+      match (viewed_tm, act_value viewed_tm p (Modalcell.id2 src)) with
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
-      | Neu { head = Live _ as head; args; value; ty } ->
+      | Neu { ty; _ }, Neu { head = Live _ as head; args; value; ty = _ } ->
+          (* The type of the projection is computed from the original term, its original type, and the original insertion.  The type of the *acted* term would not match the original term and insertion: its boundary has already been permuted by p, so the permutation would be applied twice. *)
           let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
           (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_entry to replay a filtered spine. *)
           let (Has_filter filter) = Modality.filter fm n in
