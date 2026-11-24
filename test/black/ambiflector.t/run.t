@@ -155,3 +155,81 @@ The zero key is displayed, since elaboration would insert the identity rather th
   b ↦ b
     : (b : A) → A
   
+
+A field variable used behind a lock is displayed with the key of its
+self-variable outside it, including in an unequal-heads message where the
+heads are compared at the head end of a spine that crosses a modal field.
+
+  $ narya -ambiflector field_var_key.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/field_var_key.ny
+   5 | def T : Type ≔ sig ( x : C, p : Id N ((x :♮| _) .fld) ((x :♮| _) .fld), q : Id N ((d .y :♮| _) .fld) ((d .y :♮| _) .fld), r : Id (Id N ((x :♮| _) .fld) ((x :♮| _) .fld)) p q )
+     ^ term synthesized type
+         N⁽ᵉ⁾ ((d .y :♮| _) .fld) ((d .y :♮| _) .fld)
+       but is being checked against type
+         N⁽ᵉ⁾ ((x :♮| _) .fld) ((x :♮| _) .fld)
+       unequal head terms:
+         d
+       does not equal
+         x
+  
+  [1]
+
+  $ narya -ambiflector -show-unique-keys field_var_key.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/field_var_key.ny
+   5 | def T : Type ≔ sig ( x : C, p : Id N ((x :♮| _) .fld) ((x :♮| _) .fld), q : Id N ((d .y :♮| _) .fld) ((d .y :♮| _) .fld), r : Id (Id N ((x :♮| _) .fld) ((x :♮| _) .fld)) p q )
+     ^ term synthesized type
+         N⁽ᵉ⁾ ((d .y :♮| _) .fld) ((d .y :♮| _) .fld)
+       but is being checked against type
+         N⁽ᵉ⁾ ((x #η :♮| _) .fld) ((x #η :♮| _) .fld)
+       unequal head terms:
+         d
+       does not equal
+         x #η
+  
+  [1]
+
+A degenerated field variable with a key is read back with the projection
+inside the degeneracy and key, as the elaborator produces it.  So in
+self-variable syntax (here because a field name clashes with a parameter)
+they are displayed on the projection.
+
+  $ narya -ambiflector -show-implicits -show-unique-keys field_var_key_deg.ny -e "about T" -e "about T'"
+  sig (
+    x : C,
+    p : N⁽ᵉᵉᵉ⁾ {(x #η :♮| _) .fld} {(x #η :♮| _) .fld}
+          {(refl x #η :♮| _) .fld} {(x #η :♮| _) .fld} {(x #η :♮| _) .fld}
+          {(refl x #η :♮| _) .fld} {(refl x #η :♮| _) .fld}
+          {(refl x #η :♮| _) .fld} ((refl (refl (x #η)) :♮| _) .fld)
+          {(x #η :♮| _) .fld} {(x #η :♮| _) .fld} {(refl x #η :♮| _) .fld}
+          {(x #η :♮| _) .fld} {(x #η :♮| _) .fld} {(refl x #η :♮| _) .fld}
+          {(refl x #η :♮| _) .fld} {(refl x #η :♮| _) .fld}
+          ((refl (refl (x #η)) :♮| _) .fld) {(refl x #η :♮| _) .fld}
+          {(refl x #η :♮| _) .fld} ((refl (refl (x #η)) :♮| _) .fld)
+          {(refl x #η :♮| _) .fld} {(refl x #η :♮| _) .fld}
+          ((refl (refl (x #η)) :♮| _) .fld) ((refl (refl (x #η)) :♮| _) .fld)
+          ((refl (refl (x #η)) :♮| _) .fld) )
+    : Type
+  
+  x ↦
+  sig (
+    𝑥 .x : C,
+    𝑥 .p : N⁽ᵉᵉᵉ⁾ {(𝑥 .x #η :♮| _) .fld} {(𝑥 .x #η :♮| _) .fld}
+             {(refl (𝑥 .x) #η :♮| _) .fld} {(𝑥 .x #η :♮| _) .fld}
+             {(𝑥 .x #η :♮| _) .fld} {(refl (𝑥 .x) #η :♮| _) .fld}
+             {(refl (𝑥 .x) #η :♮| _) .fld} {(refl (𝑥 .x) #η :♮| _) .fld}
+             ((refl (refl (𝑥 .x #η)) :♮| _) .fld) {(𝑥 .x #η :♮| _) .fld}
+             {(𝑥 .x #η :♮| _) .fld} {(refl (𝑥 .x) #η :♮| _) .fld}
+             {(𝑥 .x #η :♮| _) .fld} {(𝑥 .x #η :♮| _) .fld}
+             {(refl (𝑥 .x) #η :♮| _) .fld} {(refl (𝑥 .x) #η :♮| _) .fld}
+             {(refl (𝑥 .x) #η :♮| _) .fld}
+             ((refl (refl (𝑥 .x #η)) :♮| _) .fld)
+             {(refl (𝑥 .x) #η :♮| _) .fld} {(refl (𝑥 .x) #η :♮| _) .fld}
+             ((refl (refl (𝑥 .x #η)) :♮| _) .fld)
+             {(refl (𝑥 .x) #η :♮| _) .fld} {(refl (𝑥 .x) #η :♮| _) .fld}
+             ((refl (refl (𝑥 .x #η)) :♮| _) .fld)
+             ((refl (refl (𝑥 .x #η)) :♮| _) .fld)
+             ((refl (refl (𝑥 .x #η)) :♮| _) .fld) )
+    : (x : N) → Type
+  

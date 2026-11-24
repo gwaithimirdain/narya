@@ -295,19 +295,9 @@ and equal_neu : type mode a b.
       match (nonmodal_apps apps1, nonmodal_apps apps2) with
       (* If neither spine crosses a modal field projection, the heads are at the ambient mode and we can compare them first (as we always did before modal fields), which gives more precise "unequal heads" error messages. *)
       | Some Eq, Some Eq -> (
-          match equal_head ctx head1 head2 with
-          | Some (Error (Variables _)) ->
-              Error
-                (Unequal.Heads
-                   (Variables
-                      ( PTerm (ctx, readback_unequal_head ctx head1 apps1),
-                        PTerm (ctx, readback_unequal_head ctx head2 apps2) )))
-          | Some (Error err) -> Error (Unequal.Heads err)
-          | None ->
-              let h1, h2 =
-                (readback_unequal_head ctx head1 apps1, readback_unequal_head ctx head2 apps2) in
-              Error (Unequal.Heads (Terms (PTerm (ctx, h1), PTerm (ctx, h2))))
-          | Some (Ok ()) -> (
+          match equal_heads ctx ctx head1 head2 apps1 apps2 with
+          | Error err -> Error err
+          | Ok () -> (
               match equal_apps ctx apps1 apps2 with
               | None -> Error (Unequal.Terms (PVal (ctx, x), PVal (ctx, y)))
               | Some x -> x))
@@ -319,6 +309,29 @@ and equal_neu : type mode a b.
   | Lam _, _ | _, Lam _ -> fatal (Anomaly "unexpected lambda in synthesizing equality-check")
   | Struct _, _ | _, Struct _ -> fatal (Anomaly "unexpected struct in synthesizing equality-check")
   | Constr _, _ | _, Constr _ -> fatal (Anomaly "unexpected constr in synthesizing equality-check")
+
+(* Compare the heads of two neutrals, in the context "cctx".  If they are unequal, we report them as read back in the context "rctx" (at the same mode) together with any leading projections of their spines that are needed to display them (see readback_unequal_head). *)
+and equal_heads : type mode a b c d any1 any2.
+    (mode, a, b) Ctx.t ->
+    (mode, c, d) Ctx.t ->
+    (mode, kinetic) head ->
+    (mode, kinetic) head ->
+    (mode, mode, any1, live) apps ->
+    (mode, mode, any2, live) apps ->
+    unit Err.t =
+ fun cctx rctx head1 head2 apps1 apps2 ->
+  let reported () =
+    ( PTerm (rctx, readback_unequal_head rctx head1 apps1),
+      PTerm (rctx, readback_unequal_head rctx head2 apps2) ) in
+  match equal_head cctx head1 head2 with
+  | Some (Ok ()) -> Ok ()
+  | Some (Error (Variables _)) ->
+      let t1, t2 = reported () in
+      Error (Unequal.Heads (Variables (t1, t2)))
+  | Some (Error err) -> Error (Unequal.Heads err)
+  | None ->
+      let t1, t2 = reported () in
+      Error (Unequal.Heads (Terms (t1, t2)))
 
 and equal_tyargs : type mode n1 k1 nk1 n2 k2 nk2 a b.
     (mode, a, b) Ctx.t ->
@@ -428,13 +441,7 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
   | Emp, Emp -> (
       match heads with
       | None -> return ()
-      | Some (head1, head2) -> (
-          match equal_head ctx head1 head2 with
-          | Some (Ok ()) -> return ()
-          | Some (Error err) -> Some (Error (Unequal.Heads err))
-          | None ->
-              let t1, t2 = (readback_head ctx head1, readback_head ctx head2) in
-              Some (Error (Unequal.Heads (Terms (PTerm (ctx, t1), PTerm (ctx, t2)))))))
+      | Some (head1, head2) -> Some (equal_heads ctx ctx head1 head2 Emp Emp))
   | Snoc (rest1, Arg (filter1, a1, i1)), Snoc (rest2, Arg (filter2, a2, i2)) -> (
       let modality1 = Modality.filter_modality filter1 in
       let modality2 = Modality.filter_modality filter2 in
@@ -463,7 +470,12 @@ and equal_apps : type h1 h2 mode any1 any2 a b.
       | Neq -> None
       | Eq -> (
           let (Locked (_, lctx)) = Ctx.lock ctx fm1 in
-          let* () = equal_apps lctx rest1 rest2 ?heads in
+          let* () =
+            match (rest1, rest2, heads, Modality.compare_id fm1) with
+            (* If this is a nonmodal projection at the bottom of both spines, we compare the heads here rather than at the bottom of the recursion, so that we can report them together with this projection (see readback_unequal_head). *)
+            | Emp, Emp, Some (head1, head2), Eq ->
+                Some (equal_heads lctx ctx head1 head2 apps1 apps2)
+            | _ -> equal_apps lctx rest1 rest2 ?heads in
           let To d1, To d2 = (deg_of_ins i1, deg_of_ins i2) in
           let* () = ErrOpt.of_opt (deg_equiv d1 d2) in
           (* The 'plus' parts must automatically be equal if the fields are equal and well-typed. *)

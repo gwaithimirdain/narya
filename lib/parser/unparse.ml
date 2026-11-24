@@ -1510,6 +1510,7 @@ and unparse_field : type mode n lt ls rt rs s.
           let right_ok = No.le_refl No.plus_omega in
           parenthesize (unlocated (App { fn; arg; left_ok; right_ok })))
 
+(* A projection of a field from a self-variable whose fields are visible as field variables (see Names.add_fields) is displayed as that field variable.  Any degeneracy or key on the field variable is outside the projection, since that is how both the elaborator and readback (see Readback.readback_head) produce them. *)
 and unparse_field_var : type mode n lt ls rt rs s.
     n Names.t -> (mode, n, s) term -> string -> (lt, ls, rt, rs) parse located option =
  fun vars tm fld ->
@@ -1520,15 +1521,6 @@ and unparse_field_var : type mode n lt ls rt rs s.
       | Some name -> Some (unlocated (Ident (name, [])))
       (* If the field is still leftover after the lookup, we unparse it as a field. *)
       | None -> None)
-  (* TODO: Nonidentity degeneracies and keys of field variables should still be field variables, but with the degeneracies and keys on the outside.  Currently we just fail if there is a nonidentity degeneracy or key, probably leading to printing the unnamed self variable. *)
-  | Act (_, tm, deg, _) -> (
-      match is_id_deg deg with
-      | Some _ -> unparse_field_var vars tm fld
-      | None -> None)
-  | Key { tm; cell; plus_src; plus_tgt = Plus_with_locks (comp, _) } -> (
-      match Modalcell.compare_id2 cell with
-      | Eq -> unparse_field_var (Names.add_lock (Names.split vars comp) plus_src) tm fld
-      | Neq -> None)
   | _ -> None
 
 (* Unparse a key operation applied postfix to a synthesizing term.  The body is unparsed in the context locked by the key's source, obtained from the ambient names by splitting off the target locks ('comp') and re-adding the source lock ('plus_src').  Since elaboration inserts a key on a variable after stripping off any keys applied to it explicitly, we decide whether to print a whole nest of keys at once, by its composite (see decide_keys): if elaboration would insert the composite itself, we omit all of them, and otherwise we print all of them except the identities.  This decision is made at the outermost key and passed to the others.  To print a key, we ask the mode theory for a normal form of the cell, as a vertical composite (outer list) of horizontal composites / whiskerings (inner list), and emit one syntactic key application "#a.b.c" for each entry of the vertical composite. *)

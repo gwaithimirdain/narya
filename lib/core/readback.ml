@@ -71,6 +71,18 @@ let sort_of_val : type mode. mode Mode.t -> (mode, kinetic) value -> [ `Type | `
   Reporter.discard_errors ~fallback:(fun () -> `Other) @@ fun () ->
   sort_of_ty (Ctx.empty mode) (view_type ty "sort_of_val")
 
+(* The sort of the type of a field projected from a term of a given type, for displaying a degeneracy acting on a field variable (see readback_head).  As in sort_of_val, we fall back on the generic name if anything goes wrong. *)
+let sort_of_field_val : type mode.
+    mode Mode.t ->
+    (mode, kinetic) value ->
+    (mode, kinetic) value ->
+    D.zero Field.t ->
+    [ `Type | `Function | `Other ] =
+ fun mode tm ty fld ->
+  Reporter.discard_errors ~fallback:(fun () -> `Other) @@ fun () ->
+  let fldty = tyof_field (Modality.id mode) tm ty fld (ins_zero D.zero) in
+  sort_of_ty (Ctx.empty mode) (view_type fldty "sort_of_field_val")
+
 (* Whether a constant is defined to be a canonical type, possibly a family of them.  Such a constant is displayed with a superscript degeneracy rather than a name like "Id", even if the term in which it appears is not itself a type (e.g. a field projection out of a degenerated record type). *)
 let rec is_canonical_def : type mode a. (mode, a, potential) term -> bool = function
   | Canonical _ -> true
@@ -970,23 +982,31 @@ and readback_spine : type hmode mode a z any s.
   | Snoc (apps, Field (filter, fld, fldplus, ins)) -> (
       let fm = Modality.filter_modality filter in
       let (To p) = deg_of_ins ins in
-      (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
-      let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
-      let t = cod_left_ins ins in
-      let inner = readback_spine energy ~canonical lctx head apps in
-      match Modality.filter_is_trivial t filter with
-      | Some Eq ->
-          (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
-          Term.Act
-            (energy, Field (energy, Modal (fm, plus_lock, inner), fld, id_ins t fldplus), p, sort)
-      | None ->
-          (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
-          let ft = Modality.filtered t filter in
-          let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
-          let fieldterm : (_, _, s) Term.term =
-            Term.Field (energy, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
-          let liftdeg = Modality.deg_of_filter t filter in
-          Term.Act (energy, Term.Act (energy, fieldterm, liftdeg, sort), p, sort))
+      match (apps, head, Modality.compare_id fm, D.compare_zero (Field.dim fld)) with
+      (* A spine that begins by projecting a field from a variable whose fields are displayed as field variables.  Such fields are all nonmodal and zero-dimensional (see Ctx.vis_fields), which is also what we need for readback_head to build the projection directly on the variable, in the unlocked context. *)
+      | Emp, Var { level; _ }, Eq, Zero when Ctx.level_has_fields ctx level ->
+          Term.Act (energy, readback_head ~canonical ~field:fld ctx head, p, sort)
+      | _ -> (
+          (* The spine inside a modal field projection lives behind a lock by the left adjoint, so we read it back in the locked context, at the filtered dimension. *)
+          let (Locked (plus_lock, lctx)) = Ctx.lock ctx fm in
+          let t = cod_left_ins ins in
+          let inner = readback_spine energy ~canonical lctx head apps in
+          match Modality.filter_is_trivial t filter with
+          | Some Eq ->
+              (* Trivial filter: the inner spine is at the full result dimension t, and we build the projection there directly. *)
+              Term.Act
+                ( energy,
+                  Field (energy, Modal (fm, plus_lock, inner), fld, id_ins t fldplus),
+                  p,
+                  sort )
+          | None ->
+              (* Nontrivial filter: the field's modality is nonparametric and a degeneracy has acted, so the inner spine lives at a strictly smaller filtered dimension ft than the result dimension t.  We read back the projection at ft and lift it to t by the filter's degeneracy, which reconstructs (and prints as) the acting degeneracy — this is exactly the "disappeared" projection viewed as a degeneracy of a lower-dimensional one, and it re-evaluates correctly since eval filters the environment dimension. *)
+              let ft = Modality.filtered t filter in
+              let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
+              let fieldterm : (_, _, s) Term.term =
+                Term.Field (energy, Modal (fm, plus_lock, inner), fld, id_ins ft new_fldplus) in
+              let liftdeg = Modality.deg_of_filter t filter in
+              Term.Act (energy, Term.Act (energy, fieldterm, liftdeg, sort), p, sort)))
   | Snoc (apps, Inst (_, args)) ->
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
       Inst (energy, readback_spine energy ~canonical ctx head apps, args)
@@ -1034,10 +1054,11 @@ and replay_stuck : type hmode mode a z any.
 and readback_head : type mode s c z.
     ?canonical:[ `Canonical | `Other ] ->
     ?abbreviable:bool ->
+    ?field:D.zero Field.t ->
     (mode, z, c) Ctx.t ->
     (mode, s) head ->
     (mode, c, s) term =
- fun ?(canonical = `Other) ?(abbreviable = false) ctx h ->
+ fun ?(canonical = `Other) ?(abbreviable = false) ?field ctx h ->
   match h with
   | Var { level; deg; key } -> (
       (* The source of the key is supposed to be the modal annotation of the variable, while its target is supposed to be the composite of all the locks in the context to its right (including any added by the degeneracy).  So we remove its target from the context. *)
@@ -1053,14 +1074,24 @@ and readback_head : type mode s c z.
           let (Has_plus_lock plus_src) = plus_lock modality in
           (* If there's a nontrivial degeneracy, we act by it; otherwise we leave it off. *)
           let iplus = plus_with_locks_of_plus_lock plus_src in
+          let var = Term.Var (Index (insert, fa, filter, iplus)) in
+          (* If we are reading back a projection of a field from a variable whose fields are displayed as field variables, the projection goes directly on the variable, inside any degeneracy and key.  This is the term that the elaborator produces for the field variable with that degeneracy and key, so it is displayed as such in field-variable syntax ("Id X", "X #η"), while in self-variable syntax they are displayed on the projection ("Id (x .X)", "x .X #η"). *)
+          let var =
+            match field with
+            | Some fld ->
+                Term.Field (Kinetic, modal_id (Modality.src modality) var, fld, ins_zero D.zero)
+            | None -> var in
           let tm =
             match is_id_deg deg with
-            | Some _ -> Term.Var (Index (insert, fa, filter, iplus))
+            | Some _ -> var
             | None ->
-                (* The degeneracy acts on the variable itself, so its display name is determined by the sort of the variable's own type. *)
-                let sort = sort_of_val (Modality.src modality) (Lazy.force value.ty) in
-                Act (Kinetic, Term.Var (Index (insert, fa, filter, iplus)), deg, (sort, canonical))
-          in
+                (* The degeneracy acts on the variable itself, or the projection of a field from it, so its display name is determined by the sort of the type of that. *)
+                let sort =
+                  match field with
+                  | Some fld ->
+                      sort_of_field_val (Modality.src modality) value.tm (Lazy.force value.ty) fld
+                  | None -> sort_of_val (Modality.src modality) (Lazy.force value.ty) in
+                Act (Kinetic, var, deg, (sort, canonical)) in
           (* And if the key is nontrivial, we act by it; otherwise we leave it off. *)
           match (Modality.compare_id modality, plus_src, plus_tgt) with
           | Eq, Plus_lock (Zero _, Zero), Plus_with_locks (Zero, Zero _) -> tm

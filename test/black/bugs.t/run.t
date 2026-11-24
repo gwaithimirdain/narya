@@ -762,3 +762,73 @@ Likewise when the other head is not a variable.
          x
   
   [1]
+
+A degenerated field variable is displayed with the degeneracy outside it.
+
+  $ narya field_var_deg.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/field_var_deg.ny
+   3 | def T : Type := sig ( x : A, q : Id (Id A x x) (refl x) (refl x), s : Id (Id A c c) (refl c) (refl c), t : Id (Id (Id A x x) (refl x) (refl x)) q s)
+     ^ term synthesized type
+         A⁽ᵉᵉ⁾ (refl c) (refl c) (refl c) (refl c)
+       but is being checked against type
+         A⁽ᵉᵉ⁾ (refl x) (refl x) (refl x) (refl x)
+       unequal head terms:
+         c
+       does not equal
+         x
+  
+  [1]
+
+A degeneracy on a field variable is named according to the field's type,
+just as one on an ordinary variable is named according to its type.
+
+  $ narya field_var_deg_type.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/field_var_deg_type.ny
+   2 | def T : Type := sig ( X : Type, q : Id (Id Type X X) (refl X) (refl X), s : Id (Id Type C C) (refl C) (refl C), t : Id (Id (Id Type X X) (refl X) (refl X)) q s)
+     ^ term synthesized type
+         Type⁽ᵉᵉ⁾ (Id C) (Id C) (Id C) (Id C)
+       but is being checked against type
+         Type⁽ᵉᵉ⁾ (Id X) (Id X) (Id X) (Id X)
+       unequal head terms:
+         C
+       does not equal
+         X
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/field_var_deg_type.ny
+   3 | def U (X : Type) : Type := sig ( q : Id (Id Type X X) (refl X) (refl X), s : Id (Id Type C C) (refl C) (refl C), t : Id (Id (Id Type X X) (refl X) (refl X)) q s)
+     ^ term synthesized type
+         Type⁽ᵉᵉ⁾ (Id C) (Id C) (Id C) (Id C)
+       but is being checked against type
+         Type⁽ᵉᵉ⁾ (Id X) (Id X) (Id X) (Id X)
+       unequal head terms:
+         C
+       does not equal
+         X
+  
+  [1]
+
+When a record type with field variables is displayed with self-variable
+syntax (here because a field name clashes with a parameter), a degeneracy
+on a field variable is displayed on the projection.
+
+  $ narya -show-implicits field_var_deg_self.ny -e "about T" -e "about T'"
+  X ↦
+  sig (
+    𝑥 .X : Type,
+    𝑥 .q : Type⁽ᵉᵉᵉ⁾ {𝑥 .X} {𝑥 .X} {Id (𝑥 .X)} {𝑥 .X} {𝑥 .X} {Id (𝑥 .X)}
+             {Id (𝑥 .X)} {Id (𝑥 .X)} (𝑥 .X)⁽ᵉᵉ⁾ {𝑥 .X} {𝑥 .X} {Id (𝑥 .X)}
+             {𝑥 .X} {𝑥 .X} {Id (𝑥 .X)} {Id (𝑥 .X)} {Id (𝑥 .X)} (𝑥 .X)⁽ᵉᵉ⁾
+             {Id (𝑥 .X)} {Id (𝑥 .X)} (𝑥 .X)⁽ᵉᵉ⁾ {Id (𝑥 .X)} {Id (𝑥 .X)}
+             (𝑥 .X)⁽ᵉᵉ⁾ (𝑥 .X)⁽ᵉᵉ⁾ (𝑥 .X)⁽ᵉᵉ⁾ )
+    : (X : Type) → Type
+  
+  sig (
+    X : Type,
+    q : Type⁽ᵉᵉᵉ⁾ {X} {X} {Id X} {X} {X} {Id X} {Id X} {Id X} X⁽ᵉᵉ⁾ {X} {X}
+          {Id X} {X} {X} {Id X} {Id X} {Id X} X⁽ᵉᵉ⁾ {Id X} {Id X} X⁽ᵉᵉ⁾
+          {Id X} {Id X} X⁽ᵉᵉ⁾ X⁽ᵉᵉ⁾ X⁽ᵉᵉ⁾ )
+    : Type
+  
