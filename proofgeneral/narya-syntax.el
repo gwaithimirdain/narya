@@ -4,11 +4,15 @@
 
 ;; We omit "display", "solve", "split", "show", "undo", and "chdir" because these should NOT appear in source files.
 (defconst narya-commands
-  "\\_<\\(axiom\\|def\\|echo\\|synth\\|notation\\|import\\|export\\|quit\\|section\\|option\\|end\\)\\_>")
+  "\\_<\\(axiom\\|def\\|echo\\|synth\\|about\\|notation\\|import\\|export\\|quit\\|section\\|option\\|end\\)\\_>")
 
 ;; As noted in the PG source, the default function proof-generic-state-preserving-p is not really correct; it thinks that things like "def" are state-preserving.  These are the commands that it makes sense for PG to issue directly to the prover without their being in the file.
 (defun narya-state-preserving-p (cmd)
-  (string-match "^echo\\|synth\\|show\\|display" cmd))
+  (string-match "\\`[ \t\n]*\\(echo\\|synth\\|about\\|show\\|display\\)\\_>" cmd))
+
+;; The commands that can appear in a source file but don't create anything that "undo" would remove, so PG mustn't count them when computing how many commands to undo.  (Commands like "undo" and "show" can't appear in a source file, since they aren't in `narya-commands'.)  This is matched against the whole text of a command, so it must be anchored to the command's first word; otherwise a command containing e.g. the word "about" in a comment would be ignored.
+(defconst narya-ignore-for-undo-count
+  "\\`[ \t\n]*\\(echo\\|synth\\|about\\)\\_>")
 
 ;; TODO: Do this for everything else too.
 (defun narya-highlight-abstractions (limit)
