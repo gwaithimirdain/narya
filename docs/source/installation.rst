@@ -141,6 +141,8 @@ Narya can also be developed and installed with `Nix <https://nixos.org/>`_, whic
 
 2. Run ``nix develop`` to open a shell with all of the necessary dependencies for running ``dune build``. This may ask if you accept using a cache; you can say yes if you want to speed up the build process, or no if you want everything built on your own machine.
 
+   If you also want ``dune test`` to run the tests of the ProofGeneral mode, run ``nix develop .#proofgeneral`` instead, which also provides Emacs with ProofGeneral.  (Outside Nix, these tests run whenever Emacs is installed, and are skipped if ProofGeneral can't be found or the environment variable ``NARYA_SKIP_PG_TESTS`` is set.)
+
 3. To build a static executable that can be copied over to other Linux machines without problems (like the one mentioned above that is built automatically and hosted on github), run the following command in the Narya source directory.
 
 .. code-block:: bash

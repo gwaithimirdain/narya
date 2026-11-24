@@ -1,0 +1,15 @@
+; Tests of the ProofGeneral mode, run in batch-mode Emacs.  The rule is
+; disabled if Emacs isn't installed, and the tests are skipped (not failed) if
+; ProofGeneral can't be found or NARYA_SKIP_PG_TESTS is set; see run-ert.sh.
+; Use "nix develop .#proofgeneral" for a shell that includes both.
+
+(rule
+ (alias runtest)
+ (enabled_if %{bin-available:emacs})
+ (deps
+  narya-pg-tests.el
+  ../../proofgeneral/narya.el
+  ../../proofgeneral/narya-syntax.el
+  %{bin:narya})
+ (action
+  (run sh %{dep:run-ert.sh} %{bin:narya} ../../proofgeneral)))
