@@ -180,7 +180,8 @@ let rec pp_term : type lt ls rt rs.
         | `With_number ->
             utf8string ("⁇" ^ string_of_int !num)
             ^^ Option.fold ~some:utf8string ~none:(utf8string "¿ʔ") contents
-        | `Without_number -> utf8string "?"),
+        (* A hole parsed with contents keeps them, so that reformatting doesn't discard them. *)
+        | `Without_number -> utf8string (Option.value ~default:"?" contents)),
         ws )
 
 (* A notice following a displayed term that was too large, and was truncated (see Readback.budgeted). *)
