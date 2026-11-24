@@ -720,3 +720,45 @@ compute a type whose boundary was permuted twice.
    ￫ info[I0000]
    ￮ constant connectableᵈ_Br defined
   
+
+A head variable that is a field variable of a record type declared with
+field-variable syntax used to be displayed as unprintable, since only the
+field, not the record's self-variable, has a name.
+
+  $ narya -v field_var_head.ny
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/field_var_head.ny
+   5 | cube : A⁽ᵉᵉᵉ⁾ a0⁽ᵉᵉ⁾ lconnish a0⁽ᵉᵉ⁾ lconnish a0⁽ᵉᵉ⁾ lconn
+     ^ term synthesized type
+         A⁽ᵉᵉ⁾ (refl a0) a2 (refl a0) a2
+       but is being checked against type
+         A⁽ᵉᵉ⁾ (refl a0) a2ish (refl a0) a2ish
+       unequal head variables:
+         a2
+       does not equal
+         a2ish
+  
+  [1]
+
+Likewise when the other head is not a variable.
+
+  $ narya -v field_var_head_const.ny
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom c assumed
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/field_var_head_const.ny
+   3 | def T : Type := sig ( x : A, p : Id A x x, q : Id A c c, r : Id (Id A x x) p q)
+     ^ term synthesized type
+         Id A c c
+       but is being checked against type
+         Id A x x
+       unequal head terms:
+         c
+       does not equal
+         x
+  
+  [1]

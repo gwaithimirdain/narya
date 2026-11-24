@@ -65,6 +65,30 @@ let rec nonmodal_apps : type hmode mode any.
       | Eq -> nonmodal_apps rest
       | Neq -> None)
 
+(* The first entry of a spine, if it is a nonmodal field projection. *)
+let rec first_field_apps : type hmode mode any.
+    (hmode, mode, any, live) apps -> (hmode, hmode, noninst, live) apps option = function
+  | Emp -> None
+  | Snoc (Emp, (Field (filter, _, _, _) as e)) -> (
+      match Modality.compare_id (Modality.filter_modality filter) with
+      | Eq -> Some (Snoc (Emp, e))
+      | Neq -> None)
+  | Snoc (rest, _) -> first_field_apps rest
+
+(* Read back the head of a neutral to report it as unequal to another head.  Usually this is just the head, but a variable whose fields are visible as field variables (such as the self-variable of a record type declared with field-variable syntax) has no name of its own to display, only its fields do.  So if its spine begins with a projection of one of those fields, we include that projection, which displays as the corresponding field variable. *)
+let readback_unequal_head : type mode a b any.
+    (mode, a, b) Ctx.t ->
+    (mode, kinetic) head ->
+    (mode, mode, any, live) apps ->
+    (mode, b, kinetic) term =
+ fun ctx head apps ->
+  match head with
+  | Var { level; _ } when Ctx.level_has_fields ctx level -> (
+      match first_field_apps apps with
+      | Some apps -> readback_spine Kinetic ~canonical:`Other ctx head apps
+      | None -> readback_head ctx head)
+  | _ -> readback_head ctx head
+
 module ErrOpt = struct
   type 'a t = 'a Err.t option
 
@@ -272,9 +296,16 @@ and equal_neu : type mode a b.
       (* If neither spine crosses a modal field projection, the heads are at the ambient mode and we can compare them first (as we always did before modal fields), which gives more precise "unequal heads" error messages. *)
       | Some Eq, Some Eq -> (
           match equal_head ctx head1 head2 with
+          | Some (Error (Variables _)) ->
+              Error
+                (Unequal.Heads
+                   (Variables
+                      ( PTerm (ctx, readback_unequal_head ctx head1 apps1),
+                        PTerm (ctx, readback_unequal_head ctx head2 apps2) )))
           | Some (Error err) -> Error (Unequal.Heads err)
           | None ->
-              let h1, h2 = (readback_head ctx head1, readback_head ctx head2) in
+              let h1, h2 =
+                (readback_unequal_head ctx head1 apps1, readback_unequal_head ctx head2 apps2) in
               Error (Unequal.Heads (Terms (PTerm (ctx, h1), PTerm (ctx, h2))))
           | Some (Ok ()) -> (
               match equal_apps ctx apps1 apps2 with

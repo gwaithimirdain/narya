@@ -483,6 +483,24 @@ module Ordered = struct
     | Some v -> Some v
     | None -> Option.map (pop_lookup modality (CubeOf.dim vars) filter) (find_level ctx i)
 
+  (* Whether a De Bruijn level is that of a variable whose fields are visible as field variables (see vis_fields), such as the self-variable of a record type declared with field-variable syntax.  Such a variable has no name of its own for display, only its fields do. *)
+  let rec level_has_fields : type mode a b. (mode, a, b) t -> level -> bool =
+   fun ctx i ->
+    match ctx with
+    | Emp _ -> false
+    | Snoc (ctx, { bindings; vis; vars = Vars; _ }, _) -> (
+        let here = ref false in
+        CubeOf.miter
+          { it = (fun _ [ x ] -> if Binding.level x = Some i then here := true) }
+          [ bindings ];
+        match (!here, vis) with
+        | true, Vis { hasfields = Has_fields; _ } -> true
+        | true, _ -> false
+        | false, _ -> level_has_fields ctx i)
+    | Snoc (ctx, { vars = Alias; _ }, _) -> level_has_fields ctx i
+    | Lock (ctx, _) -> level_has_fields ctx i
+    | Weaken (ctx, _) -> level_has_fields ctx i
+
   (* Every context has an underlying environment that substitutes each (level) variable for itself (index).  This environment ALWAYS HAS DIMENSION ZERO, and therefore in particular the variables don't need to come with any boundaries.  It is represented by the context itself (see Value.env), so computing it takes constant time. *)
   let env : type mode a b. (mode, a, b) t -> (mode, D.zero, b) env = fun ctx -> Ctx ctx
 
@@ -793,6 +811,7 @@ let apps (Permute { ctx; _ }) = Ordered.apps ctx
 (* Lookup is the only place where the permutations are used nontrivially: we apply the permutation to the raw index before looking it up. *)
 let lookup (Permute { perm; ctx; _ }) i = Ordered.lookup ctx (N.perm_apply perm (fst i), snd i)
 let find_level (Permute { ctx; _ }) x = Ordered.find_level ctx x
+let level_has_fields (Permute { ctx; _ }) x = Ordered.level_has_fields ctx x
 let env (Permute { ctx; _ }) = Ordered.env ctx
 
 let ext (Permute { perm; level; ctx }) modality xs ty =
