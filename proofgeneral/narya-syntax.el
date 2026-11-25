@@ -1,4 +1,4 @@
-;;; narya-syntax.el --- Proof General instance for Narya - syntax file
+;;; narya-syntax.el --- Proof General instance for Narya - syntax file  -*- lexical-binding: t -*-
 
 ;;; Code:
 
@@ -167,10 +167,10 @@ subdivisions."
    '(?_ "_")
    '(?' "_")
    ;; Parentheses
-   '(?( "(")
-   '(?[ "(")
-   '(?) ")")
-   '(?] ")")
+   '(?\( "(")
+   '(?\[ "(")
+   '(?\) ")")
+   '(?\] ")")
    ;; Hole delimiters are treated as parenthesis-like
    '(?¿ "(")
    '(?ʔ ")")
