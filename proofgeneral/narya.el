@@ -257,9 +257,17 @@ Based on `proof-script-generic-parse-cmdstart'."
     (when (looking-at proof-script-command-start-regexp)
       ;; We've got at least the beginnings of a command, skip past it
       (goto-char (match-end 0))
-      ;; Find next command start or end of buffer
-      (when (or (and (re-search-forward proof-script-command-start-regexp nil 'movetolimit)
-                     (goto-char (match-beginning 0)))
+      ;; Find next command start or end of buffer, skipping over
+      ;; command keywords that occur inside comments or strings (such
+      ;; as a comment in the middle of a mutual definition that
+      ;; contains the word "about" or "end").
+      (when (or (let (found)
+                  (while (and (setq found
+                                    (and (re-search-forward proof-script-command-start-regexp nil 'movetolimit)
+                                         (goto-char (match-beginning 0))))
+                              (proof-buffer-syntactic-context))
+                    (forward-char 1))
+                  found)
                 (eq (point) (point-max)))
         ;; If we're in an unclosed comment, back out of it
 	(when (proof-looking-at-syntactic-context)
@@ -602,8 +610,7 @@ handling in Proof General."
  proof-script-parse-function           'narya-parse-cmdstart
 
  ;; Undo
- proof-non-undoables-regexp            "undo"
- proof-ignore-for-undo-count           "echo\\|synth\\|about\\|show\\|undo"
+ proof-ignore-for-undo-count           narya-ignore-for-undo-count
  proof-undo-n-times-cmd                "undo %s\n\x0C" ;; has to end with a formfeed to terminate a PG-mode command
  proof-state-preserving-p              'narya-state-preserving-p
  ;; The difference between proof-count-undos-fn and proof-find-and-forget-fn seems to be that the former is called iff staying inside a single proof.  However, as far as I can see, for Narya the default value of the former also works for the latter.
