@@ -248,40 +248,41 @@ let rec pp_ctx (ctx : printed_entry Bwd.t) : document =
             (Token.pp Coloneq ^^ blank 1 ^^ group (hang 2 doc), pp_ws `Break ws)
         | None -> (empty, empty) in
       let pty, wty = pp_term ty in
+      (* The break before the colon belongs to a group containing the whole definition and type, so that if they don't all fit on one line the type starts on a new line, rather than following the last line of a broken definition.  The definition and the type are grouped separately inside it. *)
       pp_ctx ctx
       ^^ hardline
       ^^ pp_var (Some x)
       ^^ blank 1
-      ^^ ptm
       ^^ group
-           (nest 2
-              (wtm
-              ^^ Token.pp Colon
-              ^^ (match modality with
-                | [] -> empty
-                | [ m ] -> utf8string m ^^ Token.pp (Op "|")
-                | _ ->
-                    blank 1
-                    ^^ separate_map (blank 1) utf8string modality
-                    ^^ blank 1
-                    ^^ Token.pp (Op "|"))
-              ^^ blank 1
-              ^^ align
-                   (match (hidden, renamed) with
-                   | true, false -> group (pty ^^ pp_ws `Break wty ^^ string "(hidden by lock)")
-                   | true, true ->
-                       group (pty ^^ pp_ws `Break wty ^^ string "(hidden by lock, not in scope)")
-                   | false, true -> group (pty ^^ pp_ws `Break wty ^^ string "(not in scope)")
-                   | false, false -> (
-                       match lock with
-                       | [] -> group (pty ^^ pp_ws `None wty)
-                       | _ :: _ ->
-                           group
-                             (pty
-                             ^^ pp_ws `Break wty
-                             ^^ utf8string "(locked: "
-                             ^^ separate_map (blank 1) utf8string lock
-                             ^^ utf8string ")")))))
+           (ptm
+           ^^ nest 2
+                (wtm
+                ^^ Token.pp Colon
+                ^^ (match modality with
+                  | [] -> empty
+                  | [ m ] -> utf8string m ^^ Token.pp (Op "|")
+                  | _ ->
+                      blank 1
+                      ^^ separate_map (blank 1) utf8string modality
+                      ^^ blank 1
+                      ^^ Token.pp (Op "|"))
+                ^^ blank 1
+                ^^ align
+                     (match (hidden, renamed) with
+                     | true, false -> group (pty ^^ pp_ws `Break wty ^^ string "(hidden by lock)")
+                     | true, true ->
+                         group (pty ^^ pp_ws `Break wty ^^ string "(hidden by lock, not in scope)")
+                     | false, true -> group (pty ^^ pp_ws `Break wty ^^ string "(not in scope)")
+                     | false, false -> (
+                         match lock with
+                         | [] -> group (pty ^^ pp_ws `None wty)
+                         | _ :: _ ->
+                             group
+                               (pty
+                               ^^ pp_ws `Break wty
+                               ^^ utf8string "(locked: "
+                               ^^ separate_map (blank 1) utf8string lock
+                               ^^ utf8string ")")))))
 
 let pp_hole ctx ty =
   pp_ctx ctx ^^ hardline ^^ repeat 70 (char '-') ^^ hardline ^^ pp_complete_term ty `None

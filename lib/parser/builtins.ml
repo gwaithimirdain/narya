@@ -912,9 +912,11 @@ let pp_abslet_case (triv : [ `Trivial | `Nontrivial of Whitespace.t list ]) obs 
             wsbody )
       | _ :: _ -> (
           let ibody, pbody, wsbody = pp_case `Trivial body in
-          let newbody = nest 2 (concat abslets ^^ optional (pp_ws `Break) ws ^^ ibody ^^ pbody) in
+          let lets = concat abslets ^^ optional (pp_ws `Break) ws ^^ ibody ^^ pbody in
+          let newbody = nest 2 lets in
           match (introabs, triv) with
-          | [], `Trivial -> (empty, newbody, wsbody)
+          (* A trivial caller has already placed us at the start of a line (or aligned us), so the let-bindings and body line up there without further indentation. *)
+          | [], `Trivial -> (empty, lets, wsbody)
           | [], `Nontrivial _ ->
               let doc = ifflat empty (hardline ^^ blank 2) ^^ newbody in
               (empty, (if List.is_empty abslets then group doc else doc), wsbody)
@@ -924,18 +926,18 @@ let pp_abslet_case (triv : [ `Trivial | `Nontrivial of Whitespace.t list ]) obs 
                 wsbody )))
   | (absws, abs) :: trailabs -> (
       let ibody, pbody, wsbody = pp_case (`Nontrivial (Option.value ws ~default:[])) body in
-      let newbody =
-        nest 2
-          (concat abslets
-          ^^ optional (pp_ws `Break) absws
-          ^^ group
-               (abs
-               ^^ concat_map (fun (w, x) -> optional (pp_ws `Break) w ^^ x) trailabs
-               ^^ optional (pp_ws `Break) ws
-               ^^ ibody)
-          ^^ pbody) in
+      let lets =
+        concat abslets
+        ^^ optional (pp_ws `Break) absws
+        ^^ group
+             (abs
+             ^^ concat_map (fun (w, x) -> optional (pp_ws `Break) w ^^ x) trailabs
+             ^^ optional (pp_ws `Break) ws
+             ^^ ibody)
+        ^^ pbody in
+      let newbody = nest 2 lets in
       match (introabs, triv) with
-      | [], `Trivial -> (empty, newbody, wsbody)
+      | [], `Trivial -> (empty, lets, wsbody)
       | [], `Nontrivial _ ->
           let doc = ifflat empty (hardline ^^ blank 2) ^^ newbody in
           (empty, (if List.is_empty abslets then group doc else doc), wsbody)
