@@ -590,6 +590,30 @@ If such a metavariable has a nontrivial environment, its definition is wrapped i
             (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
   
 
+Reformatting preserves the contents of holes, including nested ones.
+
+  $ cat >reformat_holes.ny <<'EOT'
+  > axiom   A : Type
+  > def B : Type ≔   ?
+  > def C : Type ≔ ¿ʔ
+  > def D : Type ≔   ¿ fill this with A ʔ
+  > def E : Type ≔ ¿outer ¿inner ʔ outerʔ
+  > EOT
+
+  $ narya reformat_holes.ny >/dev/null 2>&1
+  [1]
+
+  $ cat reformat_holes.ny
+  axiom A : Type
+  
+  def B : Type ≔ ?
+  
+  def C : Type ≔ ¿ʔ
+  
+  def D : Type ≔ ¿ fill this with A ʔ
+  
+  def E : Type ≔ ¿outer ¿inner ʔ outerʔ
+
 If a let-bound variable's definition and type don't fit on one line, the type goes on its own line.
 
   $ narya -v -fake-interact 'axiom A : Type
