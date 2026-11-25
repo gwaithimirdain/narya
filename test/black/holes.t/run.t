@@ -589,3 +589,32 @@ If such a metavariable has a nontrivial environment, its definition is wrapped i
            (let only x ≔ ⋯ in
             (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
   
+
+If a let-bound variable's definition and type don't fit on one line, the type goes on its own line.
+
+  $ narya -v -fake-interact 'axiom A : Type
+  > axiom f : A → A → A → A
+  > axiom aaaaaaaaaaaaaaaaaaaa : A
+  > def t : A ≔ let x ≔ f (f aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa) (f aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa) aaaaaaaaaaaaaaaaaaaa in ?'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f assumed
+  
+   ￫ info[I0001]
+   ￮ axiom aaaaaaaaaaaaaaaaaaaa assumed
+  
+   ￫ info[I0000]
+   ￮ constant t defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     x ≔ f (f aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa)
+           (f aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa)
+           aaaaaaaaaaaaaaaaaaaa
+       : A
+     ----------------------------------------------------------------------
+     A
+  
