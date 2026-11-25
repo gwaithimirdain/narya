@@ -581,7 +581,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* Otherwise, the case tree doesn't reduce.  If the match has display data, we remember where it got stuck, for display by "about". *)
       | _ -> (
           match display with
-          | Some display -> Unrealized (Some (Stuck { env; tm = mtch; display }))
+          | Some display ->
+              Unrealized (Some (Stuck_neu (Stuck { env; tm = mtch; display }, Stuck_emp)))
           | None -> Unrealized None))
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
@@ -1518,7 +1519,7 @@ and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) va
   let (Val v) = force_eval v in
   v
 
-(* Apply a single entry of an 'apps' to something, calling either 'apply' or 'field' or 'inst' as appropriate.  Applying, projecting from, or instantiating a stuck evaluation leaves it stuck, but forgets where it got stuck (see Value.stuck): all Unrealizeds become None.  It may not be possible to reach here with a nontrivial stuck entry for an application or an instantiation, but it definitely is for a field projection, so we treat them all the same. *)
+(* Apply a single entry of an 'apps' to something, calling either 'apply' or 'field' or 'inst' as appropriate.  Applying, projecting from, or instantiating a stuck evaluation leaves it stuck; if it remembers where it got stuck, we add the entry to its spine (see Value.stuck). *)
 and app_eval_entry : type mode1 mode2 s any inst.
     (mode1, s) evaluation -> (mode1, mode2, any, inst) apps_entry -> (mode2, s) evaluation =
  fun ev e ->
@@ -1549,7 +1550,9 @@ and app_eval_entry : type mode1 mode2 s any inst.
           let (Val v) =
             act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized _ -> Unrealized None)
+      | Unrealized None -> Unrealized None
+      | Unrealized (Some (Stuck_neu (head, spine))) ->
+          Unrealized (Some (Stuck_neu (head, Stuck_app (spine, Arg (filter, xs, ins))))))
   | Field (filter, fld, fldplus, ins) -> (
       let fm = Modality.filter_modality filter in
       let mode = Modality.tgt fm in
@@ -1565,12 +1568,32 @@ and app_eval_entry : type mode1 mode2 s any inst.
               (field fm tm fld (id_ins (cod_left_ins ins) fldplus))
               p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized _ -> Unrealized None)
-  | Inst (_, args) -> (
+      | Unrealized None -> Unrealized None
+      | Unrealized (Some (Stuck_neu (head, spine))) ->
+          Unrealized (Some (Stuck_neu (head, Stuck_app (spine, Field (filter, fld, fldplus, ins)))))
+      )
+  | Inst (dim2, args2) -> (
       match ev with
-      | Val tm -> Val (inst tm args)
-      | Realize tm -> Realize (inst tm args)
-      | Unrealized _ -> Unrealized None)
+      | Val tm -> Val (inst tm args2)
+      | Realize tm -> Realize (inst tm args2)
+      | Unrealized None -> Unrealized None
+      (* As in inst, a new instantiation of a stuck spine is combined with any existing one at its end. *)
+      | Unrealized (Some (Stuck_neu (head, spine))) -> (
+          match stuck_split_inst spine with
+          | No_inst spine ->
+              Unrealized (Some (Stuck_neu (head, Stuck_app (spine, Inst (dim2, args2)))))
+          | Has_inst (spine, _, args1) -> (
+              match D.compare (TubeOf.out args2) (TubeOf.uninst args1) with
+              | Neq ->
+                  fatal
+                    (Dimension_mismatch
+                       ("instantiating a stuck type", TubeOf.out args2, TubeOf.uninst args1))
+              | Eq ->
+                  let (Plus nk) = D.plus (TubeOf.inst args1) in
+                  let newargs = TubeOf.plus_tube nk args1 args2 in
+                  Unrealized
+                    (Some (Stuck_neu (head, Stuck_app (spine, Inst (D.pos_plus dim2 nk, newargs)))))
+              )))
 
 (* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the Locks on the end of the environment have already been stripped off by restrict_keys (which the type of the index ensures, since an insertion only passes dimension entries).  Any Prekeys inside are accumulated into a prekey action. *)
 and lookup_cube : type dom mu mode n a b k mk nk.

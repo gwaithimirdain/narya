@@ -392,11 +392,6 @@ let rec no_checked_vars : type mode a b. (mode, a, b) ordered_termctx -> (b, mod
   | Weaken (ctx, _) -> no_checked_vars ctx
   | Ext _ | Lock _ -> None
 
-(* The result of replaying an application spine to find where a case tree got stuck: either the stuck point that a match remembers, with the rest of the spine that was applied after it, or the evaluation of the whole spine if no such point was found.  The second parameter records, as for apps, whether the spine ends with an instantiation. *)
-type (_, _) replayed =
-  | Stuck_at : ('m1, potential) head * ('m1, 'mode, 'any, live) apps -> ('mode, 'any) replayed
-  | Not_stuck : ('mode, potential) evaluation -> ('mode, 'any) replayed
-
 (* Readback of values to terms.  Closely follows equality-testing in equal.ml, so most comments are omitted.  However, unlike equality-testing and the "readback" in theoretical NbE, this readback does *not* eta-expand functions and tuples.  It is used for (1) displaying terms to the user, who will usually prefer not to see things eta-expanded, and (2) turning values into terms so that we can re-evaluate them in a new environment, for which purpose eta-expansion is irrelevant.  There are two exceptions:
 
    1. When reading back at a record type that the user has marked as transparent, we eta-expand tuples.  This is chosen based on the readback type.
@@ -461,12 +456,6 @@ let after_same_depth () =
   | Some b -> b.depth <- b.depth + 1
   | None -> ()
 
-(* Run a readback whose result will be evaluated rather than displayed, such as when replaying a stuck spine (see replay_stuck), outside the budget of any display readback it happens during, since a term truncated for display can't be evaluated. *)
-let without_budget (f : unit -> 'a) : 'a =
-  let saved = !display_budget in
-  display_budget := None;
-  Fun.protect ~finally:(fun () -> display_budget := saved) f
-
 (* Run a readback for display with a budget (None meaning unlimited), returning its result and whether it had to be truncated.  The first attempt is unlimited in depth, so a term that fits is read back only once.  If it overflows, we don't need the greatest depth at which it would fit, only some indication of what it looks like.  If the first attempt overflowed after reaching depth d, then all the subterms it produced lie within depth d, so it can't fit at depth d.  We guess a depth from the number of subterms the first attempt produced at each depth, as the greatest depth whose subterms so far fill at most half of the budget (since the first attempt only saw part of the term), and halve it until the term fits. *)
 let budgeted (size : int option) (f : unit -> 'a) : 'a * bool =
   match size with
@@ -524,7 +513,7 @@ and readback_eval : type mode a z s.
   (* In the realize case the value is kinetic, so the stored self-term in the Potential status is discarded. *)
   | Realize v, _ -> Realize (readback_at ~eta Kinetic ctx v ty)
   (* A case tree stuck on a match that remembers where it got stuck is displayed as a let-only binding the variables of that match's context to the values they had there, around the match itself. *)
-  | Unrealized (Some stuck), Potential _ -> readback_head ~abbreviable:false ctx stuck
+  | Unrealized (Some stuck), Potential _ -> readback_stuck ~abbreviable:false ctx stuck
   (* Any other stuck case tree is displayed as the application spine of the neutral that the status carries.  Only a potential readback can meet an Unrealized, so that neutral is always available. *)
   | Unrealized None, Potential neutral -> Realize (readback_val ctx neutral)
 
@@ -898,22 +887,11 @@ and readback_val_unbudgeted : type mode a z s.
   | Neu { head = Live head; args; value; ty } -> (
       match (force_eval value, Displaying.read ()) with
       | Realize v, true -> readback_at Kinetic ctx v (Lazy.force ty)
-      (* When displaying, a metavariable whose value is stuck on a match may be displayed as that stuck value, if the display settings call for it.  If the value remembers where it got stuck, nothing more has been applied to it since, so it is the value of the whole neutral. *)
+      (* When displaying, a metavariable whose value is stuck on a match may be displayed as that stuck value, if the display settings call for it. *)
       | Unrealized (Some stuck), true -> (
           match head with
           | Meta { meta; _ } when !stuck_meta_shown_hook.shown meta ->
-              Stuck_meta (meta, readback_head ~abbreviable:true ctx stuck)
-          | _ -> readback_neu ~canonical:`Other ctx head args)
-      (* If more has been applied to it after it got stuck, we find the stuck point by replaying its spine. *)
-      | Unrealized None, true -> (
-          match (head, args) with
-          | Meta { meta; _ }, Snoc _ when !stuck_meta_shown_hook.shown meta -> (
-              match replay_stuck ctx head args with
-              | Stuck_at (stuck, rest) ->
-                  Stuck_meta
-                    ( meta,
-                      readback_spine Potential ~canonical:`Other ~abbreviable:true ctx stuck rest )
-              | Not_stuck _ -> readback_neu ~canonical:`Other ctx head args)
+              Stuck_meta (meta, readback_stuck ~abbreviable:true ctx stuck)
           | _ -> readback_neu ~canonical:`Other ctx head args)
       | Val (Canonical _), _ -> readback_neu ~canonical:`Canonical ctx head args
       | _ -> readback_neu ~canonical:`Other ctx head args)
@@ -936,7 +914,7 @@ and readback_neu : type hmode mode a z any.
       Inst (Kinetic, readback_head ~canonical ctx head, args)
   | _ -> readback_spine Kinetic ~canonical ctx head apps
 
-(* Read back an application spine on top of a head that we know how to read back, with any energy.  A potential spine arises only for display, from a stuck case tree (see readback_stuck_spine). *)
+(* Read back an application spine on top of a head that we know how to read back, with any energy.  A potential spine arises only for display, from a stuck case tree (see readback_stuck). *)
 and readback_spine : type hmode mode a z any s.
     s energy ->
     canonical:[ `Canonical | `Other ] ->
@@ -991,45 +969,12 @@ and readback_spine : type hmode mode a z any s.
       let args = TubeOf.mmap { map = (fun _ [ x ] -> readback_nf ctx x) } [ args ] in
       Inst (energy, readback_spine energy ~canonical ctx head apps, args)
 
-(* Replay the application spine of a neutral from its head, to find the point at which its case tree got stuck on a match, if the match remembers it, and the rest of the spine applied after that.  The value of a neutral can remember where it got stuck only if nothing more has been applied to it since, so this is how we find the stuck point of one that has.  We get the evaluation of the head by reading it back (internally, not for display, and outside any display budget) and evaluating it in the identity environment, in the context locked by the modalities of any field projections in the spine, so that we don't have to know how its value depends on the kind of head; and then we apply the entries of the spine to it one at a time.  Only a constant or metavariable can have a case tree to get stuck. *)
-and replay_stuck : type hmode mode a z any.
-    (mode, z, a) Ctx.t ->
-    (hmode, kinetic) head ->
-    (hmode, mode, any, live) apps ->
-    (mode, any) replayed =
- fun ctx head apps ->
-  (* Extend a replay by one more entry of the spine. *)
-  let replay_entry : type m1 m2 any inst.
-      (m1, any) replayed -> (m1, m2, any, inst) apps_entry -> (m2, inst) replayed =
-   fun r e ->
-    match r with
-    | Stuck_at (stuck, rest) -> Stuck_at (stuck, Snoc (rest, e))
-    | Not_stuck ev -> (
-        let ev = app_eval_entry ev e in
-        match (ev, e) with
-        | Unrealized (Some stuck), Arg _ -> Stuck_at (stuck, Emp)
-        | Unrealized (Some stuck), Field _ -> Stuck_at (stuck, Emp)
-        (* Instantiating a stuck case tree forgets where it got stuck, so an instantiation can't be the stuck point. *)
-        | _ -> Not_stuck ev) in
-  match apps with
-  | Emp -> (
-      match head with
-      | Const _ | Meta _ -> (
-          let tm =
-            without_budget @@ fun () ->
-            Displaying.run ~env:false @@ fun () -> readback_head ctx head in
-          match eval_term (Ctx.env ctx) tm with
-          | Neu { value; _ } -> (
-              match force_eval value with
-              | Unrealized (Some stuck) -> Stuck_at (stuck, Emp)
-              | ev -> Not_stuck ev)
-          | _ -> Not_stuck (Unrealized None))
-      | _ -> Not_stuck (Unrealized None))
-  | Snoc (rest, (Arg _ as e)) -> replay_entry (replay_stuck ctx head rest) e
-  | Snoc (rest, (Field (filter, _, _, _) as e)) ->
-      let (Locked (_, lctx)) = Ctx.lock ctx (Modality.filter_modality filter) in
-      replay_entry (replay_stuck lctx head rest) e
-  | Snoc (rest, (Inst _ as e)) -> replay_entry (replay_stuck ctx head rest) e
+(* Read back a stuck evaluation as the match it got stuck on, with everything applied to it since put back on outside, after pushing any delayed actions in it into that match (see Value.stuck). *)
+and readback_stuck : type mode a z.
+    abbreviable:bool -> (mode, z, a) Ctx.t -> mode stuck -> (mode, a, potential) term =
+ fun ~abbreviable ctx stuck ->
+  let (Pushed_stuck (head, apps)) = push_stuck stuck in
+  readback_spine Potential ~canonical:`Other ~abbreviable ctx head apps
 
 and readback_head : type mode s c z.
     ?canonical:[ `Canonical | `Other ] ->
@@ -1737,21 +1682,12 @@ let rec readback_about : type mode a b.
     (mode, a, b) Ctx.t -> (mode, kinetic) Value.value -> (mode, b, potential) Term.term option =
  fun ctx value ->
   match value with
-  | Neu { head = Live head; args; value = v; ty } -> (
+  | Neu { head = Live _; args = _; value = v; ty } -> (
       match force_eval v with
       | Val v -> Some (readback_at (Potential value) ctx v (Lazy.force ty))
       (* Under glued evaluation, a constant whose definition is an ordinary term rather than a case tree is a neutral whose value realizes that term.  It has no potential value of its own, but the neutral it realizes to may, so we look there. *)
       | Realize v -> readback_about ctx v
-      (* A case tree stuck on a match whose display data is stored can be displayed as a let-only around that match. *)
-      | Unrealized (Some _) as ev -> Some (readback_eval (Potential value) ctx ev (Lazy.force ty))
-      (* If it has been applied to more arguments since it got stuck, we find the stuck point by replaying the spine, and put the rest of the spine back on outside. *)
-      | Unrealized None -> (
-          match args with
-          | Emp -> None
-          | Snoc _ -> (
-              match replay_stuck ctx head args with
-              | Stuck_at (stuck, rest) ->
-                  Some
-                    (readback_spine Potential ~canonical:`Other ~abbreviable:false ctx stuck rest)
-              | Not_stuck _ -> None)))
+      (* A case tree stuck on a match whose display data is stored can be displayed as a let-only around that match, with anything applied to it since put back on outside. *)
+      | Unrealized (Some stuck) -> Some (readback_stuck ~abbreviable:false ctx stuck)
+      | Unrealized None -> None)
   | _ -> None
