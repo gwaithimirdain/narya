@@ -149,7 +149,7 @@ Narya can also be developed and installed with `Nix <https://nixos.org/>`_, whic
 
 Running just ``nix build`` instead will still build a static binary that will work, but it will not know what git commit it was built from.  This has two consequences: it will not report that commit when run with the ``-version`` flag (making it harder to track down any bugs it exhibits); and it will not be able to tell whether compiled ``.nyo`` files are compatible (and therefore will never load them).
 
-If you want to *run* Narya from Nix every time, without installing a static binary, then it's recommended to create a shell script wrapper that passes all its arguments off to the appropriate Nix command (e.g. with `"$@"` in Bash), which is called `narya` and placed in your `PATH`.  This will allow you to then run the `install-pg.sh` script for :ref:`Automatic ProofGeneral installation`.
+If you want to *run* Narya from Nix every time, without installing a static binary, then it's recommended to create a shell script wrapper that passes all its arguments off to the appropriate Nix command (e.g. with `"$@"` in Bash), which is called `narya` and placed in your `PATH`.  This will allow you to then run the `install-pg.sh` script for :ref:`Automatic ProofGeneral installation`.  Alternatively, if you also install Emacs with Nix, you can install the ProofGeneral mode with Nix as well; see :ref:`ProofGeneral installation with Nix`.
 
 
 Building the Documentation
@@ -217,10 +217,11 @@ When using Emacs, it is also *highly* recommended to change your keyboard layout
 - In Windows, install Microsoft `PowerToys <https://github.com/microsoft/PowerToys>`_.  Run it and navigate to the ``Keyboard Manager``, select ``Remap a Key``, and remap ``Caps Lock`` to ``Ctrl (Left)``.
 - In MacOS, go to System Preferences, navigate to a Keyboard section and look for a Modifier Keys option.
 
-Once Emacs is installed, you have two options for installing the Narya ProofGeneral mode:
+Once Emacs is installed, you have several options for installing the Narya ProofGeneral mode:
 
 - There is an :ref:`Automatic ProofGeneral installation` script that should usually be able to install ProofGeneral and the Narya ProofGeneral mode for you, once you have installed Emacs.
 - If this doesn't work, please submit a `bug report <https://github.com/gwaithimirdain/narya/issues>`_.  But while you wait for us to fix the problem, you can use :ref:`Manual ProofGeneral installation` instead.
+- If you installed Emacs with Nix, you can also use :ref:`ProofGeneral installation with Nix`.
 
 
 .. _Automatic ProofGeneral installation:
@@ -234,7 +235,9 @@ Narya comes with a shell script that should install ProofGeneral, and the ProofG
 
   ./install-pg.sh
 
-Pay attention to the output of the script!  If it fails and it has a guess about why, it will give you instructions.  In particular, it may fail if you installed ProofGeneral in some way *other* than through the Emacs package manager, such as with `apt` or `nix`, since in that case it won't be able to find the ProofGeneral installation directory to configure ProofGeneral for Narya.  In that case, the script will prompt you to remove the external ProofGeneral so that it can reinstall it with the Emacs package manager.
+Pay attention to the output of the script!  If it fails and it has a guess about why, it will give you instructions.
+
+If ProofGeneral is not already installed, the script installs it from `MELPA <https://melpa.org/>`_ using the Emacs package manager.  (If you already installed ProofGeneral some other way, such as with ``apt`` or ``nix``, the script will use that one.)  It then installs the Narya ProofGeneral mode as a package in the directory of the Emacs package manager (usually ``$HOME/.emacs.d/elpa/narya-VERSION``), from which Emacs activates it automatically at startup.  If you run the script from the ``dist`` directory of the Narya source tree, the elisp files in that package are symlinks to the ones in the source tree, so that you get any changes to them whenever you restart Emacs.  Earlier versions of the script installed the Narya mode inside the ProofGeneral installation directory instead; if it finds such an installation, it removes it.
 
 If you follow the instructions of the script but it still doesn't work, or if running the script produces errors, or if it doesn't report any errors but the ProofGeneral mode doesn't seem to work as advertised, please report a bug on `GitHub <https://github.com/gwaithimirdain/narya>`_.  In the meantime, you can follow the instructions for :ref:`Manual ProofGeneral installation`.
 
@@ -248,7 +251,9 @@ If the script succeeds, then it will end by instructing you to add some lines to
 
 Depending on your operating system and version of Emacs, the script may also instruct you to add additional lines to ``.emacs``.  Please do as it says, unless those lines are already there.  (It doesn't do this automatically to avoid the danger of disrupting any personal Emacs configuration you may have already done.)
 
-You will need to re-run the installation script every time Emacs, ProofGeneral, or Narya is updated.  This will be the case until the Narya ProofGeneral mode stabilizes and we can get it incorporated in the ProofGeneral distribution.
+You will need to re-run the installation script every time Narya is updated (unless you ran it from the source tree, in which case restarting Emacs suffices).
+
+The Narya mode is activated at startup by the Emacs package manager, so if your Emacs configuration turns that off (for instance, some configuration frameworks set ``package-enable-at-startup`` to ``nil``), you will need to call ``(package-activate-all)`` in your configuration, or follow the :ref:`Manual ProofGeneral installation` instructions instead.
 
 Once ProofGeneral is installed and working, you can proceed with further :ref:`Configuration`.
 
@@ -270,23 +275,59 @@ If the automatic ProofGeneral installer doesn't work for you, you can follow the
 
    Then try ``M-! narya`` again.  If it still doesn't work, please `report a bug <https://github.com/gwaithimirdain/narya>`_.
 
-3. Find the ProofGeneral installation directory, which may be something like ``$HOME/.emacs.d/elpa/proof-general-XXXXXXXX-XXXX``.
+3. Put the ``.el`` files from the ``proofgeneral`` directory of the Narya repository somewhere Emacs can find them.  If you are using the static distribution, the ``.el`` files are included there as well.  You can use them where they are, or copy them to a directory such as ``$HOME/.emacs.d/narya``.
 
-4. In this directory, create a subdirectory called ``narya`` and copy (or, better, symlink) the ``.el`` files in the ``proofgeneral`` directory of the Narya repository into that subdirectory.  If you are using the static distribution, the ``.el`` files are included there as well.
+4. Add the following lines to the ``.emacs`` file in your home directory, replacing ``/path/to/narya/proofgeneral`` with the directory containing the ``.el`` files:
 
-5. Edit the file ``proof-site.el`` in the subdirectory ``generic`` of the ProofGeneral installation directory and add this line
+   .. code-block:: elisp
 
-  .. code-block:: none
+      (add-to-list 'load-path "/path/to/narya/proofgeneral")
+      (autoload 'narya-mode "narya" "Major mode for Narya proof scripts." t)
+      (add-to-list 'auto-mode-alist '("\\.ny\\'" . narya-mode))
 
-    (narya "Narya" "ny" nil (".nyo"))
+5. Restart Emacs.
 
-  to the list of proof assistants in the definition of the variable ``proof-assistant-table-default``.
+If you copied the ``.el`` files, you will have to copy them again whenever the Narya ProofGeneral mode is updated; otherwise restarting Emacs will suffice.  Note that the Narya mode does not need to be placed inside the ProofGeneral installation directory, nor does ProofGeneral itself need to be modified.
 
-6. If there is a byte-compiled Emacs Lisp file ``proof-site.elc`` in the ``generic`` directory, either delete it, or re-create it from your edited ``proof-site.el`` using ``M-x byte-compile-file``.
+Alternatively, the Emacs package manager can install the Narya mode directly from the git repository, together with ProofGeneral from MELPA if it isn't already installed through the package manager.  (This clones the entire Narya repository, but only uses the ``proofgeneral`` subdirectory.)  To do this, evaluate the following with ``M-:``:
 
-7. Restart Emacs.
+.. code-block:: elisp
 
-You will have to repeat these steps whenever the Narya ProofGeneral mode is updated (unless you symlinked the files instead of copying them, in which case restarting Emacs will suffice); whenever ProofGeneral is updated; and whenever Emacs is updated.
+   (package-vc-install
+    '(narya :url "https://github.com/gwaithimirdain/narya" :lisp-dir "proofgeneral"))
+
+Or, in Emacs 30 or newer, you can put the equivalent ``use-package`` declaration in your ``.emacs``:
+
+.. code-block:: elisp
+
+   (use-package narya
+     :vc (:url "https://github.com/gwaithimirdain/narya" :lisp-dir "proofgeneral"))
+
+To update the Narya mode when installed this way, run ``M-x package-vc-upgrade``.
+
+
+.. _ProofGeneral installation with Nix:
+
+Installation with Nix
+^^^^^^^^^^^^^^^^^^^^^
+
+If you install Emacs with Nix, you can install ProofGeneral and the Narya mode with it too.  The file ``proofgeneral/package.nix`` in the Narya repository defines the Narya mode as an Emacs package, which you can build with the ``callPackage`` of your Emacs package set.  For instance, if ``narya`` is the Narya repository (such as a flake input), then
+
+.. code-block:: nix
+
+   (pkgs.emacsPackagesFor pkgs.emacs).emacsWithPackages (epkgs: [
+     (epkgs.callPackage "${narya}/proofgeneral/package.nix" { })
+   ])
+
+is an Emacs with ProofGeneral and the Narya mode installed, or with Home Manager you can use
+
+.. code-block:: nix
+
+   programs.emacs.extraPackages = epkgs: [
+     (epkgs.callPackage "${narya}/proofgeneral/package.nix" { })
+   ];
+
+The Narya flake also provides the package built for the default Emacs as ``emacs-narya``.  You will still need to make the ``narya`` executable available in your ``PATH``.
 
 Once ProofGeneral is installed and working, you can proceed with further :ref:`Configuration`.
 
