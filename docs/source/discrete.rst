@@ -120,7 +120,7 @@ In other words, ``Br (△ A)`` is a datatype indexed by two copies of ``△ A`` 
 
 Discrete modalities can also be pellucid, transparent, or translucent.  However, a discrete modality cannot currently be used as a window modality for a match against a higher-dimensional datatype.  This is not a semantic restriction, but a limitation of the structure of contexts in Narya; it would be possible to work around but we haven't done it yet.
 
-In particular, the preferred replacement for the deprecated :ref:`strictly discrete datatypes <Strictly discrete datatypes (experimental and deprecated)>` is now to use a two-mode theory with discreteness and work with ordinary datatypes at the ``Disc`` mode, under the discrete window ``△`` when working at the ``Type`` mode.  Thus, for instance, we can prove things at ``Type`` by induction over the ``Disc``-natural-numbers ``ℕ`` using a ``△`` window, and no higher-dimensional versions of ``ℕ`` appear even when recursing into higher dimensions.
+In particular, a good way to work with discrete datatypes is to use a two-mode theory with discreteness and work with ordinary datatypes at the ``Disc`` mode, under the discrete window ``△`` when working at the ``Type`` mode.  Thus, for instance, we can prove things at ``Type`` by induction over the ``Disc``-natural-numbers ``ℕ`` using a ``△`` window, and no higher-dimensional versions of ``ℕ`` appear even when recursing into higher dimensions.
 
 
 Codiscrete records and codata

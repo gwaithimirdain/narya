@@ -7,6 +7,7 @@ open Dim
 open Tctx
 open Term
 open Value
+open Env
 open Act
 open Printable
 open View
@@ -69,7 +70,7 @@ let rec take_args : type dom window mode annotations m n k kn a b ab.
         (type mdom mmod pq)
         ((filter_constr_pq_kn, arg) : (mdom, mmod, dom, pq, kn) Modality.filter_dim * _)
       :: args,
-      Suc (Annotate filter_window_constr_q_n, annotate),
+      Suc (Annotate (_, filter_window_constr_q_n), annotate),
       Suc (Dim _, comp) ) -> (
       (* The value's stored filter is that of its constructor annotation mu, whose codomain is the (inner) mode of the datatype, while the context annotation is the composite of the window modality with mu, whose codomain is the outer mode.  So we compose mu with the window before comparing. *)
       let _m = dim_env env in
@@ -108,43 +109,47 @@ let rec take_args : type dom window mode annotations m n k kn a b ab.
               take_args env k_n args window_modality filter_window_k_m annotate comp))
   | _ -> fatal (Anomaly "wrong number of arguments in argument list")
 
-(* The adjunction of a (lower) field of a record type, together with the non-keyed type of its component: the type at which the component of a tuple is checked or read back, living behind the lock by the right adjoint. *)
-type _ tyof_modal_field =
-  | Tyof_modal_field :
-      ('amode, 'f, 'g, 'gmode) Modalcell.adjunction * ('gmode, kinetic) value
-      -> 'amode tyof_modal_field
-
 (* Eval-readback callback for tyof_higher_codatafield *)
-type (_, _, _, _, _) shuffleable =
-  | Trivial : ('mode, D.zero, 'i, 'i, 'c) shuffleable
+type (_, _, _, _) shuffleable =
+  | Trivial : ('mode, D.zero, 'i, 'i) shuffleable
   | Nontrivial : {
-      dbwd : ('mode, 'c) Tctx.t;
       shuffle : ('r, 'h, 'i) shuffle;
-      (* The environment to be degenerated is that of a codatafield's type, so it lies behind a lock by the field's right adjoint and is extended by the field's self variable.  We therefore pass in that modality, to lock the ambient context and key the degenerating environment by it, and the termctx describing the environment's codomain, at which its values are read back. *)
+      (* The environment to be degenerated is that of a codatafield's type, so it lies behind a lock by the field's right adjoint; but it does *not* contain the field's self variable, which is supplied to the field type only after the degeneration.  Its values therefore always live in the ambient context locked by the right adjoint, whether we are checking a field or displaying one, which is why this callback has a single implementation.  We pass in the field's adjunction, from which it reconstructs that locked context, along with the termctx describing the environment's codomain, at which its values are read back.  The adjunction must be passed rather than stored, since it is existential at the point of use. *)
       deg_env :
-        'dom 'mu 'b 'd 's 'sh 'r_sh.
-        ('dom, 'mu, 'mode) Modality.t ->
-        ('dom, 'd, 'b) termctx ->
-        ('s, 'h, 'sh) D.plus ->
-        ('r, 'sh, 'r_sh) D.plus ->
-        ('dom, 'sh, 'b) env ->
-        ('dom, 'r_sh, 'b) env;
-      deg_nf : 'mode normal -> 'mode normal;
+        'f 'g 'gmode 'b 'd 'k 'rk.
+        ('mode, 'f, 'g, 'gmode) Modalcell.adjunction ->
+        ('gmode, 'd, 'b) termctx ->
+        ('r, 'k, 'rk) D.plus ->
+        ('gmode, 'k, 'b) env ->
+        ('gmode, 'rk, 'b) env;
     }
-      -> ('mode, 'r, 'h, 'i, 'c) shuffleable
+      -> ('mode, 'r, 'h, 'i) shuffleable
 
-(* If glued evaluation is off, then every value is fully normalized already, so there is nothing for viewing a term to do.  If glued evaluation is on, then the term might be a neutral with a lazy value waiting to be evaluated, in which case we force that value recursively.  Importantly, even under glued evaluation this function should be IDEMPOTENT up to PHYSICAL EQUALITY. *)
+(* Eliminating a failed term, by application, field projection, or instantiation, produces another failed term.  Its type is computed from that of the eliminated term as usual, unless that is also failed. *)
+let failed_elim : type m mode.
+    mode Mode.t ->
+    (m, kinetic) value Lazy.t ->
+    ((m, kinetic) value -> (mode, kinetic) value) ->
+    (mode, kinetic) value =
+ fun mode ty tyof ->
+  failed mode
+    (lazy
+      (match Lazy.force ty with
+      | Neu { head = Failed _; _ } -> failed_type mode
+      | ty -> tyof ty))
+
+(* Because of glued evaluation, a term might be a neutral with a lazy value waiting to be evaluated.  Viewing it forces that value recursively.  Importantly, this function should be IDEMPOTENT up to PHYSICAL EQUALITY. *)
 let rec view_term : type mode s. (mode, s) value -> (mode, s) value =
  fun tm ->
-  if GluedEval.read () then
-    match tm with
-    | Neu { value; _ } -> (
-        (* For glued evaluation, when viewing a term, we force its value and proceed to view that value instead. *)
-        match force_eval value with
-        | Realize v -> view_term v
-        | _ -> tm)
-    | _ -> tm
-  else tm
+  match tm with
+  (* A failed term has no value to view, so viewing it leaves it alone.  Code that needs to inspect it must instead fail silently (see Value.Failed). *)
+  | Neu { head = Failed _; _ } -> tm
+  | Neu { value; _ } -> (
+      (* When viewing a term, we force its value and proceed to view that value instead. *)
+      match force_eval value with
+      | Realize v -> view_term v
+      | _ -> tm)
+  | _ -> tm
 
 (* Viewing a type fails if the argument is not fully instantiated.  In most situations this would be a bug, but we allow the caller to specify it differently, since during typechecking it could be a user error. *)
 and view_type : type mode.
@@ -152,7 +157,9 @@ and view_type : type mode.
  fun ?(severity = Asai.Diagnostic.Bug) (ty : (mode, kinetic) value) (err : string) :
      mode view_type ->
   match ty with
-  | Neu { head; args; value; ty = _ } -> (
+  (* A failed type has no value to view, so code that needs to view it fails silently (see Value.Failed). *)
+  | Neu { head = Failed _; _ } -> fatal (Dependent "viewing a failed type")
+  | Neu { head = Live head; args; value; ty = _ } -> (
       (* Glued evaluation: when viewing a type, we force its value and proceed to view that value instead. *)
       match force_eval value with
       | Val (Canonical { mode = _; canonical = c; tyargs; ins; fields = _; inst_fields = _ }) -> (
@@ -213,27 +220,20 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                               | _ ->
                                   fatal (Anomaly "eval of lower-dim constant not neutral/canonical"));
                         })) in
-              let head = Const { name; ins = ins_zero dim } in
+              let head = Live (Const { name; ins = ins_zero dim }) in
               let result =
                 match defn with
-                | `Defined tree -> (
-                    if GluedEval.read () then
-                      (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
-                      Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
-                    else
-                      let value = eval (Emp (mode, dim)) tree in
-                      let newtm = Neu { head; args = Emp; value = ready value; ty } in
-                      match value with
-                      | Realize x -> x
-                      | _ -> newtm)
-                | `Axiom -> Neu { head; args = Emp; value = ready Unrealized; ty } in
+                | `Defined tree ->
+                    (* Glued evaluation: we evaluate the definition lazily and return a neutral with that lazy evaluation stored. *)
+                    Neu { head; args = Emp; value = lazy_eval (Emp (mode, dim)) tree; ty }
+                | `Axiom -> Neu { head; args = Emp; value = ready (Unrealized None); ty } in
               add_cached_const name dim mode result;
               Val result
           | Neq ->
               fatal (Mode_mismatch (`Internal, "evaluating a constant", mode, None, mode_env env))))
   | Meta (meta, ambient) -> (
       let dim = dim_env env in
-      let head = Value.Meta { meta; env; ins = ins_zero dim } in
+      let head = Live (Value.Meta { meta; env; ins = ins_zero dim }) in
       (* As with constants, we need to instantiate the type at the same meta evaluated at lower dimensions. *)
       let make_ty meta ty =
         inst (eval_term env ty)
@@ -254,29 +254,22 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       | { tm = `Defined tm; energy = Potential; _ }, Potential -> eval env tm
       | { tm = `Defined tm; energy = Kinetic; _ }, Kinetic -> eval env tm
       | { tm = `Defined tm; energy = Kinetic; _ }, Potential -> Realize (eval_term env tm)
-      | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic -> (
-          if GluedEval.read () then
-            (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
-            Val (Neu { head; args = Emp; value = lazy_eval env tm; ty = lazy (make_ty meta ty) })
-          else
-            (* If a potential metavariable with a definition is used in a kinetic context, and doesn't evaluate yet to a kinetic result, we again have to build a neutral. *)
-            match eval env tm with
-            | Realize tm -> Val tm
-            | value ->
-                Val (Neu { head; args = Emp; value = ready value; ty = lazy (make_ty meta ty) }))
+      | { tm = `Defined tm; energy = Potential; ty; _ }, Kinetic ->
+          (* A defined potential metavariable in kinetic context evaluates to a glued neutral, with its evaluated definition stored lazily. *)
+          Val (Neu { head; args = Emp; value = lazy_eval env tm; ty = lazy (make_ty meta ty) })
       (* If an undefined potential metavariable appears in a case tree, then that branch of the case tree is stuck.  We don't need to return the metavariable itself; it suffices to know that that branch of the case tree is stuck, as the constant whose definition it is should handle all identity/equality checks correctly. *)
-      | _, Potential -> Unrealized
+      | _, Potential -> Unrealized None
       (* To evaluate an undefined kinetic metavariable, we have to build a neutral. *)
       | { ty; _ }, Kinetic ->
-          Val (Neu { head; args = Emp; value = ready Unrealized; ty = lazy (make_ty meta ty) }))
-  | MetaEnv (meta, metaenv) ->
-      let (Plus m_n) = D.plus (dim_term_env metaenv) in
-      eval (eval_env env m_n metaenv) (Term.Meta (meta, Kinetic))
+          Val
+            (Neu { head; args = Emp; value = ready (Unrealized None); ty = lazy (make_ty meta ty) })
+      )
   | UU (mode, n) ->
       let m = dim_env env in
       let (Plus mn) = D.plus n in
       Val (universe mode (D.plus_out m mn))
-  | Inst (tm, args) -> (
+  | Inst (Potential, _, _) -> fatal (Evaluating_display_term "potential instantiation")
+  | Inst (Kinetic, tm, args) -> (
       (* The arguments are an (n,k) tube, with k dimensions instantiated and n dimensions uninstantiated. *)
       let n = TubeOf.uninst args in
       let k = TubeOf.inst args in
@@ -340,7 +333,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
            ( Variables (D.plus_out l l_n, ln_k, vars),
              Modality.filter_plus l_nk m_p filter_lm filter,
              eval_binder env m_p modality filter body ))
-  | App (fn, k, filter_nk, Modal (modality, al, args)) ->
+  | App (Potential, _, _, _, _) -> fatal (Evaluating_display_term "potential application")
+  | App (Kinetic, fn, k, filter_nk, Modal (modality, al, args)) ->
       (* First we evaluate the function. *)
       let efn = eval_term env fn in
       (* The environment is m-dimensional and the original application is n-dimensional, so the *substituted* application is m+n dimensional.  However, the stored cube of arguments is at the *filtered* dimension of the original application, and likewise the arguments of the substituted application must be at *its* filtered dimension, which is (filtered m)+n.  So, as in the Constr case below, we filter the dimension m of the environment by the modality, acting on the environment by a face to cut it down to the filtered dimension. *)
@@ -351,21 +345,22 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let (Plus l_n) = D.plus n in
       let ln = D.plus_out l l_n in
       (* Then we evaluate all the arguments, not just in the (filtered, keyed) environment, but in that environment acted on by all the strict faces of l.  Since the given arguments are indexed by strict faces of n, the result is a collection of values indexed by strict faces of l+n.  *)
-      let lenv = key_id_env env al in
+      let lenv = lock_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m filter_lm)) in
       let eargs = eval_args flenv l_n ln args in
       (* Having evaluated the function and its arguments, we now pass the job off to a helper function. *)
       let (Plus m_k) = D.plus k in
       let filter_total = Modality.filter_plus l_n m_k filter_lm filter_nk in
       apply efn filter_total eargs
-  | Field (Modal (fm, plus_lock, tm), fld, fldins) -> (
+  | Field (Potential, _, _, _) -> fatal (Evaluating_display_term "potential field")
+  | Field (Kinetic, Modal (fm, plus_lock, tm), fld, fldins) -> (
       let m = dim_env env in
       let n, l = (dom_ins fldins, cod_left_ins fldins) in
       match Modality.compare_id fm with
       | Eq ->
           (* An ordinary field (identity adjunction), including all higher fields, does no dimension filtering: the term being projected lives behind a (trivial) lock by the identity, evaluated in the environment keyed by the identity cell. *)
           let Plus m_n, Plus m_l = (D.plus n, D.plus l) in
-          let ltm = eval_term (key_id_env env plus_lock) tm in
+          let ltm = eval_term (lock_env env plus_lock) tm in
           field fm ltm fld (plus_ins m m_n m_l fldins)
       | Neq ->
           (* A genuinely modal field over a (possibly nonparametric) left adjoint fm.  The term being projected lives behind a lock by fm, hence at the dimension m filtered by fm; we evaluate it in the keyed, locked environment cut down to that filtered dimension k by a face.  We then project at dimension k and degenerate the result back up to the outer dimension m.  For a nonparametric fm at a dimension it filters nontrivially, the field "disappears": k < m, so this projection is genuinely a degeneracy of a lower-dimensional one.  (For a lower field, cod_left_ins fldins = 0, so k is the whole result dimension.) *)
@@ -373,7 +368,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
           let k = Modality.filtered m kfilter in
           let (Plus k_n) = D.plus n in
           let (Plus k_l) = D.plus l in
-          let lenv = key_id_env env plus_lock in
+          let lenv = lock_env env plus_lock in
           let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m kfilter)) in
           let ltm = eval_term flenv tm in
           let proj = field fm ltm fld (plus_ins k k_n k_l fldins) in
@@ -398,7 +393,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
             let (Plus k_l) = D.plus (Modality.filtered n lfilter) in
             let kl = D.plus_out k k_l in
             let filter = Modality.filter_plus k_l m_n kfilter lfilter in
-            let lenv = key_id_env env al in
+            let lenv = lock_env env al in
             (* The dimension of the cube of arguments that we want should be filtered by the modality.  Thus, we need to filter the dimension of the environment we evaluate it in as well.  We do this by acting with a face: in the unary case this is the unique such face, in other cases it is a dummy face.  The mode theory used for the non-unary cases (the nonparametric modality is only a comonad) should ensure that the dummy endpoints in the non-unary case never actually get used; they should be canceled out by degeneracies. *)
             let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m kfilter)) in
             Value.Modal (filter, eval_args flenv k_l kl tm))
@@ -421,7 +416,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       let mn = D.plus_out m m_n in
       let filter = Modality.filter_plus k_l m_n kfilter lfilter in
       (* The basic thing we do is evaluate the cubes of domains and codomains. *)
-      let lenv = key_id_env env al in
+      let lenv = lock_env env al in
       let doms =
         CubeOf.build kl
           {
@@ -449,7 +444,7 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* However, because the result will be a Neu, we need to know its type as well.  The starting n-dimensional pi-type (which is itself uninstantiated) lies in a full instantiation of the n-dimensional universe at lower-dimensional pi-types formed from subcubes of its domains and codomains.  Accordingly, the resulting (m+n)-dimensional pi-type will like in a full instantiation of the (m+n)-dimensional universe at lower-dimensional pi-types obtained by evaluating these at appropriately split faces.  Since each of them *also* belongs to a universe instantiated similarly, and needs to know its type not just because it is an uninst but because it is a normal, we build the whole cube at once and then take its top. *)
       let pitbl = Hashtbl.create 10 in
       (* Since we only care about the hashtbl and the top, and we can get that from the hashtbl at the end anyway, we don't bother actually putting the normals into a meaningful cube. *)
-      let build : type u. (u, mn) sface -> unit =
+      let it : type u. (u, mn) sface -> unit =
        fun fab ->
         let kl = dom_sface fab in
         let codmode = mode_env env in
@@ -464,7 +459,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
         let (SFace_of_plus (ab, fa', fb')) = sface_of_plus k_l fab' in
         let subdoms, subcods = (CubeOf.subcube fab' doms, BindCube.subcube fab cods) in
         let subx = plus_variables (dom_sface fa') ab (sub_variables fb' x) in
-        let head : mode head = Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods } in
+        let head : (mode, kinetic) head =
+          Pi { x = subx; filter = ufilter; doms = subdoms; cods = subcods } in
         (* We don't need fibrancy fields for all the boundary types, since once something "is a type" we don't need it to be in Fib any more. *)
         let fields : (mode * u * potential * no_eta) Value.StructfieldAbwd.t =
           match (is_id_sface fab, Fibrancy.PiValuesMap.find_opt modality !Fibrancy.pi) with
@@ -508,16 +504,16 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     fields;
                     inst_fields = Some fields;
                   })) in
-        let tm = Neu { head; args = Emp; value; ty = Lazy.from_val ty } in
+        let tm = Neu { head = Live head; args = Emp; value; ty = Lazy.from_val ty } in
         Hashtbl.add pitbl (SFace_of fab) { tm; ty = Lazy.from_val ty } in
-      let _ = CubeOf.build mn { build } in
+      CubeOf.iter_faces mn { it };
       Val (Hashtbl.find pitbl (SFace_of (id_sface mn))).tm
   | Let (_, Modal (modality, al, v), body) ->
       (* We evaluate let-bindings lazily, on the chance they aren't actually used. *)
       let m = dim_env env in
       let (Has_filter fm) = Modality.filter modality m in
       let k = Modality.filtered m fm in
-      let lenv = key_id_env env al in
+      let lenv = lock_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter m fm)) in
       eval
         (Ext
@@ -532,8 +528,13 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                     { build = (fun fa -> lazy_eval (act_env flenv (opt_op_of_sface fa)) v) });
            })
         body
+  | Stuck_meta _ -> fatal (Evaluating_display_term "stuck metavariable")
+  | Letonly { env = tmenv; tm = body; _ } ->
+      (* The body sees only the bound variables, so we evaluate their term environment in the ambient one and then the body in the result.  The dimension of the result is the sum of that of the ambient environment and that of the term environment. *)
+      let (Plus m_n) = D.plus (dim_term_env tmenv) in
+      eval (eval_env env m_n tmenv) body
   (* It's tempting to write just "act_value (eval env x) s" here, but that is WRONG!  Pushing a substitution through an operator action requires whiskering the operator by the dimension of the substitution. *)
-  | Act (x, s, _) ->
+  | Act (_, x, s, _) ->
       let k = dim_env env in
       let (Plus km) = D.plus (dom_deg s) in
       let (Plus kn) = D.plus (cod_deg s) in
@@ -541,19 +542,15 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
       (* We push as much of the resulting degeneracy into the environment as possible, in hopes that the remaining insertion outside will be trivial and act_value will be able to short-circuit.  (Ideally, the insertion would be carried through by eval for a single traversal in all cases.) *)
       let (Insfact (is, ins)) = insfact ks kn in
       let (To p) = deg_of_ins ins in
-      Val
-        (act_value (eval_term (act_env env (opt_op_of_deg is)) x) p (Modalcell.id2 (mode_env env)))
+      act_evaluation (eval (act_env env (opt_op_of_deg is)) x) p (Modalcell.id2 (mode_env env))
   | Key { tm; cell; plus_src; plus_tgt } ->
-      (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, then compose the keys we found there with the supplied key to make a new key on an environment for evaluating the body.  The resulting environment is back at the original mode, so any prekey action stripped along the way is re-applied as a prekey on top. *)
-      let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
-      let (Comp nu12) = Modality.comp (Modalcell.vsrc cell) in
-      let extra_cell = Modalcell.postwhisker nu12 mu12 (plus_lock_modality extra) cell in
-      let env = key_env env (Modalcell.vcomp keys extra_cell) (plus_lock_comp extra plus_src nu12) in
-      let env = prekey_env env pre in
+      (* To evaluate a key, we strip off the part of the environment corresponding to the codomain of the key cell, lock what remains by the domain of the cell, and apply the cell as a prekey.  The resulting environment is back at the original mode, so any prekey action stripped along the way is re-applied as a prekey on top. *)
+      let (Restrict_keys (env, pre)) = restrict_keys env plus_tgt in
+      let env = prekey_env (prekey_env (lock_env env plus_src) cell) pre in
       eval env tm
-  | Match { tm; window; plus_lock; dim = match_dim; branches } -> (
+  | Match { tm; window; plus_lock; dim = match_dim; branches; motive = _; display } as mtch -> (
       let env_dim = dim_env env in
-      let kenv = key_id_env env plus_lock in
+      let kenv = lock_env env plus_lock in
       let (Has_filter fw) = Modality.filter window env_dim in
       let akenv = act_env kenv (opt_op_of_opt_sface (Modality.sface_of_filter env_dim fw)) in
       let (Plus plus_dim) = D.plus match_dim in
@@ -568,6 +565,8 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                 (Anomaly
                    (Printf.sprintf "constructor %s missing from compiled match"
                       (Constr.to_string name)))
+          (* A branch that failed to typecheck has already reported its error, so it realizes to a failed value (whose type is unknown), which fails silently if it is ever inspected. *)
+          | Some Failed_branch -> Realize (failed_untyped (mode_env env))
           | Some (Branch { annotate; comp; perm; tm }) -> (
               let total_dim = D.plus_out (Modality.filtered env_dim fw) plus_dim in
               match D.compare constr_dim total_dim with
@@ -576,11 +575,14 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
                   (* If we have a branch with a matching constructor, then our constructor must be applied to exactly the right number of elements (in dargs).  In that case, we pick them out and add them to the environment. *)
                   let env = take_args env plus_dim dargs window fw annotate comp in
                   (* Then we proceed recursively with the body of that branch. *)
-                  eval (Permute (perm, env)) tm)
-          (* If this constructor belongs to a refuted case, it must be that we are in an inconsistent context with some neutral belonging to an empty type.  In that case, the match must be stuck. *)
-          | Some Refute -> Unrealized)
-      (* Otherwise, the case tree doesn't reduce. *)
-      | _ -> Unrealized)
+                  eval (Permute (perm, env)) tm))
+      (* A match on a failed term also realizes to a failed value. *)
+      | Neu { head = Failed _; _ } -> Realize (failed_untyped (mode_env env))
+      (* Otherwise, the case tree doesn't reduce.  If the match has display data, we remember where it got stuck, for display by "about". *)
+      | _ -> (
+          match display with
+          | Some display -> Unrealized (Some (Stuck { env; tm = mtch; display }))
+          | None -> Unrealized None))
   | Realize tm -> Realize (eval_term env tm)
   | Canonical c -> eval_canonical env c
   | Unshift (n, plusmap, tm) ->
@@ -605,7 +607,13 @@ and eval : type mode m b s. (mode, m, b) env -> (mode, b, s) term -> (mode, s) e
   | Shift (n, plusmap, tm) ->
       let (Plus mn) = D.plus n in
       eval (Unshift (env, mn, plusmap)) tm
-  | Weaken tm -> eval (remove_top env) tm
+  (* A term that failed to typecheck has already reported its error, so it evaluates to a failed value, which fails silently if it is ever inspected.  We don't know its type, so that is failed too.  A failed case tree realizes to such a value. *)
+  | Failed energy -> (
+      let tm = failed_untyped (mode_env env) in
+      match energy with
+      | Kinetic -> Val tm
+      | Potential -> Realize tm)
+  | Overflow -> fatal (Anomaly "evaluating a term truncated for display")
 
 and eval_with_boundary : type mode m a.
     (mode, m, a) env -> (mode, a, kinetic) term -> (m, (mode, kinetic) value) CubeOf.t =
@@ -631,14 +639,13 @@ and eval_args : type mode m n mn a.
           eval_term (act_env env (opt_op_of_sface fa)) (CubeOf.find tms fb));
     }
 
-(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used both by 'apply', for a neutral application spine being evaluated with a case tree, and by 'app_eval_apps', for a glued application spine being replayed. *)
+(* Append a new index argument to a datatype value that is not yet applied to all of its indices, given the argument as a cube of normals.  Used by 'app_eval_entry', for a glued application spine being replayed. *)
 and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     mode Mode.t ->
     m D.t ->
     (mode, kinetic) lazy_eval ->
     ((m, mode normal) CubeOf.t, j Fwn.suc, ij) Fillvec.t ->
-    (Constr.t, (mode, m, ij) dataconstr) Abwd.t ->
-    [ `Yes | `Maybe | `No ] ->
+    (Constr.t, (mode, m) dataconstr) Abwd.t ->
     Positivity.recursion ->
     hints ->
     k D.t ->
@@ -647,7 +654,7 @@ and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
     (dom, modl, mode) Modality.t ->
     (an, dom normal) CubeOf.t ->
     (mode, potential) evaluation =
- fun mode dim tyfam indices constrs discrete recursive hints tyargs_inst ins fields modality xs ->
+ fun mode dim tyfam indices constrs recursive hints tyargs_inst ins fields modality xs ->
   let Eq = eq_of_ins_zero ins in
   match
     (D.compare dim (CubeOf.dim xs), D.compare_zero tyargs_inst, Modality.compare_id modality)
@@ -667,7 +674,7 @@ and apply_unfilled_data_index : type mode m j ij mk dom modl an k.
         (Value.Canonical
            {
              mode;
-             canonical = Data { dim; tyfam; indices; constrs; discrete; recursive; hints };
+             canonical = Data { dim; tyfam; indices; constrs; recursive; hints };
              tyargs = TubeOf.empty dim;
              ins;
              fields;
@@ -683,6 +690,19 @@ and apply : type dom modality mode n m s.
  fun fn filter_nm arg ->
   let modality = Modality.filter_modality filter_nm in
   match view_term fn with
+  | Neu { head = Failed mode; args = Emp; value = _; ty } ->
+      Val
+        (failed_elim mode ty (fun ty ->
+             match view_type ty "apply" with
+             | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) -> (
+                 let Eq = eq_of_ins_zero ins in
+                 match
+                   ( D.compare (CubeOf.dim arg) (CubeOf.dim doms),
+                     Modality.compare (Modality.filter_modality filter) modality )
+                 with
+                 | Eq, Eq -> tyof_app cods tyargs filter arg
+                 | _ -> fatal (Anomaly "invalid application of failed function"))
+             | _ -> fatal (Anomaly "invalid application of failed non-function")))
   (* If the function is a lambda-abstraction, we check that it has the correct dimension and mode and then beta-reduce, adding the arguments to the environment. *)
   | Lam (_, lam_filter, body) -> (
       let m = dim_binder body in
@@ -698,7 +718,7 @@ and apply : type dom modality mode n m s.
             (Modality_mismatch
                (`Internal, "applying a lambda", Modality.filter_modality lam_filter, modality)))
   (* If it is a uninstantiated neutral application... *)
-  | Neu { head; args; value; ty = (lazy ty) } -> (
+  | Neu { head = Live _ as head; args; value; ty = (lazy ty) } -> (
       (* ... we check that its type is fully instantiated... *)
       match view_type ty "apply" with
       | Canonical (_, Pi { filter; doms; cods; _ }, ins, tyargs) -> (
@@ -712,54 +732,16 @@ and apply : type dom modality mode n m s.
           | _, Neq ->
               fatal
                 (Modality_mismatch (`Internal, "applying a neutral function", pi_modality, modality))
-          | Eq, Eq -> (
+          | Eq, Eq ->
               (* We annotate the new argument by its type, extracted from the domain type of the function being applied. *)
               let newarg = norm_of_vals_cube arg doms in
               (* We compute the output type of the application. *)
               let newty = lazy (tyof_app cods tyargs filter arg) in
               (* We add the new argument to the existing application spine. *)
-              let args = Arg (args, filter, newarg, ins_zero m) in
-              if GluedEval.read () then
-                (* We add the argument to the lazy value and return a glued neutral. *)
-                let value = apply_lazy value m filter newarg in
-                Val (Neu { head; args; value; ty = newty })
-              else
-                (* We evaluate further with a case tree. *)
-                match force_eval value with
-                | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
-                (* It could be an indexed datatype waiting to be applied to more indices. *)
-                | Val
-                    (Canonical
-                       {
-                         mode;
-                         canonical =
-                           Data
-                             {
-                               dim;
-                               tyfam;
-                               indices = Unfilled _ as indices;
-                               constrs;
-                               discrete;
-                               recursive;
-                               hints;
-                             };
-                         tyargs = data_tyargs;
-                         ins;
-                         fields;
-                         inst_fields = _;
-                       }) ->
-                    (* TODO: What happens to the fields?  What even are the fields of a not-fully-applied indexed datatype? *)
-                    let value =
-                      apply_unfilled_data_index mode dim tyfam indices constrs discrete recursive
-                        hints (TubeOf.inst data_tyargs) ins fields modality newarg in
-                    Val (Neu { head; args; value = ready value; ty = newty })
-                | Val tm -> (
-                    let value = apply tm filter_nm arg in
-                    let newtm = Neu { head; args; value = ready value; ty = newty } in
-                    match value with
-                    | Realize x -> Val x
-                    | _ -> Val newtm)
-                | _ -> fatal (Anomaly "invalid application of type")))
+              let args = Snoc (args, Arg (filter, newarg, ins_zero m)) in
+              (* We add the argument to the lazy value and return a glued neutral. *)
+              let value = apply_lazy value m filter newarg in
+              Val (Neu { head; args; value; ty = newty }))
       | _ -> fatal (Anomaly "invalid application by non-function"))
   | _ -> fatal (Anomaly "invalid application of non-function")
 
@@ -771,6 +753,17 @@ and tyof_app : type dom modality mode k n.
     (k, (dom, kinetic) value) CubeOf.t ->
     (mode, kinetic) value =
  fun cods fns filter args ->
+  tyof_app_lazy cods fns filter
+    (CubeOf.mmap { map = (fun _ [ v ] -> defer (fun () -> Val v)) } [ args ])
+
+(* Like tyof_app, but with arguments that may not yet have been evaluated.  They are forced only if the function is higher-dimensional (so that its boundary has to be applied to them) or if the codomain uses them. *)
+and tyof_app_lazy : type dom modality mode k n.
+    (n, mode * modality * dom) BindCube.t ->
+    (D.zero, n, n, mode normal) TubeOf.t ->
+    (dom, modality, mode, k, n) Modality.filter_dim ->
+    (k, (dom, kinetic) lazy_eval) CubeOf.t ->
+    (mode, kinetic) value =
+ fun cods fns filter args ->
   let out_arg_tbl = Hashtbl.create 10 in
   let out_args =
     TubeOf.mmap
@@ -779,7 +772,9 @@ and tyof_app : type dom modality mode k n.
           (fun fa [ { tm = afn; ty = _ } ] ->
             let fa = sface_of_tface fa in
             let (Filter_sface (fb, bf)) = Modality.filter_sface filter fa in
-            let tmargs = CubeOf.subcube fb args in
+            let tmargs =
+              CubeOf.mmap { map = (fun _ [ a ] -> force_eval_term a) } [ CubeOf.subcube fb args ]
+            in
             let (BindFam b) = BindCube.find cods fa in
             let tm = apply_term afn bf tmargs in
             let cod = apply_binder_term b bf tmargs in
@@ -798,7 +793,8 @@ and tyof_app : type dom modality mode k n.
       }
       [ fns ] in
   let (BindFam b) = BindCube.find_top cods in
-  inst (apply_binder_term b filter args) out_args
+  let (Val cod) = apply_binder_lazy b filter args in
+  inst cod out_args
 
 (* Compute a field of a structure (or a fibrant type).  The modality is the left adjoint of the field's adjunction: the term being projected lives at its source mode (behind a lock by it), and the projection at its target mode.  For ordinary fields it is the identity. *)
 and field : type src f mode n k nk s.
@@ -810,6 +806,10 @@ and field : type src f mode n k nk s.
  fun fm tm fld fldins ->
   let src = Modality.src fm in
   match view_term tm with
+  (* If the value is failed, it remains failed, with the type computed as usual. *)
+  | Neu { head = Failed _; args = Emp; value = _; ty } ->
+      Val (failed_elim (Modality.tgt fm) ty (fun ty -> tyof_field fm tm ty fld fldins))
+  (* If the value is a struct, we select the appropriate field. *)
   | Struct { fields; ins = structins; energy; eta = _ } -> (
       match (is_id_ins structins, D.compare (cod_left_ins structins) (dom_ins fldins)) with
       | Some _, Eq -> struct_field "struct" energy fm fields fld fldins
@@ -829,28 +829,17 @@ and field : type src f mode n k nk s.
       let n, k = (cod_left_ins fldins, cod_right_ins fldins) in
       let (Plus fldplus) = D.plus k in
       let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins fldplus)) in
-      match act_value viewed_tm p (Modalcell.id2 src) with
+      match (viewed_tm, act_value viewed_tm p (Modalcell.id2 src)) with
       (* It must be an uninstantiated neutral application (which could be either an element of a record/codata, or a fibrant type). *)
-      | Neu { head; args; value; ty = (lazy ty) } -> (
-          let newty = lazy (tyof_field fm (Ok tm) ty fld ~shuf:Trivial fldins) in
-          (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_apps to replay a filtered spine. *)
+      | Neu { ty; _ }, Neu { head = Live _ as head; args; value; ty = _ } ->
+          (* The type of the projection is computed from the original term, its original type, and the original insertion.  The type of the *acted* term would not match the original term and insertion: its boundary has already been permuted by p, so the permutation would be applied twice. *)
+          let newty = lazy (tyof_field fm tm (Lazy.force ty) fld fldins) in
+          (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the corresponding filtered dimension.  For a fresh projection this filter is trivial; a nontrivial one arises only from a degeneracy having acted (see act_apps), which is exactly the situation when this is called from app_eval_entry to replay a filtered spine. *)
           let (Has_filter filter) = Modality.filter fm n in
-          let args = Field (args, filter, fld, fldplus, ins_zero n) in
-          if GluedEval.read () then
-            (* As in the non-glued case below, the insertion was already pushed inside by acting on the whole neutral above, so the remaining insertion to project from its value is the identity. *)
-            let value = field_lazy fm value fld (ins_of_plus n fldplus) in
-            Val (Neu { head; args; value; ty = newty })
-          else
-            match force_eval value with
-            | Unrealized -> Val (Neu { head; args; value = ready Unrealized; ty = newty })
-            | Val tm -> (
-                (* At this point we've already pushed the insertion inside in computing our neutral, so the remaining insertion on the field to compute of its value is "the identity" of appropriate dimensions *)
-                let value = field fm tm fld (ins_of_plus n fldplus) in
-                let newtm = Neu { head; args; value = ready value; ty = newty } in
-                match value with
-                | Realize x -> Val x
-                | _ -> Val newtm)
-            | Realize _ -> fatal (Anomaly "realized neutral"))
+          let args = Snoc (args, Field (filter, fld, fldplus, ins_zero n)) in
+          (* We add the projection to the lazy value and return a glued neutral.  At this point we've already pushed the insertion inside by acting on the whole neutral above, so the remaining insertion to project from its value is "the identity" of appropriate dimensions. *)
+          let value = field_lazy fm value fld (ins_of_plus n fldplus) in
+          Val (Neu { head; args; value; ty = newty })
       | _ ->
           fatal ~severity:Asai.Diagnostic.Bug
             (No_such_field (`Other (Dump.Val tm), `Ins (fld, fldins))))
@@ -887,13 +876,14 @@ and struct_field : type src f mode s et n k nk.
                   let (Adjunction { counit; _ }) = adj in
                   act_evaluation (force_eval v) (id_deg D.zero) counit
               | None ->
-                  if unset_ok then Unrealized else fatal (Anomaly (err ^ " field value unset")))
+                  if unset_ok then Unrealized None else fatal (Anomaly (err ^ " field value unset"))
+              )
           | Neq ->
               fatal (Dimension_mismatch (err ^ " field intrinsic", intrinsic, cod_right_ins fldins))
           ))
   | _ -> (
       match energy with
-      | Potential -> Unrealized
+      | Potential -> Unrealized None
       | Kinetic -> fatal (Anomaly ("missing field in eval struct: " ^ Field.to_string fld)))
 
 and field_term : type src f mode n k nk.
@@ -906,67 +896,70 @@ and field_term : type src f mode n k nk.
   let (Val v) = field fm x fld fldins in
   v
 
-(* Given a term and its record type, compute the type of a field projection, and the substitution dimension it was evaluated at.  There are two versions of this function, one for when we already know the insertion associated to the field, and one for when we are synthesizing it from the user's integer sequence.  First we define the shared part of both, where we have already found the codatafield from the codata type.  We allow the term to be an error, in case typechecking failed earlier but we are continuing on; this can nevertheless succeed (or fail in more interesting ways) if the type doesn't actually depend on that value. *)
-
-and tyof_codatafield : type src f mode m n mn a k r s i et.
+(* Given a term and its record type, compute the type of a field projection, and the substitution dimension it was evaluated at.  There are two versions of this function, one for when we already know the insertion associated to the field, and one for when we are synthesizing it from the user's integer sequence.  First we define the shared part of both, where we have already found the codatafield from the codata type. *)
+and tyof_codatafield : type src f mode m n mn a s i et.
     (src, f, mode) Modality.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     i Field.t ->
-    (i, src * a * n * et) Codatafield.t ->
+    (i, src * a * D.zero * n * et) Codatafield.t ->
     (src, m, a) env ->
     (D.zero, mn, mn, src normal) TubeOf.t ->
     m D.t ->
     (m, n, mn) D.plus ->
-    (* We allow passing through a shuffle and eval-readback as well, in the case that this is a higher field being called recursively as part of the instantiation arguments. *)
-    shuf:(src, r, k, i, a) shuffleable ->
-    (m, s, k) insertion ->
+    (m, s, i) insertion ->
     (mode, kinetic) value =
- fun fm tm fldname fldty env tyargs m mn ~shuf fldins ->
+ fun fm tm fldname (Codatafield (_, adj, plus_lock, fldty)) env tyargs m mn fldins ->
   (* The type of the field projection comes from the type associated to that field name in general, evaluated at the stored environment extended by the term itself and its boundaries. *)
   match fldty with
-  | Term.Codatafield.Lower (adj, plus_lock, fldty) -> (
+  | Lower fldty -> (
       (* The projecting modality must be the left adjoint of the field's adjunction; the caller is responsible for having checked this with a user-facing error when synthesizing. *)
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality in tyof_codatafield")
-      | Eq -> tyof_lower_codatafield tm fldname adj plus_lock fldty env tyargs m mn ~key:`Counit)
-  | Term.Codatafield.Higher (adj, plus_lock, fldtermctx, ic0, fldty) -> (
+      | Eq ->
+          tyof_lower_codatafield (self_values adj tm tyargs) tyargs fldname adj plus_lock fldty env
+            m mn ~key:`Counit)
+  | Higher (fldtermctx, fldtys) -> (
       (* Like a lower field, the projecting modality must be the left adjoint of the field's adjunction. *)
       match Modality.compare (Modalcell.adj_left adj) fm with
       | Neq -> fatal (Anomaly "wrong locking modality of higher field in tyof_codatafield")
       | Eq ->
+          (* The codatatype was produced by typechecking, so it has evaluation dimension zero and the field has just its declared type. *)
+          let (Fieldtype (ic0, fldty)) = declared_fieldtype fldtys in
           let Eq = D.plus_uniq mn (D.plus_zero m) in
-          tyof_higher_codatafield tm fldname adj env tyargs fldins ~shuf plus_lock fldtermctx ic0
-            fldty ~key:`Counit)
+          (* A projection has no remaining dimensions, so the self value and its boundary are used as they are. *)
+          tyof_higher_codatafield (self_values adj tm tyargs) tyargs (D.zero_plus m) fldname adj env
+            fldins ~shuf:Trivial plus_lock fldtermctx ic0 fldty ~key:`Counit)
 
-(* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.
+(* Assemble the self value that a codatafield's type is applied to, from the term being projected and the boundary of its type.  The self variable lies behind the locks by the right and then the left adjoint, whereas an ambient value being projected from lives in the ambient context; so, exactly as for the *type* of the self variable when the codatatype is checked, we transport it and its boundary along the adjunction unit 1 ⇒ gf.  For an ordinary field the unit is an identity cell and this is a no-op.  (A caller that already has the self *variable* of a self-extended context, such as readback_codata, has no ambient term to transport, and calls tyof_lower_codatafield or tyof_higher_codatafield directly with that variable instead.) *)
+and self_values : type amode f g gmode mn.
+    (amode, f, g, gmode) Modalcell.adjunction ->
+    (amode, kinetic) value ->
+    (D.zero, mn, mn, amode normal) TubeOf.t ->
+    (mn, (amode, kinetic) value) CubeOf.t =
+ fun (Adjunction { unit; _ }) tm tyargs ->
+  let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
+  CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ]
 
-   The ~key flag distinguishes two uses.  `Counit computes the type of a *projection* x .fld, which is keyed by the adjunction counit to put it in the ambient context (rule 3 of modal fields).  `Nokey computes the type at which the *component* of a tuple/comatch is checked or read back, which lives behind the lock by the right adjoint and is not keyed (rule 2).  For ordinary fields the two agree, since the counit is the identity. *)
+(* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.  The ~key flag distinguishes two uses.  `Counit computes the type of a *projection* x .fld, which is keyed by the adjunction counit to put it in the ambient context (rule 3 of modal fields).  `Nokey computes the type at which the *component* of a tuple/comatch is checked or read back, which lives behind the lock by the right adjoint and is not keyed (rule 2).  For ordinary fields the two agree, since the counit is the identity. *)
 and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
-    ((amode, kinetic) value, Code.t) Result.t ->
+    (* As for a higher field, the self value and its boundary, in the context behind the locks where the field's type lives: an ambient value being projected from is transported there along the adjunction unit (self_values does that), while a caller displaying a codatatype supplies the self variable of its self-extended context, which is already there. *)
+    (mn, (amode, kinetic) value) CubeOf.t ->
+    (* The boundary of the self, as its type presents it in the context where it lives: an ambient term's untransported boundary, or the boundary of the self variable's own type.  These are the terms whose field projections instantiate the field type. *)
+    (D.zero, mn, mn, amode normal) TubeOf.t ->
     D.zero Field.t ->
     (amode, f, g, gmode) Modalcell.adjunction ->
     (a, amode, g, gmode, ag) plus_lock ->
     (gmode, (ag, (f, n) dim_entry) snoc, kinetic) term ->
     (amode, m, a) env ->
-    (D.zero, mn, mn, amode normal) TubeOf.t ->
     m D.t ->
     (m, n, mn) D.plus ->
     key:[ `Counit | `Nokey ] ->
     (gmode, kinetic) value =
- fun tm fldname adj plus_lock fldty env tyargs m mn ~key ->
+ fun values tyargs fldname adj plus_lock fldty env m mn ~key ->
   let n = D.plus_right mn in
-  let (Adjunction { left; counit; unit; _ }) = adj in
-  (* The self variable now lies behind the locks by g and then f, whereas the supplied values live in the ambient context; so, exactly as for the *type* of the self variable when the codatatype is checked, we transport them along the adjunction unit 1 ⇒ gf.  This is what makes the new presentation agree with the old one: in the old one the value was looked up *through* the key by g, so it was acted on by a composite 1 ⇒ gν, whereas now it is looked up above that key and acted on only by f ⇒ ν; precomposing with the unit restores the former.  For an ordinary field the unit is an identity cell and this is a no-op. *)
-  let values =
-    match tm with
-    | Ok tm ->
-        `Ok
-          (CubeOf.mmap
-             { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) }
-             [ TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) ])
-    | Error e -> `Error e in
-  (* The type of a modal field lives behind a lock by the right adjoint, so we first key the environment by its identity cell, and only then extend it by the self variable, which is annotated by the left adjoint. *)
-  let env = key_id_env env plus_lock in
+  let (Adjunction { left; counit; _ }) = adj in
+  (* The type of a modal field lives behind a lock by the right adjoint, so we first lock the environment by it, and only then extend it by the self variable, which is annotated by the left adjoint. *)
+  let env = lock_env env plus_lock in
   (* Since the self variable is annotated by the left adjoint, its dimensions are filtered by it.  But a field whose left adjoint filters the substitution dimension m nontrivially "disappears" at that dimension, so all callers have already discarded it; and we reject at definition time a modal field of a codatatype whose own dimension n is filtered nontrivially.  Thus both filters here are trivial. *)
   let (Has_filter mfilter) = Modality.filter left m in
   let (Has_filter nfilter) = Modality.filter left n in
@@ -980,7 +973,7 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
             plus = mn;
             filter = mfilter;
             filtered = Modality.filter_idempotent nfilter;
-            values;
+            values = `Ok values;
           } in
       (* This type is m-dimensional, hence must be instantiated at a full m-tube. *)
       let insttm = eval_term env fldty in
@@ -996,61 +989,38 @@ and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
               (fun fa [ arg ] ->
                 let fains = ins_zero (dom_tface fa) in
                 let tm = field_term left arg.tm fldname fains in
-                let ty =
-                  lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname ~shuf:Trivial fains)
-                in
+                let ty = lazy (tyof_field left arg.tm (Lazy.force arg.ty) fldname fains) in
                 { tm; ty });
           }
           [ fst (TubeOf.split (D.zero_plus m) mn tyargs) ] in
       inst insttm instargs
 
-(* Compute the non-keyed component type of a lower field of a record type value, along with the field's adjunction: the type at which the stored component of a tuple lives, behind the lock by the right adjoint.  Used when reading back a struct at a record type. *)
-and tyof_field_nokey : type amode.
-    ((amode, kinetic) value, Code.t) Result.t ->
-    (amode, kinetic) value ->
-    D.zero Field.t ->
-    amode tyof_modal_field =
- fun tm ty fld ->
-  match view_type ty "tyof_field_nokey" with
-  | Canonical (_, Codata { env; fields; _ }, codatains, tyargs) -> (
-      match is_id_ins codatains with
-      | None -> fatal (Anomaly "degenerated record in tyof_field_nokey")
-      | Some mn -> (
-          let m = dim_env env in
-          match Term.CodatafieldAbwd.find_opt fields fld with
-          | Found (Lower (adj, plus_lock, fldty)) ->
-              Tyof_modal_field
-                (adj, tyof_lower_codatafield tm fld adj plus_lock fldty env tyargs m mn ~key:`Nokey)
-          | _ -> fatal (Anomaly "field not found in tyof_field_nokey")))
-  | _ -> fatal (Anomaly "non-codatatype in tyof_field_nokey")
-
 (* This function is also called directly from check_higher_field.  In that case, the field is determined by a partial bijection that may *not* be just an insertion, and we have to frobnicate the environment in which we evaluate the type.  Some of that frobnication involves an eval-readback cycle, which requires a callback from here since readback isn't defined yet. *)
-and tyof_higher_codatafield : type mode f g gmode c n h s r i d ag iagx.
-    ((mode, kinetic) value, Code.t) Result.t ->
+and tyof_higher_codatafield : type mode f g gmode c n rn h s r i d ag iagx.
+    (* The self value and its boundary, *already* in the context where this instance of the field lives: transported behind the locks along the adjunction unit if it is an ambient value (self_values does that), or the self variable of a self-extended context if the caller is displaying a codatatype, and degenerated by the remaining dimensions either way.  The value is an (r+n)-cube: for a projection (r=0) that is just the self and its boundary, while for a nonprojectable instance it is their degeneration. *)
+    (rn, (mode, kinetic) value) CubeOf.t ->
+    (* The boundary faces of the self as its type presents them (see tyof_lower_codatafield), indexed by the faces of n, each degenerated by the remaining dimensions as above (so the face at an n-face of dimension k is (r+k)-dimensional).  These are the terms whose field projections instantiate the field type. *)
+    (D.zero, n, n, mode normal) TubeOf.t ->
+    (r, n, rn) D.plus ->
     i Field.t ->
     (* A higher field is modal over an adjunction, just like a lower field.  Its type is checked (and hence lives) behind a lock by the right adjoint, at the right adjoint's source mode; ordinary fields use the identity adjunction.  We currently require the modality to be fully parametric, so it filters no dimensions of the field. *)
     (mode, f, g, gmode) Modalcell.adjunction ->
     (* The codatatype is in context of length c.  It has been evaluated at dimension n, in an (n, c) env. *)
     (mode, n, c) env ->
-    (* And so it has a boundary n-tube. *)
-    (D.zero, n, n, mode normal) TubeOf.t ->
-    (* The field has intrinsic dimension i, determined by a pbij from n to i, with result s, remaining r, shared h.  We record the insertion and shuffle separately, with a shuffleable recording explicitly whether the shuffle is nontrivial and including a readback callback if so.  This is because we will have to readback an (s+h) env over the field's context, in some context, and evaluate in an (r,a) env coming from degenerating that context, to get an (r+s+h) one, but readback depends on this file. *)
+    (* The field has intrinsic dimension i, determined by a pbij from n to i, with result s, remaining r, shared h.  We record the insertion and shuffle separately, with a shuffleable recording explicitly whether the shuffle is nontrivial and including a readback callback if so.  This is because we will have to readback an (n, ag) env, in some context, and evaluate in an (r, a) env coming from degenerating that context, to get an (r+n) one, but readback depends on this file. *)
     (n, s, h) insertion ->
-    (* It's very important that these callbacks be called on *all values* before they are used, including tm, env, and tyargs, since they start out in the non-degenerated context but everything has to actually happen in the degenerated one. *)
-    shuf:(mode, r, h, i, c) shuffleable ->
-    (* We lock the context c by the right adjoint g, getting the context ag at its source mode gmode. *)
+    shuf:(mode, r, h, i) shuffleable ->
+    (* We lock the context c by the right adjoint g, getting the context ag at its source mode gmode.  That is where the field type's closure environment lives, and the termctx of it is stored with the field so that we can eval-readback that environment. *)
     (c, mode, g, gmode, ag) plus_lock ->
-    (* Then we extend it by the self variable, annotated by the left adjoint f.  The termctx of the resulting context is stored with the field, so that we can eval-readback environments over it. *)
-    (gmode, d, (ag, (f, D.zero) dim_entry) snoc) termctx ->
-    (* Finally we add i to all its dimensions. *)
+    (gmode, d, ag) termctx ->
+    (* The field's type is a term in that context extended by the self variable, annotated by the left adjoint f, with i added to all the dimensions. *)
     (i, (ag, (f, D.zero) dim_entry) snoc, iagx, gmode) plusmap ->
-    (* The unevaluated type of the field is a term in that context. *)
     (gmode, iagx, kinetic) term ->
     (* As for lower fields, ~key:`Counit keys the result by the adjunction counit (for a projection) while ~key:`Nokey leaves it behind the g-lock (for checking/reading back a tuple component). *)
     key:[ `Counit | `Nokey ] ->
     (* In the nontrivial case, the return value is also in the degenerated context. *)
     (gmode, kinetic) value =
- fun tm fldname adj codataenv tyargs fldins ~shuf plus_lock fldtermctx ic0 fldty ~key ->
+ fun values tyargs r_n fldname adj codataenv fldins ~shuf plus_lock fldtermctx ic0 fldty ~key ->
   let n = dom_ins fldins in
   let s = cod_left_ins fldins in
   let h =
@@ -1061,52 +1031,54 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i d ag iagx.
   let (Plus sh) = D.plus h in
   let (Plus r_sh) = D.plus (D.plus_out s sh) in
   let rs_h = D.plus_assocl rs sh r_sh in
-  let (Adjunction { left; right; counit; unit; _ }) = adj in
-  (* The self variable lies behind the locks by the right and then the left adjoint, whereas the supplied values live in the ambient context, so we transport them there along the adjunction unit, exactly as for a lower field.  (For an ordinary field the unit is an identity cell and this is a no-op.) *)
-  let values =
-    match tm with
-    | Ok tm ->
-        `Ok
-          (CubeOf.mmap
-             { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) }
-             [ TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) ])
-    | Error e -> `Error e in
-  (* The field type lives behind a lock by the right adjoint, so we key the environment by it (by identity cells, per generator), and then extend it by the self variable, getting an (n, agx) env.  Since we require modal higher fields to be parametric, the left adjoint filters no dimensions. *)
-  let env = key_id_env codataenv plus_lock in
-  let (Has_filter nfilter) = Modality.filter left n in
-  match Modality.filter_is_trivial n nfilter with
+  let (Adjunction { left; counit; _ }) = adj in
+  (* The field type lives behind a lock by the right adjoint, so we lock the environment by it (one Lock per generator), getting an (n, ag) env.  Note that we do *not* extend it by the self variable yet: the degeneration below must be applied to the parameters alone, so that its eval-readback happens in the ambient context locked by the right adjoint, whether the self is an ambient value or the self variable of a codatatype being displayed. *)
+  let env = lock_env codataenv plus_lock in
+  (* Degenerate the parameters by the remaining dimensions, if there are any, getting an (r+n, ag) env. *)
+  let (r, env) : r D.t * (gmode, rn, ag) env =
+    match shuf with
+    | Trivial ->
+        let Eq = D.plus_uniq r_n (D.zero_plus n) in
+        (D.zero, env)
+    | Nontrivial { shuffle; deg_env } ->
+        (* Since that environment lies behind the lock by the right adjoint, we supply that modality and the stored termctx of its codomain. *)
+        (left_shuffle shuffle, deg_env adj fldtermctx r_n env) in
+  let rn = D.plus_out r r_n in
+  (* Then extend by the self, which the caller has already degenerated to match, getting an (r+n, agx) env.  Since we require modal higher fields to be parametric, the left adjoint filters no dimensions. *)
+  let (Has_filter rnfilter) = Modality.filter left rn in
+  match Modality.filter_is_trivial rn rnfilter with
   | None -> fatal (Anomaly "filtered self variable in tyof_higher_codatafield")
   | Some Eq ->
       let env =
         Value.Ext
           {
             env;
-            plus = D.plus_zero n;
-            filter = nfilter;
+            plus = D.plus_zero rn;
+            filter = rnfilter;
             filtered = Modality.filter_zero left;
-            values;
+            values = `Ok values;
           } in
-      (* Now we act on this (n, agx) env by the inverse of the insertion to get an (s+h, agx) env. *)
-      let env = Act (env, opt_op_of_deg (deg_of_perm (perm_inv (perm_of_ins_plus fldins sh)))) in
+      (* Now we act by the inverse of the insertion, in the last n of the r+n dimensions, to get an (r+s+h, agx) env. *)
+      let insdeg = plus_deg r r_n r_sh (deg_of_perm (perm_inv (perm_of_ins_plus fldins sh))) in
       let env =
         match shuf with
         (* When r=0 and h=i, we can just shift this to get an (s, h+agx) env, which is the same as (s, i+agx), so it matches the context of fldty. *)
-        | Trivial -> Shift (env, sh, ic0)
+        | Trivial ->
+            let Eq = D.plus_uniq r_sh (D.zero_plus (D.plus_out s sh)) in
+            Shift (Act (env, opt_op_of_deg insdeg), sh, ic0)
         (* In the general case... *)
-        | Nontrivial { dbwd = _; shuffle; deg_env; deg_nf = _ } ->
-            (* First we do some dimension arithemetic. *)
-            let r = left_shuffle shuffle in
+        | Nontrivial { shuffle; _ } ->
+            (* First we do some dimension arithmetic. *)
             let i = out_shuffle shuffle in
             let (Plus si) = D.plus i in
             let (Plus sr) = D.plus r in
             let (Plus sr_h) = D.plus h in
             let s_rh = D.plus_assocr sr rh sr_h in
-            (* Then we eval-readback to get an (r+s+h, agx) env.  Since that environment lies behind the lock by the right adjoint and is extended by the self variable, we supply that modality and the stored termctx of its codomain. *)
-            let env = deg_env right fldtermctx sh r_sh env in
             (* Then we permute it to get an (s+r+h, agx) env, and act by the shuffle to get (s+i, agx) *)
             let swapdeg = deg_plus (swap_deg sr rs) rs_h sr_h in
             let shuffledeg = plus_deg s s_rh si (deg_of_shuffle shuffle rh) in
-            let env = Value.Act (env, opt_op_of_deg (comp_deg swapdeg shuffledeg)) in
+            let env =
+              Value.Act (env, opt_op_of_deg (comp_deg insdeg (comp_deg swapdeg shuffledeg))) in
             (* Finally, now we can shift this to get a (s, i+agx) env. *)
             Shift (env, si, ic0) in
       (* Now this matches the context of fldty, so we can evaluate it. *)
@@ -1126,48 +1098,34 @@ and tyof_higher_codatafield : type mode f g gmode c n h s r i d ag iagx.
                 let (Pface_lift_ins (type m) ((fains, faplus) : (m, k, h) insertion * (m, n) pface))
                     =
                   pface_lift_ins fa fldins in
+                (* The boundary faces were degenerated by the caller, so this one is (r+m)-dimensional. *)
                 let arg = TubeOf.find tyargs faplus in
                 match shuf with
                 | Trivial ->
                     let tm = field_term left arg.tm fldname fains in
-                    let ty =
-                      lazy (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname ~shuf fains)
-                    in
+                    let ty = lazy (tyof_field left arg.tm (Lazy.force arg.ty) fldname fains) in
                     { tm; ty }
-                | Nontrivial { shuffle; deg_nf; _ } ->
-                    (* In this case, we have to degenerate the arguments, since they depend on the context. *)
-                    let arg = deg_nf arg in
-                    (* We also use these extra dimensions to make the pbij into an insertion. *)
+                | Nontrivial { shuffle; _ } ->
+                    (* We use the extra dimensions of the degenerated face to make the pbij into an insertion. *)
                     let (Plus rm) = D.plus (dom_tface faplus) in
                     let arg_ins = ins_plus_of_pbij fains shuffle rm in
                     let tm = field_term left arg.tm fldname arg_ins in
-                    let ty =
-                      lazy
-                        (tyof_field left (Ok arg.tm) (Lazy.force arg.ty) fldname ~shuf:Trivial
-                           arg_ins) in
+                    let ty = lazy (tyof_field left arg.tm (Lazy.force arg.ty) fldname arg_ins) in
                     { tm; ty });
           } in
       inst insttm instargs
 
 (* This version is when we already know the insertion.  In this case, it's a bug if the field name or dimension don't match.  The modality is the left adjoint of the field's adjunction: the term and its type live at its source mode and the resulting field type at its target mode. *)
-and tyof_field : type src f mode m h s r i c.
+and tyof_field : type src f mode m s i.
     (src, f, mode) Modality.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     (src, kinetic) value ->
     i Field.t ->
-    (* We allow passing through a shuffle and eval-readback as well, in the case that this is a higher field being called recursively as part of the instantiation arguments. *)
-    shuf:(src, r, h, i, c) shuffleable ->
-    (m, s, h) insertion ->
+    (m, s, i) insertion ->
     (mode, kinetic) value =
- fun fm tm ty fld ~shuf fldins ->
-  let errtm =
-    match tm with
-    | Ok tm -> Dump.Val tm
-    | Error _err -> PString "[ERROR]" in
-  let errfld =
-    match shuf with
-    | Trivial -> `Ins (fld, fldins)
-    | Nontrivial { shuffle; _ } -> `Pbij (fld, Pbij (fldins, shuffle)) in
+ fun fm tm ty fld fldins ->
+  let errtm = Dump.Val tm in
+  let errfld = `Ins (fld, fldins) in
   let severity = Asai.Diagnostic.Bug in
   match view_type ty "tyof_field" with
   | Canonical
@@ -1178,24 +1136,21 @@ and tyof_field : type src f mode m h s r i c.
            ({ env; fields; opacity = _; eta; hints = _ } : (src, m, n, a, et) codata_args),
          codatains,
          tyargs ) :
-        hmode head
+        (hmode, kinetic) head
         * (src, m, n) canonical
         * (mn, m, n) insertion
         * (D.zero, mn, mn, src normal) TubeOf.t) -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
       match is_id_ins codatains with
       | None -> fatal ~severity (No_such_field (`Degenerated_record eta, errfld))
-      | Some mn -> tyof_field_giventype fm tm head eta env mn fields tyargs fld ~shuf fldins)
+      | Some mn -> tyof_field_giventype fm tm head eta env mn fields tyargs fld fldins)
   | Canonical (head, UU (srcmode, m), ins, tyargs) -> (
       let Eq = eq_of_ins_zero ins in
       let err = Code.No_such_field (`Type errtm, errfld) in
       match Fibrancy.FieldsMap.find_opt srcmode !Fibrancy.fields with
       | None -> fatal ~severity err
       | Some fields ->
-          let values =
-            match tm with
-            | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
-            | Error e -> `Error e in
+          let values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) in
           let env =
             Value.Ext
               {
@@ -1205,33 +1160,24 @@ and tyof_field : type src f mode m h s r i c.
                 filtered = Modality.filter_zero (Modality.id srcmode);
                 values;
               } in
-          tyof_field_giventype fm tm head Noeta env (D.plus_zero m) fields tyargs fld ~shuf fldins)
-  | _ ->
-      let p =
-        match tm with
-        | Ok tm -> Dump.Val tm
-        | Error _err -> PString "[ERROR]" in
-      fatal ~severity (No_such_field (`Other p, errfld))
+          tyof_field_giventype fm tm head Noeta env (D.plus_zero m) fields tyargs fld fldins)
+  | _ -> fatal ~severity (No_such_field (`Other (Dump.Val tm), errfld))
 
-and tyof_field_giventype : type src f mode m n mn h s r i c et a k hmode.
+and tyof_field_giventype : type src f mode m n mn s i et a k hmode.
     (src, f, mode) Modality.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
-    hmode head ->
+    (src, kinetic) value ->
+    (hmode, kinetic) head ->
     (potential, et) eta ->
     (src, m, a) env ->
     (m, n, mn) D.plus ->
-    (src * a * n * et) Term.CodatafieldAbwd.t ->
+    (src * a * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, src normal) TubeOf.t ->
     i Field.t ->
-    shuf:(src, r, h, i, c) shuffleable ->
-    (k, s, h) insertion ->
+    (k, s, i) insertion ->
     (mode, kinetic) value =
- fun fm tm head eta env mn fields tyargs fld ~shuf fldins ->
+ fun fm tm head eta env mn fields tyargs fld fldins ->
   let severity = Asai.Diagnostic.Bug in
-  let errfld =
-    match shuf with
-    | Trivial -> `Ins (fld, fldins)
-    | Nontrivial { shuffle; _ } -> `Pbij (fld, Pbij (fldins, shuffle)) in
+  let errfld = `Ins (fld, fldins) in
   let m = dim_env env in
   (* Note that n is the Gel dimension while m is the evaluation dimension.  So we need an m+n tube of type arguments, but the insertion labeling the field being accessed has only m as its evaluation dimension. *)
   match D.compare m (dom_ins fldins) with
@@ -1240,28 +1186,17 @@ and tyof_field_giventype : type src f mode m n mn h s r i c et a k hmode.
         (Dimension_mismatch ("tyof_field evaluation " ^ Field.to_string fld, m, dom_ins fldins))
   | Eq -> (
       match Term.CodatafieldAbwd.find_opt fields fld with
-      | Found fldty ->
-          let shuf : (src, r, h, i, a) shuffleable =
-            match shuf with
-            | Trivial -> Trivial
-            | Nontrivial { dbwd; _ } -> (
-                match Tctx.compare dbwd (length_env env) with
-                | Eq -> shuf
-                | Neq -> fatal (Anomaly "context length mismatch in tyof_field")) in
-          tyof_codatafield fm tm fld fldty env tyargs m mn ~shuf fldins
+      | Found fldty -> tyof_codatafield fm tm fld fldty env tyargs m mn fldins
       | Not_found -> fatal ~severity (No_such_field (`Record (eta, phead head), errfld))
       | Wrong_dimension (i, _) ->
-          let errsuffix =
-            match shuf with
-            | Trivial -> `Ins fldins
-            | Nontrivial { shuffle; _ } -> `Pbij (Pbij (fldins, shuffle)) in
-          fatal ~severity (Wrong_dimension_of_field (eta, phead head, `Field fld, m, i, errsuffix)))
+          fatal ~severity
+            (Wrong_dimension_of_field (eta, phead head, `Field fld, m, i, `Ins fldins)))
 
 (* This version is for when we are synthesizing the insertion, so we return the resulting insertion along with the type.  The field might also be given positionally in this case, so we also return the field name when we find it.  In this case, mismatches in field names or dimensions are user errors, as is a mismatch between the locking modality (from the user's annotation, or the identity if none) and the left adjoint of the field's adjunction. *)
 and tyof_field_withname : type src f mode a b.
     (src, f, mode) Modality.t ->
     (src, a, b) Ctx.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     (src, kinetic) value ->
     [ `Name of string * int list | `Int of int ] ->
     Field.with_ins * (mode, kinetic) value =
@@ -1270,10 +1205,7 @@ and tyof_field_withname : type src f mode a b.
     match infld with
     | `Name (str, ints) -> `Strings (str, ints)
     | `Int n -> `Int n in
-  let errtm =
-    match tm with
-    | Ok tm -> PVal (ctx, tm)
-    | Error _err -> PString "[ERROR]" in
+  let errtm = PVal (ctx, tm) in
   match view_type ~severity:Asai.Diagnostic.Error ty "tyof_field" with
   | Canonical (head, Codata { env; fields; opacity = _; eta; hints = _ }, codatains, tyargs) -> (
       (* The type cannot have a nonidentity degeneracy applied to it (though it can be at a higher dimension). *)
@@ -1288,10 +1220,7 @@ and tyof_field_withname : type src f mode a b.
       match Fibrancy.FieldsMap.find_opt srcmode !Fibrancy.fields with
       | None -> fatal err
       | Some fields ->
-          let values =
-            match tm with
-            | Ok tm -> `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm))
-            | Error e -> `Error e in
+          let values = `Ok (TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm)) in
           let env =
             Value.Ext
               {
@@ -1309,12 +1238,12 @@ and tyof_field_withname : type src f mode a b.
 and tyof_field_withname_giventype : type src f mode a b m n mn c et.
     (src, f, mode) Modality.t ->
     (src, a, b) Ctx.t ->
-    ((src, kinetic) value, Code.t) Result.t ->
+    (src, kinetic) value ->
     (src, kinetic) value ->
     (potential, et) eta ->
     (src, m, c) env ->
     (m, n, mn) D.plus ->
-    (src * c * n * et) Term.CodatafieldAbwd.t ->
+    (src * c * D.zero * n * et) Term.CodatafieldAbwd.t ->
     (D.zero, mn, mn, src normal) TubeOf.t ->
     [ `Name of string * int list | `Int of int ] ->
     Code.t ->
@@ -1322,8 +1251,9 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
  fun fm ctx tm ty eta env mn fields tyargs infld err ->
   let m = dim_env env in
   (* Check that the locking modality supplied by the user (or the identity, if none) agrees with the left adjoint of the adjunction stored with the field, and that the field is present (not filtered away by a nonparametric modality) at the current dimension. *)
-  let check_modality : type i. i Field.t -> (i, src * c * n * et) Term.Codatafield.t -> unit =
-   fun fld fldty ->
+  let check_modality : type i.
+      i Field.t -> (i, src * c * D.zero * n * et) Term.Codatafield.t -> unit =
+   fun fld (Codatafield (_, adj, _, _)) ->
     let mismatch : type d1 m1 c1. (d1, m1, c1) Modality.t -> unit =
      fun left ->
       let field = Field.to_string fld in
@@ -1333,28 +1263,15 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
       | Neq, Eq -> fatal (Wrong_locking_modality { field; expected = Some left; got = None })
       | Neq, Neq -> fatal (Wrong_locking_modality { field; expected = Some left; got = Some fm })
     in
-    match fldty with
-    | Lower (adj, _, _) -> (
-        let left = Modalcell.adj_left adj in
-        match Modality.compare left fm with
-        | Neq -> mismatch left
-        | Eq -> (
-            (* The field disappears if its nonparametric modality filters this dimension nontrivially. *)
-            let (Has_filter left_filter) = Modality.filter left m in
-            match Modality.filter_is_trivial m left_filter with
-            | Some Eq -> ()
-            | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))))
-    | Higher (adj, _, _, _, _) -> (
-        (* Like a lower field, a higher field's projecting modality must be the left adjoint. *)
-        let left = Modalcell.adj_left adj in
-        match Modality.compare left fm with
-        | Neq -> mismatch left
-        | Eq -> (
-            (* The field disappears if its nonparametric modality filters this dimension nontrivially.  (Currently unreachable, since we require modal higher fields to be parametric at definition time; but this keeps the check robust.) *)
-            let (Has_filter left_filter) = Modality.filter left m in
-            match Modality.filter_is_trivial m left_filter with
-            | Some Eq -> ()
-            | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left)))) in
+    let left = Modalcell.adj_left adj in
+    match Modality.compare left fm with
+    | Neq -> mismatch left
+    | Eq -> (
+        (* The field disappears if its nonparametric modality filters this dimension nontrivially. *)
+        let (Has_filter left_filter) = Modality.filter left m in
+        match Modality.filter_is_trivial m left_filter with
+        | Some Eq -> ()
+        | None -> fatal (Modal_field_filtered_away (Field.to_string fld, left))) in
   let m = dim_env env in
   match infld with
   | `Name (fldname, ints) -> (
@@ -1366,7 +1283,7 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
           match Term.CodatafieldAbwd.find_opt fields fld with
           | Found fldty ->
               check_modality fld fldty;
-              let fldty = tyof_codatafield fm tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
+              let fldty = tyof_codatafield fm tm fld fldty env tyargs m mn fldins in
               (WithIns (fld, fldins), fldty)
           | Wrong_dimension (i, fldty) -> (
               (* If the user omitted the suffix completely, and the field and the term are both 1-dimensional, we fill in the unique suffix "1" for them. *)
@@ -1381,8 +1298,7 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
                       let fld = Field.intern fldname i in
                       let fldins = zero_ins m in
                       check_modality fld fldty;
-                      let fldty =
-                        tyof_codatafield fm tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
+                      let fldty = tyof_codatafield fm tm fld fldty env tyargs m mn fldins in
                       (WithIns (fld, fldins), fldty)
                   | Pos _ -> fatal err)
               | _ -> fatal err)
@@ -1394,7 +1310,7 @@ and tyof_field_withname_giventype : type src f mode a b m n mn c et.
         | Zero ->
             let fldins = ins_zero m in
             check_modality fld fldty;
-            let fldty = tyof_codatafield fm tm fld fldty env tyargs m mn ~shuf:Trivial fldins in
+            let fldty = tyof_codatafield fm tm fld fldty env tyargs m mn fldins in
             (WithIns (fld, fldins), fldty)
         | Pos _ -> fatal err
       with Failure _ -> fatal err)
@@ -1403,6 +1319,16 @@ and apply_binder : type dom modality mode kl mn s.
     (mode, modality, dom, mn, s) Value.binder ->
     (dom, modality, mode, kl, mn) Modality.filter_dim ->
     (kl, (dom, kinetic) value) CubeOf.t ->
+    (mode, s) evaluation =
+ fun b filter argstbl ->
+  apply_binder_lazy b filter
+    (CubeOf.mmap { map = (fun _ [ v ] -> defer (fun () -> Val v)) } [ argstbl ])
+
+(* Like apply_binder, but with arguments that may not yet have been evaluated, so that if the body doesn't use them they never are. *)
+and apply_binder_lazy : type dom modality mode kl mn s.
+    (mode, modality, dom, mn, s) Value.binder ->
+    (dom, modality, mode, kl, mn) Modality.filter_dim ->
+    (kl, (dom, kinetic) lazy_eval) CubeOf.t ->
     (mode, s) evaluation =
  fun (Value.Bind { env; modality; filter = filter_l_n; ins; body }) filter_kl_mn argstbl ->
   let m = dim_env env in
@@ -1433,9 +1359,7 @@ and apply_binder : type dom modality mode kl mn s.
                      build =
                        (fun frfs ->
                          let (Face (fa, fb)) = perm_sface filtered_perm_inv frfs in
-                         act_lazy_eval
-                           (defer (Modality.src modality) (fun () -> Val (CubeOf.find argstbl fa)))
-                           (deg_of_perm fb)
+                         act_lazy_eval (CubeOf.find argstbl fa) (deg_of_perm fb)
                            (Modalcell.id2 (Modality.src modality)));
                    });
           })
@@ -1447,17 +1371,14 @@ and eval_canonical : type mode m a.
     (mode, m, a) env -> (mode, a) Term.canonical -> (mode, potential) evaluation =
  fun env can ->
   match can with
-  | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
+  | Data { indices; evaldim = _; constrs; recursive; hints; tyfam } ->
+      let dim, mode = (dim_env env, mode_env env) in
       (* The type family (the datatype applied to its parameters, e.g. "Vec A") was read back when this datatype was checked; we now evaluate it, lazily to avoid the circularity of re-entering this same evaluation eagerly.  Its type we take from the resulting neutral, since that is computed fully-instantiated at the current dimension (whereas re-evaluating a read-back type term would not be). *)
       let tyfam = lazy_eval env tyfam in
       let constrs =
-        Abwd.map
-          (fun (Term.Dataconstr { args; indices }) -> Value.Dataconstr { env; args; indices })
-          constrs in
-      let dim, mode = (dim_env env, mode_env env) in
+        Abwd.map (fun ty -> Value.Dataconstr { env; ty; fnty = lazy_eval env ty }) constrs in
       let canonical =
-        Data { dim; tyfam; indices = Fillvec.empty indices; constrs; discrete; recursive; hints }
-      in
+        Data { dim; tyfam; indices = Fillvec.empty indices; constrs; recursive; hints } in
       let tyargs = TubeOf.empty (dim_env env) in
       let fields =
         match Lazy.force Fibrancy.data with
@@ -1466,9 +1387,15 @@ and eval_canonical : type mode m a.
       Val
         (Canonical
            { mode; canonical; tyargs; ins = ins_zero dim; fields; inst_fields = Some fields })
-  | Codata c ->
-      eval_codata env c.eta c.opacity c.hints c.dim c.fields
-        (Fibrancy.Codata.finished (mode_env env) c)
+  | Codata c -> (
+      (* Typechecking only produces codatatypes of evaluation dimension zero, which carry a fibrancy.  A positive evaluation dimension, or a missing fibrancy, means this codatatype is the readback of a codatatype *value*, which is display-only and is never evaluated. *)
+      match c.fibrancy with
+      | Some fibrancy ->
+          let Eq = fibrancy.evaldim in
+          let Eq = D.plus_uniq c.plusdim (D.zero_plus c.dim) in
+          eval_codata env c.eta c.opacity c.hints c.dim c.fields
+            (Fibrancy.Codata.finished (mode_env env) c.fields fibrancy c.is_glue)
+      | _ -> fatal (Evaluating_display_term "codata"))
 
 (* We split out this subroutine so it can be called from Check.with_codata_so_far.  *)
 and eval_codata : type mode m a n et.
@@ -1477,7 +1404,7 @@ and eval_codata : type mode m a n et.
     opacity ->
     hints ->
     n D.t ->
-    (mode * a * n * et) CodatafieldAbwd.t ->
+    (mode * a * D.zero * n * et) CodatafieldAbwd.t ->
     (mode * (n * a * potential * no_eta)) Term.StructfieldAbwd.t ->
     (mode, potential) evaluation =
  fun env eta opacity hints n fields fibrancy_fields ->
@@ -1523,7 +1450,7 @@ and eval_env : type mode a q n qn b.
       let (Plus pm_k) = D.plus k in
       let p_mk = D.plus_assocr p_m m_k pm_k in
       let pmk = D.plus_out p p_mk in
-      let lenv = key_id_env env al in
+      let lenv = lock_env env al in
       let flenv = act_env lenv (opt_op_of_opt_sface (Modality.sface_of_filter q filt_p_q)) in
       (* We make everything lazy, since we can, and not everything may end up being used. *)
       Value.Ext
@@ -1542,25 +1469,14 @@ and eval_env : type mode a q n qn b.
                        lazy_eval (act_env flenv (opt_op_of_sface fa)) (CubeOf.find xss fb));
                  });
         }
-  | Key { env = tmenv; cell; plus_src; plus_tgt } -> (
-      let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
-      match extra with
-      | Plus_lock (Zero _, Zero) ->
-          let Eq = Modality.comp_uniq mu12 (Modality.id_comp (Modalcell.vtgt cell)) in
-          prekey_env (Key (eval_env env q_n tmenv, Modalcell.vcomp keys cell, plus_src)) pre
-      | Plus_lock (Suc _, _) ->
-          (* The split landed in the middle of a key, so restrict_keys slurped the rest of that key's locks (extra) and folded its whole cell into keys, which therefore lives at a deeper mode than cell and can't be vertically composed with it.  Unlike a term Key, we can't extend plus_src by the extra either, since it lies on the codomain base of the term environment while the extra lies on its domain base.  So we rebuild the extra locks as identity keys to realign the residual environment with the term environment's domain, and apply the composite keys as a prekey action outside the resulting Key, where the accumulated actions compose in the same order as before. *)
-          prekey_env
-            (prekey_env (Key (eval_env (key_id_env env extra) q_n tmenv, cell, plus_src)) keys)
-            pre)
-  (* A term prekey is evaluated just like a key, except that the composite cell mediates the value environment on the domain side, before evaluating the inner term environment, rather than being wrapped around the result on the codomain side. *)
+  (* To evaluate a lock, we strip off the corresponding part of the value environment (which may include variables to the right of the lock, since the domain of a term environment can grow when passing a lock), evaluate the inner term environment in what remains, and re-lock it.  Any prekey action stripped along the way is re-applied on top. *)
+  | Lock { env = tmenv; gen; plus_tgt } ->
+      let (Restrict_keys (env, pre)) = restrict_keys env plus_tgt in
+      prekey_env (Lock (eval_env env q_n tmenv, gen)) pre
+  (* A term prekey mediates the domain context: we strip off the locks of its vertical target, re-lock by its vertical source, and apply its cell as a prekey to the value environment before evaluating the inner term environment in it. *)
   | Prekey { env = tmenv; cell; plus_src; plus_tgt } ->
-      let (Restrict_keys (env, extra, mu12, keys, pre)) = restrict_keys env plus_tgt in
-      (* As in the Key branch of eval, if restrict_keys had to slurp up extra locks from the middle of a key, we postwhisker the cell by their composite modality so that its target matches the source of the composite keys, and extend the source locks of the resulting key by the extra.  (Here, unlike in the Key branch of eval_env, plus_src lies on the same base as plus_tgt, so this is possible.) *)
-      let (Comp nu12) = Modality.comp (Modalcell.vsrc cell) in
-      let extra_cell = Modalcell.postwhisker nu12 mu12 (plus_lock_modality extra) cell in
-      let kenv =
-        key_env env (Modalcell.vcomp keys extra_cell) (plus_lock_comp extra plus_src nu12) in
+      let (Restrict_keys (env, pre)) = restrict_keys env plus_tgt in
+      let kenv = prekey_env (lock_env env plus_src) cell in
       prekey_env (eval_env kenv q_n tmenv) pre
 
 and apply_term : type dom modality mode n m.
@@ -1583,17 +1499,18 @@ and apply_binder_term : type dom modality mode k n.
 
 and force_eval : type mode s. (mode, s) lazy_eval -> (mode, s) evaluation =
  fun lev ->
-  let undefer tm s c apps =
-    (* TODO: In an ideal world, there would be one function that would traverse the term once doing both "eval" and "act" by the insertion. *)
-    let etm = act_evaluation tm s c in
-    let etm = app_eval_apps etm apps in
+  let cache etm =
     lev := Ready etm;
     etm in
   match !lev with
-  | Deferred_eval (env, tm, ins, c, apps) ->
+  | Deferred_eval (env, tm, ins, c) ->
+      (* The insertion and cell are only the part of any outer actions that act_lazy_eval couldn't compose into the environment.  They are almost always trivial, in which case act_evaluation returns immediately. *)
       let (To p) = deg_of_ins ins in
-      undefer (eval env tm) p c apps
-  | Deferred (tm, s, c, apps) -> undefer (tm ()) s c apps
+      cache (act_evaluation (eval env tm) p c)
+  | Deferred tm -> cache (tm ())
+  (* Forcing the inner value caches it there too, so that it is shared with anything else that refers to it. *)
+  | Applied (inner, Apps e) -> cache (app_eval_entry (force_eval inner) e)
+  | Applied (inner, Action (s, c)) -> cache (act_evaluation (force_eval inner) s c)
   | Ready etm -> etm
 
 and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) value =
@@ -1601,40 +1518,30 @@ and force_eval_term : type mode. (mode, kinetic) lazy_eval -> (mode, kinetic) va
   let (Val v) = force_eval v in
   v
 
-(* Apply an 'apps' to something, calling either 'apply' or 'field' or 'inst' for each stage as appropriate. *)
-and app_eval_apps : type hmode mode s any.
-    (hmode, s) evaluation -> (hmode, mode, any) apps -> (mode, s) evaluation =
- fun ev x ->
-  match x with
-  | Emp -> ev
-  | Arg (rest, filter, xs, ins) -> (
+(* Apply a single entry of an 'apps' to something, calling either 'apply' or 'field' or 'inst' as appropriate.  Applying, projecting from, or instantiating a stuck evaluation leaves it stuck, but forgets where it got stuck (see Value.stuck): all Unrealizeds become None.  It may not be possible to reach here with a nontrivial stuck entry for an application or an instantiation, but it definitely is for a field projection, so we treat them all the same. *)
+and app_eval_entry : type mode1 mode2 s any inst.
+    (mode1, s) evaluation -> (mode1, mode2, any, inst) apps_entry -> (mode2, s) evaluation =
+ fun ev e ->
+  match e with
+  | Arg (filter, xs, ins) -> (
       let modality = Modality.filter_modality filter in
       let mode = Modality.tgt modality in
       let (To p) = deg_of_ins ins in
-      match app_eval_apps ev rest with
+      match ev with
       (* A datatype not yet applied to all its indices is a potential value that 'apply' can't handle, since the new index must be stored with its type; we deal with it here where we have the argument as a cube of normals. *)
       | Val
           (Canonical
              {
                mode = cmode;
                canonical =
-                 Data
-                   {
-                     dim;
-                     tyfam;
-                     indices = Unfilled _ as indices;
-                     constrs;
-                     discrete;
-                     recursive;
-                     hints;
-                   };
+                 Data { dim; tyfam; indices = Unfilled _ as indices; constrs; recursive; hints };
                tyargs;
                ins = cins;
                fields;
                inst_fields = _;
              }) ->
           let value =
-            apply_unfilled_data_index cmode dim tyfam indices constrs discrete recursive hints
+            apply_unfilled_data_index cmode dim tyfam indices constrs recursive hints
               (TubeOf.inst tyargs) cins fields modality xs in
           act_evaluation value p (Modalcell.id2 mode)
       | Val tm -> act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode)
@@ -1642,12 +1549,12 @@ and app_eval_apps : type hmode mode s any.
           let (Val v) =
             act_evaluation (apply tm filter (val_of_norm_cube xs)) p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized -> Unrealized)
-  | Field (rest, filter, fld, fldplus, ins) -> (
+      | Unrealized _ -> Unrealized None)
+  | Field (filter, fld, fldplus, ins) -> (
       let fm = Modality.filter_modality filter in
       let mode = Modality.tgt fm in
       let (To p) = deg_of_ins ins in
-      match app_eval_apps ev rest with
+      match ev with
       | Val tm ->
           act_evaluation
             (field fm tm fld (id_ins (cod_left_ins ins) fldplus))
@@ -1658,23 +1565,22 @@ and app_eval_apps : type hmode mode s any.
               (field fm tm fld (id_ins (cod_left_ins ins) fldplus))
               p (Modalcell.id2 mode) in
           Realize v
-      | Unrealized -> Unrealized)
-  | Inst (rest, _, args) -> (
-      match app_eval_apps ev rest with
+      | Unrealized _ -> Unrealized None)
+  | Inst (_, args) -> (
+      match ev with
       | Val tm -> Val (inst tm args)
       | Realize tm -> Realize (inst tm args)
-      | Unrealized -> Unrealized)
+      | Unrealized _ -> Unrealized None)
 
-(* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the keys on the end of the environment have already been stripped off, even though the input types don't statically rule out a key with identity domain. *)
-and lookup_cube : type dom mu munu mode n a b k mk nk.
+(* Look up a cube of values in an environment by variable index, accumulating operator actions, shifts, and keys as we go.  At the end, we usually use the operator to select a value from the cubes (with its face part) and act on it (with its degeneracy part).  We assume all the Locks on the end of the environment have already been stripped off by restrict_keys (which the type of the index ensures, since an insertion only passes dimension entries).  Any Prekeys inside are accumulated into a prekey action. *)
+and lookup_cube : type dom mu mode n a b k mk nk.
     (mode, n, b) env ->
     (n, k, nk) D.plus ->
     (dom, mu, mode) Modality.t ->
-    (dom, munu, mode) Modality.t ->
     (a, mu, k, b) insert ->
     (mk, nk) opt_op ->
     (dom, mk) looked_up_cube =
- fun env nk mu pretr v op ->
+ fun env nk mu v op ->
   let n = dim_env env in
   match env with
   (* Since there's an index, the environment can't be empty. *)
@@ -1685,17 +1591,16 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
   | Act (env, op') ->
       let (Plus lk) = D.plus (D.plus_right nk) in
       let op'k = opt_op_plus op' lk nk in
-      lookup_cube env lk mu pretr v (comp_opt_op op'k op)
-  (* Keys are disallowed here, because we've already called restrict_keys that is supposed to strip them all off. *)
-  | Key (env, cell, plus) -> (
-      match (Modalcell.compare_id cell, plus) with
-      | Eq, Plus_lock (Zero _, Zero) -> lookup_cube env nk mu pretr v op
-      | _ -> fatal (Anomaly "nonidentity key in lookup_cube"))
-  (* A prekey doesn't change the codomain context, so it can appear between the values of an environment and thus not be stripped off by restrict_keys.  We accumulate its cell into the returned prekey action.  Since the prekey acts at the environment's mode, but the looked-up value is at its own (deeper) mode, we prewhisker the cell by the transport modality (the vertical target of the composite key returned by restrict_keys), moving its source to the value's mode so that it composes with the accumulated action there. *)
+      lookup_cube env lk mu v (comp_opt_op op'k op)
+  (* Since there's an index, which can only pass dimension entries, the environment can't end with a lock: restrict_keys has already stripped them all off. *)
+  | Lock _ -> (
+      match v with
+      | _ -> .)
+  (* A prekey doesn't change the codomain context, so it can appear between the values of an environment and thus not be stripped off by restrict_keys.  We accumulate its cell into the returned prekey action.  Since the prekey acts at the environment's mode, but the looked-up value is at its own (deeper) mode, we prewhisker the cell by the transport modality (the composite modality of the locks stripped by restrict_keys), moving its source to the value's mode so that it composes with the accumulated action there. *)
   | Prekey (env, cell) ->
-      let (Looked_up { act; op; entry; pre }) = lookup_cube env nk mu pretr v op in
-      let (Wrap cell) = Modalcell.prewhisker_wrapped cell pretr in
-      let (Prekey_action pre) = prekey_vcomp cell pre in
+      let (Looked_up { act; op; entry; pre }) = lookup_cube env nk mu v op in
+      let (Wrap cell) = Modalcell.prewhisker_wrapped cell mu in
+      let (Wrap pre) = key_vcomp cell pre in
       Looked_up { act; op; entry; pre }
   (* If we encounter a shift or unshift, we just have to edit the insertion and go on. *)
   | Shift (env, n_x, xb) ->
@@ -1709,7 +1614,7 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
           (plus_opt_op n n_x n_y (opt_op_of_opt_sface (Modality.sface_of_filter x filter_y_x)))
       in
       let ny_k = D.plus_assocl n_y y_k n_xk in
-      lookup_cube yenv ny_k mu pretr v op
+      lookup_cube yenv ny_k mu v op
   | Unshift (env, n_x, xb) ->
       (* In this branch, n is renamed to n+x. *)
       let nx = n in
@@ -1723,16 +1628,16 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
       let n_yk = D.plus_assocr n_y y_k ny_k in
       let op' = plus_opt_op n n_y n_x (opt_op_of_deg (Modality.deg_of_filter x filter_y_x)) in
       let op'' = opt_op_plus op' ny_k nx_k in
-      lookup_cube env n_yk mu pretr v (comp_opt_op op'' op)
+      lookup_cube env n_yk mu v (comp_opt_op op'' op)
   (* If the environment is permuted, we apply the permutation to the index. *)
   | Permute (p, env) ->
       let (Permute_insert (v, _)) = permute_insert v p in
-      lookup_cube env nk mu pretr v op
+      lookup_cube env nk mu v op
   | Ext { env; plus = mk; values; filter = filter_m_n; filtered = filter_k_k } -> (
       let modality = Modality.filter_modality filter_m_n in
       match v with
       (* If we encounter a variable that isn't ours, we skip it and proceed. *)
-      | Later v -> lookup_cube env nk mu pretr v op
+      | Later v -> lookup_cube env nk mu v op
       (* Finally, when we find our variable, we decompose the accumulated operator into a strict face and degeneracy, use the face as an index lookup, and act by the degeneracy.  The forcing function is the identity if the entry is not lazy, and force_eval_term if it is lazy. *)
       | Now -> (
           let filter = Modality.filter_plus mk nk filter_m_n filter_k_k in
@@ -1741,36 +1646,50 @@ and lookup_cube : type dom mu munu mode n a b k mk nk.
           (* The looked-up value lives at the modality's domain mode, where the prekey action starts as an identity. *)
           let pre = Modalcell.id2 (Modality.src mu) in
           match (values, Modality.compare modality mu) with
-          (* Looking up a variable that's bound to an error immediately fails with that error.  (In particular, this sort of failure can't currently happen "deeper" inside a term.) *)
-          | `Error e, _ -> fatal e
           | `Ok entry, Eq -> Looked_up { act = (fun x s c -> act_value x s c); op; entry; pre }
           | `Lazy entry, Eq ->
               Looked_up
                 { act = (fun x s c -> force_eval_term (act_lazy_eval x s c)); op; entry; pre }
           | _, Neq -> fatal (Modality_mismatch (`Internal, "lookup_cube keys", modality, mu))))
+  | Ctx ctx -> lookup_cube_ctx ctx nk mu v op
+
+(* In the identity environment of a context, we skip the variables that aren't ours without unfolding them, and unfold only the one that is. *)
+and lookup_cube_ctx : type dom mu mode a b k mk nk c.
+    (mode, c, b) Ordered_ctx.t ->
+    (D.zero, k, nk) D.plus ->
+    (dom, mu, mode) Modality.t ->
+    (a, mu, k, b) insert ->
+    (mk, nk) opt_op ->
+    (dom, mk) looked_up_cube =
+ fun ctx nk mu v op ->
+  match (ctx, v) with
+  | Snoc (ctx', { vars = Vars; _ }, _), Later v -> lookup_cube (Ctx ctx') nk mu v op
+  | Snoc (ctx', { bindings; filter; vars = Vars; _ }, _), Now ->
+      (* TODO: Factor out the Ext/Now case from lookup_cube so we don't have to go through env_ext here? *)
+      lookup_cube (env_ext (Ctx ctx') filter bindings) nk mu Now op
+  | Snoc (ctx', { vars = Alias; _ }, _), _ ->
+      (* An alias has no checked variables. *)
+      lookup_cube (Ctx ctx') nk mu v op
+  | Weaken (ctx, _), _ -> lookup_cube (Ctx ctx) nk mu v op
+  | Emp _, _ | Lock _, _ -> .
 
 and lookup : type mode n b. (mode, n, b) env -> (mode, b) index -> (mode, kinetic) value =
  fun env (Index (v, fa, _, (Plus_with_locks (_, locks) as plus))) ->
   let (Plus n_k) = D.plus (cod_sface fa) in
   let n = dim_env env in
-  (* We strip off the keys and prekeys corresponding to the locks to the right of the variable, composing them on the way out into a composite key cell (for the variable's own locks) and a prekey action, both to be applied to the looked-up value.  The prekeys encountered inside the environment by lookup_cube are transported to the value's mode by prewhiskering with the vertical target of the composite key. *)
-  let (Restrict_keys (env, extra, _, keys, pre)) = restrict_keys env plus in
-  match (extra, v) with
-  (* The extension of an index includes all the locks to the right of the variable, and a key can only span locks, so the split can never land in the middle of a key here. *)
-  | Plus_lock (Suc _, _), _ -> .
-  | Plus_lock (Zero _, Zero), _ -> (
-      let mu = Locks.cod locks in
-      match lookup_cube env n_k mu (Modalcell.vtgt keys) v (id_opt_op (D.plus_out n n_k)) with
-      | Looked_up { act; op; entry; pre = inner_pre } -> (
-          let (Plus x) = D.plus (dom_sface fa) in
-          match op_of_opt (comp_opt_op op (plus_opt_op n n_k x (opt_op_of_sface fa))) with
-          | Some (Op (f, s)) ->
-              (* We combine, into a single cell applied in one traversal, the composite lock keys (innermost), then the prekey action from inside the environment, then the prekey action from the stripped-off extension (outermost). *)
-              let (Prekey_action c) = prekey_vcomp inner_pre keys in
-              let (Prekey_action c) = prekey_vcomp pre c in
-              act (CubeOf.find entry f) s c
-          (* This means that in the non-unary case, some dummy endpoints in an opt_sface didn't get canceled out by a degeneracy.  I think that could only happen if a non-unary mode theory has a 2-cell from a sharp parametric modality to a sharp non-parametric modality.  In all the models I know, the primary nonparametric modalities are *comonadic*, plus in the unary case *only* a left adjoint monad to it (which is also right adjoint if the parametricity is internal), and in the external non-unary case another non-monadic non-comonadic functor.  In the internal non-unary case there is a *right* adjoint to the nonparametric comonad, but it is not "nonparametric" in this sense: its parametricity is *codiscrete* rather than discrete; I haven't thought about how to enforce that for a tangible modality, although it comes naturally for a negative presentation that is right adjoint to a tangible discrete modality. *)
-          | None -> fatal (Invalid_mode_theory "uncanceled dummy endpoints")))
+  (* We strip off the locks to the right of the variable, composing the prekeys encountered on the way out into a prekey action to be applied to the looked-up value.  The prekeys encountered inside the environment by lookup_cube are transported to the value's mode by prewhiskering with the composite modality of the locks. *)
+  let (Restrict_keys (env, pre)) = restrict_keys env plus in
+  let mu = Locks.cod locks in
+  match lookup_cube env n_k mu v (id_opt_op (D.plus_out n n_k)) with
+  | Looked_up { act; op; entry; pre = inner_pre } -> (
+      let (Plus x) = D.plus (dom_sface fa) in
+      match op_of_opt (comp_opt_op op (plus_opt_op n n_k x (opt_op_of_sface fa))) with
+      | Some (Op (f, s)) ->
+          (* We combine the prekey actions from the stripped-off extension (outermost) and the further ones encountered before finding the variable (innermost). *)
+          let (Wrap c) = key_vcomp pre inner_pre in
+          act (CubeOf.find entry f) s c
+      (* This means that in the non-unary case, some dummy endpoints in an opt_sface didn't get canceled out by a degeneracy.  I think that could only happen if a non-unary mode theory has a 2-cell from a sharp parametric modality to a sharp non-parametric modality.  In all the models I know, the primary nonparametric modalities are *comonadic*, plus in the unary case *only* a left adjoint monad to it (which is also right adjoint if the parametricity is internal), and in the external non-unary case another non-monadic non-comonadic functor.  In the internal non-unary case there is a *right* adjoint to the nonparametric comonad, but it is not "nonparametric" in this sense: its parametricity is *codiscrete* rather than discrete; I haven't thought about how to enforce that for a tangible modality, although it comes naturally for a negative presentation that is right adjoint to a tangible discrete modality. *)
+      | None -> fatal (Invalid_mode_theory "uncanceled dummy endpoints"))
 
 (* Instantiate an arbitrary value, combining tubes. *)
 and inst : type mode m n mn s.
@@ -1781,8 +1700,20 @@ and inst : type mode m n mn s.
   | Zero -> tm
   | Pos dim2 -> (
       match view_term tm with
-      | Neu { head; args = neu_args; value; ty = (lazy ty) } -> (
-          (* We have to combine the new instantiation with any existing instantation at the end of the application spine. *)
+      (* If the value is failed, it remains failed, with the type computed as usual. *)
+      | Neu { head = Failed mode; args = Emp; value = _; ty } ->
+          failed_elim mode ty (fun ty ->
+              match view_type ty "inst" with
+              | Canonical (_, UU (mode, m), ins, tys1) -> (
+                  let Eq = eq_of_ins_zero ins in
+                  match D.compare m (TubeOf.out args2) with
+                  | Eq -> tyof_inst mode tys1 args2
+                  | Neq ->
+                      fatal
+                        (Dimension_mismatch ("instantiating a failed type", m, TubeOf.out args2)))
+              | _ -> fatal (Anomaly "can't instantiate failed non-type"))
+      (* If the value is a non-failed neutral, we have to combine the new instantiation with any existing instantation at the end of the application spine. *)
+      | Neu { head = Live _ as head; args = neu_args; value; ty } -> (
           let base_args, args1 = inst_of_apps neu_args in
           let (Any_tube args1) =
             Option.value args1 ~default:(Any_tube (TubeOf.empty (TubeOf.out args2))) in
@@ -1790,22 +1721,25 @@ and inst : type mode m n mn s.
           | Neq ->
               fatal
                 (Dimension_mismatch ("instantiating a type 1", TubeOf.out args2, TubeOf.uninst args1))
-          | Eq -> (
+          | Eq ->
               let (Plus nk) = D.plus (TubeOf.inst args1) in
               let newargs = TubeOf.plus_tube nk args1 args2 in
-              let args = Inst (base_args, D.pos_plus dim2 nk, newargs) in
+              let args = Snoc (base_args, Inst (D.pos_plus dim2 nk, newargs)) in
               (* Now we have to construct the type OF the new instantiation.  The old term must have belonged to some instantiation of the universe of the previously uninstantiated dimension. *)
-              match view_type ty "inst" with
-              | Canonical (_, UU (mode, m), ins, tys1) -> (
-                  let Eq = eq_of_ins_zero ins in
-                  match D.compare m (TubeOf.uninst args1) with
-                  | Neq ->
-                      fatal (Dimension_mismatch ("instantiating a type 2", m, TubeOf.uninst args1))
-                  | Eq ->
-                      let value = inst_lazy mode value args2 in
-                      let ty = lazy (tyof_inst mode tys1 args2) in
-                      Neu { head; args; value; ty })
-              | _ -> fatal (Anomaly "can't instantiate non-type")))
+              let viewed_ty = lazy (view_type (Lazy.force ty) "inst") in
+              let value = inst_lazy value args2 in
+              let ty =
+                lazy
+                  (match Lazy.force viewed_ty with
+                  | Canonical (_, UU (mode, m), ins, tys1) -> (
+                      let Eq = eq_of_ins_zero ins in
+                      match D.compare m (TubeOf.uninst args1) with
+                      | Neq ->
+                          fatal
+                            (Dimension_mismatch ("instantiating a type 2", m, TubeOf.uninst args1))
+                      | Eq -> tyof_inst mode tys1 args2)
+                  | _ -> fatal (Anomaly "can't instantiate non-type")) in
+              Neu { head; args; value; ty })
       | Canonical { mode; canonical = c; tyargs = args1; ins; fields; inst_fields = _ } -> (
           match D.compare (TubeOf.out args2) (TubeOf.uninst args1) with
           | Neq ->
@@ -1851,14 +1785,14 @@ and inst_fibrancy_fields : type mode m n mn.
               let (Snoc (Snoc (Emp, xcube), ycube)) = TubeOf.to_cube_bwv one l outer in
               let v =
                 match
-                  app_eval_apps idfld
+                  app_eval_entry
+                    (app_eval_entry idfld
+                       (Arg
+                          ( Modality.filter_id mode (CubeOf.dim xcube),
+                            xcube,
+                            ins_zero (CubeOf.dim xcube) )))
                     (Arg
-                       ( Arg
-                           ( Emp,
-                             Modality.filter_id mode (CubeOf.dim xcube),
-                             xcube,
-                             ins_zero (CubeOf.dim xcube) ),
-                         Modality.filter_id mode (CubeOf.dim ycube),
+                       ( Modality.filter_id mode (CubeOf.dim ycube),
                          ycube,
                          ins_zero (CubeOf.dim ycube) ))
                 with
@@ -1929,6 +1863,24 @@ and norm_of_vals_tube : type mode n k nk.
   TubeOf.mmap
     { map = (fun fab [ tm; ty ] -> norm_of_val new_tm_tbl (sface_of_tface fab) tm ty) }
     [ tms; tys ]
+
+(* The type of a term evaluated in a possibly higher-dimensional environment: its type evaluated there, instantiated at the term evaluated at all the strict faces of that environment. *)
+and type_of_eval : type mode n b.
+    (mode, n, b) env -> (mode, b, kinetic) term -> (mode, b, kinetic) term -> (mode, kinetic) value
+    =
+ fun env tm ty ->
+  let tbl = Hashtbl.create 10 in
+  let tyargs =
+    TubeOf.build D.zero
+      (D.zero_plus (dim_env env))
+      {
+        build =
+          (fun fa ->
+            let fa = sface_of_tface fa in
+            let fenv = act_env env (opt_op_of_sface fa) in
+            norm_of_val tbl fa (eval_term fenv tm) (eval_term fenv ty));
+      } in
+  inst (eval_term env ty) tyargs
 
 (* Given a type belonging to the m+n dimensional universe instantiated at tyargs, compute the instantiation of the m-dimensional universe that its instantiation belongs to. *)
 and tyof_inst : type mode m n mn.
@@ -2012,20 +1964,39 @@ let apply_singleton_tube_nfs : type dom modality mode n.
   TubeOf.miter { it = (fun _ [ x ] -> fn := apply_term !fn filter (CubeOf.singleton x.tm)) } [ xs ];
   !fn
 
+(* Lazily evaluate a checked term whose type is known.  If it failed, then evaluating it would give a failed value of unknown type (see Value.failed_untyped), so instead we make a failed value of the known type.  Then, for instance, a degeneracy of it can still be instantiated, and an elimination of it has a type that can be computed. *)
+let lazy_eval_at : type mode m b.
+    (mode, m, b) env ->
+    (mode, b, kinetic) term ->
+    (mode, kinetic) value ->
+    (mode, kinetic) lazy_eval =
+ fun env tm ty ->
+  if is_failed tm then ready (Val (failed (mode_env env) (Lazy.from_val ty))) else lazy_eval env tm
+
+(* Similarly, but eagerly evaluate a kinetic term. *)
+let eval_at : type mode m b.
+    (mode, m, b) env -> (mode, b, kinetic) term -> (mode, kinetic) value -> (mode, kinetic) value =
+ fun env tm ty ->
+  if is_failed tm then failed (mode_env env) (Lazy.from_val ty) else eval_term env tm
+
 (* Evaluate a term context to produce a value context. *)
 
-let eval_bindings : type dom modality mode a b n bm.
+(* The bindings of a cube of variables live in the context extended by that cube, so that each can refer to the ones before it, which we arrange with a temporary invisible entry of unknown bindings that we specify as we go.  The bindings of an alias don't extend the context, so they can't refer to each other, and they must all be let-bound. *)
+let eval_bindings : type dom modality mode a b bb n bm.
+    (modality, n, b, bb) vars ->
     (mode, a, b) Ctx.Ordered.t ->
     (dom, modality, mode, n, n) Modality.filter_dim ->
-    ((b, (modality, n) dim_entry) snoc, mode, modality, dom, bm) plus_lock ->
+    (bb, mode, modality, dom, bm) plus_lock ->
     (n, (dom, bm) binding) CubeOf.t ->
     (n, dom Ctx.Binding.t) CubeOf.t =
- fun ctx filter al cbs ->
+ fun vars ctx filter al cbs ->
   let i = Ctx.Ordered.length ctx in
   let vbs = CubeOf.build (CubeOf.dim cbs) { build = (fun _ -> Ctx.Binding.unknown ()) } in
-  let ctx = Ctx.Ordered.invis ctx filter vbs in
   let modality = Modality.filter_modality filter in
-  let tempctx = Ctx.Ordered.lock_to ctx modality al in
+  let tempctx =
+    match vars with
+    | Vars -> Ctx.Ordered.lock_to (Ctx.Ordered.invis ctx filter vbs) modality al
+    | Alias -> Ctx.Ordered.lock_to ctx modality al in
   let argtbl = Hashtbl.create 10 in
   let j = ref 0 in
   let () =
@@ -2038,11 +2009,12 @@ let eval_bindings : type dom modality mode a b n bm.
             let level = (i, !j) in
             j := !j + 1;
             let lvl, v =
-              match ctm with
-              | None ->
+              match (ctm, vars) with
+              | None, Alias -> fatal (Anomaly "alias without a value")
+              | None, Vars ->
                   ( Some level,
                     ({ tm = var modality level ety; ty = Lazy.from_val ety } : dom normal) )
-              | Some ctm ->
+              | Some ctm, _ ->
                   (None, { tm = eval_term (Ctx.Ordered.env tempctx) ctm; ty = Lazy.from_val ety })
             in
             Hashtbl.add argtbl (SFace_of fa) v;
@@ -2051,18 +2023,15 @@ let eval_bindings : type dom modality mode a b n bm.
       [ cbs; vbs ] in
   vbs
 
-let eval_entry : type dom modality mode a b f n bm.
+let eval_entry : type dom modality mode a b bb f n bm.
     (mode, a, b) Ctx.Ordered.t ->
-    (dom, modality, mode, b, bm, f, n) entry ->
-    (dom, modality, mode, f, n) Ctx.entry =
- fun ctx e ->
-  match e with
-  | Vis { dim; plus_lock; filter; plusdim; vars; bindings; hasfields; fields; fplus } ->
-      let bindings = eval_bindings ctx filter plus_lock bindings in
-      let fields = Bwv.map (fun (f, x, _) -> (f, x)) fields in
-      Vis { dim; filter; plusdim; vars; bindings; hasfields; fields; fplus }
-  | Invis { plus_lock; bindings; filter; _ } ->
-      Invis { filter; bindings = eval_bindings ctx filter plus_lock bindings }
+    (dom, modality, mode, f, n, b, bb, bm) entry ->
+    (dom, modality, mode, f, n, b, bb) Ctx.entry =
+ fun ctx { plus_lock; filter; bindings; vis; vars } ->
+  let bindings = eval_bindings vars ctx filter plus_lock bindings in
+  match vis with
+  | Vis v -> { filter; bindings; vis = Vis v; vars }
+  | Invis _ -> { filter; bindings; vis = Invis; vars }
 
 let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode, a, b) Ctx.Ordered.t
     = function
@@ -2076,7 +2045,7 @@ let rec eval_ordered_ctx : type mode a b. (mode, a, b) ordered_termctx -> (mode,
 let eval_ctx : type mode a b. (mode, a, b) termctx -> (mode, a, b) Ctx.t = function
   | Permute (perm, ctx) ->
       let ctx = eval_ordered_ctx ctx in
-      Permute { perm; env = Ctx.Ordered.env ctx; level = Ctx.Ordered.length ctx; ctx }
+      Permute { perm; level = Ctx.Ordered.length ctx; ctx }
 
 (* Evaluate a telescope (forwards context of terms) and append the result to a context. *)
 let rec eval_append : type mode a b c ac bc.
@@ -2101,20 +2070,101 @@ let get_tyargs : type mode.
   | Canonical (_, _, _, tyargs) -> Full_tube tyargs
   | Neutral (_, _, tyargs) -> Full_tube tyargs
 
-(* Check whether a given type is discrete, or has one of the the supplied constant heads (since for testing whether a newly defined datatype can be discrete, it and members of its mutual families can appear in its own parameters and arguments). *)
-let is_discrete : type mode. ?discrete:unit Constant.Map.t -> (mode, kinetic) value -> bool =
- fun ?discrete ty ->
-  match (view_type ty "is_discrete", discrete) with
-  | Canonical (_, Data { discrete = `Yes; _ }, _, _), _ -> true
-  (* The currently-being-defined types may not be known to be discrete yet, but we treat them as discrete if they are one of the given heads. *)
-  | Canonical (Const { name; ins }, _, _, _), Some consts ->
-      Option.is_some (is_id_ins ins) && Constant.Map.mem name consts
-  | Neutral (Const { name; ins }, _, _), Some consts ->
-      Option.is_some (is_id_ins ins) && Constant.Map.mem name consts
-      (* In theory, pi-types with discrete codomain, and record types with discrete fields, could also be discrete.  But that would be trickier to check as it would require evaluating their codomain and fields under binders, and eta-conversion for those types should implement direct discreteness automatically.  So the only thing we're missing is that they can't appear as arguments to a constructor of some other discrete datatype. *)
-  | _ -> false
-
 let () =
   View.term_viewer := { view = view_term };
   View.type_viewer := { view = view_type };
   View.eval_forcer := { force = force_eval }
+
+(* Extract the pi-type data from an uninstantiated pi-type value. *)
+type (_, _) viewed_pi =
+  | Viewed_pi : ('dom, 'modality, 'mode, 'k, 'n) Value.pi_args -> ('mode, 'n) viewed_pi
+
+let view_pi : type mode n. string -> n D.t -> (mode, kinetic) value -> (mode, n) viewed_pi =
+ fun err n ty ->
+  match view_term ty with
+  | Neu { value; _ } -> (
+      match force_eval value with
+      | Val (Canonical { canonical = Pi pi; ins; tyargs; _ }) -> (
+          let Eq = eq_of_ins_zero ins in
+          match (D.compare_zero (TubeOf.inst tyargs), D.compare (BindCube.dim pi.cods) n) with
+          | Zero, Eq -> Viewed_pi pi
+          | Pos _, _ -> fatal (Anomaly ("instantiated constructor pi-type in " ^ err))
+          | _, Neq -> fatal (Dimension_mismatch (err, BindCube.dim pi.cods, n)))
+      | _ -> fatal (Anomaly ("constructor type is not a pi-type in " ^ err)))
+  | _ -> fatal (Anomaly ("constructor type is not neutral in " ^ err))
+
+(* Given the evaluated domain cube of one (modal) argument of a datatype constructor of dimension n, and the corresponding arguments of the lower-dimensional versions of the constructor (extracted from the instantiation of the datatype), build the boundary tube of the top-dimensional argument.  The argument is k-dimensional, where k is the modal filtering of n; the value associated to a face of k is the argument of the lower-dimensional constructor at the corresponding face of n lifted along the filter.  (This makes sense because when a constructor is evaluated, the modally filtered arguments are degenerated to obtain values for the boundary constructors, and the face and degeneracy cancel out.)  Its type is the corresponding face of the domain cube, instantiated at the previously built faces. *)
+let modal_boundary_tube : type dom modality mode k n.
+    string ->
+    n D.t ->
+    (dom, modality, mode, k, n) Modality.filter_dim ->
+    (k, (dom, kinetic) value) CubeOf.t ->
+    (D.zero, n, n, (mode, kinetic) modal_value) TubeOf.t ->
+    (D.zero, k, k, dom normal) TubeOf.t =
+ fun err n filter doms tyargs ->
+  let modality = Modality.filter_modality filter in
+  let tyargtbl = Hashtbl.create 10 in
+  TubeOf.build D.zero
+    (D.zero_plus (CubeOf.dim doms))
+    {
+      build =
+        (fun fa ->
+          let (Pface_filter (_, fb)) = Modality.pface_filter n fa filter in
+          let (Modal (argmod, argtm)) = TubeOf.find tyargs fb in
+          match Modality.compare argmod modality with
+          | Neq -> fatal (Modality_mismatch (`Internal, err, argmod, modality))
+          | Eq ->
+              let fa = sface_of_tface fa in
+              let fb = sface_of_tface fb in
+              let argty : (dom, kinetic) value =
+                inst (CubeOf.find doms fa)
+                  (TubeOf.build D.zero
+                     (D.zero_plus (dom_sface fb))
+                     {
+                       build =
+                         (fun fc ->
+                           Hashtbl.find tyargtbl (SFace_of (comp_sface fb (sface_of_tface fc))));
+                     }) in
+              let argnorm : dom normal = { tm = argtm; ty = Lazy.from_val argty } in
+              Hashtbl.add tyargtbl (SFace_of fb) argnorm;
+              argnorm);
+    }
+
+(* To typecheck, equality-check, or read back a higher-dimensional instance of a datatype constructor, its instantiation arguments (a tube of lower-dimensional terms) must all be applications of the same constructor, at the dimension appropriate to their face of the tube.  We extract their arguments to use as the boundaries of the arguments of the constructor being checked/compared/read back.  What we naturally have is a *tube of lists* (one list of arguments for each face of the tube), but what the callers want is a *vector of tubes*, one tube of boundary arguments for each of the constructor's own arguments; we do the conversion with a multiple-output traversal.  The three "wrong_*" callbacks build the errors to report for a mismatched constructor, an instantiation argument that isn't a constructor application at all, or one with the wrong number of arguments; check_dim labels the (bug-level) error for a dimension mismatch. *)
+let find_tyarg_args : type mode mn b.
+    check_dim:string ->
+    Constr.t ->
+    b Fwn.t ->
+    (D.zero, mn, mn, mode normal) TubeOf.t ->
+    wrong_arity:(unit -> Code.t) ->
+    wrong_constr:(Constr.t -> Code.t) ->
+    not_constr:(mode normal -> Code.t) ->
+    ((D.zero, mn, mn, (mode, kinetic) modal_value) TubeOf.t, b) Vec.t =
+ fun ~check_dim constr lgth tyargs ~wrong_arity ~wrong_constr ~not_constr ->
+  let (Conses (cs, bs)) = Tlist.Tlist.conses lgth in
+  TubeOf.Heter.vec_of_hgt cs
+  @@ TubeOf.pmap
+       {
+         map =
+           (fun (type k)
+             (fa : (k, D.zero, mn, mn) tface)
+             ([ tm ] : (k, (mode normal, Tlist.nil) Tlist.cons) CubeOf.Heter.hft)
+           ->
+             match view_term tm.tm with
+             | Constr (tmname, n, tmargs) ->
+                 if tmname = constr then
+                   match D.compare n (dom_tface fa) with
+                   | Neq -> fatal (Dimension_mismatch (check_dim, n, dom_tface fa))
+                   | Eq -> (
+                       match
+                         Vec.of_list_length_map
+                           (fun (Value.Modal (xfilt, x)) : (_, _) modal_value ->
+                             Modal (Modality.filter_modality xfilt, CubeOf.find_top x))
+                           lgth tmargs
+                       with
+                       | Some ys -> CubeOf.Heter.hft_of_vec cs ys
+                       | None -> fatal (wrong_arity ()))
+                 else fatal (wrong_constr tmname)
+             | _ -> fatal (not_constr tm));
+       }
+       [ tyargs ] bs

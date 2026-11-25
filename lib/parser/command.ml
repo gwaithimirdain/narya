@@ -59,14 +59,14 @@ module Command = struct
         ty : wrapped_parse;
       }
     | Def of def list
-    (* "synth" is almost just like "echo", so we implement them as one command distinguished by an "eval" flag. *)
+    (* "synth", "echo", and "about" are almost the same command, so we implement them as one, distinguished by a "mode". *)
     | Echo of {
         wsecho : Whitespace.t list;
         number : int option;
         wsin : Whitespace.t list;
         wsnumber : Whitespace.t list;
         tm : wrapped_parse;
-        eval : bool;
+        mode : [ `Synth | `Echo | `About ];
       }
     | Notation : {
         fixity : ('left, 'tight, 'right) fixity;
@@ -121,12 +121,12 @@ module Command = struct
         wscoloneq : Whitespace.t list;
         what :
           [ `Chars of Whitespace.t list * Display.chars Display.toggle * Whitespace.t list
-          | `Function_boundaries of
-            Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
-          | `Type_boundaries of
-            Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Implicits of Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Lets of Whitespace.t list * [ `Set of Display.lets | `Cycle ] * Whitespace.t list
           | `Unique_keys of
             Whitespace.t list * Whitespace.t list * Display.show Display.toggle * Whitespace.t list
+          | `Degeneracy_names of Whitespace.t list * Whitespace.t list * int * Whitespace.t list
+          | `Size of Whitespace.t list * int option * Whitespace.t list
           | (* Each variable name is paired with the whitespace of the comma preceding it (empty for the first one) and the whitespace following it. *)
             `Variables of Whitespace.t list * (Whitespace.t list * string * Whitespace.t list) list
           ];
@@ -156,7 +156,12 @@ include Command
 
 module Parse = struct
   open Parse
-  module C = Combinators (Command)
+
+  (* The final result of parsing a command is the command together with its range: from the start of its first token to the end of its last one.  Since the whitespace and comments following a token are not part of its range, the range of a command doesn't include any comments after it, nor the token following it that the parser had to look at to know that the command was over.  Eof consumes no tokens, so it has no range. *)
+  module C = Combinators (struct
+    type t = Asai.Range.t option * Command.t
+  end)
+
   open C.Basic
 
   let token x = step "" (fun state _ (tok, w) -> if tok = x then Some (w, state) else None)
@@ -216,6 +221,7 @@ module Parse = struct
     let* nonparam = attribute (StringsMap.of_list [ ([ "nonparametric" ], ()) ]) in
     let* nameloc, (name, wsname) = located ident in
     let loc = Some (Range.convert nameloc) in
+    if not (Lexer.valid_ident name) then fatal ?loc (Invalid_constant_name (name, None));
     let* parameters = zero_or_more parameter in
     let* wscolon = token Colon in
     (* Axioms live at a mode and are always available.  MODALTODO: "Postulates" live under a modality, like variables at the beginning of the context.  *)
@@ -259,11 +265,13 @@ module Parse = struct
     | _ -> fatal ?severity (Invalid_instant (Origin.to_string (Instant past)))
 
   let echo =
-    let* wsecho, eval =
+    let* wsecho, mode =
       (let* wsecho = token Echo in
-       return (wsecho, true))
-      </> let* wsecho = token Synth in
-          return (wsecho, false) in
+       return (wsecho, `Echo))
+      </> (let* wsecho = token Synth in
+           return (wsecho, `Synth))
+      </> let* wsecho = token About in
+          return (wsecho, `About) in
     let* number, wsin, wsnumber, tm =
       (let* wsin = token In in
        let* number, wsnumber = integer in
@@ -273,7 +281,7 @@ module Parse = struct
        return (Some number, wsin, wsnumber, tm))
       </> let* tm = C.term [] in
           return (None, [], [], tm) in
-    return (Command.Echo { wsecho; number; wsin; wsnumber; tm; eval })
+    return (Command.Echo { wsecho; number; wsin; wsnumber; tm; mode })
 
   let tightness : (Whitespace.t list * No.wrapped option * Whitespace.t list * Whitespace.t list) t
       =
@@ -481,7 +489,7 @@ module Parse = struct
           match tok with
           | Ident [ "all" ] -> Some (`All ws, state)
           | Ident [ "id" ] -> Some (`Id ws, state)
-          | Ident [ "only" ] -> Some (`Only ws, state)
+          | Only -> Some (`Only ws, state)
           | In -> Some (`In ws, state)
           | Ident [ "none" ] -> Some (`None ws, state)
           | Ident [ "except" ] -> Some (`Except ws, state)
@@ -649,8 +657,10 @@ module Parse = struct
       step "" (fun state _ (tok, ws) ->
           match tok with
           | Ident [ "chars" ] -> Some ((`Chars, ws), state)
-          | Ident [ "function" ] -> Some ((`Function, ws), state)
-          | Ident [ "type" ] -> Some ((`Type, ws), state)
+          | Ident [ "implicits" ] -> Some ((`Implicits, ws), state)
+          | Let -> Some ((`Lets, ws), state)
+          | Ident [ "degeneracy" ] -> Some ((`Degeneracy, ws), state)
+          | Ident [ "size" ] -> Some ((`Size, ws), state)
           | Ident [ "unique" ] -> Some ((`Unique, ws), state)
           | Ident [ "variables" ] -> Some ((`Variables, ws), state)
           | _ -> None) in
@@ -661,24 +671,46 @@ module Parse = struct
             let open Monad.Ops (Monad.Maybe) in
             let* chars = chars_of_token tok in
             return (Display { wsdisplay; wscoloneq; what = `Chars (wswhat, chars, ws) }, state))
-    | `Function ->
-        let* wsb = token (Ident [ "boundaries" ]) in
+    | `Implicits ->
         let* wscoloneq = token Coloneq in
         step "" (fun state _ (tok, ws) ->
             let open Monad.Ops (Monad.Maybe) in
             let* show = show_of_token tok in
-            return
-              ( Display { wsdisplay; wscoloneq; what = `Function_boundaries (wswhat, wsb, show, ws) },
-                state ))
-    | `Type ->
-        let* wsb = token (Ident [ "boundaries" ]) in
+            return (Display { wsdisplay; wscoloneq; what = `Implicits (wswhat, show, ws) }, state))
+    | `Lets ->
         let* wscoloneq = token Coloneq in
         step "" (fun state _ (tok, ws) ->
             let open Monad.Ops (Monad.Maybe) in
-            let* show = show_of_token tok in
-            return
-              ( Display { wsdisplay; wscoloneq; what = `Type_boundaries (wswhat, wsb, show, ws) },
-                state ))
+            let* lets =
+              match tok with
+              | Ident [ "names" ] -> Some (`Set `Names)
+              | Ident [ "environments" ] -> Some (`Set `Environments)
+              | Ident [ "definitions" ] -> Some (`Set `Definitions)
+              | Ident [ "cycle" ] -> Some `Cycle
+              | _ -> None in
+            return (Display { wsdisplay; wscoloneq; what = `Lets (wswhat, lets, ws) }, state))
+    | `Degeneracy ->
+        let* wsnames = token (Ident [ "names" ]) in
+        let* wscoloneq = token Coloneq in
+        let* number, wsnumber = integer in
+        return
+          (Display
+             { wsdisplay; wscoloneq; what = `Degeneracy_names (wswhat, wsnames, number, wsnumber) })
+    | `Size ->
+        let* wscoloneq = token Coloneq in
+        step "" (fun state _ (tok, ws) ->
+            let size =
+              match tok with
+              | Ident [ ("∞" | "infinity") ] -> Some None
+              | Ident [ num ] -> (
+                  match int_of_string_opt num with
+                  | Some n when n > 0 -> Some (Some n)
+                  | _ -> None)
+              | _ -> None in
+            Option.map
+              (fun size ->
+                (Display { wsdisplay; wscoloneq; what = `Size (wswhat, size, ws) }, state))
+              size)
     | `Unique ->
         let* wsb = token (Ident [ "keys" ]) in
         let* wscoloneq = token Coloneq in
@@ -713,7 +745,9 @@ module Parse = struct
 
   let section =
     let* wssection = token Section in
-    let* prefix, wsprefix = ident in
+    let* prefixloc, (prefix, wsprefix) = located ident in
+    if not (Lexer.valid_ident prefix) then
+      fatal ~loc:(Range.convert prefixloc) (Invalid_section_name prefix);
     let* wscoloneq = token Coloneq in
     return (Command.Section { wssection; prefix; wsprefix; wscoloneq })
 
@@ -766,7 +800,13 @@ module Parse = struct
     command ()
     </> let* tm = C.term [] in
         return
-          (Command.Echo { wsecho = []; number = None; wsin = []; wsnumber = []; tm; eval = true })
+          (Command.Echo { wsecho = []; number = None; wsin = []; wsnumber = []; tm; mode = `Echo })
+
+  let located_command or_echo =
+    let* rng, cmd = located (if or_echo then command_or_echo () else command ()) in
+    match cmd with
+    | Eof -> return (None, cmd)
+    | _ -> return (Some (Range.convert_extent rng), cmd)
 
   type open_source = Range.Data.t * [ `String of int * string | `File of In_channel.t ]
 
@@ -787,8 +827,7 @@ module Parse = struct
     Range.run ~env @@ fun () ->
     let p =
       C.Lex_and_parse.make Lexer.Parser.start
-        (C.Basic.make_partial (Origin.current ())
-           (if or_echo then command_or_echo () else command ())) in
+        (C.Basic.make_partial (Origin.current ()) (located_command or_echo)) in
     let out, p = run p in
     (C.ensure_success p, (env, out))
 
@@ -804,12 +843,13 @@ module Parse = struct
     Range.run ~env @@ fun () ->
     let p =
       C.Lex_and_parse.make_next p
-        (C.Basic.make_partial (Origin.current ())
-           (if or_echo then command_or_echo () else command ())) in
+        (C.Basic.make_partial (Origin.current ()) (located_command or_echo)) in
     let out, p = run p in
     (C.ensure_success p, (env, out))
 
-  let final p = C.Lex_and_parse.final p
+  (* The command that was parsed, and its range (see above).  The range of Bof is empty, and at the first token of the source. *)
+  let final_located p = C.Lex_and_parse.final p
+  let final p = snd (final_located p)
   let has_consumed_end p = C.Lex_and_parse.has_consumed_end p
 end
 
@@ -827,26 +867,20 @@ let parse_single (content : string) : Whitespace.t list * Command.t option =
       else (ws, None)
   | _ -> Core.Reporter.fatal (Anomaly "interactive parse doesn't start with Bof")
 
-(* The context and type of a hole are stored as terms, read back at the moment the hole was created.  Since then, other holes appearing in them may have been solved, and constants that were being defined may have acquired definitions.  Thus, before displaying a hole we re-evaluate its context and type in the current global state and read them back again, so that the user sees an up-to-date goal.  (This is also what happens when the hole is actually solved: "solve" evaluates the stored context and type in the current state, so the type displayed here is the one that a solution will be checked against.) *)
+(* Display a hole's context and type.  The printer for PHole re-evaluates them in the current global state, so that the user sees an up-to-date goal. *)
 let show_hole = function
   | Global.Found_hole { instant; meta; termctx; ty; vars; _ } ->
-      let termctx, ty =
-        Reporter.try_with
-          ~fatal:(fun _ ->
-            (* If anything goes wrong with the re-evaluation, we fall back on displaying the stored context and type. *)
-            (termctx, ty))
-          (fun () ->
-            let ctx = Norm.eval_ctx termctx in
-            let ety = Norm.eval_term (Ctx.env ctx) ty in
-            Readback.Displaying.run ~env:true @@ fun () -> (readback_ctx ctx, readback_val ctx ety))
-      in
       emit (Hole (Meta.name meta, PHole (Instant instant, vars, termctx, ty)))
+
+let string_of_mode = function
+  | `Echo -> "echo"
+  | `Synth -> "synth"
+  | `About -> "about"
 
 let to_string : Command.t -> string = function
   | Axiom _ -> "axiom"
   | Def _ -> "def"
-  | Echo { eval = true; _ } -> "echo"
-  | Echo { eval = false; _ } -> "synth"
+  | Echo { mode; _ } -> string_of_mode mode
   | Notation _ -> "notation"
   | Import _ -> "import"
   | Chdir _ -> "chdir"
@@ -885,14 +919,13 @@ let split_match_cases : type mode a b.
   let module S = Monad.State (Bool) in
   let module LS = Monad.ListT (S) in
   let open Monad.Ops (LS) in
-  let rec do_args : type a p ap.
-      (mode, a, p, ap) Term.Telescope.t ->
+  let do_args (names : string option list) :
       (No.plus_omega, No.strict, No.plus_omega, No.nonstrict) parse located list =
-   fun args ->
-    match args with
-    | Emp -> []
-    | Ext (None, _, args) -> locate_opt None (Placeholder []) :: do_args args
-    | Ext (Some x, _, args) -> locate_opt None (Ident ([ x ], [])) :: do_args args in
+    List.map
+      (function
+        | None -> locate_opt None (Placeholder [])
+        | Some x -> locate_opt None (Ident ([ x ], [])))
+      names in
   let rec go = function
     | [] ->
         let* higher = LS.lift S.get in
@@ -903,14 +936,14 @@ let split_match_cases : type mode a b.
     | (_, Wrap tm) :: tms -> (
         match process vars tm with
         | { value = Synth rtm; loc } -> (
-            let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
+            let _, sty = Check.synth Kinetic ctx (locate_opt loc rtm) in
             match View.view_type sty "split" with
             | Canonical (_, Data { dim; constrs; _ }, _, _) ->
                 let* () =
                   match D.compare_zero dim with
                   | Zero -> return ()
                   | Pos _ -> LS.lift (S.put true) in
-                let* c, Dataconstr { args; _ } = S.return (Bwd.to_list constrs) in
+                let* c, Dataconstr { ty; _ } = S.return (Bwd.to_list constrs) in
                 let left_ok = No.le_refl No.plus_omega in
                 let right_ok = No.le_refl No.plus_omega in
                 let first =
@@ -918,13 +951,20 @@ let split_match_cases : type mode a b.
                     (List.fold_left
                        (fun fn arg -> locate_opt None (App { fn; arg; left_ok; right_ok }))
                        (locate_opt None (Constr (Constr.to_string c, [])))
-                       (do_args args)) in
+                       (do_args (Term.pi_names ty))) in
                 let* rest = go tms in
                 if List.length rest = 2 then return (first :: rest)
                 else return (first :: tok (Op ",") :: rest)
             | _ -> fatal (Invalid_split (`Term, "non-datatype")))
         | _ -> fatal (Nonsynthesizing "splitting term")) in
   fst (go tms false)
+
+(* The output of 'echo', 'synth' and 'about' is not a diagnostic, so it isn't reported through the Reporter.  By default it is printed to stdout, followed by a blank line; a caller that uses stdout for something else, such as a language server, can replace this function to receive the output instead. *)
+let echo_output : (PPrint.document -> unit) ref =
+  ref (fun doc ->
+      PPrint.ToChannel.pretty 1.0 (Display.columns ()) stdout doc;
+      print_newline ();
+      print_newline ())
 
 (* Most execution of commands we can do here, but there are a couple things where we need to call out to the executable: noting when an effectual action like 'echo' is taken (for recording warnings in compiled files), and loading another file.  So this function takes a couple of callbacks as arguments. *)
 let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (cmd : Command.t) :
@@ -944,9 +984,12 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | _ -> ());
       Scope.check_name name loc;
       let const = Scope.define ?loc name in
-      let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
+      let ty =
+        lazy
+          (let (Processed_tel (params, ctx, _)) = process_tel Emp parameters in
+           Core.Command.Axiom_type { params; ty = process ctx ty }) in
       let parametric = Option.is_none nonparam in
-      Core.Command.execute (Axiom { name = const; params; ty = process ctx ty; parametric })
+      Core.Command.execute (Axiom { name = const; ty; parametric })
   | Def defs ->
       Global.run_command ~holes_allowed:(Ok ()) @@ fun () ->
       let cdefs =
@@ -974,7 +1017,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                      | _ -> fatal (Nonsynthesizing "body of def without specified type"))) ))
           defs in
       Core.Command.execute (Def cdefs)
-  | Echo { tm = Wrap tm; eval; number; _ } -> (
+  | Echo { tm = Wrap tm; mode; number; _ } -> (
       let module Scope_and_ctx = struct
         type _ ctx_of_raw = Of_raw : ('mode, 'a, 'b) Ctx.t -> 'a ctx_of_raw
 
@@ -994,38 +1037,72 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               Global.run_command_then_undo ~holes_allowed:(Ok ()) )
         | Some number ->
             let num = Global.find_hole number in
-            let (Found_hole { instant; termctx; vars; parametric; _ }) = num in
+            let (Found_hole { meta; instant; termctx; vars; parametric; _ }) = num in
             show_hole num;
             ( Scope_and_ctx (vars, fun _ -> Of_raw (Norm.eval_ctx termctx)),
-              Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant ) in
+              fun f ->
+                Global.rewind_command_then_undo ~parametric ~holes_allowed:(Ok ()) instant
+                @@ fun () -> Global.with_owner_of meta f ) in
       run @@ fun () ->
       let rtm = process vars tm in
       action_taken ();
       match rtm.value with
       | Synth stm ->
           let (Of_raw ctx) = ctx rtm in
+          (* The term is checked with internal readback, like any other term, so that the contexts of any metavariables it creates are not read back for display.  Only the results are read back for display. *)
+          let ctm, ety = Check.synth Kinetic ctx { value = stm; loc = rtm.loc } in
           Readback.Displaying.run ~env:true @@ fun () ->
-          let ctm, ety = Check.synth (Kinetic `Nolet) ctx { value = stm; loc = rtm.loc } in
-          let btm =
-            if eval then
-              let etm = Norm.eval_term (Ctx.env ctx) ctm in
-              readback_at ctx etm ety
-            else ctm in
-          let bty = readback_at ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
-          let utm = unparse (Names.of_ctx ctx) btm No.Interval.entire No.Interval.entire in
-          let uty = unparse (Names.of_ctx ctx) bty No.Interval.entire No.Interval.entire in
-          PPrint.(
-            ToChannel.pretty 1.0 (Display.columns ()) stdout
-              (hang 2
-                 (pp_complete_term (Wrap utm) `None
-                 ^^ hardline
-                 ^^ Token.pp Colon
-                 ^^ blank 1
-                 ^^ pp_complete_term (Wrap uty) `None)));
-          print_newline ();
-          print_newline ();
+          let names = Names.of_ctx ctx in
+          (* In "echo" and "about" mode we normalize the term.  In "about" mode, a bare zero-dimensional defined constant is displayed as its stored definition, and any other neutral as its potential value if it has one. *)
+          (* The displayed term and its type are each limited to the display size. *)
+          let utm, utm_truncated =
+            budgeted (Display.size ()) @@ fun () ->
+            match mode with
+            | `Synth -> unparse names ctm No.Interval.entire No.Interval.entire
+            | `Echo ->
+                let etm = Norm.eval_term (Ctx.env ctx) ctm in
+                unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                  No.Interval.entire
+            | `About -> (
+                let etm = Norm.eval_term (Ctx.env ctx) ctm in
+                match etm with
+                (* A defined *zero-dimensional* constant is displayed as its stored case tree, which shows the definition as written rather than as it computes.  This is more informative when possible, since the readback of a potential value falls back to a neutral application spine wherever a match is stuck.  We require dimension zero so that a degeneracy of such a constant isn't shown as the undegenerated stored tree, which would be wrong. *)
+                | Value.Neu { head = Value.Live (Const { name; ins }); args = Value.Emp; _ }
+                  when Option.is_some (is_id_ins ins)
+                       &&
+                       match D.compare_zero (cod_left_ins ins) with
+                       | Zero -> true
+                       | Pos _ -> false -> (
+                    match Global.find_const name with
+                    | Definition { tm = `Defined tree; _ } ->
+                        unparse Names.empty tree No.Interval.entire No.Interval.entire
+                    | Definition { tm = `Axiom; _ } ->
+                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                          No.Interval.entire)
+                (* Otherwise we read back the neutral's potential value, which displays a canonical type as its declaration and a comatch as itself.  If it has no potential value at all we show its normal form. *)
+                | _ -> (
+                    match readback_about ctx etm with
+                    | Some tm -> unparse names tm No.Interval.entire No.Interval.entire
+                    | None ->
+                        unparse names (readback_at Kinetic ctx etm ety) No.Interval.entire
+                          No.Interval.entire)) in
+          let uty, uty_truncated =
+            budgeted (Display.size ()) @@ fun () ->
+            let bty = readback_at Kinetic ctx ety (Value.universe (Ctx.mode ctx) D.zero) in
+            unparse names bty No.Interval.entire No.Interval.entire in
+          if not (moribund ()) then
+            !echo_output
+              PPrint.(
+                hang 2
+                  (pp_complete_term (Wrap utm) `None
+                  ^^ Print.pp_truncated utm_truncated
+                  ^^ hardline
+                  ^^ Token.pp Colon
+                  ^^ blank 1
+                  ^^ pp_complete_term (Wrap uty) `None
+                  ^^ Print.pp_truncated uty_truncated));
           (None, fun _ -> None)
-      | _ -> fatal (Nonsynthesizing ("argument of " ^ if eval then "echo" else "synth")))
+      | _ -> fatal (Nonsynthesizing ("argument of " ^ string_of_mode mode)))
   | Notation { fixity; loc; pattern; head; args; _ } ->
       Global.run_command ~holes_allowed:(Error (to_string cmd)) @@ fun () ->
       let name = "«" ^ User.Pattern.to_string pattern ^ "»" in
@@ -1109,20 +1186,31 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       (* Now we typecheck the supplied term, in an occurrence-analysis scope with the set of constants that were being defined when the hole was created, and record the resulting recursion verdict on the metavariable so that it can be chased by the window checks of datatypes whose constructor types contained this hole. *)
       let ctx = Norm.eval_ctx termctx in
       let ety = Norm.eval_term (Ctx.env ctx) ty in
+      (* The metavariables created, such as by let-bindings, have the same owner as the hole. *)
       let ctm, recursion =
+        Global.with_owner_of meta @@ fun () ->
         Positivity.run_beingdefined beingdefined @@ fun () ->
         Positivity.scope @@ fun () -> Check.check status ctx ptm ety in
       Global.set_meta meta ~recursion ctm;
       let buf = Buffer.create 20 in
       PPrint.ToBuffer.compact buf (pp_complete_term data.tm `None);
-      ( Reporter.try_with ~fatal:(fun _ ->
-            data.tm <- Wrap (parenthesize tm);
-            data.parenthesized <- true)
-      @@ fun () ->
-        let _ =
-          TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None })
-        in
-        () );
+      let parenthesize_it () =
+        data.tm <- Wrap (parenthesize tm);
+        data.parenthesized <- true in
+      ( Reporter.discard_errors ~fallback:(fun _ -> parenthesize_it ()) @@ fun () ->
+        ignore
+          (TermParse.Term.parse ~li ~ri (`String { content = Buffer.contents buf; title = None }));
+        (* Even if the term parses in the hole's position, if that position is in an application spine, we parenthesize it for readability when its edge facing a juxtaposition is word-like, as the unparser does (see Unparse.word_like_notation).  A hole that is an application argument has left tightness interval (+ω,+ω], and one that is a head or an argument followed by another argument (or a field projection) has right tightness interval [+ω,+ω]; no other positions have these intervals. *)
+        let left_juxt =
+          match li with
+          | No.Interval { strictness = Strict; endpoint } -> No.equalb endpoint No.plus_omega
+          | _ -> false in
+        let right_juxt =
+          match ri with
+          | No.Interval { strictness = Nonstrict; endpoint } -> No.equalb endpoint No.plus_omega
+          | _ -> false in
+        if (left_juxt && word_like_notation `Left tm) || (right_juxt && word_like_notation `Right tm)
+        then parenthesize_it () );
       (Some offset, fun h -> Some (Code.Hole_solved h))
   | Split data ->
       let (Found_hole { instant; termctx; ty; vars; parametric; _ }) =
@@ -1169,10 +1257,10 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             | Canonical (_, Codata { eta; fields; _ }, ins, _) -> (
                 let m = cod_left_ins ins in
                 let do_field : type a n et.
-                    (_ * a * n * et) Term.CodatafieldAbwd.entry ->
+                    (_ * a * D.zero * n * et) Term.CodatafieldAbwd.entry ->
                     (string * string list) list ->
                     (string * string list) list =
-                 fun (Term.CodatafieldAbwd.Entry (fld, cdf)) acc ->
+                 fun (Term.CodatafieldAbwd.Entry (fld, Codatafield (_, _, _, cdf))) acc ->
                   match cdf with
                   | Lower _ -> (Field.to_string fld, []) :: acc
                   | Higher _ ->
@@ -1221,9 +1309,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             Emp fields,
                           Left (RBracket, ([], None)) ) in
                     locate_opt None @@ outfix ~notn:Builtins.comatch ~inner)
-            | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { args; _ })); _ }, _, _)
+            | Canonical (_, Data { constrs = Snoc (Emp, (constr, Dataconstr { ty; _ })); _ }, _, _)
               ->
-                let nargs = Fwn.to_int (Term.Telescope.length args) in
+                let nargs = List.length (Term.pi_names ty) in
                 unparse_spine names (`Constr constr)
                   (Bwd.init nargs (fun _ -> { unparse = (fun li ri -> hole li ri) }))
                   No.Interval.entire No.Interval.entire
@@ -1250,16 +1338,16 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                   type t = Names.wrapped
                 end) in
             let open Monad.Ops (NameBranches) in
-            let rec constr_args : type a p ap n k.
+            let rec constr_args : type n k.
                 n Names.t ->
                 k D.t ->
                 Variables.hints list ->
                 ?acc:unparser Bwd.t ->
-                (_, a, p, ap) Term.Telescope.t ->
+                string option list ->
                 unparser Bwd.t * Names.wrapped =
              fun names dim hints ?(acc = Emp) -> function
-               | Emp -> (acc, Wrap names)
-               | Ext (x, _, args) ->
+               | [] -> (acc, Wrap names)
+               | x :: args ->
                    (* If the argument is anonymous, use any display hints from its type. *)
                    let hint, hints =
                      match hints with
@@ -1281,7 +1369,7 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               | (_, Wrap tm) :: tms -> (
                   match process vars tm with
                   | { value = Synth rtm; loc } -> (
-                      let _, sty = Check.synth (Kinetic `Nolet) ctx (locate_opt loc rtm) in
+                      let _, sty = Check.synth Kinetic ctx (locate_opt loc rtm) in
                       match View.view_type sty "split" with
                       | Canonical (_, Data { dim; constrs; _ }, _, _) ->
                           let* () =
@@ -1289,13 +1377,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                             | Zero -> return ()
                             | Pos _ ->
                                 NameBranches.stateless (Branches.lift (HigherBranch.put true)) in
-                          let* c, Dataconstr { env; args; _ } =
+                          let* c, Dataconstr { env; ty; fnty = _ } =
                             NameBranches.stateless (HigherBranch.return (Bwd.to_list constrs)) in
                           let* (Wrap names) = NameBranches.get in
                           let arg_hints =
-                            Reporter.try_with ~fatal:(fun _ -> Emp) @@ fun () ->
-                            Domvars.constr_arg_hints ctx env args in
-                          let cargs, newnames = constr_args names dim (Bwd.to_list arg_hints) args in
+                            Reporter.discard_errors ~fallback:(fun () -> Emp) @@ fun () ->
+                            Domvars.constr_arg_hints ctx env ty in
+                          let cargs, newnames =
+                            constr_args names dim (Bwd.to_list arg_hints) (Term.pi_names ty) in
                           let* () = NameBranches.put newnames in
                           let first =
                             Term
@@ -1341,15 +1430,21 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
       | `Chars (_, chars, _) ->
           let chars = Display.modify_chars chars in
           emit (Display_set ("chars", Display.to_string (chars :> Display.values)))
-      | `Function_boundaries (_, _, fb, _) ->
-          let fb = Display.modify_function_boundaries fb in
-          emit (Display_set ("function boundaries", Display.to_string (fb :> Display.values)))
-      | `Type_boundaries (_, _, tb, _) ->
-          let tb = Display.modify_type_boundaries tb in
-          emit (Display_set ("type boundaries", Display.to_string (tb :> Display.values)))
+      | `Implicits (_, im, _) ->
+          let im = Display.modify_implicits im in
+          emit (Display_set ("implicits", Display.to_string (im :> Display.values)))
+      | `Lets (_, lets, _) ->
+          let lets = Display.modify_lets lets in
+          emit (Display_set ("let", Display.string_of_lets lets))
       | `Unique_keys (_, _, uk, _) ->
           let uk = Display.modify_unique_keys uk in
           emit (Display_set ("unique keys", Display.to_string (uk :> Display.values)))
+      | `Degeneracy_names (_, _, number, _) ->
+          Display.modify (fun s -> { s with degeneracy_names = number });
+          emit (Display_set ("degeneracy names", string_of_int number))
+      | `Size (_, size, _) ->
+          Display.modify (fun s -> { s with size });
+          emit (Display_set ("size", Option.fold ~none:"∞" ~some:string_of_int size))
       | `Variables (_, xs) ->
           let variables = List.map (fun (_, x, _) -> x) xs in
           Display.modify (fun s -> { s with variables });
@@ -1508,10 +1603,14 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
     | Def defs ->
         let doc, ws = pp_defs Def None defs empty in
         (indent, doc, ws)
-    | Echo { wsecho; number; wsin; wsnumber; tm = Wrap tm; eval } ->
+    | Echo { wsecho; number; wsin; wsnumber; tm = Wrap tm; mode } ->
         let tm, rest = split_ending_whitespace tm in
         ( indent,
-          Token.pp (if eval then Echo else Synth)
+          Token.pp
+            (match mode with
+            | `Echo -> Echo
+            | `Synth -> Synth
+            | `About -> About)
           ^^ pp_ws `Nobreak wsecho
           ^^ optional
                (fun n ->

@@ -20,9 +20,9 @@ The -discrete-functor mode theory is like -functor, but its domain mode DomType 
 
 Ordinary (non-degenerate) uses of DomType, including the ○ functor into CodType, are unaffected.
 
-  $ narya -discrete-functor -parametric -v -e "def wrap (A :○| DomType) : CodType := data [ circle. (_ :○| A) ]"
+  $ narya -discrete-functor -parametric -v -e "def ○ (A :○| DomType) : CodType := data [ ○. (_ :○| A) ]"
    ￫ info[I0000]
-   ￮ constant wrap defined
+   ￮ constant ○ defined
   
 
 

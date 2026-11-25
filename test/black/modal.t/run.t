@@ -27,12 +27,17 @@
    1 | def g (A : Type) (x : A) : A := f A x
      ^ use of id variable behind ♭ lock requires a key
   
-  [1]
-
-  $ narya -coreflector box.ny -e "def η (A :♭| Type) (x : A) : ♭ A := box. x"
    ￫ error[E1705]
    ￭ command-line exec string
-   1 | def η (A :♭| Type) (x : A) : ♭ A := box. x
+   1 | def g (A : Type) (x : A) : A := f A x
+     ^ use of id variable behind ♭ lock requires a key
+  
+  [1]
+
+  $ narya -coreflector box.ny -e "def η (A :♭| Type) (x : A) : ♭ A := ♭. x"
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def η (A :♭| Type) (x : A) : ♭ A := ♭. x
      ^ use of id variable behind ♭ lock requires a key
   
   [1]
@@ -55,7 +60,7 @@
   
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/functor.ny
-   28 |            match u0, u1 [ circle. x0, circle. x1 ↦ ○ (Id A x0 x1) ] [
+   28 |            match u0, u1 [ ○. x0, ○. x1 ↦ ○ (Id A x0 x1) ] [
       ^ match encountered outside case tree, wrapping in implicit let-binding
   
    ￫ info[I0000]
@@ -64,8 +69,8 @@
    ￫ hint[H0403]
    ￭ $TESTCASE_ROOT/functor.ny
    37 |            match u0, u1 [
-   38 |            | circle. x0, circle. x1 ↦
-   39 |                Id (Id (○ A) (circle. x0) (circle. x1))
+   38 |            | ○. x0, ○. x1 ↦
+   39 |                Id (Id (○ A) (○. x0) (○. x1))
    40 |                  (to_Id A x0 x1 (from_Id A x0 x1 u2)) u2] [
       ^ match encountered outside case tree, wrapping in implicit let-binding
   
@@ -79,10 +84,10 @@
 
   $ narya -v -reflector reflector.ny
    ￫ info[I0000]
-   ￮ constant diamond defined
+   ￮ constant ♯ defined
   
    ￫ info[I0000]
-   ￮ constant diamondmap defined
+   ￮ constant ♯map defined
   
    ￫ info[I0001]
    ￮ axiom A assumed
@@ -101,6 +106,11 @@
 Unlike the coreflector, the reflector has no counit, so a ♯-locked variable cannot be used directly at its unlocked type.
 
   $ narya -reflector reflector.ny -e "def ε (A :♯| Type) (x :♯| A) : A := x"
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def ε (A :♯| Type) (x :♯| A) : A := x
+     ^ use of ♯ variable behind id lock requires a key
+  
    ￫ error[E1705]
    ￭ command-line exec string
    1 | def ε (A :♯| Type) (x :♯| A) : A := x
@@ -138,6 +148,11 @@ The reflector ♯ has no counit of its own, unlike the coreflector ♭.
    1 | def ε (A :♯| Type) (x :♯| A) : A := x
      ^ use of ♯ variable behind id lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def ε (A :♯| Type) (x :♯| A) : A := x
+     ^ use of ♯ variable behind id lock requires a key
+  
   [1]
 
 
@@ -160,6 +175,11 @@ The adjunction ♭ ⊣ ♯ only gives cells ♭∘♯ ⇒ id and id ⇒ ♯∘�
    1 | def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x
      ^ use of ♯♭ variable behind id lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def nocounit (A :♯♭| Type) (x :♯♭| A) : A := x
+     ^ use of ♯♭ variable behind id lock requires a key
+  
   [1]
 
 
@@ -171,6 +191,79 @@ The adjunction ♭ ⊣ ♯ only gives cells ♭∘♯ ⇒ id and id ⇒ ♯∘�
   
   [1]
 
+
+A match against a variable refines the goal and the context by rebinding the
+discriminee and the index variables of its datatype.  Rebinding a variable's
+slot rebinds what its *unkeyed* uses evaluate to, so an index variable whose use
+is keyed cannot be rebound: the value we would bind is available only at the
+window's modality, not at the variable's own annotation.  Here the index of the
+discriminee's type is a ♭-annotated variable used unmodally, hence keyed by the
+counit of ♭, so the match falls back to a non-dependent one.
+
+  $ narya -v -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def len (n :♭| N) (v : Vec N n) : N ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Vec defined
+  
+   ￫ hint[E1101]
+   ￭ command-line exec string
+   1 | def len (n :♭| N) (v : Vec N n) : N ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
+     ^ match will not refine the goal or context (index variable is keyed): n
+  
+   ￫ info[I0000]
+   ￮ constant len defined
+  
+
+That it really is a non-dependent match is visible in the goal: a motive that
+depends on the index is not refined, so the branch bodies fail to check against
+it.
+
+  $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def P : N → Type ≔ [ zero. ↦ N | suc. _ ↦ N ]' -e 'def f (n :♭| N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def f (n :♭| N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
+     ^ non-datatype P n has no constructor named zero
+  
+   ￫ error[E1000]
+   ￭ command-line exec string
+   1 | def f (n :♭| N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]
+     ^ non-datatype P n has no constructor named suc
+  
+  [1]
+
+With the same index variable unkeyed, the match refines as usual.
+
+  $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Vec (A : Type) : N → Type ≔ data [ nil. : Vec A zero. | cons. : (n : N) → A → Vec A n → Vec A (suc. n) ]' -e 'def P : N → Type ≔ [ zero. ↦ N | suc. _ ↦ N ]' -e 'def f (n : N) (v : Vec N n) : P n ≔ match v [ nil. ↦ zero. | cons. k x w ↦ suc. k ]'
+
+A branch of a match may be omitted if one of its pattern variables belongs to an empty type, since then the branch can never be reached.  But refuting such a variable is matching against it with no branches, so its modal annotation must be one that a match could use as a window.  A ♭-annotated variable can be matched against, since ♭ is transparent, so it can refute a branch:
+
+  $ narya -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Empty : Type ≔ data [ ]' -e 'def D : Type ≔ data [ c0. | c1. (_ :♭| Empty) ]' -e 'def g (x : D) : N ≔ match x [ c0. ↦ zero. ]'
+
+But a ♯-annotated variable cannot be matched against, so it cannot refute a branch either: the constructor needs a clause, and a hint explains why the variable doesn't suffice.
+
+  $ narya -v -spatial -e 'def N : Type ≔ data [ zero. | suc. (_ : N) ]' -e 'def Empty : Type ≔ data [ ]' -e 'def D : Type ≔ data [ c0. | c1. (_ :♯| Empty) ]' -e 'def g (x : D) : N ≔ match x [ c0. ↦ zero. ]'
+   ￫ info[I0000]
+   ￮ constant N defined
+  
+   ￫ info[I0000]
+   ￮ constant Empty defined
+  
+   ￫ info[I0000]
+   ￮ constant D defined
+  
+   ￫ hint[E1102]
+   ￭ command-line exec string
+   1 | def g (x : D) : N ≔ match x [ c0. ↦ zero. ]
+     ^ refutation window modality ♯ must be pellucid or transparent
+  
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def g (x : D) : N ≔ match x [ c0. ↦ zero. ]
+     ^ missing match clause for constructor c1
+  
+  [1]
 
 Modal fields of records and codata: a field parametrized by the sinister
 modality ♭ (with right adjoint ♯) is checked, supplied, and projected behind
@@ -296,6 +389,65 @@ adjoint.
   
   [1]
 
+"about" on a modal codatatype or record displays each field with the locking
+annotation on the self-variable that declares it, and its type in the context
+locked by the right adjoint.  A record with a modal field must use the
+self-variable syntax, since the field-variable syntax "sig (a : …)" has nowhere
+to put the annotation; an ordinary non-modal field is unaffected.
+
+  $ narya -spatial modalfields.ny -e "about C" -e "about R" -e "about D"
+  codata [
+  | (x :♭| _) .fld : N ]
+    : Type
+  
+  sig (
+    (x :♭| _) .fst : N )
+    : Type
+  
+  codata [
+  | y .snd : N ]
+    : Type
+  
+
+
+
+
+A comatch or tuple for a modal field displays as usual: only the declaration and
+the projection carry the locking annotation.
+
+  $ narya -spatial modalfields.ny -e "about c" -e "about r"
+  [ .fld ↦ 1 ]
+    : C
+  
+  (fst ≔ 0)
+    : R
+  
+
+Projections are displayed with the modal annotation.
+
+  $ narya -spatial modalfields.ny -e "about p"
+  (c :♭| _) .fld
+    : N
+  
+
+
+A *degeneracy* of a modal codatatype is displayed the same way, with the
+locking annotation on the self-variable cube: each field's type is instantiated
+at the projections of that field from the faces of the self-variable, which
+carry the same annotation.
+
+  $ narya -spatial modalfields.ny -e "about (refl C)" -e "about (refl R)"
+  codata⁽ᵉ⁾ [
+  | (x :♭| _) .fld : N⁽ᵉ⁾ ((x.0 :♭| _) .fld) ((x.1 :♭| _) .fld) ]
+    : Type⁽ᵉ⁾ C C
+  
+  sig⁽ᵉ⁾ (
+    (x :♭| _) .fst : N⁽ᵉ⁾ ((x.0 :♭| _) .fst) ((x.1 :♭| _) .fst) )
+    : Type⁽ᵉ⁾ R R
+  
+
+
+
 A field can only be parametrized by a sinister (left adjoint) modality; ♯ is
 not sinister.
 
@@ -303,7 +455,7 @@ not sinister.
    ￫ error[E1711]
    ￭ command-line exec string
    1 | def Bad : Type ≔ codata [ | (x :♯| _) .f : Type ]
-     ^ modality ♯ is not sinister: it has no declared right adjoint, so it cannot parametrize a modal field
+     ^ modal field annotation ♯ is not sinister
   
   [1]
 
@@ -363,7 +515,7 @@ disappears at dimensions it filters (the reflexivity/parametric direction).
    ￮ constant a22 defined
   
   ()
-    : ♯⁽ᵉ⁾ (Id A) (_ ≔ (a0 :♭| _) .unsharp) (_ ≔ (a1 :♭| _) .unsharp)
+    : ♯⁽ᵉ⁾ (Id A) (_ ≔ (a0 :♭| _) .♯) (_ ≔ (a1 :♭| _) .♯)
   
 
 At dimension 0 the field projects and computes.
@@ -396,7 +548,7 @@ Projecting a disappeared field (from a 1-dimensional element) is an error.
    ￫ error[E1713]
    ￭ command-line exec string
    1 | echo (refl c :♭| _) .fld
-     ^ field fld does not exist at this dimension: its modality ♭ is nonparametric and filters this dimension away
+     ^ field fld does not exist at this dimension: its modality ♭ is discrete there
   
   [1]
 
@@ -406,7 +558,7 @@ Supplying a disappeared field in a tuple/comatch is an error.
    ￫ error[E1714]
    ￭ command-line exec string
    1 | def bad : Id C c c ≔ [ .fld ↦ refl (suc. zero.) ]
-     ^ field fld must be omitted at this dimension: its modality ♭ is nonparametric and filters this dimension away
+     ^ field fld must be omitted at this dimension: its modality ♭ is discrete there
   
   [1]
 
@@ -419,16 +571,16 @@ An ordinary (non-modal) field never disappears: it projects at any dimension.
 
 If a type is given in a modal field projection, it must be correct.
 
-  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ A) .unbox : A)" -e "def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| Disc) .unbox"
+  $ narya -coreflection -e "def □ (A :□| Type) : Disc ≔ sig ((x :△| □ A) .□ : A)" -e "def unbox (A :△□| Type) (u :△| □ A) : A ≔ (u :△| Disc) .□"
    ￫ error[E0401]
    ￭ command-line exec string
-   1 | def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| Disc) .unbox
+   1 | def unbox (A :△□| Type) (u :△| □ A) : A ≔ (u :△| Disc) .□
      ^ term synthesized type
-         □′ A
+         □ A
        but is being checked against type
          Disc
        unequal head terms:
-         □′
+         □
        does not equal
          Disc
   
@@ -436,20 +588,20 @@ If a type is given in a modal field projection, it must be correct.
 
 And likewise in a record definition.
 
-  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .unbox : A)"
+  $ narya -coreflection -e "def □ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .□ : A)"
    ￫ error[E1508]
    ￭ command-line exec string
-   1 | def □′ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .unbox : A)
-     ^ invalid self variable type for field unbox: head must be current record
+   1 | def □ (A :□| Type) : Disc ≔ sig ((x :△| Disc) .□ : A)
+     ^ invalid self variable type for field □: head must be current record
   
   [1]
 
-  $ narya -coreflection -e "def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ Type) .unbox : A)"
+  $ narya -coreflection -e "def □ (A :□| Type) : Disc ≔ sig ((x :△| □ Type) .□ : A)"
    ￫ error[E1508]
    ￭ command-line exec string
-   1 | def □′ (A :□| Type) : Disc ≔ sig ((x :△| □′ Type) .unbox : A)
-     ^ invalid self variable type for field unbox: unequal head terms: 
-       Type does not equal A
+   1 | def □ (A :□| Type) : Disc ≔ sig ((x :△| □ Type) .□ : A)
+     ^ invalid self variable type for field □: unequal head terms: Type
+       does not equal A
   
   [1]
 
@@ -571,6 +723,11 @@ suffix (or at a wrong dimension) is an error, as for ordinary higher fields.
    1 | def bad : √♭A ≔ [ .root ↦ a ]
      ^ codata method 'root.e' missing in comatch
   
+   ￫ error[E1403]
+   ￭ command-line exec string
+   1 | def bad : √♭A ≔ [ .root ↦ a ]
+     ^ method 'root.' in comatch doesn't occur in codata type
+  
   [1]
 
 The type of a modal higher field is checked in a context that is degenerated by
@@ -622,6 +779,42 @@ Projecting a modal higher field without the locking annotation is an error.
      ^ field root is modal with left adjoint ♭, so projecting it requires a locking annotation such as (_ : ♭ | _) .root
   
   [1]
+
+"about" on a modal *higher* codatatype displays the field's declaration
+instance ".root.e" with its locking annotation, as for a lower field, and a
+comatch for it displays its components.  As for a lower modal field, a
+degeneracy is displayed with the annotation on the self-variable cube, listing
+each instance of the field.
+
+  $ narya -spatial -e "axiom A : Type" -e "axiom a : A" -e "def √♭A : Type ≔ codata [ (x :♭| _) .root.e : A ]" -e "def mk : √♭A ≔ [ .root.e ↦ a ]" -e "about √♭A" -e "about mk" -e "about (refl √♭A)"
+  codata [
+  | (x :♭| _) .root.e : A ]
+    : Type
+  
+  [ .root.e ↦ a ]
+    : √♭A
+  
+  codata⁽ᵉ⁾ [
+  | (x :♭| _) .root.e : Id A ((x.02 :♭| _) .root) ((x.12 :♭| _) .root)
+  | (x :♭| _) .root.1 : A ]
+    : Type⁽ᵉ⁾ √♭A √♭A
+  
+
+
+
+
+A second degeneracy displays all three instances of the field, each in a
+context degenerated by its own remaining dimensions.
+
+  $ narya -spatial -e "axiom A : Type" -e "def √♭A : Type ≔ codata [ (x :♭| _) .root.e : A ]" -e "about (refl (refl √♭A))"
+  codata⁽ᵉᵉ⁾ [
+  | (x :♭| _) .root.e
+    : A⁽ᵉᵉ⁾ ((sym x.022 :♭| _) .root.1) ((sym x.122 :♭| _) .root.1)
+        ((sym x.202 :♭| _) .root.1) ((sym x.212 :♭| _) .root.1)
+  | (x :♭| _) .root.1 : Id A ((x.20 :♭| _) .root) ((x.21 :♭| _) .root)
+  | (x :♭| _) .root.2 : Id A ((x.02 :♭| _) .root) ((x.12 :♭| _) .root) ]
+    : Type⁽ᵉᵉ⁾ √♭A⁽ᵉ⁾ √♭A⁽ᵉ⁾ √♭A⁽ᵉ⁾ √♭A⁽ᵉ⁾
+  
 
 In the discrete spatial mode theory, ♭ is nonparametric, so it filters the
 field's intrinsic dimensions; modal higher fields there are not yet supported.

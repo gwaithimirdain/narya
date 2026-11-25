@@ -6,6 +6,15 @@ type argstyle = [ `Spaces | `Parens ]
 type spacing = [ `Wide | `Narrow ]
 type show = [ `Show | `Hide ]
 type holes = [ `With_number | `Without_number ]
+
+(* How to display let-bound variables and holes (which are implemented as metavariables) when they appear in a context other than their own, e.g. after substitution.  With `Names, we display them by name, abbreviating the bindings of the variables in their context by the omission marker, as in "let only ⋯ in x".  With `Environments, we display those bindings in full, but still the name in the body.  With `Definitions, we also display their definitions (if any) instead of their names, including when they appear in their own context. *)
+type lets = [ `Names | `Environments | `Definitions ]
+
+let string_of_lets : lets -> string = function
+  | `Names -> "names"
+  | `Environments -> "environments"
+  | `Definitions -> "definitions"
+
 type values = [ `Unicode | `ASCII | `Show | `Hide ]
 type 'a toggle = [ `Set of 'a | `Toggle ]
 
@@ -22,10 +31,14 @@ module Config = struct
     argstyle : argstyle;
     spacing : spacing;
     holes : holes;
-    function_boundaries : show;
-    type_boundaries : show;
+    lets : lets;
+    implicits : show;
     unique_keys : show;
+    (* Degeneracies that are iterated reflexivities are displayed with iterated names, like "refl (refl x)" or "Id (Id X)", when the number of iterations is at most this value, and with a superscript otherwise. *)
+    degeneracy_names : int;
     variables : string list;
+    (* The number of subterms a displayed term may have before it is truncated, or None for no limit (see Readback.budgeted). *)
+    size : int option;
   }
 end
 
@@ -36,10 +49,12 @@ let default : Config.t =
     argstyle = `Spaces;
     spacing = `Wide;
     holes = `Without_number;
-    function_boundaries = `Hide;
-    type_boundaries = `Hide;
+    lets = `Names;
+    implicits = `Hide;
     unique_keys = `Hide;
+    degeneracy_names = 1;
     variables = [ "𝑥"; "𝑦"; "𝑧"; "𝑤"; "𝑢"; "𝑣" ];
+    size = Some 2000;
   }
 
 module State = Util.State.Make (Config)
@@ -54,11 +69,13 @@ let chars () = (State.get ()).chars
 let metas () = (State.get ()).metas
 let argstyle () = (State.get ()).argstyle
 let spacing () = (State.get ()).spacing
-let function_boundaries () = (State.get ()).function_boundaries
-let type_boundaries () = (State.get ()).type_boundaries
+let implicits () = (State.get ()).implicits
 let unique_keys () = (State.get ()).unique_keys
 let holes () = (State.get ()).holes
+let lets () = (State.get ()).lets
 let variables () = (State.get ()).variables
+let degeneracy_names () = (State.get ()).degeneracy_names
+let size () = (State.get ()).size
 
 let alt_char uni asc =
   match (State.get ()).chars with
@@ -79,25 +96,26 @@ let modify_chars chars =
   State.set { s with chars };
   chars
 
-let modify_function_boundaries fb =
+let modify_implicits im =
   let s = State.get () in
-  let function_boundaries =
-    match (fb, s.function_boundaries) with
+  let implicits =
+    match (im, s.implicits) with
     | `Set x, _ -> x
     | `Toggle, `Show -> `Hide
     | `Toggle, `Hide -> `Show in
-  State.set { s with function_boundaries };
-  function_boundaries
+  State.set { s with implicits };
+  implicits
 
-let modify_type_boundaries fb =
+let modify_lets (l : [ `Set of lets | `Cycle ]) =
   let s = State.get () in
-  let type_boundaries =
-    match (fb, s.type_boundaries) with
+  let lets =
+    match (l, s.lets) with
     | `Set x, _ -> x
-    | `Toggle, `Show -> `Hide
-    | `Toggle, `Hide -> `Show in
-  State.set { s with type_boundaries };
-  type_boundaries
+    | `Cycle, `Names -> `Environments
+    | `Cycle, `Environments -> `Definitions
+    | `Cycle, `Definitions -> `Names in
+  State.set { s with lets };
+  lets
 
 let modify_unique_keys uk =
   let s = State.get () in

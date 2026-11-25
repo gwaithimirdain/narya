@@ -78,9 +78,11 @@ In HOTT mode, elements of ``Id`` are equalities, hence in particular are not jus
      = z
          by q
      = w
-         by r ∎
+         by ← r ∎
 
-Note that the supplied reason for each equality can be applied either forwards or backwards, without the user needing to notate which.  However, all congruences must be applied explicitly (e.g. with ``refl``).  If two subsequent terms are definitionally equal, the ``by`` clause can be omitted; this allows notating applications of definitional equality in a more readable way.
+To apply a reason backwards, write ``by ← r`` (or ``by <- r``).  Narya then checks ``r`` only against the reversed equality.  Since ``←`` is an identifier-constituent, it needs a space afterwards if ``r`` starts with an identifier.  With an unmarked reason ``by r``, Narya first tries the forward direction, then the reverse direction if the forward check fails; but a failed check can be expensive when the types are large.
+
+Apply congruences explicitly, for example with ``refl``.  If two subsequent terms are definitionally equal, you can omit the ``by`` clause.
 
 
 HOTT inside parametricity

@@ -4,7 +4,6 @@ const arity = document.getElementById("arity");
 const direction = document.getElementById("direction");
 const internal = document.getElementById("internal");
 const external = document.getElementById("external");
-const discreteness = document.getElementById("discreteness");
 const startup = document.getElementById("startup");
 
 const queryString = window.location.search;
@@ -20,9 +19,6 @@ if(urlParams.has('internal')) {
 }
 if(urlParams.has('external')) {
     external.checked = true;
-}
-if(urlParams.has('discreteness')) {
-    discreteness.checked = true;
 }
 if(urlParams.has('startup')) {
     startup.value = urlParams.get('startup');
@@ -64,13 +60,12 @@ function start() {
 
     var startupcode = startup.value
     
-    var err = Narya.start(arity.value, direction.value, internal.checked, discreteness.checked, startupcode);
+    var err = Narya.start(arity.value, direction.value, internal.checked, startupcode);
     if (!err) {
         arity.disabled = true;
         direction.disabled = true;
         internal.disabled = true;
         external.disabled = true;
-        discreteness.disabled = true;
         startup.disabled = true;
         readLine();
         term.focus();

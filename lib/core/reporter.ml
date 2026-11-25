@@ -1,3 +1,5 @@
+open Effect
+open Effect.Deep
 open Bwd
 open Util
 open Modal
@@ -29,18 +31,27 @@ type printable +=
 
 type oracle_error = ..
 
+(* A client of Narya may also have errors of its own to report, which arise from how it builds the
+   terms it hands to Narya rather than from anything Narya checks.  Rather than Narya having a code
+   for each of them, "extern_error" is an extensible variant that the client extends with a tag for
+   each, and the Extern code wraps such a tag together with a code and text that Narya displays for
+   it, since Narya can't say anything about a tag it's never heard of.  They all share the same short
+   code, which the client's code is appended to as a suffix, so they don't clash with Narya's own codes. *)
+
+type extern_error = ..
+
 (* The function that actually does the work of printing a "printable" will be defined in Parser.Unparse.  But we need to be able to "call" that function in this file to define "default_text" that converts structured messages to text.  Thus, in this file we define a mutable global variable to contain that function, starting with a dummy function, and call its value to print "printable"s; then in Parser.Unparse we will set the value of that variable after defining the function it should contain. *)
 
 (* In addition, in Asai messages are emitted by performing an effect or raising an exception that carries with it the data of a function of type "formatter -> unit", which is then called by the handler Reporter.run to format the message text as part of a larger display formatting.  This causes problems if we define our printing functions naively, since it means that any effects performed by the formatting function (such as looking up names in a Yuujinchou Scope) will take place in the context of the handler, not that where the message was invoked, and hence in the wrong scope.  To deal with this, we ensure that the printable values are converted to PPrint documents directly in "default_text", before they are passed to Asai. *)
 
-let printer : (sort:[ `Type | `Function | `Other ] -> printable -> PPrint.document) ref =
-  ref (fun ~sort:_ _ -> raise (Failure "print not set (hint: Parser.Unparse must be loaded)"))
+let printer : (printable -> PPrint.document) ref =
+  ref (fun _ -> raise (Failure "print not set (hint: Parser.Unparse must be loaded)"))
 
-let print ?(sort = `Other) pr = !printer ~sort pr
+let print pr = !printer pr
 
 let print_to_string pr =
   let buf = Buffer.create 5 in
-  PPrint.ToBuffer.pretty 1.0 70 buf (!printer ~sort:`Other pr);
+  PPrint.ToBuffer.pretty 1.0 70 buf (!printer pr);
   Buffer.contents buf
 
 (* Now the function that Asai carries around is basically just PPrint.ToFormatter.pretty.  It's important to know exactly what this does, although it's not described precisely in the PPrint documentation: it converts all newlines to pp_force_newline and all spaces to pp_print_space.  Note that the latter is a break hint, allowing Format to break the line!  This is not what we want; the spaces in PPrint's output are supposed to be spaces, and only the newlines in PPrint's output should be newlines.  I think the only solution, short of modifying PPrint, is to surround it in a Format hbox, which causes all break hints to never split the line.  It does still respect force_newline, of course, so this should do what we want.  *)
@@ -103,6 +114,7 @@ module Code = struct
     | Noncube_abstraction_in_higher_dimensional_match : 'n D.t -> t
     | Not_enough_arguments_to_function : t
     | Not_enough_arguments_to_instantiation : t
+    | Not_enough_arguments_to_constructor : t
     | Type_not_fully_instantiated : string * 'n D.pos -> t
     | Instantiating_zero_dimensional_type : printable -> t
     | Unequal_synthesized_type : {
@@ -121,6 +133,7 @@ module Code = struct
         -> t
     | Not_enough_domains : 'a D.t -> t
     | Invalid_higher_function : string -> t
+    | Invalid_higher_letonly : string -> t
     | Invalid_nullary_application : t
     | Expected_nullary_application : t
     | Checking_tuple_at_degenerated_record : printable -> t
@@ -141,6 +154,7 @@ module Code = struct
     | Checking_tuple_at_nonrecord : printable -> t
     | Choice_mismatch : printable -> t
     | Calc_error : printable -> t
+    | No_implicit_goal_arg : printable * printable -> t
     | Comatching_at_noncodata : printable -> t
     | Comatching_at_degenerated_codata : printable -> t
     | No_such_constructor :
@@ -172,9 +186,14 @@ module Code = struct
         Constr.t * [ `Constr of Constr.t | `Nonconstr of printable ]
         -> t
     | Unequal_indices : printable * printable * Unequal.t -> t
+    | Unequal_boundary_argument : {
+        face : ('a, 'b) sface;
+        got : printable;
+        expected : printable;
+        why : Unequal.t;
+      }
+        -> t
     | Unbound_variable : string * (string list * string list) list -> t
-    | Ill_scoped_connection : t
-    | Unattached_assumption : t
     | Undefined_constant : printable -> t
     | Undefined_metavariable : printable -> t
     | Nonsynthesizing : string -> t
@@ -188,6 +207,7 @@ module Code = struct
     | Deprecated : string -> t
     | Matching_datatype_has_degeneracy : printable -> t
     | Wrong_number_of_arguments_to_pattern : Constr.t * int -> t
+    | Wrong_boundary_of_pattern_variable : int -> t
     | Wrong_number_of_arguments_to_motive : int -> t
     | No_such_constructor_in_match : printable * Constr.t -> t
     | Duplicate_constructor_in_match : Constr.t -> t
@@ -208,17 +228,22 @@ module Code = struct
     | Unknown_modality : string -> t
     | Unknown_modalcell : string -> t
     | Key_mismatch : ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'p, 'd) Modality.t -> t
+    | Letonly_lock_mismatch : ('a, 'm, 'b) Modality.t * ('c, 'p, 'd) Modality.t -> t
     | Modalcell_mismatch : string * ('a, 'm, 'n, 'b) Modalcell.t * ('c, 'r, 's, 'd) Modalcell.t -> t
     | Intangible_modality : ('a, 'm, 'b) Modality.t -> t
     | Nontransparent_window_modality :
         ('a, 'm, 'b) Modality.t * bool * [ `Nonrecursive | `Recursive | `Unknown ]
         -> t
+    (* A branch was omitted, and there is a pattern variable of empty type that would have refuted it, but its modal annotation is not one a match could use as a window. *)
+    | Nonrefutable_modal_variable : ('a, 'm, 'b) Modality.t -> t
     | Non_mode_synthesizing : string -> t
     | Invalid_mode_theory : string -> t
     | Nonparametric_mode_degeneracy : string * 'a Mode.t -> t
     | Invalid_variable_face : 'a D.t * ('n, 'm) sface -> t
     | Anomaly : string -> t
     | No_such_level : printable -> t
+    (* Raised by Names.lookup when an anonymous self-variable of a record being displayed with field-variable syntax is used directly rather than through a field; caught by the unparser to fall back to self-variable syntax.  A Bug because it should always be caught. *)
+    | Self_used : t
     | Redefining_constant : string list -> t
     | Invalid_constant_name : string list * string option -> t
     | Too_many_commands : t
@@ -233,19 +258,15 @@ module Code = struct
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
     | Constant_assumed : { name : printable; parametric : bool; holes : int } -> t
-    | Constant_defined : {
-        names : printable list;
-        discrete : bool;
-        parametric : bool;
-        holes : int;
-      }
-        -> t
+    | Constant_defined : { names : printable list; parametric : bool; holes : int } -> t
     | Hole_solved : int -> t
     | Split_term : PPrint.document -> t
     | Notation_defined : string -> t
+    (* Evaluating a term form that exists only for display, such as a potential application, which readback can produce but typechecking never does. *)
+    | Evaluating_display_term : string -> t
     | Show : string * printable -> t
     | Comment_end_in_string : t
-    | Checking_canonical_at_nonuniverse : string * printable -> t
+    | Universe_expected : [ `Check | `Synth ] * string * printable -> t
     | Bare_case_tree_construct : string -> t
     | Wrong_boundary_of_record : int -> t
     | Invalid_constructor_type : Constr.t * (string, Unequal.t) Either.t -> t
@@ -253,7 +274,7 @@ module Code = struct
     | Missing_constructor_type : Constr.t -> t
     | Locked_variable : t
     | Locked_constant : printable -> t
-    | Hidden_variable : t
+    | Hidden_variable : [ `Key | `Lock ] -> t
     | Missing_key : ('dom1, 'mu1, 'cod1) Modality.t * ('dom2, 'mu2, 'cod2) Modality.t -> t
     | Axiom_in_parametric_definition : printable -> t
     | Modality_not_sinister : ('dom, 'mu, 'cod) Modality.t -> t
@@ -274,6 +295,8 @@ module Code = struct
     | Synthesizing_recursion : printable -> t
     | Invalid_synthesized_type : string * printable -> t
     | Unrecognized_attribute : t
+    | Display_only_syntax : string -> t
+    | Generative_copy : t
     | Invalid_degeneracy_action : string * 'nk D.t * 'n D.t -> t
     | Wrong_number_of_patterns : t
     | Inconsistent_patterns : t
@@ -305,12 +328,14 @@ module Code = struct
     | Display_set : string * string -> t
     | Option_set : string * string -> t
     | Break : t
-    | Accumulated : string * t Asai.Diagnostic.t Bwd.t -> t
+    | Dependent : string -> t
+    | Fatalize : string -> t
     | No_holes_allowed : [ `Command of string | `File of string | `Other of string ] -> t
     | Invalid_instant : string -> t
-    | Cyclic_term : t
     | Oracle_failed : oracle_error -> t
+    | Extern : { code : string; text : string; error : extern_error } -> t
     | Invalid_flags : t
+    | Typeless_meta : ('mode, 'x, 'b, 's) Meta.t * [ `Let | `Bare ] -> t
 
   (* If an error is encountered during printing a term, we (meaning the function 'printer' to be defined in Parser.Unparse) call the function supplied by this reader effect and print it as "_UNPRINTABLE".  Usually this is a bug, but sometimes it can happen normally, particularly when accumulating errors: a term involved in a later error might be unprintable due to a previous error.  We make this a reader that supplies a function so that the function can be called at the point of *performing* the effect.  Thus, if we are not in the middle of displaying another message, there can be an outer handler for this effect that supplies the function "fatal", which is called at the point of performing the effect and is therefore inside any inner Reporter.run wrappers rather than the outermost one that just Exits. *)
   module PrintingErrorData = struct
@@ -342,6 +367,7 @@ module Code = struct
     | Unequal_synthesized_boundary _ -> Error
     | Not_enough_domains _ -> Error
     | Invalid_higher_function _ -> Error
+    | Invalid_higher_letonly _ -> Error
     | Invalid_nullary_application -> Error
     | Expected_nullary_application -> Error
     | Checking_tuple_at_degenerated_record _ -> Error
@@ -362,14 +388,14 @@ module Code = struct
     | Checking_tuple_at_nonrecord _ -> Error
     | Choice_mismatch _ -> Error
     | Calc_error _ -> Error
+    | No_implicit_goal_arg _ -> Error
     | Comatching_at_noncodata _ -> Error
     | Comatching_at_degenerated_codata _ -> Error
     | No_such_constructor _ -> Error
     | Missing_instantiation_constructor _ -> Error
     | Unequal_indices _ -> Error
+    | Unequal_boundary_argument _ -> Error
     | Unbound_variable _ -> Error
-    | Ill_scoped_connection -> Error
-    | Unattached_assumption -> Error
     | Undefined_constant _ -> Bug
     | Undefined_metavariable _ -> Bug
     | No_such_field _ -> Error
@@ -381,6 +407,7 @@ module Code = struct
     | Instantiating_zero_dimensional_type _ -> Error
     | Invalid_variable_face _ -> Error
     | Not_enough_arguments_to_instantiation -> Error
+    | Not_enough_arguments_to_constructor -> Error
     | Applying_nonfunction_nontype _ -> Error
     | Unexpected_implicitness _ -> Error
     | Insufficient_dimension _ -> Error
@@ -389,12 +416,14 @@ module Code = struct
     | Deprecated _ -> Warning
     | Matching_datatype_has_degeneracy _ -> Error
     | Wrong_number_of_arguments_to_pattern _ -> Error
+    | Wrong_boundary_of_pattern_variable _ -> Error
     | Wrong_number_of_arguments_to_motive _ -> Error
     | No_such_constructor_in_match _ -> Error
     | Duplicate_constructor_in_match _ -> Error
     | Duplicate_constructor_in_data _ -> Error
     | Matching_on_nondatatype _ -> Error
     | Matching_wont_refine _ -> Hint
+    | Nonrefutable_modal_variable _ -> Hint
     | Dimension_mismatch _ -> Bug (* Sometimes Error? *)
     | Mode_mismatch (`Internal, _, _, _, _) -> Bug
     | Mode_mismatch (`User, _, _, _, _) -> Error
@@ -403,6 +432,7 @@ module Code = struct
     | Unknown_modality _ -> Error
     | Unknown_modalcell _ -> Error
     | Key_mismatch _ -> Error
+    | Letonly_lock_mismatch _ -> Error
     | Modalcell_mismatch _ -> Error
     | Intangible_modality _ -> Error
     | Nontransparent_window_modality _ -> Error
@@ -411,6 +441,8 @@ module Code = struct
     | Nonparametric_mode_degeneracy _ -> Error
     | Anomaly _ -> Bug
     | No_such_level _ -> Bug
+    | Evaluating_display_term _ -> Bug
+    | Self_used -> Bug
     | Redefining_constant _ -> Warning
     | Invalid_constant_name _ -> Error
     | Too_many_commands -> Error
@@ -429,7 +461,7 @@ module Code = struct
     | Notation_defined _ -> Info
     | Show _ -> Info
     | Comment_end_in_string -> Warning
-    | Checking_canonical_at_nonuniverse _ -> Error
+    | Universe_expected _ -> Error
     | Bare_case_tree_construct _ -> Hint
     | Wrong_boundary_of_record _ -> Error
     | Invalid_constructor_type _ -> Error
@@ -437,7 +469,7 @@ module Code = struct
     | Missing_constructor_type _ -> Error
     | Locked_variable -> Error
     | Locked_constant _ -> Error
-    | Hidden_variable -> Error
+    | Hidden_variable _ -> Error
     | Missing_key _ -> Error
     | Axiom_in_parametric_definition _ -> Error
     | Modality_not_sinister _ -> Error
@@ -452,6 +484,8 @@ module Code = struct
     | Synthesizing_recursion _ -> Error
     | Invalid_synthesized_type _ -> Error
     | Unrecognized_attribute -> Error
+    | Display_only_syntax _ -> Error
+    | Generative_copy -> Warning
     | Invalid_degeneracy_action _ -> Bug
     | Wrong_number_of_patterns -> Error
     | Inconsistent_patterns -> Error
@@ -485,22 +519,28 @@ module Code = struct
     | Display_set _ -> Info
     | Option_set _ -> Info
     | Break -> Error
-    | Accumulated _ -> Error
+    | Dependent _ -> Error
+    | Fatalize _ -> Error
     | No_holes_allowed _ -> Error
     | Invalid_instant _ -> Bug
     | Wrong_dimension_of_field _ -> Error
     | Invalid_field_suffix _ -> Error
-    | Cyclic_term -> Error
     | Oracle_failed _ -> Error
+    | Extern _ -> Error
     | Invalid_flags -> Error
+    | Typeless_meta _ -> Bug
 
   (** A short, concise, ideally Google-able string representation for each message code. *)
   let short_code : t -> string = function
-    (* Usually bugs *)
+    (* Usually bugs (at least, if they escape to the user) *)
     | Anomaly _ -> "E0000"
     | No_such_level _ -> "E0001"
-    | Accumulated (_msg, _errs) -> "E0002"
+    | Dependent _msg -> "E0002"
     | Invalid_degeneracy_action _ -> "E0003"
+    | Self_used -> "E0004"
+    | Evaluating_display_term _ -> "E0005"
+    | Fatalize _msg -> "E0006"
+    | Typeless_meta _ -> "E0010"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
     | Deprecated _ -> "E0110"
@@ -514,19 +554,18 @@ module Code = struct
     | Invalid_degeneracy _ -> "E0206"
     | No_relative_precedence _ -> "E0207"
     | Unrecognized_attribute -> "E0208"
+    | Display_only_syntax _ -> "E0209"
+    | Generative_copy -> "W0210"
     | Comment_end_in_string -> "E0250"
-    | Cyclic_term -> "E0280"
     | Encoding_error -> "E0299"
     (* Scope errors *)
     | Unbound_variable _ -> "E0300"
     | Undefined_constant _ -> "E0301"
     | Undefined_metavariable _ -> "E0302"
-    | Ill_scoped_connection -> "E0303"
-    | Unattached_assumption -> "E0304"
     | Locked_variable -> "E0310"
     | Locked_constant _ -> "E0311"
     | Axiom_in_parametric_definition _ -> "E0312"
-    | Hidden_variable -> "E0313"
+    | Hidden_variable _ -> "E0313"
     (* Bidirectional typechecking and case trees *)
     | Nonsynthesizing _ -> "E0400"
     | Unequal_synthesized_type _ -> "E0401"
@@ -542,6 +581,7 @@ module Code = struct
     | Type_not_fully_instantiated _ -> "E0504"
     | Instantiating_zero_dimensional_type _ -> "E0505"
     | Invalid_variable_face _ -> "E0506"
+    | Not_enough_arguments_to_constructor -> "E0507"
     | Zero_dimensional_cube_abstraction _ -> "E0508"
     | Mismatched_dimensions_in_cube_abstraction _ -> "E0509"
     | Noncube_abstraction_in_higher_dimensional_match _ -> "E0510"
@@ -560,6 +600,7 @@ module Code = struct
     | Invalid_higher_function _ -> "E0706"
     | Invalid_nullary_application -> "E0707"
     | Expected_nullary_application -> "E0708"
+    | Invalid_higher_letonly _ -> "E0709"
     (* Record fields *)
     | No_such_field _ -> "E0800"
     | Wrong_dimension_of_field _ -> "E0801"
@@ -576,10 +617,12 @@ module Code = struct
     | Wrong_number_of_arguments_to_constructor _ -> "E1001"
     | Missing_instantiation_constructor _ -> "E1002"
     | Unequal_indices _ -> "E1003"
+    | Unequal_boundary_argument _ -> "E1004"
     (* Matches *)
     (* - Match variable *)
     | Unnamed_variable_in_match -> "E1100"
     | Matching_wont_refine _ -> "E1101"
+    | Nonrefutable_modal_variable _ -> "E1102"
     (* - Match type *)
     | Matching_on_nondatatype _ -> "E1200"
     | Matching_datatype_has_degeneracy _ -> "E1201"
@@ -588,6 +631,7 @@ module Code = struct
     | No_such_constructor_in_match _ -> "E1301"
     | Duplicate_constructor_in_match _ -> "E1302"
     | Wrong_number_of_arguments_to_pattern _ -> "E1303"
+    | Wrong_boundary_of_pattern_variable _ -> "E1310"
     | Duplicate_pattern_variable _ -> "E1304"
     | Wrong_number_of_patterns -> "E1305"
     | Inconsistent_patterns -> "E1306"
@@ -595,7 +639,7 @@ module Code = struct
     | No_remaining_patterns -> "E1308"
     | Invalid_refutation -> "E1309"
     (* - Match motive *)
-    | Wrong_number_of_arguments_to_motive _ -> "E1400"
+    | Wrong_number_of_arguments_to_motive _ -> "E1310"
     (* Comatches *)
     | Comatching_at_noncodata _ -> "E1400"
     | Comatching_at_degenerated_codata _ -> "E1401"
@@ -604,7 +648,7 @@ module Code = struct
     | Duplicate_method_in_comatch _ -> "E1404"
     | Invalid_method_in_comatch -> "E1405"
     (* Canonical types *)
-    | Checking_canonical_at_nonuniverse _ -> "E1500"
+    | Universe_expected _ -> "E1500"
     | Duplicate_field_in_record _ -> "E1501"
     | Duplicate_method_in_codata _ -> "E1502"
     | Duplicate_constructor_in_data _ -> "E1503"
@@ -616,6 +660,7 @@ module Code = struct
     (* Tactics *)
     | Choice_mismatch _ -> "E1600"
     | Calc_error _ -> "E1601"
+    | No_implicit_goal_arg _ -> "E1602"
     (* Modal type theory *)
     | Mode_mismatch _ -> "E1700"
     | Modality_mismatch _ -> "E1701"
@@ -625,13 +670,14 @@ module Code = struct
     | Missing_key _ -> "E1705"
     | Unknown_modalcell _ -> "E1706"
     | Key_mismatch _ -> "E1707"
+    | Letonly_lock_mismatch _ -> "E1716"
     | Modality_not_sinister _ -> "E1711"
     | Wrong_locking_modality _ -> "E1712"
     | Modal_field_filtered_away _ -> "E1713"
     | Extra_filtered_field_in_tuple _ -> "E1714"
     | Invalid_mode_theory _ -> "E1710"
-    | Intangible_modality _ -> "E1706"
-    | Nontransparent_window_modality _ -> "E1707"
+    | Intangible_modality _ -> "E1709"
+    | Nontransparent_window_modality _ -> "E1715"
     | Nonparametric_mode_degeneracy _ -> "E1708"
     (* Commands *)
     | Too_many_commands -> "E2000"
@@ -671,6 +717,8 @@ module Code = struct
     | Invalid_section_name _ -> "E2601"
     (* oracles *)
     | Oracle_failed _ -> "E3000"
+    (* errors of a client's own, each numbered by the client within this one code *)
+    | Extern { code; _ } -> "E3100-" ^ code
     (* Interactive proof *)
     | Open_holes _ -> "W3000"
     | No_such_hole _ -> "E3001"
@@ -693,7 +741,7 @@ module Code = struct
     | Display_set _ -> "I0101"
     (* Control of execution *)
     | Quit _ -> "I0200"
-    | Break -> "E0201"
+    | Break -> "E2004"
     (* Debugging *)
     | Show _ -> "I9999"
 
@@ -705,7 +753,8 @@ module Code = struct
     let msg =
       PrintingError.run ~env:(fun d -> printing_errors := Snoc (!printing_errors, d)) @@ fun () ->
       match err with
-      | Accumulated _ -> text "anomaly: multiple accumulated errors"
+      | Dependent _ -> text "silent error: dependence on a previous error"
+      | Fatalize _ -> text "silent error: fatalization"
       | Parse_error str -> textf "parse error: %s" str
       | Encoding_error -> text "UTF-8 encoding error"
       | Parsing_ambiguity strs ->
@@ -739,18 +788,20 @@ module Code = struct
           text "not enough arguments for a higher-dimensional function application"
       | Not_enough_arguments_to_instantiation ->
           text "not enough arguments to instantiate a higher-dimensional type"
+      | Not_enough_arguments_to_constructor ->
+          text "not enough arguments to a higher-dimensional constructor application"
       | Type_not_fully_instantiated (str, n) ->
           textf "type not fully instantiated in %s (need %s more dimensions)" str
             (string_of_dim0 (D.pos n))
       | Instantiating_zero_dimensional_type ty ->
           textf "@[<hv 0>can't apply/instantiate a zero-dimensional type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+            (print ty)
       | Unequal_synthesized_type { got; expected; which; why } ->
           let str, p1, p2 = Unequal.printables why in
           textf
             "@[<hv 0>term synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a%a@]"
-            pp_printed (print ~sort:`Type got) pp_printed (print ~sort:`Type expected) str
-            pp_printed (print p1) pp_printed (print p2)
+            pp_printed (print got) pp_printed (print expected) str pp_printed (print p1) pp_printed
+            (print p2)
             (pp_print_option
                ~none:(fun _ () -> ())
                (fun ppf which -> fprintf ppf "@ (hint: %s boundaries are explicit)" which))
@@ -759,19 +810,20 @@ module Code = struct
           let str, p1, p2 = Unequal.printables why in
           textf
             "@[<hv 0>the %s-boundary synthesized type@;<1 2>%a@ but is being checked against type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
-            (string_of_sface face) pp_printed (print ~sort:`Type got) pp_printed
-            (print ~sort:`Type expected) str pp_printed (print p1) pp_printed (print p2)
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
       | Not_enough_domains dim ->
           textf "not enough domains for an %s-dimensional function type" (string_of_dim0 dim)
       | Invalid_higher_function str -> textf "invalid higher function-type: %s" str
+      | Invalid_higher_letonly str -> textf "invalid higher-dimensional let-only: %s" str
       | Invalid_nullary_application -> text "invalid nullary application"
       | Expected_nullary_application -> text "expected nullary application"
       | Checking_tuple_at_degenerated_record r ->
           textf "can't check a tuple against a record %a with a nonidentity degeneracy applied"
-            pp_printed (print ~sort:`Type r)
+            pp_printed (print r)
       | Comatching_at_degenerated_codata r ->
           textf "can't comatch against a codatatype %a with a nonidentity degeneracy applied"
-            pp_printed (print ~sort:`Type r)
+            pp_printed (print r)
       | Missing_field_in_tuple (f, _) ->
           textf "record field '%s' missing in tuple" (Field.to_string f)
       | Missing_method_in_comatch (f, p) ->
@@ -793,28 +845,28 @@ module Code = struct
       | Unnamed_variable_in_match -> text "unnamed match variable"
       | Checking_lambda_at_nonfunction ty ->
           textf "@[<hv 0>checking abstraction against non-function type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+            (print ty)
       | Checking_tuple_at_nonrecord ty ->
-          textf "@[<hv 0>checking tuple against non-record type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+          textf "@[<hv 0>checking tuple against non-record type@;<1 2>%a@]" pp_printed (print ty)
       | Choice_mismatch ty ->
-          textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+          textf "@[<hv 0>multi-choice term doesn't match type@;<1 2>%a@]" pp_printed (print ty)
       | Calc_error e -> textf "error in calc: %a" pp_printed (print e)
+      | No_implicit_goal_arg (fn, ty) ->
+          textf "@[<hv 0>can't take an implicit argument for@;<1 2>%a@ from type@;<1 2>%a@]"
+            pp_printed (print fn) pp_printed (print ty)
       | Comatching_at_noncodata ty ->
-          textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+          textf "@[<hv 0>checking comatch against non-codata type@;<1 2>%a@]" pp_printed (print ty)
       | No_such_constructor (d, c) -> (
           match d with
           | `Data d ->
-              textf "datatype %a has no constructor named %s" pp_printed (print ~sort:`Type d)
+              textf "datatype %a has no constructor named %s" pp_printed (print d)
                 (Constr.to_string c)
           | `Nondata d ->
-              textf "non-datatype %a has no constructor named %s" pp_printed (print ~sort:`Type d)
+              textf "non-datatype %a has no constructor named %s" pp_printed (print d)
                 (Constr.to_string c)
           | `Other ty ->
               textf "@[<hv 0>non-datatype@;<1 2>%a@ has no constructor named %s@]" pp_printed
-                (print ~sort:`Type ty) (Constr.to_string c))
+                (print ty) (Constr.to_string c))
       | Wrong_number_of_arguments_to_constructor (c, n) ->
           if n > 0 then
             textf "too many arguments to constructor %s (%d extra)" (Constr.to_string c) n
@@ -830,11 +882,9 @@ module Code = struct
             | `Int n -> string_of_int n in
           match d with
           | `Record (eta, d) ->
-              textf "%s type %a has no field named %s" (record_or_codata eta) pp_printed
-                (print ~sort:`Type d) f
+              textf "%s type %a has no field named %s" (record_or_codata eta) pp_printed (print d) f
           | `Nonrecord d ->
-              textf "non-record/codata type %a has no field named %s" pp_printed
-                (print ~sort:`Type d) f
+              textf "non-record/codata type %a has no field named %s" pp_printed (print d) f
           | `Other tm -> textf "term %a has no field named %s" pp_printed (print tm) f
           | `Type tm ->
               textf "type %a has no field named %s (maybe turn off -parametric?)" pp_printed
@@ -857,8 +907,8 @@ module Code = struct
           let err = if err = "" then "empty suffix" else "suffix " ^ err in
           textf
             "@[<hv 0>field %s of %s type@;<1 2>%a@ has intrinsic dimension %s and used at dimension %s, can't have %s@]"
-            fldname (record_or_codata eta) pp_printed (print ~sort:`Type d)
-            (string_of_dim0 intrinsic) (string_of_dim0 used_at) err
+            fldname (record_or_codata eta) pp_printed (print d) (string_of_dim0 intrinsic)
+            (string_of_dim0 used_at) err
       | Invalid_field_suffix (ty, f, p, evaldim) ->
           textf "invalid suffix %s for field %s of %s-dimensional type %a" (string_of_ins_ints p) f
             (string_of_dim0 evaldim) pp_printed (print ty)
@@ -879,6 +929,12 @@ module Code = struct
             "@[<hv 0>index@;<1 2>%a@ of constructor application doesn't match the corresponding index@;<1 2>%a@ of datatype instance: unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
             pp_printed (print t1) pp_printed (print t2) str pp_printed (print p1) pp_printed
             (print p2)
+      | Unequal_boundary_argument { face; got; expected; why } ->
+          let str, p1, p2 = Unequal.printables why in
+          textf
+            "@[<hv 0>supplied %s-boundary argument@;<1 2>%a@ doesn't match the one determined by the type@;<1 2>%a@ unequal %s:@;<1 2>%a@ does not equal@;<1 2>%a@]"
+            (string_of_sface face) pp_printed (print got) pp_printed (print expected) str pp_printed
+            (print p1) pp_printed (print p2)
       | Unbound_variable (c, alt) -> (
           match alt with
           | [] -> textf "unbound variable: %s" c
@@ -912,7 +968,7 @@ module Code = struct
       | Applying_nonfunction_nontype (tm, ty) ->
           textf
             "@[<hv 0>attempt to apply/instantiate@;<1 2>%a@ of type@;<1 2>%a@ which is not a function-type or universe@]"
-            pp_printed (print tm) pp_printed (print ~sort:`Type ty)
+            pp_printed (print tm) pp_printed (print ty)
       | Unexpected_implicitness (i, what, str) ->
           textf "unexpected %s %s: %s"
             (match i with
@@ -936,6 +992,13 @@ module Code = struct
           else
             textf "not enough arguments to constructor %s in match pattern (need %d more)"
               (Constr.to_string c) (abs n)
+      | Wrong_boundary_of_pattern_variable n ->
+          if n > 0 then
+            textf "too many boundary arguments for higher-dimensional pattern variable (%d extra)" n
+          else
+            textf
+              "not enough boundary arguments for higher-dimensional pattern variable (need %d more)"
+              (abs n)
       | Wrong_number_of_arguments_to_motive n ->
           textf "wrong number of arguments for match motive: should be %d" n
       | No_such_constructor_in_match (d, c) ->
@@ -945,7 +1008,7 @@ module Code = struct
           textf "constructor %s appears twice in match" (Constr.to_string c)
       | Matching_on_nondatatype ty ->
           textf "@[<hv 0>can't match on variable belonging to non-datatype@;<1 2>%a@]" pp_printed
-            (print ~sort:`Type ty)
+            (print ty)
       | Matching_wont_refine (msg, Some d) ->
           textf "@[<hv 0>match will not refine the goal or context (%s):@;<1 2>%a@]" msg pp_printed
             (print d)
@@ -981,19 +1044,24 @@ module Code = struct
           textf "vertical target %s of key %s doesn't match any suffix of context locks %s"
             (Modality.to_string (Modalcell.vtgt key))
             (Modalcell.to_string key) (Modality.to_string ctx_lock)
+      | Letonly_lock_mismatch (lock, ctx_lock) ->
+          textf "let-only lock %s doesn't match any suffix of context locks %s"
+            (Modality.to_string lock) (Modality.to_string ctx_lock)
       | Intangible_modality m -> textf "modality %s is not tangible" (Modality.to_string m)
       | Nontransparent_window_modality (m, _, `Recursive) ->
           textf "window modality %s must be pellucid since the datatype has recursive constructors"
             (Modality.to_string m)
       | Nontransparent_window_modality (m, _, `Unknown) ->
           textf
-            "window modality %s must be pellucid since it is not yet known whether the datatype has recursive constructors, due to unsolved holes in its constructor types"
+            "window modality %s must be pellucid since the datatype might have recursive constructors"
             (Modality.to_string m)
       | Nontransparent_window_modality (m, false, `Nonrecursive) ->
           textf "window modality %s must be pellucid or transparent" (Modality.to_string m)
       | Nontransparent_window_modality (m, true, `Nonrecursive) ->
-          textf
-            "window modality %s must be pellucid or transparent, or translucent since the datatype has only one constructor"
+          textf "window modality %s must be pellucid, transparent, or translucent"
+            (Modality.to_string m)
+      | Nonrefutable_modal_variable m ->
+          textf "refutation window modality %s must be pellucid or transparent"
             (Modality.to_string m)
       | Missing_key (vdom, vcod) ->
           textf "use of %a variable behind %a lock requires a key" pp_printed
@@ -1001,9 +1069,7 @@ module Code = struct
             pp_printed
             (print (PString (Modality.to_string vcod)))
       | Modality_not_sinister m ->
-          textf
-            "modality %s is not sinister: it has no declared right adjoint, so it cannot parametrize a modal field"
-            (Modality.to_string m)
+          textf "modal field annotation %s is not sinister" (Modality.to_string m)
       | Wrong_locking_modality { field; expected; got } -> (
           match (expected, got) with
           | Some expected, Some got ->
@@ -1019,14 +1085,13 @@ module Code = struct
                 (Modality.to_string got)
           | None, None -> textf "field %s has mismatched locking modalities" field)
       | Modal_field_filtered_away (field, m) ->
-          textf
-            "field %s does not exist at this dimension: its modality %s is nonparametric and filters this dimension away"
-            field (Modality.to_string m)
+          textf "field %s does not exist at this dimension: its modality %s is discrete there" field
+            (Modality.to_string m)
       | Extra_filtered_field_in_tuple (field, m) ->
-          textf
-            "field %s must be omitted at this dimension: its modality %s is nonparametric and filters this dimension away"
+          textf "field %s must be omitted at this dimension: its modality %s is discrete there"
             field (Modality.to_string m)
       | Anomaly str -> textf "anomaly: %s" str
+      | Self_used -> text "uncaught use of self-variable in a field-variable record display"
       | No_such_level i -> textf "@[<hov 2>no level variable@ %a@ in context@]" pp_printed (print i)
       | Redefining_constant name ->
           textf "redefining constant: %a" pp_printed (print (PString (String.concat "." name)))
@@ -1058,11 +1123,8 @@ module Code = struct
           else if holes = 1 then
             textf "%saxiom %a assumed, containing 1 hole" p pp_printed (print name)
           else textf "%saxiom %a assumed" p pp_printed (print name)
-      | Constant_defined { names; discrete; parametric; holes } -> (
-          (* Nonparametricity trumps discreteness *)
-          let prefix =
-            if parametric || Dim.Endpoints.internal () then if discrete then "discrete " else ""
-            else "nonparametric " in
+      | Constant_defined { names; parametric; holes } -> (
+          let prefix = if parametric || Dim.Endpoints.internal () then "" else "nonparametric " in
           match names with
           | [] -> textf "anomaly: no constant defined"
           | [ name ] ->
@@ -1082,11 +1144,14 @@ module Code = struct
                 (fun ppf names -> pp_print_list (fun ppf name -> pp_printed ppf name) ppf names)
                 (List.map (fun name -> print name) names))
       | Notation_defined name -> textf "notation %s defined" name
+      | Evaluating_display_term str -> textf "evaluating display-only %s" str
       | Show (str, x) -> textf "%s: %a" str pp_printed (print x)
       | Comment_end_in_string ->
           text "comment-end sequence `} in quoted string: cannot be commented out"
-      | Checking_canonical_at_nonuniverse (tm, ty) ->
-          textf "checking %s at non-universe %a" tm pp_printed (print ~sort:`Type ty)
+      | Universe_expected (`Check, str, ty) ->
+          textf "checking %s at non-universe %a" str pp_printed (print ty)
+      | Universe_expected (`Synth, str, ty) ->
+          textf "synthesizing %s gave non-universe %a" str pp_printed (print ty)
       | Bare_case_tree_construct str ->
           textf "%s encountered outside case tree, wrapping in implicit let-binding" str
       | Duplicate_method_in_codata fld ->
@@ -1126,7 +1191,8 @@ module Code = struct
           textf
             "constant %a is or uses a nonparametric axiom, can't appear inside an external degeneracy"
             pp_printed (print a)
-      | Hidden_variable -> text "variable hidden by key application"
+      | Hidden_variable `Key -> text "variable hidden by key application"
+      | Hidden_variable `Lock -> text "variable hidden by lock"
       | Axiom_in_parametric_definition a ->
           textf
             "constant %a is or uses a nonparametric axiom, can't be used in a parametric command"
@@ -1145,9 +1211,11 @@ module Code = struct
       | Synthesizing_recursion c ->
           textf "for '%a' to be recursive, it must have a declared type" pp_printed (print c)
       | Invalid_synthesized_type (str, ty) ->
-          textf "type %a synthesized by %s is invalid for entire term" pp_printed
-            (print ~sort:`Type ty) str
+          textf "type %a synthesized by %s is invalid for entire term" pp_printed (print ty) str
       | Unrecognized_attribute -> textf "unrecognized attribute"
+      | Display_only_syntax str -> textf "display-only syntax can't be parsed: %s" str
+      | Generative_copy ->
+          textf "a term copied from a printed local case tree won't be equal to the original"
       | Invalid_degeneracy_action (str, nk, n) ->
           textf
             "invalid degeneracy action on %s: dimension '%s' doesn't factor through codomain '%s'"
@@ -1175,9 +1243,7 @@ module Code = struct
       | Library_has_extension file -> textf "putative library name '%s' has extension" file
       | Invalid_filename file -> textf "filename '%s' does not have 'ny' extension" file
       | Library_modified file ->
-          textf
-            "library '%s'@ was@ already@ loaded@ in@ this@ session@ but@ has@ been@ modified@ since@ then:@ you@ must@ restart@ Narya@ to@ reload@ it"
-            file
+          textf "library '%s' was already loaded this session but has been modified since then" file
       | Directory_changed dir -> textf "current directory changed to@ %s" dir
       | No_such_file file -> textf "error opening file: %s" file
       | Cant_write_compiled_file file -> textf "can't write compiled file: %s" file
@@ -1214,11 +1280,15 @@ module Code = struct
           | `File file -> textf "imported file '%s' cannot contain holes" file
           | `Other where -> textf "%s cannot contain holes" where)
       | Invalid_instant instant -> textf "invalid instant: %s" instant
-      | Ill_scoped_connection -> text "ill-scoped connection"
-      | Unattached_assumption -> text "assumption of an unattached block"
-      | Cyclic_term -> text "cycle in graphical term"
       | Oracle_failed _ -> text "oracle failed"
-      | Invalid_flags -> text "invalid combination of command-line flags" in
+      | Extern { text = t; _ } -> text t
+      | Invalid_flags -> text "invalid combination of command-line flags"
+      | Typeless_meta (m, why) ->
+          textf "typeless meta in %s: %a"
+            (match why with
+            | `Let -> "let-binding"
+            | `Bare -> "bare case tree")
+            pp_printed (print (PMeta m)) in
     match !printing_errors with
     | Emp -> msg
     | Snoc _ ->
@@ -1234,13 +1304,30 @@ module Code = struct
             msg
 end
 
-include Asai.StructuredReporter.Make (Code)
-open Code
+module Delegate = Asai.StructuredReporter.Make (Code)
+include Delegate
+
+let ( <|> ) : type a. a option -> Code.t -> a =
+ fun x e ->
+  match x with
+  | Some x -> x
+  | None -> fatal e
+
+(* Re-raise one diagnostic, if given, otherwise another. *)
+let fatal_or d e =
+  match d with
+  | Some d -> fatal_diagnostic d
+  | None -> fatal e
 
 (* Don't try to set the 'message' field of an Asai.Diagnostic.t directly, since the 'explanation' field was already computed from it.  Use this function instead.  See https://github.com/RedPRL/asai/issues/189. *)
 let with_message d message =
   let explanation = Asai.Range.locate_opt d.explanation.loc (Code.default_text message) in
   { d with message; explanation }
+
+(* Whether a diagnostic is a bug. *)
+let is_bug (d : Code.t Asai.Diagnostic.t) = d.severity = Bug
+
+(* Smart constructors *)
 
 let struct_at_degenerated_type : type s et. (s, et) eta -> printable -> Code.t =
  fun eta name ->
@@ -1278,37 +1365,6 @@ let struct_at_nonrecord : type s et. (s, et) eta -> printable -> Code.t =
   match eta with
   | Eta -> Checking_tuple_at_nonrecord p
   | Noeta -> Comatching_at_noncodata p
-
-let ( <|> ) : type a. a option -> Code.t -> a =
- fun x e ->
-  match x with
-  | Some x -> x
-  | None -> fatal e
-
-(* After a fatal error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  This is handled by a special "Accumulated" error that encapsulates a backwards list of diagnostics.  When displaying this error, we instead descend into its list, recursively, and display all the constituent errors. *)
-
-module Terminal = Asai.Tty.Make (Code)
-
-let rec display ?use_ansi ?output ?(empty_ok = false) (d : Code.t Asai.Diagnostic.t) =
-  match d.message with
-  | Accumulated (why, Emp) when not empty_ok ->
-      Terminal.display ?use_ansi ?output
-        (with_message d (Anomaly ("unexpected empty error accumulation: " ^ why)))
-  | Accumulated (_name, msgs) ->
-      Mbwd.miter (fun [ e ] -> display ?use_ansi ?output ~empty_ok:true e) [ msgs ]
-  | _ -> try_with ~fatal:(fun _ -> ()) @@ fun () -> Terminal.display ?use_ansi ?output d
-
-(* We also may need to extract an accumulated singleton, for testing purposes. *)
-let rec unaccumulate (c : Code.t) : Code.t =
-  match c with
-  | Accumulated (_, Snoc (Emp, c)) -> unaccumulate c.message
-  | c -> c
-
-(* Re-raise one diagnostic, if given, otherwise another. *)
-let fatal_or d e =
-  match d with
-  | Some d -> fatal_diagnostic d
-  | None -> fatal e
 
 type dim_err = { make : 'a 'b. needed:'a D.t -> got:'b D.t -> Code.t }
 
@@ -1350,3 +1406,203 @@ let modalcell_fatal : type a. string -> modality_error -> a =
   | `Wrong_src (Wrap a, m, Wrap b) ->
       fatal ?loc:m.loc ~severity:Asai.Diagnostic.Error
         (Mode_mismatch (`User, str, a, Some (`Hsrc m.value), b))
+
+(* After a "fatal" error, we allow continuing to typecheck other parts of the term that don't depend on that error and reporting any additional errors they produce.  Specifically, we introduce "mortal" errors, which will eventually kill the program, but allow it to continue doing more checking to accumulate more errors.  A mortal error should be raised instead of a fatal one if there is something sensible that could be returned to allow typechecking to continue elsewhere, e.g. a branch of a match statement that doesn't typecheck can be marked as failing while other branches can continue to be typechecked.  Reporting a mortal error is an effect instead of an exception.  The reported errors are collected by a handler (see [collect] and [failing_on_errors] below), such as the one around each command, which is "moribund" if at least one error has been reported inside it.  Some mortal errors leave nothing to mark as failed at all, e.g. if the user wrote ⤇ where ↦ was expected, in which case checking simply continues. *)
+
+(* An error or other diagnostic that has been reported but whose reporting has been delayed by [collect] below.  Non-error diagnostics that are emitted with Asai's [emit] (such as warnings) are also delayed, so that they can be discarded along with errors if a computation is speculative. *)
+type pending = [ `Mortal of Code.t Asai.Diagnostic.t | `Emitted of Code.t Asai.Diagnostic.t ]
+
+type _ Effect.t +=
+  | Mortal : Code.t Asai.Diagnostic.t -> unit Effect.t
+  | Moribund : Code.t Asai.Diagnostic.t Bwd.t Effect.t
+
+(* Select the errors from a list of pending diagnostics. *)
+let pending_errors (ps : pending Bwd.t) : Code.t Asai.Diagnostic.t Bwd.t =
+  Bwd.filter_map
+    (function
+      | `Mortal d -> Some d
+      | `Emitted _ -> None)
+    ps
+
+(* Whether any errors have been reported inside the innermost [collect] or [failing_on_errors], such as the one around each command.  This is appropriate for deciding whether to display output that would only be meaningful if there were no errors at all. *)
+let moribund () = not (Bwd.is_empty (perform Moribund))
+
+(* Raise a mortal error whose diagnostic is already constructed. *)
+let mortal_diagnostic d = perform (Mortal d)
+
+(* Pass on a pending diagnostic outwards, as if it were reported again here. *)
+let release_one = function
+  | `Emitted d -> emit_diagnostic d
+  | `Mortal d -> mortal_diagnostic d
+
+let release (ps : pending Bwd.t) = Mbwd.miter (fun [ p ] -> release_one p) [ ps ]
+
+(* There are two kinds of silent error, which are never displayed to the user since the real errors they come from are reported elsewhere.  A dependent error means that something depends on a part of the term that already failed, such as a failed match branch or a constant whose definition failed. *)
+let is_dependent (d : Code.t Asai.Diagnostic.t) =
+  match d.message with
+  | Dependent _ -> true
+  | _ -> false
+
+(* The other kind of silent error is a fatalization error, which indicates that some errors have been reported as mortal, and the part of the term that they occurred in should now fail fatally.  When raising such an error, however, if *all* the mortal errors that it fatalizes were themselves dependent, then the failure should be considered dependent too. *)
+let fatalize_with why errs =
+  if Bwd.for_all is_dependent errs then fatal (Dependent why) else fatal (Fatalize why)
+
+(* Whether a diagnostic is one of these two kinds of silent error. *)
+let is_silent (d : Code.t Asai.Diagnostic.t) =
+  match d.message with
+  | Dependent _ | Fatalize _ -> true
+  | _ -> false
+
+(* Verify that among the list of errors and single error passed, there is at least one visible error.  Otherwise, replace the single error by an anomaly. *)
+let not_all_silent what errs d =
+  let errs = Snoc (errs, d) in
+  if Bwd.for_all is_silent errs then
+    let whys =
+      Bwd_extra.to_list_map
+        (fun (e : Code.t Asai.Diagnostic.t) ->
+          match e.message with
+          | Dependent why | Fatalize why -> why
+          | _ -> "")
+        errs in
+    diagnostic ?loc:d.explanation.loc
+      (Anomaly (what ^ " failed with only silent errors: " ^ String.concat ", " whys))
+  else d
+
+(* Raise a new mortal error.  Formatting the message of a diagnostic can raise a fatal dependent error, if it involves printing a term that depends on a part that already failed (see Unparse.printer).  If that happens while formatting the message of a mortal error, we convert the fatal dependent error to a mortal one, replacing the one we were trying to format.  However, we do not put the call to [mortal_diagnostic] inside the [try_with].  This means that if a mortal-error handler discontinues its continuation with a fatal error, that fatal error won't be caught here. *)
+let mortal ?severity ?loc ?text ?backtrace ?extra_remarks msg =
+  mortal_diagnostic
+    (Delegate.try_with
+       (fun () -> diagnostic ?severity ?loc ?text ?backtrace ?extra_remarks msg)
+       ~fatal:(fun d -> if is_dependent d then d else fatal_diagnostic d))
+
+(* Exceptions are used both for reporting errors and for nonlocal control flow.  For the latter we use this exception, with an extensible payload, to abandon an attempt at doing something, such as a typechecking attempt that will be redone in a different way.  The diagnostics reported during an abandoned attempt belong to it, so they are discarded along with it: in particular, [collect] discards rather than releases them when a [Backtrack] passes through it.  (See also Control.) *)
+type backtrack = ..
+
+exception Backtrack of backtrack
+
+(* Delay all mortal errors reported by a callback, and all its emitted diagnostics.  Returns the result of the callback, or a fatal error it raised, together with everything reported inside it, in order.  Inside the callback, [moribund] refers only to these local errors.  If the body raises some other non-Asai exception, the locally delayed diagnostics are released outwards before re-raising the exception, so that they aren't lost; except that if it is a [Backtrack], they are discarded.  We also allow the caller to supply a passthrough test that lets some Asai diagnostics through the collector, preserving their fatal/mortal status; in the case of a fatal error propagated this way the delayed diagnostics are released first so that they aren't lost.  If the optional [emits_only] is true, collect only emitted non-errors and fail as soon as any mortal or fatal error is encountered, returning that error as the Error result (even if it was originally only mortal).  In that case the callback is abandoned by unwinding it with an exception, during which some cleanup code (such as an inner [collect]) may report more mortal errors; these are ignored, so that the error returned is the first one.
+
+   This is an internal function that should not be called outside Reporter, except by white-box tests. *)
+let collect ?passthrough ?(emits_only = false) (f : unit -> 'a) :
+    ('a, Code.t Asai.Diagnostic.t) Result.t * pending Bwd.t =
+  let exception Killed of Code.t Asai.Diagnostic.t in
+  let killed = ref false in
+  let pendings = ref Emp in
+  let passes d =
+    match passthrough with
+    | Some test -> test d
+    | None -> false in
+  match
+    (* The nesting of [try_with] and [try] doesn't matter, since one catches only fatal errors and emits and the other catches only Mortal and Moribund effects.  However, they do have to be nested inside the outer exception handler, since fatal errors are implemented as exceptions. *)
+    Delegate.try_with
+      ~emit:(fun d ->
+        if passes d then emit_diagnostic d else pendings := Snoc (!pendings, `Emitted d))
+      ~fatal:(fun d ->
+        if passes d then (
+          release !pendings;
+          fatal_diagnostic d)
+        else Result.Error d)
+    @@ fun () ->
+    try Ok (f ()) with
+    | effect Mortal p, k ->
+        if passes p then (
+          mortal_diagnostic p;
+          continue k ())
+        else if emits_only then
+          if !killed then continue k ()
+          else (
+            killed := true;
+            discontinue k (Killed p))
+        else (
+          pendings := Snoc (!pendings, `Mortal p);
+          continue k ())
+    | effect Moribund, k -> continue k (pending_errors !pendings)
+  with
+  | result -> (result, !pendings)
+  | exception Killed p -> (Error p, !pendings)
+  | exception (Backtrack _ as exn) ->
+      let bt = Printexc.get_raw_backtrace () in
+      Printexc.raise_with_backtrace exn bt
+  | exception exn ->
+      let bt = Printexc.get_raw_backtrace () in
+      release !pendings;
+      Printexc.raise_with_backtrace exn bt
+
+(* Run a callback that should fail if it reports any mortal errors, even if it returns a result.  This is appropriate for a unit of work, such as a command, that shouldn't take effect if it had any errors.  All errors are passed on outwards immediately, and if any such errors occurred, a (silent) fatal error is raised at the end.  Inside the callback, [moribund] refers only to the errors it has reported. *)
+let failing_on_errors ?(why = "failing_on_errors") f =
+  let errors = ref Emp in
+  let result =
+    try f () with
+    | effect Mortal p, k ->
+        errors := Snoc (!errors, p);
+        perform (Mortal p);
+        continue k ()
+    | effect Moribund, k -> continue k !errors in
+  match !errors with
+  | Emp -> result
+  | Snoc _ -> fatalize_with why !errors
+
+(* [run] is like [failing_on_errors], delimiting a region whose reported errors make it fail at the end.  But it is outermost, never passing errors further out, and "reporting" all emissions and errors to appropriately-named handlers right away as they occur.  The [~emit] and [~mortal] handlers receive one diagnostic and return [unit].  The [~fatal] handler receives a bwd of *already-reported* mortal errors (in case it wants to summarize them in some way) along with one new fatal error, and must return the same type as the body.  If the body raises mortal errors but completes without a fatal error, [~fatal] is called with the silent fatal error [Fatalize]. *)
+let run ?init_loc ?init_backtrace ~fatal ~mortal ~emit f =
+  let errors : Code.t Asai.Diagnostic.t Bwd.t ref = ref Emp in
+  Delegate.run ?init_loc ?init_backtrace ~emit ~fatal:(fun d -> fatal !errors d) @@ fun () ->
+  try
+    let result = f () in
+    if Bwd.is_empty !errors then result else fatal !errors (diagnostic (Fatalize "run"))
+  with
+  | effect Mortal p, k ->
+      mortal p;
+      errors := Snoc (!errors, p);
+      continue k ()
+  | effect Moribund, k -> continue k !errors
+
+(* We can locally declare that fatal errors should become merely mortal, so that we can continue to find more.  This catches a fatal error raised by the callback and reports it as mortal instead, returning a fallback result, so that the error can be accumulated by an outer handler along with any others.  (Compare [fatalize_with] and [failing_on_errors], which go in the other direction.)  We also allow a filter that passes some fatal errors through as fatal.  *)
+let mortalize ~fallback ?passthrough f =
+  Delegate.try_with
+    ~fatal:(fun err ->
+      match passthrough with
+      | Some test when test err -> fatal_diagnostic err
+      | _ ->
+          mortal_diagnostic err;
+          fallback ())
+    f
+
+(* Sometimes we may want to run some code speculatively, and if it fails try something else, such that if the second try succeeds the errors in the first try are completely discarded.  We can define this [speculate] in terms of [collect].  However, we always want to report bugs in Narya, even if they appear in a speculative branch, so we give [collect] a [passthrough] argument that lets bugs through.  [speculate] considers itself to have failed if any mortal errors were reported.  Its return value is either a success, together with any emitted diagnostics containing no mortal errors, or a list of pending diagnostics containing at least one mortal error (a fatal error being included as a mortal one).  In both cases, the caller should either discard or [release] the pending diagnostics. *)
+let speculate (f : unit -> 'a) : ('a * pending Bwd.t, pending Bwd.t) Result.t =
+  match collect ~passthrough:is_bug f with
+  | Ok x, ps when Bwd.is_empty (pending_errors ps) -> Ok (x, ps)
+  | Ok _, ps -> Error ps
+  | Error e, ps -> Error (Snoc (ps, `Mortal e))
+
+(* [capture] is like [speculate], but in the case of success it releases the pending diagnostics immediately. *)
+let capture (f : unit -> 'a) : ('a, pending Bwd.t) Result.t =
+  match speculate f with
+  | Ok (x, ps) ->
+      release ps;
+      Ok x
+  | Error ps -> Error ps
+
+(* Report errors captured by [capture] or [speculate], and then fail silently since they were collectively fatal.  Note that this should only be passed a list containing at least one mortal error, such as [capture] and [speculate] return when they fail. *)
+let replay (ps : pending Bwd.t) : 'a =
+  release ps;
+  fatalize_with "replay" (pending_errors ps)
+
+(* Like [capture], but if there are any errors, discard them and return the result of a fallback computation.  Since the result is going to be discarded anyway, we give up as soon as the first error is reported, rather than continuing on to collect more of them; thus [moribund] is always false inside the callback.  Emitted diagnostics are collected and passed on only in the case of success.  Bugs stop the callback like any other error, but they are not discarded: we report them as mortal errors before falling back, so that the bug is seen and the enclosing command fails, but checking can go on. *)
+let discard_errors (f : unit -> 'a) ~(fallback : unit -> 'a) : 'a =
+  match collect ~emits_only:true f with
+  | Ok x, ps ->
+      release ps;
+      x
+  | Error d, _ ->
+      if is_bug d then mortal_diagnostic d;
+      fallback ()
+
+(* Another thing we may want to do is to catch some *specific* fatal errors and either recover from them or replace them by a different error.  For instance, the specific error may be a missing De Bruijn level, which would normally be a bug, but is interpreted by a specific caller as a failure of an occurs-check.  For this we use Asai's [try_with] (included above from [Delegate]), whose [fatal] handler can return a result, re-raise the error with [fatal_diagnostic], or raise a different one.  This deliberately doesn't see mortal errors: a mortal error means that something inside has already failed and been dealt with locally, so it's not a failure of the callback as a whole.  In particular, it doesn't affect what [moribund] sees.  To ask whether a callback succeeded at all, without any errors, use [capture] instead. *)
+
+(* When displaying an accumulated list of errors, we display all the constituent errors, except for the silent ones.  Except that if all the errors were silent, we report where the silent ones came from. *)
+
+module Terminal = Asai.Tty.Make (Code)
+
+let display ?use_ansi ?output (e : Code.t Asai.Diagnostic.t) =
+  try_with ~fatal:(fun _ -> ()) @@ fun () ->
+  if not (is_silent e) then Terminal.display ?use_ansi ?output e

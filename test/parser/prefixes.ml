@@ -15,7 +15,7 @@ type (_, _, _) identity +=
   | Atat : (No.strict opn, No.minus_omega, No.nonstrict opn) identity
 
 let unparse str =
-  Core.Reporter.run ~emit:(fun _ -> ()) ~fatal:(fun _ -> ()) @@ fun () ->
+  Core.Reporter.run ~emit:(fun _ -> ()) ~mortal:(fun _ -> ()) ~fatal:(fun _ _ -> ()) @@ fun () ->
   let _ = parse str in
   raise (Failure "Unexpected parse success")
 

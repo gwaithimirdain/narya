@@ -15,13 +15,12 @@ peak heap catches retention blowups (the eager-mode pathology, which reached
 tens of gigabytes).  The budgets have wide headroom over current figures and
 exist to catch a *return* of those blowups, not to police small changes.
 
-Current figures (these may drift with the evaluator and the compiler):
-glued evaluation on is about 1.4e8 words allocated and 3e6 words peak heap;
-glued evaluation off is about 1.6e9 words allocated and 4e7 words peak heap.
-
-The budgets below (5e9 / 5e8) pass in either state of the glued-evaluation
-toggle in value.ml, so flipping it does not spuriously fail this test.  If a
-genuine algorithmic change moves the figures near a budget, re-baseline it.
+Current figures (these may drift with the evaluator and the compiler) are
+about 1.4e8 words allocated and 3e6 words peak heap.  (Before glued evaluation
+was made permanent, eager evaluation took about 1.6e9 words allocated and 4e7
+words peak heap; the budgets below, 5e9 / 5e8, were chosen to accommodate
+both.)  If a genuine algorithmic change moves the figures near a budget,
+re-baseline it.
 
   $ OCAMLRUNPARAM=v=0x400 narya -no-reformat -source-only veryslow.ny 2>gc.log
   $ awk '/allocated_words:/ { a = $2 } /top_heap_words:/ { h = $2 } END {

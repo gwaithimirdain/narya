@@ -147,6 +147,15 @@ module Situation = struct
   let add_with_print : User.notation -> unit =
    fun notn -> modify @@ fun s -> ((), Situation.add_with_print notn s)
 
+  (* How to print something, without adding anything to the trees that parse. *)
+  let add_print : User.notation -> unit =
+   fun notn -> modify @@ fun s -> ((), Situation.add_print notn s)
+
+  let set_successor : User.notation -> unit =
+   fun notn -> modify @@ fun s -> ((), Situation.set_successor notn s)
+
+  let successor : unit -> User.notation option = fun () -> (get ()).successor
+
   let add_user : User.prenotation -> User.notation * User.key list =
    fun user -> modify @@ fun s -> Situation.add_user_to user s
 end

@@ -1,5 +1,6 @@
 (library
  (name io)
+ (public_name narya.io)
  (libraries util core parser)
  (modules io))
 
@@ -22,6 +23,7 @@
 
 (library
  (name hott)
+ (public_name narya.hott)
  (modules hott)
  (libraries io)
  (preprocess

@@ -11,11 +11,11 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
   | Var i -> Var i
   | Const c -> Const (Constant.remake f c)
   | Meta (m, s) -> Meta (Meta.remake f m, s)
-  | MetaEnv (m, e) -> MetaEnv (Meta.remake f m, env f e)
-  | Field (Modal (modality, al, tm), fld, fldins) ->
-      Field (Modal (modality, al, term f tm), fld, fldins)
+  | Field (e, Modal (modality, al, tm), fld, fldins) ->
+      Field (e, Modal (modality, al, term f tm), fld, fldins)
   | UU (mode, n) -> UU (mode, n)
-  | Inst (tm, args) -> Inst (term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
+  | Inst (energy, tm, args) ->
+      Inst (energy, term f tm, TubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ])
   | Pi { x; filter; doms = Modal (modality, al, doms); cods } ->
       Pi
         {
@@ -24,9 +24,10 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
           doms = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ doms ]);
           cods = CodCube.mmap { map = (fun _ [ Cod (filt, x) ] -> Cod (filt, term f x)) } [ cods ];
         }
-  | App (fn, m, filter, Modal (modality, al, args)) ->
+  | App (energy, fn, m, filter, Modal (modality, al, args)) ->
       App
-        ( term f fn,
+        ( energy,
+          term f fn,
           m,
           filter,
           Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ args ]) )
@@ -38,9 +39,13 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
             (fun (Term.Modal (filter, al, arg)) ->
               Modal (filter, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ arg ]))
             args )
-  | Act (tm, s, sort) -> Act (term f tm, s, sort)
+  | Act (e, tm, s, sort) -> Act (e, term f tm, s, sort)
   | Key v -> Key { v with tm = term f v.tm }
   | Let (x, Modal (modality, al, v), body) -> Let (x, Modal (modality, al, term f v), term f body)
+  | Letonly { termctx = tc; env = e; tm = body; ty; abbreviable } ->
+      Letonly
+        { termctx = termctx f tc; env = env f e; tm = term f body; ty = term f ty; abbreviable }
+  | Stuck_meta (v, tm) -> Stuck_meta (Meta.remake f v, term f tm)
   | Lam (x, p, filter, body) -> Lam (x, p, filter, term f body)
   | Struct { eta; dim; fields = flds; energy } ->
       Struct
@@ -54,63 +59,79 @@ let rec term : type mode a s. (File.t -> File.t) -> (mode, a, s) term -> (mode, 
               flds;
           energy;
         }
-  | Match { tm; plus_lock; window; dim; branches } ->
+  | Match { tm; plus_lock; window; dim; motive; branches; display } ->
       Match
-        { tm = term f tm; plus_lock; window; dim; branches = Constr.Map.map (branch f) branches }
+        {
+          tm = term f tm;
+          plus_lock;
+          window;
+          dim;
+          motive =
+            (match motive with
+            | `Explicit motive -> `Explicit (term f motive)
+            | (`Implicit | `Nondep) as motive -> motive);
+          branches = Constr.Map.map (branch f) branches;
+          display = Option.map (fun (tc, ty) -> (termctx f tc, term f ty)) display;
+        }
   | Realize tm -> Realize (term f tm)
   | Canonical can -> Canonical (canonical f can)
   | Unshift (n, plusmap, tm) -> Unshift (n, plusmap, term f tm)
   | Unact (o, tm) -> Unact (o, term f tm)
   | Shift (n, plusmap, tm) -> Shift (n, plusmap, term f tm)
-  | Weaken tm -> Weaken (term f tm)
+  | Failed energy -> Failed energy
+  | Overflow -> Overflow
 
 and branch : type mode a n. (File.t -> File.t) -> (mode, a, n) branch -> (mode, a, n) branch =
  fun f br ->
   match br with
   | Branch b -> Branch { b with tm = term f b.tm }
-  | Refute -> Refute
+  | Failed_branch -> Failed_branch
 
 and canonical : type mode a. (File.t -> File.t) -> (mode, a) canonical -> (mode, a) canonical =
  fun f can ->
   match can with
-  | Data { indices; constrs; discrete; recursive; hints; tyfam } ->
+  | Data { indices; evaldim; constrs; recursive; hints; tyfam } ->
       Data
         {
           indices;
-          constrs = Abwd.map (dataconstr f) constrs;
-          discrete;
+          evaldim;
+          constrs = Abwd.map (term f) constrs;
           recursive = Positivity.link_recursion f recursive;
           hints;
           tyfam = term f tyfam;
         }
-  | Codata { eta; opacity; hints; dim; fields; fibrancy = fib; is_glue } ->
-      let trr =
-        Mbwd.map
-          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
-          fib.trr in
-      let liftr =
-        Mbwd.map
-          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
-          fib.liftr in
-      let trl =
-        Mbwd.map
-          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
-          fib.trl in
-      let liftl =
-        Mbwd.map
-          (fun (StructfieldAbwd.Entry (fld, x)) -> StructfieldAbwd.Entry (fld, structfield f x))
-          fib.liftl in
+  | Codata { eta; opacity; hints; evaldim; dim; plusdim; fields; fibrancy; is_glue } ->
+      let fibrancy =
+        match fibrancy with
+        | None -> None
+        | Some fib ->
+            let structfields flds =
+              Mbwd.map
+                (fun (StructfieldAbwd.Entry (fld, x)) ->
+                  StructfieldAbwd.Entry (fld, structfield f x))
+                flds in
+            Some
+              {
+                fib with
+                ty = term f fib.ty;
+                trr = structfields fib.trr;
+                trl = structfields fib.trl;
+                liftr = structfields fib.liftr;
+                liftl = structfields fib.liftl;
+              } in
       Codata
         {
           eta;
           opacity;
           hints;
+          evaldim;
           dim;
+          plusdim;
           fields =
             Mbwd.map
               (fun (CodatafieldAbwd.Entry (fld, x)) -> CodatafieldAbwd.Entry (fld, codatafield f x))
               fields;
-          fibrancy = { fib with ty = term f fib.ty; trr; trl; liftr; liftl };
+          fibrancy;
           is_glue;
         }
 
@@ -136,25 +157,23 @@ and structfield : type mode n a s i et.
             [ m ] )
   | LazyHigher _ -> Reporter.fatal (Anomaly "lazy higher field can't be linked")
 
-and codatafield : type mode a n i et.
+and codatafield : type mode a m n i et.
     (File.t -> File.t) ->
-    (i, mode * a * n * et) Codatafield.t ->
-    (i, mode * a * n * et) Codatafield.t =
- fun f fld ->
-  match fld with
-  | Lower (adj, plus_lock, ty) -> Lower (adj, plus_lock, term f ty)
-  | Higher (adj, plus_lock, tc, ka, tm) -> Higher (adj, plus_lock, termctx f tc, ka, term f tm)
-
-and dataconstr : type mode p i.
-    (File.t -> File.t) -> (mode, p, i) dataconstr -> (mode, p, i) dataconstr =
- fun f (Dataconstr { args; indices }) ->
-  Dataconstr { args = tel f args; indices = Vec.mmap (fun [ x ] -> term f x) [ indices ] }
-
-and tel : type mode a b ab. (File.t -> File.t) -> (mode, a, b, ab) tel -> (mode, a, b, ab) tel =
- fun f t ->
-  match t with
-  | Emp -> Emp
-  | Ext (x, Modal (modality, al, ty), t) -> Ext (x, Modal (modality, al, term f ty), tel f t)
+    (i, mode * a * m * n * et) Codatafield.t ->
+    (i, mode * a * m * n * et) Codatafield.t =
+ fun f (Codatafield (x, adj, plus_lock, fld)) ->
+  Codatafield
+    ( x,
+      adj,
+      plus_lock,
+      match fld with
+      | Lower ty -> Lower (term f ty)
+      | Higher (tc, tys) ->
+          Higher
+            ( termctx f tc,
+              FieldtypePbijmap.mmap
+                { map = (fun _ [ Fieldtype (rb, ty) ] -> FieldtypeFam.Fieldtype (rb, term f ty)) }
+                [ tys ] ) )
 
 and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a, n, b) env =
  fun f e ->
@@ -167,35 +186,23 @@ and env : type mode a n b. (File.t -> File.t) -> (mode, a, n, b) env -> (mode, a
           env = env f e;
           values = Modal (modality, al, CubeOf.mmap { map = (fun _ [ x ] -> term f x) } [ xs ]);
         }
-  | Key k -> Key { k with env = env f k.env }
+  | Lock k -> Lock { k with env = env f k.env }
   | Prekey k -> Prekey { k with env = env f k.env }
 
-and entry : type dom modality mode b f mn bm.
+and entry : type dom modality mode bb bm f mn b.
     (File.t -> File.t) ->
-    (dom, modality, mode, b, bm, f, mn) entry ->
-    (dom, modality, mode, b, bm, f, mn) entry =
+    (dom, modality, mode, f, mn, b, bb, bm) entry ->
+    (dom, modality, mode, f, mn, b, bb, bm) entry =
  fun f e ->
-  match e with
-  | Vis v ->
-      let bindings =
-        CubeOf.mmap
-          {
-            map =
-              (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
-                { ty = term f b.ty; tm = Option.map (term f) b.tm });
-          }
-          [ v.bindings ] in
-      Vis { v with bindings }
-  | Invis v ->
-      let bindings =
-        CubeOf.mmap
-          {
-            map =
-              (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
-                { ty = term f b.ty; tm = Option.map (term f) b.tm });
-          }
-          [ v.bindings ] in
-      Invis { v with bindings }
+  let bindings =
+    CubeOf.mmap
+      {
+        map =
+          (fun _ [ (b : (dom, bm) binding) ] : (dom, bm) binding ->
+            { ty = term f b.ty; tm = Option.map (term f) b.tm });
+      }
+      [ e.bindings ] in
+  { e with bindings }
 
 and termctx_ordered : type mode a b.
     (File.t -> File.t) -> (mode, a, b) ordered_termctx -> (mode, a, b) ordered_termctx =
@@ -219,4 +226,5 @@ let metadef : type mode x y z.
     | `Defined tm -> `Defined (term f tm)
     | x -> x in
   let recursion = Positivity.link_recursion f data.recursion in
-  { data with tm; termctx; ty; recursion }
+  let owner = Option.map (Constant.remake f) data.owner in
+  { data with tm; termctx; ty; recursion; owner }

@@ -115,16 +115,24 @@ let () =
     match Global.find_const isfibrant with
     | Definition
         {
-          tm = `Defined (Lam (x, _, modality, Canonical (Codata { eta = Noeta; dim; fields; _ })));
+          tm =
+            `Defined
+              (Lam
+                 ( x,
+                   _,
+                   modality,
+                   Canonical (Codata { eta = Noeta; evaldim; dim; plusdim; fields; _ }) ));
           mode;
           _;
         } -> (
         match
           ( D.compare_zero (dim_variables x),
+            D.compare_zero evaldim,
             D.compare_zero dim,
             Modality.compare_id (Modality.filter_modality modality) )
         with
-        | Zero, Zero, Eq ->
+        | Zero, Zero, Zero, Eq ->
+            let Eq = D.plus_uniq plusdim (D.zero_plus dim) in
             Fibrancy.fields :=
               Fibrancy.FieldsMap.add mode
                 (* The recursive "id" field is not exposed to the user; they access it simply by instantiating higher-dimensional types. *)
@@ -196,10 +204,19 @@ let () =
                                             bm,
                                             Realize
                                               (App
-                                                 ( App
-                                                     ( App
-                                                         ( App
-                                                             ( App (App (Const c, _, _, _), _, _, _),
+                                                 ( Kinetic,
+                                                   App
+                                                     ( Kinetic,
+                                                       App
+                                                         ( Kinetic,
+                                                           App
+                                                             ( Kinetic,
+                                                               App
+                                                                 ( Kinetic,
+                                                                   App (Kinetic, Const c, _, _, _),
+                                                                   _,
+                                                                   _,
+                                                                   _ ),
                                                                _,
                                                                _,
                                                                _ ),
@@ -309,14 +326,27 @@ let () =
                          Realize
                            (App
                               (type dom modality n m)
-                              (( App
-                                   ( App
-                                       ( App
-                                           ( App
-                                               ( App
-                                                   ( App
-                                                       ( App
-                                                           ( App (App (Const c, _, _, _), _, _, _),
+                              (( Kinetic,
+                                 App
+                                   ( Kinetic,
+                                     App
+                                       ( Kinetic,
+                                         App
+                                           ( Kinetic,
+                                             App
+                                               ( Kinetic,
+                                                 App
+                                                   ( Kinetic,
+                                                     App
+                                                       ( Kinetic,
+                                                         App
+                                                           ( Kinetic,
+                                                             App
+                                                               ( Kinetic,
+                                                                 App (Kinetic, Const c, _, _, _),
+                                                                 _,
+                                                                 _,
+                                                                 _ ),
                                                              _,
                                                              _,
                                                              _ ),
@@ -342,6 +372,7 @@ let () =
                                  _,
                                  Modal (modality, plus, tm) ) :
                                 _
+                                * _
                                 * m D.t
                                 * _
                                 * ( n,

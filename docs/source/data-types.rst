@@ -221,7 +221,7 @@ If a :ref:`notation<Mixfix notations>` has been defined for a constructor, that 
 Matching and case trees
 -----------------------
 
-Matches are case tree nodes, which only reduce if the term being matched against is a constructor form so that one of the branches can be selected.  Thus, for instance, ``Sum.swap x`` does not reduce unless ``x`` is a constructor, and similarly for ``Sum.assoc (inl. x)``.  This more or less aligns with the behavior of functions defined by pattern-matching in Agda, whereas Coq has to mimic it with ``simpl nomatch`` annotations.
+Matches are case tree nodes, which only reduce if the term being matched against is a constructor form so that one of the branches can be selected.  Thus, for instance, ``Sum.swap x`` does not reduce unless ``x`` is a constructor, and similarly for ``Sum.assoc (inl. x)``.  This more or less aligns with the behavior of functions defined by pattern-matching in Agda, whereas Rocq has to mimic it with ``simpl nomatch`` annotations.
 
 However, unlike the other types and constructs we have discussed so far, matches and datatypes do not satisfy any kind of η-conversion.  Thus, two functions defined by matching are not equal to each other even if their definitions are identical.  For instance, if we define
 
@@ -232,6 +232,12 @@ However, unlike the other types and constructs we have discussed so far, matches
 
 then ``neg1`` and ``neg2`` are not convertible.  By η-expansion, when trying to convert them we do automatically introduce a new variable ``x`` and try to compare ``neg1 x`` with ``neg2 x``, but neither of these terms reduce since ``x`` is not a constructor.  In particular, datatypes do not satisfy any kind of η-conversion themselves.
 
+The ``about`` command can display a stuck match, but this is tricky because its discriminee may now be an arbitrary term, while the branches of a :ref:`variable match <Variable matches>` can depend for their well-typedness on its refinement of the context and goal, which only makes sense if the discriminee is a variable.  Thus, ``about`` displays a stuck match in its original context, with its discriminee as originally written, wrapped in a :ref:`Let-only binding`.  For instance, with ``neg1`` as above and an axiom ``b : Bool``, the command ``about neg1 b`` displays
+
+.. code-block:: none
+
+   let only 𝑥 : Bool ≔ b in
+   (match 𝑥 [ false. ↦ true. | true. ↦ false. ] : Bool)
 
 Recursion
 ---------
@@ -258,7 +264,7 @@ To ensure termination and consistency, the recursive calls should be on structur
 While there is no termination-checking there is coverage-checking.  Thus, all the constructors of a datatype must be present in the match.  So while you can write infinite loops, your programs shouldn't get stuck.
 
 
-Multiple matches and deep matches
+Multiple and deep matches
 ---------------------------------
 
 It is possible to condense a sequence of nested matches into a single one.  For example, the above definition of ``Sum.assoc`` can be condensed into a single "deep match":
@@ -268,44 +274,63 @@ It is possible to condense a sequence of nested matches into a single one.  For 
    def Sum.assoc (A B C : Type) (x : (A ⊔ B) ⊔ C) : A ⊔ (B ⊔ C) ≔ match x [
    | inl. (inl. a) ↦ inl. a
    | inl. (inr. b) ↦ inr. (inl. b)
-   | inr. c        ↦ inr. (inr. c)
-   ]
+   | inr. c        ↦ inr. (inr. c) ]
 
 Similarly, a naive definition of the Boolean conjunction would be:
 
 .. code-block:: none
 
-   def andb (x y : Bool) : Bool ≔ match x [
+   def Bool.and (x y : Bool) : Bool ≔ match x [
    | true.  ↦ match y [
      | true.  ↦ true.
      | false. ↦ false.
      ]
-   | false. ↦ false.
-   ]
+   | false. ↦ false. ]
 
 but this can be condensed to a "multiple match":
 
 .. code-block:: none
 
-   def andb (x y : Bool) : Bool ≔ match x, y [
+   def Bool.and (x y : Bool) : Bool ≔ match x, y [
    | true.  , true.  ↦ true.
    | true.  , false. ↦ false.
-   | false. , _      ↦ false.
-   ]
+   | false. , _      ↦ false. ]
 
 Here the ``_`` indicates that that value can be anything.  It can also be replaced by a variable, which is then bound to the value being matched.
 
-Multiple and deep matches can be combined.  In general, for a multiple match on a comma-separated list of a positive number of discriminees, the left-hand side of each branch must be a comma-separated list of the same number of *patterns*.  Each pattern is either a variable, an underscore, or a constructor applied to some number of other patterns.  Plain variable patterns are equivalent to let-bindings: ``match x [ y ↦ M ]`` is the same as ``let y ≔ x in M``.  Multiple and deep matches are (with one exception, discussed :ref:`below<Empty types and refutation cases>`) a *purely syntactic* abbreviation: the condensed forms are expanded automatically to the nested match forms before even being typechecked.
+Multiple and deep matches can be combined.  In general, for a multiple match on a comma-separated list of a positive number of discriminees, the left-hand side of each branch must be a comma-separated list of the same number of *patterns*.  Each pattern is either a variable, an underscore, or a constructor applied to some number of other patterns.  Plain variable patterns are equivalent to let-bindings: ``match x [ y ↦ M ]`` is the same as ``let y ≔ x in M``.
 
-Multiple and deep patterns can also be used in pattern-matching abstractions.  In the case of a multiple match, the number of variables abstracted over is determined by the number of patterns in the branches.  Thus, for instance, ``andb`` can also be defined by:
+Multiple and deep matches are (with one exception, discussed :ref:`below<Empty types and refutation cases>`) a *purely syntactic* abbreviation: the condensed forms are expanded automatically to the nested match forms before even being typechecked.  That is, when you write the second version of ``Bool.and`` above, the typechecker sees the first version.
+
+If a discriminee after the first in a multiple match is not a simple variable, then the syntactic expansion let-binds it to a variable outside the match.  Thus, for instance, 
 
 .. code-block:: none
 
-   def andb : Bool → Bool → Bool ≔ [
+   def andf (x : Bool) (f : Bool → Bool) : Bool ≔ match x, f x [
    | true.  , true.  ↦ true.
    | true.  , false. ↦ false.
-   | false. , _      ↦ false.
-   ]
+   | false. , _      ↦ false. ]
+
+expands to
+
+.. code-block:: none
+
+   def andf (x : Bool) (f : Bool → Bool) : Bool ≔ 
+     let y ≔ f x in
+     match x [
+     | false. ↦ false.
+     | true. ↦ match y [ false. ↦ false. | true. ↦ true. ]]
+
+This has two important consequences.  First, the discriminee term (such as ``f x``) is typechecked only once, rather than once in each match (and so in particular any errors in it are only reported once).  Second, that term is typechecked *outside the match*, and therefore it cannot depend for its correctness on the match against a previous variable.  If it does so depend, you have to write the nested match explicitly rather than as a multiple match.
+
+Multiple and deep patterns can also be used in pattern-matching abstractions.  In the case of a multiple match, the number of variables abstracted over is determined by the number of patterns in the branches.  Thus, for instance, ``Bool.and`` can also be defined by:
+
+.. code-block:: none
+
+   def Bool.and : Bool → Bool → Bool ≔ [
+   | true.  , true.  ↦ true.
+   | true.  , false. ↦ false.
+   | false. , _      ↦ false. ]
 
 All the pattern variables of each branch must be distinct: they cannot shadow each other.  Allowing them to shadow each other would be a recipe for confusion, because replacing a match by its expanded version alters the order in which variables appear.  For instance, the nested match
 
@@ -314,8 +339,7 @@ All the pattern variables of each branch must be distinct: they cannot shadow ea
    def prod' (A B : Type) : Type ≔ data [ pair. (_:A) (_:B) ]
 
    def proj31 (A B C : Type) (u : prod' (prod' A B) C) : A ≔ match u [
-   | pair. (pair. x y) z ↦ x
-   ]
+   | pair. (pair. x y) z ↦ x ]
 
 would expand to
 
@@ -323,9 +347,7 @@ would expand to
 
    def proj31 (A B C : Type) (u : prod' (prod' A B) C) : A ≔ match u [
    | pair. H z ↦ match H [
-     | (pair. x y) ↦ x
-     ]
-   ]
+     | (pair. x y) ↦ x ] ]
 
 in which ``z`` is bound first instead of last.  (The intermediate variable ``H`` is inserted automatically in the process of expansion, and you will see it in the contexts of holes.)
 
@@ -333,7 +355,7 @@ Matching always proceeds from left to right, so that the matches corresponding t
 
 .. code-block:: none
 
-   def andb2 (x : prod' Bool Bool) : Bool ≔ match x [
+   def Bool.and2 (x : prod' Bool Bool) : Bool ≔ match x [
    | pair. true. true.   ↦ true.
    | pair. true. false.  ↦ false.
    | pair. false. true.  ↦ false.
@@ -344,7 +366,7 @@ Here the first argument of ``pair.`` is matched before the second, producing the
 
 .. code-block:: none
 
-   def andb2 (x : prod' Bool Bool) : Bool ≔ match x [
+   def Bool.and2 (x : prod' Bool Bool) : Bool ≔ match x [
    | pair. a b ↦ match a [
      | true. ↦ match b [
        | true. ↦ true.
@@ -361,7 +383,7 @@ To match on the second argument first, you would have to use a nested match expl
 
 .. code-block:: none
 
-   def andb2' (x : prod' Bool Bool) : Bool ≔ match x [
+   def Bool.and2' (x : prod' Bool Bool) : Bool ≔ match x [
    | pair. a b ↦ match b, a [
      | true.  , true.  ↦ true.
      | false. , true.  ↦ false.
@@ -598,9 +620,9 @@ It is also possible to match against a term that is not a free variable, or whos
    
    def efq (A C : Type) (a : A) (na : A → ⊥) : C ≔ match na a [ ]
 
-Note that matching against a let-bound variable is equivalent to matching against its value, so it falls under this category.
+Note that matching against a let-bound variable is equivalent to matching against its value, so it falls under this category.  This is the case even if the *value* of a let-bound variable is a free variable: to automatically refine the context, the discriminee must be *syntactically* a free variable.
 
-The fact that this kind of match uses the same syntax as the previous one means that if you intend to do a variable match, as above, but the conditions on the match variable and its indices are not satisfied, then Narya will fall back to trying this kind of match.  You will then probably get an error message due to the fact that the goal type didn't get refined in the branches the way you were expecting it to.  Narya tries to help you find bugs of this sort by emitting a hint when that sort of fallback happens.  If you really did mean to write a non-dependent match, you can silence the hint by writing ``match M return _ ↦ _`` (see :ref:`Explicitly dependent matches`).
+The fact that this kind of match uses the same syntax as the previous one means that if you intend to do a variable match, as above, but the conditions on the match variable and its indices are not satisfied, then Narya will fall back to trying this kind of match.  You will then probably get an error message due to the fact that the goal type didn't get refined in the branches the way you were expecting it to.  Narya tries to help you find bugs of this sort by emitting a hint when that sort of fallback happens.  If you really did mean to write a non-dependent match, you can silence the hint by writing ``match M return _`` (see :ref:`Explicitly dependent matches`).
 
 A variable match can only check, but a non-dependent match can also synthesize.  This requires at least one of the branch bodies to synthesize a type that does not depend on any of its pattern variables; then the other branches are checked against that same type, and it is the type synthesized by the whole match statement.  Writing a match that could have been a variable match but in a synthesizing context will also cause an automatic fallback to non-dependent matching, with a hint emitted.
 
@@ -610,7 +632,7 @@ Like the ordinary ``match`` command, a pattern-matching abstraction like ``def p
 Explicitly dependent matches
 ----------------------------
 
-Although Narya can't guess how to refine the output type when matching against a general term, you can tell it how to do so by writing ``match M return x ↦ P``.  Here ``x ↦ P`` (where ``P`` can involve ``x``) is a type family (called the *motive*) depending on a variable ``x`` belonging to the datatype (the type of ``M``).  If this datatype has indices, then variables to be bound to the indices must be included in the abstraction as well, e.g. ``match V return i v ↦ P`` for matching against a vector; this ensures that the motive of the elimination is fully general over the indexed datatype family.  Thus, this kind of match has roughly the same functionality as Coq's ``match M in T i as x return P``.
+Although Narya can't guess how to refine the output type when matching against a general term, you can tell it how to do so by writing ``match M return x ↦ P``.  Here ``x ↦ P`` (where ``P`` can involve ``x``) is a type family (called the *motive*) depending on a variable ``x`` belonging to the datatype (the type of ``M``).  If this datatype has indices, then variables to be bound to the indices must be included in the abstraction as well, e.g. ``match V return i v ↦ P`` for matching against a vector; this ensures that the motive of the elimination is fully general over the indexed datatype family.  Thus, this kind of match has roughly the same functionality as Rocq's ``match M in T i as x return P``.
 
 Each branch of such a match is checked at the type obtained by substituting the corresponding constructor for ``x`` in the motive ``P``.  The entire match synthesizes the result of substituting the discriminee ``M`` for ``x`` in the motive ``P``.  For example, we could prove associativity of addition more verbosely as follows:
 
@@ -622,11 +644,11 @@ Each branch of such a match is checked at the type obtained by substituting the 
      | suc. m' ↦ suc. (ℕ.plus.assoc m' n p)
      ]
 
-As usual, the variables bound in the motive can be written as underscores if they are not used; thus with ``match M return _ ↦ P`` you can specify a constant motive explicitly.  This is equivalent to ascribing the entire match to type ``P``, but it forces the match to be a non-dependent one.  You can also write ``match M return _ ↦ _`` in a checking context (with the correct number of variables for the indices, if any) to indicate that the output type is intentionally constant, silencing any hints about fallback, without having to specify that output type explicitly.
+As usual, the variables bound in the motive can be written as underscores if they are not used; thus with ``match M return _ ↦ P`` you can specify a constant motive explicitly.  This is equivalent to ascribing the entire match to type ``P``, but it forces the match to be a non-dependent one.  You can also write ``match M return _`` in a checking context to indicate that the output type is intentionally constant, silencing any hints about fallback, without having to specify that output type explicitly.  The longer form ``match M return _ ↦ _`` (with the correct number of variables for the indices, if any) means the same thing.
 
 A match with an explicit motive cannot have more than one discriminee.  It would be rather complicated to work out, and indicate syntactically, the dependence of such a motive on all the discriminees.  Of course, you can write your own nested sequence of matches.  However, deep matching on one discriminee is still available with an explicit motive.  Upon expansion, only the outermost match will retain the explicit motive, the inner matches becoming implicit.
 
-Note that while this kind of match provides a way to explicitly refine the *output* type when matching against a non-variable term, unlike a variable match, it does not do anything to the types of other variables in the context.  If you want their types to also be refined in the branches when doing an explicitly dependent match, you have to use the `convoy pattern <http://adam.chlipala.net/cpdt/html/MoreDep.html>`_ as in Coq.
+Note that while this kind of match provides a way to explicitly refine the *output* type when matching against a non-variable term, unlike a variable match, it does not do anything to the types of other variables in the context.  If you want their types to also be refined in the branches when doing an explicitly dependent match, you have to use the `convoy pattern <http://adam.chlipala.net/cpdt/html/MoreDep.html>`_ as in Rocq.
 
 
 Matches in terms and case trees
@@ -634,7 +656,7 @@ Matches in terms and case trees
 
 The other case tree constructs we have discussed, such as abstraction and tuples, can also occur in arbitrary locations in a term.  The same is true for matches, but the behavior of such matches is somewhat subtle.
 
-If ``match`` were an ordinary kind of term syntax, Narya would have to be able to check whether two ``match`` expressions are equal.  Matches don't satisfy η-conversion, so such an equality-check would have to descend into the branch bodies, and this would require *normalizing* those bodies.  Now suppose a function were defined recursively using a match outside its case tree; then it would evaluate to a match expression even if its argument is not a constructor, and it would appear itself in one of the branches of that match expression; thus, this would lead to an infinite regress of normalization.  This is probably not an impossible problem to solve (e.g. Coq has fixpoint terms and match terms and manages to check equality), but it would be complicated and does not seem worth the trouble.
+If ``match`` were an ordinary kind of term syntax, Narya would have to be able to check whether two ``match`` expressions are equal.  Matches don't satisfy η-conversion, so such an equality-check would have to descend into the branch bodies, and this would require *normalizing* those bodies.  Now suppose a function were defined recursively using a match outside its case tree; then it would evaluate to a match expression even if its argument is not a constructor, and it would appear itself in one of the branches of that match expression; thus, this would lead to an infinite regress of normalization.  This is probably not an impossible problem to solve (e.g. Rocq has fixpoint terms and match terms and manages to check equality), but it would be complicated and does not seem worth the trouble.
 
 Narya's solution is similar to that of Agda: matches outside case trees are *generative*.  (Note that matches inside case trees are also generative in the sense that all constants defined by case trees are generative.)  Each textual occurrence of a match is, in effect, lifted to a top-level definition (actually, a metavariable) which contains the match *inside* its case tree, and therefore doesn't reduce to anything unless the discriminee is a constructor.  In particular, therefore, two such matches, even if they look identical, generate distinct lifted top-level definitions and thus are not definitionally equal (until their discriminees become constructors and they reduce to corresponding branches).  This sort of lifting allows us to say that, technically, ``match`` is *only* allowed in case trees, and any occurrences outside of case trees are silently elaborated into case trees.
 
@@ -684,7 +706,7 @@ However, a let-bound local function can use a ``let rec`` instead to define a lo
 
 In fact, ``let rec`` is *always* treated generatively and lifted to top-level like an ordinary ``let`` that contains a ``match``.  Indeed, in the absence of something like a "fixpoint" operator there is no other possibility, as there is no term syntax for it to evaluate to.
 
-Currently, such local case trees are not printed very comprehensibly if they "escape" from their site of definition.  For instance:
+Inside the body of a case-tree ``let`` or ``let rec``, the defined function is printed simply using the variable name bound by the ``let`` construct.  However, such a local definition can also "escape" from the scope of its binding, as for instance with
 
 .. code-block:: none
 
@@ -692,9 +714,52 @@ Currently, such local case trees are not printed very comprehensibly if they "es
    
    echo sqdec2 z
 
-prints something like ``_let.0.dec{…} (_let.0.dec{…} z)``, where the number is a metavariable counter.  The name ``_let.0.dec`` is not a valid user-defined identifier since it begins with an underscore, and so this notation is not re-parseable; but it indicates that there is some locally defined function, which was called ``dec`` where it was defined but is not in scope any more, and is being applied twice to the argument ``z``.  The notation ``{…}`` is like that used for a hole, indicating that this local function might also have an un-notated substitution applied to the context in which it was defined.  As noted above, like any other global constant defined by a case tree, ``_let.0.dec`` does not evaluate at all unless it reaches a leaf of its case tree; thus ``_let.0.dec{…} (_let.0.dec{…} z)`` does not reduce further since ``z`` is not a constructor.  (But ``sqdec (suc. z)`` will, of course, reduce once to ``_let.0.dec{…} z``.)
+This evaluates to ``dbl (dbl z)``, but the variable ``dbl`` is only in scope inside ``sqdec2``, so it cannot be used in printing the value of ``sqdec2 z``.
 
-As noted above, such local case trees are generative: textually identical definitions given in two different places will produce unequal values.
+Such an "escaped local variable" is, by default, printed with a name like ``sqdec2._dec``, indicating both the global constant in which it was defined (here ``sqdec2``) and the name it was given in that definition (here ``dec``).  The initial underscore makes this name not a valid user-defined identifier; this means that it doesn't conflict with any other constant name, and also thath it is not re-parseable.  If more than one local definition in the same definition has the same name, the later ones are distinguished by primes, as in ``sqdec2._dec′``.  (A local definition that occurs outside of any definition, such as in an ``echo`` command, is instead named with a number such as ``F2.0._dec``.)
+
+In addition, the behavior of an escaped local variable might depend on the values of variables in the context where it was defined.  In the above example, the meaning of ``sqdec2._dec`` might vary depending on the value passed as ``x`` to ``sqdec2``.  (In this particular example it doesn't, but detecting and omitting such trivial-dependence is a hard problem in general.)  To indicate this dependence, the name ``sqdec2._dec`` is wrapped in a :ref:`Let-only binding` when it appears.  By default, the actual values are elided for conciseness, so that ``echo sqdec2 z`` above prints
+
+.. code-block:: none
+
+  (let only ⋯ in sqdec2._dec) ((let only ⋯ in sqdec2._dec) z)
+
+This form is also not re-parseable.  As noted above, like any other global constant defined by a case tree, ``sqdec2._dec`` does not evaluate at all unless it reaches a leaf of its case tree; thus this term does not reduce further since ``z`` is not a constructor.  (But ``sqdec2 (suc. z)`` will, of course, reduce once to ``(let only ⋯ in sqdec2._dec) z``.)
+
+The above-described defaults can be controlled with the interactive command ``display let`` (or the key command ``C-c C-d C-l`` in ProofGeneral, which cycles between the three possible values).  The default behavior described above corresponds to ``display let ≔ names``.
+
+The second alternative ``display let ≔ environments`` prints the substitution in full, but still with the name of the local definition in the body:
+
+.. code-block:: none
+
+   display let ≔ environments
+   
+   echo sqdec2 z
+   
+   (let only x : ℕ ≔ z in sqdec2._dec) ((let only x : ℕ ≔ z in sqdec2._dec) z)
+     : ℕ
+
+In this case the ``let only`` blocks are re-parseable, but the names such as ``sqdec2._dec`` still are not.
+
+The third alternative ``display let ≔ definitions`` produces a fully re-parseable term, showing the *definitions* of local variables instead of their names.  Moreover, a local definition that has been applied to arguments and is stuck on a match is printed as that match, wrapped in a ``let only`` that binds the variables in its context (including the arguments it has been applied to) to their values:
+
+.. code-block:: none
+
+   display let ≔ definitions
+   
+   echo sqdec2 z
+   
+   let only x : ℕ ≔ z
+   and 𝑥 : ℕ ≔
+     let only x : ℕ ≔ z
+     and 𝑥 : ℕ ≔ z in
+     (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ) in
+   (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ)
+     : ℕ
+
+Here the inner ``let only`` is the value of ``dec z``, which is stuck on the match against ``z``, and the outer one is the value of ``dec (dec z)``, stuck on the match against ``dec z``.
+
+Note that even in this case, the printed term will not re-parsee to the *same term*, because local case trees are generative: textually identical definitions given in two different places will produce unequal values.  To remind you of this, each outermost case-tree-only construct in the printed definition of a local case tree (such as a ``match``, a comatch, or a canonical type) is marked with the attribute ``#(gen)``: after the keyword of a construct that has one, as in ``match #(gen) 𝑥 [ … ]`` or ``data #(gen) [ … ]``, and otherwise after its opening bracket, as in ``[ #(gen) .head ↦ … ]``.  If you copy such a printed term and enter it again without editing, the attribute will produce a warning that the term is generative, so that it will not be equal to the original local case tree it was copied from.  This may cause typechecking errors elsewhere.
 
 .. code-block:: none
 
@@ -707,17 +772,21 @@ As noted above, such local case trees are generative: textually identical defini
 
    def fails : dec1_is_dec2 ≔ rfl.
    
-      ￫ error[E1003]
+    ￫ error[E0401]
     1 | def fails : dec1_is_dec2 ≔ rfl.
-      ^ index
-          _let.1.dec{…}
-        of constructor application doesn't match the corresponding index
-          _let.2.dec{…}
-        of datatype instance
+      ^ term synthesized type
+          Jd (ℕ → ℕ) dec1_is_dec2._dec dec1_is_dec2._dec
+        but is being checked against type
+          Jd (ℕ → ℕ) dec1_is_dec2._dec (let only ⋯ in dec1_is_dec2._dec′)
+        unequal head metavariables:
+          dec1_is_dec2._dec
+        does not equal
+          dec1_is_dec2._dec′
 
-Note that both local functions are called ``_let.N.dec`` based on their name when defined, but their metavariable counters are different, and they are unequal.
+Here both local functions are named after ``dec``, their name when defined, but the second one has a prime to distinguish it, and they are unequal.  (The second one is printed with ``let only ⋯ in`` because it was defined in a context containing the earlier variables ``dec`` and ``dec1``.)
 
-A match not occuring inside any ``let`` value doesn't even have a user-assigned name like ``dec``, so it is printed only with a number.  For instance, ``echo sqdec3`` from above will print something like ``sq (H ↦ _match.3{…})``.  Note that the dependence of the match on the variable (which Narya named ``H``) is not even indicated (it is hidden in the context substitution ``{…}``).  However, the advantage of matches of this sort is that, unlike the value of a let-bound variable, they can check rather than synthesize.
+A match not occurring inside any ``let`` value doesn't have a user-assigned name like ``dec``, so it is always printed as its definition (wrapped in a ``let only`` if it has a nontrivial substitution), regardless of the setting of ``display let``.  For instance, ``echo sqdec3`` from above will print ``sq (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ])``.  The setting of ``display let`` still controls whether such matches display their entire environment in a ``let only``: it is displayed if ``display let ≔ definitions`` or ``environments``.  With ``display let ≔ names``, only the names of the variables are displayed, as in ``let only x, y ≔ ⋯ in (match #(gen) y [ … ] : ℕ)``, so that you can tell which variables in the match are bound by the ``let only`` rather than the ambient context, without their types, values, or any modal locks; like ``let only ⋯ in``, this form is not re-parseable.  The same goes for a match that a local definition displayed as its definition is stuck on (see above).
 
-The printing of local case trees will hopefully be improved somewhat in future, but there is a limit to how much improvement is possible.  Moreover, overuse of local case trees can make it difficult to prove theorems about a function: facts one may need about its components cannot easily be separated out into lemmas since the pieces cannot easily be referred to.  Thus, while this sort of code can be convenient for programming, and in simple cases (such as ``match e [ ]`` to fill any checking context, given any ``e:⊥``), it is often better eschewed in favor of additional explicit global helper functions.  For this reason, Narya currently emits a hint whenever it detects a "bare" case-tree-only construct and interprets it in this way.
+The advantage of "bare" matches of this sort is that, unlike the value of a let-bound variable, they can check rather than synthesize.  For instance, if ``e`` is an element of an empty datatype, then ``match e [ ]`` can be written anywhere and will typecheck at any type.
 
+However, overuse of local case trees can make it difficult to prove theorems about a function: facts one may need about its components cannot easily be separated out into lemmas since the pieces cannot easily be referred to.  Thus, while this sort of code can be convenient for programming, and in simple proofs, it is often better eschewed in favor of additional explicit global helper functions.  For this reason, Narya currently emits a hint whenever it detects a "bare" case-tree-only construct and interprets it in this way.

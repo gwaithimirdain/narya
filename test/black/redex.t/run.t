@@ -14,7 +14,7 @@
   ap (x ↦ f x) a₂
     : Id B a₂ (f a₀) (f a₁)
   
-  refl f a₂
+  ap f a₂
     : Id B a₂ (f a₀) (f a₁)
   
   ap (x ↦ ()) a₂
@@ -24,10 +24,10 @@
     : unit⁽ᵉ⁾ () ()
   
   (x ↦ f x)⁽ᵉᵉ⁾ a22
-    : B⁽ᵉᵉ⁾ a22 (refl f a02) (refl f a12) (refl f a20) (refl f a21)
+    : B⁽ᵉᵉ⁾ a22 (ap f a02) (ap f a12) (ap f a20) (ap f a21)
   
   f⁽ᵉᵉ⁾ a22
-    : B⁽ᵉᵉ⁾ a22 (refl f a02) (refl f a12) (refl f a20) (refl f a21)
+    : B⁽ᵉᵉ⁾ a22 (ap f a02) (ap f a12) (ap f a20) (ap f a21)
   
   (x ↦ ())⁽ᵉᵉ⁾ a22
     : unit⁽ᵉᵉ⁾ {()} {()} () {()} {()} () () ()
@@ -62,13 +62,13 @@
   ap (x y ↦ g x y) a₂ {()} {()} ()
     : Id B a₂ (g a₀ ()) (g a₁ ())
   
-  refl g a₂ {()} {()} ()
+  ap g a₂ {()} {()} ()
     : Id B a₂ (g a₀ ()) (g a₁ ())
   
   ap (y x ↦ g x y) {()} {()} () a₂
     : Id B a₂ (g a₀ ()) (g a₁ ())
   
-  refl g a₂ {()} {()} ()
+  ap g a₂ {()} {()} ()
     : Id B a₂ (g a₀ ()) (g a₁ ())
   
   ap (x y ↦ ()) a₂ {()} {()} ()
@@ -98,7 +98,7 @@
   ap (x y ↦ h x y) a₂ {()} {()} ()
     : Id B a₂ (h a₀ ()) (h a₁ ())
   
-  refl h a₂ {()} {()} ()
+  ap h a₂ {()} {()} ()
     : Id B a₂ (h a₀ ()) (h a₁ ())
   
   ap (x y ↦ ()) a₂ {()} {()} ()

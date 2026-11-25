@@ -62,7 +62,14 @@ type _ parametric_locker =
 module type Theory = sig
   val sinister : ('a, 'm, 'b) Modality.t -> ('a, 'm, 'b) sinister option
   val compare : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'n, 'b) t -> bool
+
+  (* The cell between two modalities, if there is exactly one.  None means that there are none, or more than one, or that the theory can't tell. *)
   val find_unique : ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t option
+
+  (* All the cells between two modalities: Some of a list asserts that it contains all of them, while None makes no assertion. *)
+  val find_all :
+    ('a, 'm, 'b) Modality.t -> ('a, 'n, 'b) Modality.t -> ('a, 'm, 'n, 'b) t list option
+
   val parametric_locker : 'a Mode.t -> ('a parametric_locker, string) Result.t
   val to_string : ('a, 'm, 'n, 'b) t -> string
 end
@@ -76,6 +83,13 @@ type (_, _, _, _, _, _) find_unique =
 val find_unique :
   ('a, 'm, 'b) Modality.t -> ('c, 'n, 'd) Modality.t -> ('a, 'm, 'b, 'c, 'n, 'd) find_unique option
 
+type (_, _, _, _, _, _) find_all =
+  | All : ('a, 'm, 'n, 'b) t list -> ('a, 'm, 'b, 'a, 'n, 'b) find_all
+  | Incompatible : ('a, 'm, 'b, 'c, 'n, 'd) find_all
+
+val find_all :
+  ('a, 'm, 'b) Modality.t -> ('c, 'n, 'd) Modality.t -> ('a, 'm, 'b, 'c, 'n, 'd) find_all option
+
 val id : ('dom, 'modality, 'cod) Modality.t -> ('dom, 'modality, 'modality, 'cod) t
 val id2 : 'mode Mode.t -> ('mode, 'mode Modality.id, 'mode Modality.id, 'mode) t
 
@@ -84,9 +98,11 @@ val compare :
   ('dom2, 'mu2, 'nu2, 'cod2) t ->
   ('dom1 * 'mu1 * 'nu1 * 'cod1, 'dom2 * 'mu2 * 'nu2 * 'cod2) Util.Eq.compare
 
-val compare_id :
+val compare_id2 :
   ('dom, 'mu, 'nu, 'cod) t ->
   ('dom * 'mu * 'nu, 'cod * 'dom Modality.id * 'dom Modality.id) Util.Eq.compare
+
+val is_id : ('dom, 'mu, 'nu, 'cod) t -> bool
 
 type (_, _) wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'b) wrapped
 type (_, _, _) cod_wrapped = Wrap : ('a, 'm, 'n, 'b) t -> ('a, 'm, 'b) cod_wrapped

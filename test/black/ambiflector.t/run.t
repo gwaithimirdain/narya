@@ -39,7 +39,7 @@
    ￮ constant roundtrip_good_ok defined
   
    ￫ info[I0000]
-   ￮ constant Neg defined
+   ￮ constant ♮ defined
   
    ￫ info[I0000]
    ￮ constant mk defined
@@ -145,3 +145,13 @@ Under arity 1, using a ♮-locked argument filters out the parametric dimension,
     : Br B (f x₀ (a x₀))
   
 
+
+The zero key is displayed, since elaboration would insert the identity rather than zero; but an identity key isn't.
+
+  $ narya -ambiflector -e "axiom A : Type" -e "def z (b : A) : A ≔ b #ø" -e "about z" -e "def i (b : A) : A ≔ b" -e "about i"
+  b ↦ b #ø
+    : (b : A) → A
+  
+  b ↦ b
+    : (b : A) → A
+  

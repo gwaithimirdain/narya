@@ -9,45 +9,45 @@ def counit2 (A :△□△□| Type) (x :△□△□| A) : A ≔ x
 
 def unit (A : Disc) (x :□△| A) : A ≔ x
 
-def □△ (A : Disc) : Disc ≔ data [ t. (_ :□△| A) ]
+def □△ (A : Disc) : Disc ≔ data [ □△. (_ :□△| A) ]
 
-def unit_inv (A : Disc) (x : A) : □△ A ≔ t. x
+def unit_inv (A : Disc) (x : A) : □△ A ≔ □△. x
 
 def epsilon (A : Disc) (x :□∇| A) : A ≔ x
 
 def isos (A : Disc) (x :□△□∇| A) : A ≔ x
 
 ` The negative □ operator, using the sinister modality △.
-def □′ (A :□| Type) : Disc ≔ codata [ (x :△| _) .unbox : A ]
+def □ (A :□| Type) : Disc ≔ codata [ (_ :△| _) .□ : A ]
 
-def box (A :□| Type) (a :□| A) : □′ A ≔ [ .unbox ↦ a ]
+def box (A :□| Type) (a :□| A) : □ A ≔ [ .□ ↦ a ]
 
-def unbox (A :△□| Type) (u :△| □′ A) : A ≔ (u :△| _) .unbox
+def unbox (A :△□| Type) (u :△| □ A) : A ≔ (u :△| _) .□
 
 def unbox_box (A :△□| Type) (a :△□| A) : Id A (unbox A (box A a)) a
   ≔ refl a
 
 ` The negative ∇ operator, using the sinister modality □.
-def ∇′ (A :△| Disc) : Type ≔ codata [ (x :□| _) .unnab : A ]
+def ∇ (A :△| Disc) : Type ≔ codata [ (_ :□| _) .∇ : A ]
 
-def nab (A :△| Disc) (a :△| A) : ∇′ A ≔ [ .unnab ↦ a ]
+def nab (A :△| Disc) (a :△| A) : ∇ A ≔ [ .∇ ↦ a ]
 
-def unnab (A :□△| Disc) (u :□| ∇′ A) : A ≔ (u :□| _) .unnab
+def unnab (A :□△| Disc) (u :□| ∇ A) : A ≔ (u :□| _) .∇
 
 ` (Disc is nonparametric in the discrete variant, so no Id-types there.)
 
-def ∇″ (A :△| Disc) : Type ≔ sig ( (x :□| _) .unnab : A )
+def ∇′ (A :△| Disc) : Type ≔ sig ( (_ :□| _) .∇ : A )
 
-def nab_unnab (A :△| Disc) (u : ∇″ A) : ∇″ A ≔ (unnab ≔ (u :□| _) .unnab)
+def nab_unnab (A :△| Disc) (u : ∇′ A) : ∇′ A ≔ (∇ ≔ (u :□| _) .∇)
 
-def nab_eta (A :△| Disc) (u : ∇″ A) : Id (∇″ A) (nab_unnab A u) u ≔ refl u
+def nab_eta (A :△| Disc) (u : ∇′ A) : Id (∇′ A) (nab_unnab A u) u ≔ refl u
 
 ` The composite sinister modality △□ ⊣ ∇□.
-def ∇□′ (A :∇□| Type) : Type ≔ codata [ (x :△□| _) .un : A ]
+def ∇□ (A :∇□| Type) : Type ≔ codata [ (_ :△□| _) .∇□ : A ]
 
-def mk (A :∇□| Type) (a :∇□| A) : ∇□′ A ≔ [ .un ↦ a ]
+def mk (A :∇□| Type) (a :∇□| A) : ∇□ A ≔ [ .∇□ ↦ a ]
 
-def unmk (A :△□∇□| Type) (u :△□| ∇□′ A) : A ≔ (u :△□| _) .un
+def unmk (A :△□∇□| Type) (u :△□| ∇□ A) : A ≔ (u :△□| _) .∇□
 
 def unmk_mk (A :△□∇□| Type) (a :△□∇□| A) : Id A (unmk A (mk A a)) a
   ≔ refl a

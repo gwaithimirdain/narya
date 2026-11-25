@@ -45,13 +45,15 @@ Parentheses ``( M )`` are defined as an outfix notation, hence with effective ti
 
 In general, ambiguities in parsing are treated as errors.  However, *potential* ambiguities are *not* reported at the time when notations are declared, since this can easily happen accidentally when importing notations from multiple libraries, and causes no problems as long as no ambiguities are actually encountered in parsing.  But an error is reported whenever an ambiguity is encountered during parsing.  In addition, some notation combinations that are not technically ambiguous are not allowed because parsing them correctly would require too much backtracking.  Specifically, the sequence of "inner" operators and variables (that is, the pattern except for any initial variable and ending variable) of one notation is not allowed to be a *prefix* of that of any other notation (including the case when the two are the same).  Thus, for instance, a notation such as ``if CONDITION then EXPR`` cannot coexist with one such as ``if CONDITION then EXPR else EXPR`` (where ``if``, ``then``, and ``else`` are notation symbols): even though *some* uses of these two notations would be unambiguous, if both are declared then an error will be reported as soon as either one is used.
 
-There is one exception to this: if a left-open notation (infix or postfix) is a prefix of one or more left-closed notations (prefix or outfix), then ambiguities in parsing are resolved in favor of the left-open notation.  This is the only possible resolution if ambiguities are to be accepted in this situation, since if a left-closed notation is intended, it can be disambiguated with parentheses, whereas the left-open case cannot.  Useful examples of this situation include:
+There is one exception to this: if a left-open notation (infix or postfix) is a prefix of one or more left-closed notations (prefix or outfix), then ambiguities in parsing are allowed, and are resolved in favor of the left-open notation.  This is the only possible resolution if ambiguities are to be accepted in this situation, since if a left-closed notation is intended, it can be disambiguated with parentheses, whereas the left-open case cannot.  Useful examples of this situation include:
 
 - Infix binary subtraction ``a - b`` and prefix unary minus ``- a`` using the same symbol ``-``.  As noted, the interpretation of ``a - b`` as the function ``a`` applied to ``- b`` can be disambiguated by writing ``a (- b)``.
 - Infix divisibility ``a ∣ b`` and outfix absolute value ``∣ a ∣`` using the same symbol ``∣`` (here 0x223 DIVIDES; using the usual pipe symbol ``|`` is probably inadvisable since that is used in :ref:`data, match<Inductive datatypes and matching>`, :ref:`codata, and comatch<Codatatypes and comatching>` statements).
 - Similarly, infix parallelism ``a ∥ b`` and outfix norm ``∥ a ∥``, and so on.  One could also use ``<`` for both infix inequality ``a < b`` and outfix pairing ``<a, b>``, although Narya's built-in pairs use parentheses, and for other kinds of pairs there are other symbols available like ``⟨``, ``⟩``.
 
-In principle, it would be possible to also allow the dual situation of exactly one *right*-open notation, but this would be more difficult to parse without backtracking, and I don't know of any important applications for it.
+If tightness and associativity are not set correctly, this rule can give rise to surprising parses.  For instance, we expect ``- a - b`` to parse as ``(- a) - b`` -- and it does, if prefix minus binds more tightly than infix subtraction -- but if those notations mistakenly have the same tightness, then ``- a - b`` parses as ``- (a (- b))``, which presumably then fails to typecheck since ``a`` is unlikely to be a function.  Similarly, we expect ``a - b - c`` to parse as ``(a - b) - c`` -- and it does, if infix subtraction is left-associative -- but if subtraction is nonassociative, then ``a - b - c`` parses as ``a - (b (- c))``, which then presumably fails to typecheck since ``b`` is unlikely to be a function.
+
+In principle, it would be possible to also allow the dual situation of a *right*-open notation that is a prefix of one or more right-closed notations, but this would be more difficult to parse without backtracking, and I don't know of any important applications for it.
 
 
 Comments and strings
@@ -69,7 +71,9 @@ A Narya source file is expected to be UTF-8 encoded and can contain arbitrary Un
 
 However, there are the following exceptions to this, where whitespace is not needed to separate tokens:
 
-- The characters ``( ) [ ] { } → ↦ ⤇ ≔ ⩴ ⩲ … ? ! ⁇ ¿ ʔ``, which either have built-in meaning or are reserved for future built-in meanings, are always treated as single tokens.  Thus, they do not need to be surrounded by whitespace.  This is the case for parentheses and braces in most languages, but in Narya you can also write, e.g., ``A→B`` without spaces.  Many of the non-ASCII characters in this group have ASCII-sequence substitutes that are completely interchangeable: ``-> |-> |=> := ::= += ...``.  Additional characters may be added to this list in the future.
+- The characters ``( ) [ ] { } → ⇒ ↦ ⤇ ≔ ⩴ ⩲ … ⋯``, which either have built-in meaning or are reserved for future built-in meanings, are always treated as single tokens.  Thus, they do not need to be surrounded by whitespace.  This is the case for parentheses and braces in most languages, but in Narya you can also write, e.g., ``A→B`` without spaces.  Many of the non-ASCII characters in this group have ASCII-sequence substitutes that are completely interchangeable: ``-> => |-> |=> := ::= += ... ....``.  Additional characters may be added to this list in the future.
+
+- The characters ``? ! ⁇ ¿ ʔ`` are reserved for :ref:`Holes` and similar features, which are lexed specially (e.g. inside a hole with contents, even comment sequences are swallowed).  They should not be used anywhere else.
 
 - A nonempty string consisting of the characters ``~ @ # $ % & * / = + | , < > : ; - ^`` is always treated as a single token, and does not need to be surrounded by whitespace.  Moreover, such tokens may only be notation symbols, not identifiers.  Note that this is most of the non-alphanumeric characters that appear on a standard US keyboard except for those that already have another meaning (parentheses, backquote, double quote, curly braces) or are allowed in identifiers (period, underscore, and single quote).  In particular:
 
@@ -116,6 +120,46 @@ At present, the available attributes are the following:
 1. Attributes of record type related to :ref:`Eta-expansion and opacity`.
 
 2. ``variables``, which specifies default variable names for a type (see :ref:`Default names`).
+
+Shadowing and renaming
+----------------------
+
+When a local variable is bound, such as inside an abstraction ``x ↦ …``, it hides or "shadows" any previously defined variable of the same name.  A variable that is shadowed is "out of scope" and cannot be referred to in the region where it is shadowed.  For instance, inside ``x ↦ x ↦ …`` the outer ``x`` is shadowed and cannot be referred to.
+
+A local variable also shadows any defined constant with the same name.  In this case, it is possible to refer to the constant anyway by prefixing it with ``_root_.``  In general, an identifier ``_root_.A`` skips past all local variables, and refers to whatever the identifier ``A`` would refer to if there were no local variables in scope.  (This can't conflict with any other name, since atomic identifiers can't start with an underscore.)
+
+A shadowed variable still exists, however, and reduction can cause it to appear in the region where it was shadowed even though it couldn't originally have been referred to there.  For instance, in evaluating the redex
+
+.. code-block:: none
+
+   (x ↦ ((y x ↦ y) : A → B → A) x)
+
+the shadowed outer variable ``x`` is substituted for the variable ``y``, and therefore must appear in the body of the abstraction over the inner ``x`` which shadows it.  Thus, one or the other of these variables must be renamed in order to print this result.
+
+The first rule is that when printing a *term*, the *shadowing* variable is renamed, along with all of its uses, by adding primes to make it unique.  Thus the above term prints as
+
+.. code-block:: none
+
+   x x′ ↦ x
+
+with the inner ``x`` renamed to ``x′`` so that it no longer shadows the outer ``x``.  This is also the case if a variable shadows a defined constant that appears in the term.  For instance, if ``x`` is an axiom of type ``A``, then ``((y x ↦ y) : A → B → A) x`` prints as ``x′ ↦ x``.
+
+On the other hand, when printing a *context* such as the context of a :ref:`hole <Interactive proof>`, it is important not to rename variables that are still in scope in the hole, since you will need to use them when filling the hole.  In this case, it is the *shadowed* variable that is renamed for printing.  The new name for that variable is still not in scope and can't be referred to in the term, but it's used for printing the types and values of other terms or of the hole itself.  For instance, the context of the hole in 
+
+.. code-block:: none
+
+   (x ↦ ((y x ↦ ?) : A → B → A) x)
+
+is printed as
+
+.. code-block:: none
+
+   x′ : A (not in scope)
+   y : A
+   x : A
+
+with the inner ``x`` retaining its name and the outer shadowed one being renamed.  A shadowed *constant* is "renamed" by prefixing it with ``_root_``, which as noted above skips past all local variables to the global context of constants (so in this case the renamed version can be referred to in the scope).
+
 
 Default names
 -------------

@@ -66,7 +66,7 @@
    ￮ constant adjcounit defined
   
    ￫ info[I0000]
-   ￮ constant Neg defined
+   ￮ constant ♭ defined
   
    ￫ info[I0000]
    ￮ constant mk defined
@@ -102,6 +102,11 @@ Nor does the reflector ʃ have a counit of its own.
    1 | def bad2 (A :ʃ| Type) (x :ʃ| A) : A ≔ x
      ^ use of ʃ variable behind id lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def bad2 (A :ʃ| Type) (x :ʃ| A) : A ≔ x
+     ^ use of ʃ variable behind id lock requires a key
+  
   [1]
 
 The unit and counit of the induced adjunction ʃ ⊣ ♭ only go in that direction.
@@ -120,6 +125,11 @@ The unit and counit of the induced adjunction ʃ ⊣ ♭ only go in that directi
    1 | def bad4 (A :♭ʃ| Type) (x :♭ʃ| A) : A ≔ x
      ^ use of ♭ʃ variable behind id lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def bad4 (A :♭ʃ| Type) (x :♭ʃ| A) : A ≔ x
+     ^ use of ♭ʃ variable behind id lock requires a key
+  
   [1]
 
 And there are no 2-cells crossing directly between ʃ and ♭ in the "wrong" direction.
@@ -129,5 +139,10 @@ And there are no 2-cells crossing directly between ʃ and ♭ in the "wrong" dir
    ￭ command-line exec string
    1 | def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x
      ^ use of ʃ variable behind ♭ lock requires a key
+  
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def bad5 (A :ʃ| Type) (x :♭| A) : A ≔ x
+     ^ use of ʃ variable behind id lock requires a key
   
   [1]

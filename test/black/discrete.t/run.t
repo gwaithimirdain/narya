@@ -49,6 +49,11 @@ Using a ♭-locked variable without a key requires the counit key.
    1 | def g (A : Type) (x : A) : A ≔ f A x
      ^ use of id variable behind ♭ lock requires a key
   
+   ￫ error[E1705]
+   ￭ command-line exec string
+   1 | def g (A : Type) (x : A) : A ≔ f A x
+     ^ use of id variable behind ♭ lock requires a key
+  
   [1]
 
 The reflexivity of the *modal* family ♭ has a *filtered* domain: instead of the
@@ -56,7 +61,7 @@ usual square of arguments, it takes a single (A :♭| Type), because ♭ removes
 parametric dimension.
 
   $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel ♭"
-  Br ♭
+  ♭⁽ᵖ⁾
     : (A :♭| Type) →⁽ᵖ⁾ Type⁽ᵖ⁾ (♭ A) (♭ A)
   
 
@@ -64,7 +69,7 @@ By contrast, the reflexivity of the *non-modal* family T has the usual full
 square domain {A₀} {A₁} (A₂).
 
   $ narya -parametric -direction p,rel,Br -discrete-coreflector discrete.ny -e "echo rel T"
-  Br T
+  T⁽ᵖ⁾
     : {A₀ : Type} {A₁ : Type} (A₂ : Type⁽ᵖ⁾ A₀ A₁) →⁽ᵖ⁾ Type⁽ᵖ⁾ (T A₀) (T A₁)
   
 

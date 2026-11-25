@@ -46,13 +46,32 @@ Checking ordinary redexes is not usually very useful; usually you want :ref:`Let
 Let-binding
 -----------
 
+Ordinary let-binding
+^^^^^^^^^^^^^^^^^^^^
+
 Writing ``let x ≔ M in N`` binds the local variable ``x`` to the value ``M`` while typechecking and evaluating ``N``.  The unicode ≔ is interchangeable with the ASCII ``:=``.  Computationally, ``let x ≔ M in N`` is equivalent to ``(x ↦ N) M``, but it also binds ``x`` to the value ``M`` while typechecking ``N``, which in a dependent type theory is stronger.
 
-The term ``M`` is required to synthesize.  Thus ``let x ≔ M : A in N`` is a common idiom, and can be written alternatively as ``let x : A ≔ M in N``.  The body ``N`` can either check or synthesize, and the let-binding as a whole inherits this from it: if ``N`` synthesizes a type then the let-binding synthesizes the same type, while if ``N`` checks then the let-binding checks against a type that is passed on to ``N`` to check against.  The let-binding notation is right-associative with tightness −ω.
+The term ``M`` is required to synthesize.  Thus ``let x ≔ M : A in N`` is a common idiom, and can be written alternatively as ``let x : A ≔ M in N``.  Conversely, when ``M`` synthesizes, you can also write ``let x : _ ≔ M in N`` to mean ``let x : M in N``; this becomes more useful with :ref:`Modal let-bindings`.
+
+The body ``N`` can either check or synthesize, and the let-binding as a whole inherits this from it: if ``N`` synthesizes a type then the let-binding synthesizes the same type, while if ``N`` checks then the let-binding checks against a type that is passed on to ``N`` to check against.  The let-binding notation is right-associative with tightness −ω.
+
+Recursive let-binding
+^^^^^^^^^^^^^^^^^^^^^
 
 An ordinary let-binding is not recursive: the variable ``x`` cannot appear in the term ``M``.  This is intentional and enables a common idiom where ``x`` shadows a previously existing variable of the same name in ``N``, while the *previous* variable of that name can appear in ``M``, thereby creating the illusion that the value of that variable has been "changed".  For instance, ``let x ≔ x + 1 in`` has the appearance of incrementing the value of ``x``.
 
 However, it is possible to define a recursive let-binding by writing ``let rec`` instead of ``let``.  (Note that ``let`` and ``rec`` are two keywords separated by a space.)  In this case, the variable ``x`` *can* appear in ``M``, and of course shadows any previously defined variable of the same name in ``M`` as well as in ``N``.  In a recursive let-binding the type of ``M`` must be given explicitly (as with a top-level ``def`` which can also be recursive): the only valid syntax is ``let rec x : A ≔ M in N``.  (Recursive let-bindings are also treated "generatively", like let-bindings that include matches or comatches; see :ref:`Matches in terms and case trees`.)
+
+A family of mutually recursive let-bindings can be defined by prefixing the second and later with the keyword ``and`` instead of ``let rec``, yielding ``let rec x : A ≔ M and y : B ≔ N in P``.  See :ref:`Mutually recursive let-bindings`.
+
+Let-only binding
+^^^^^^^^^^^^^^^^
+
+In an ordinary or recursive let-binding, the body is typechecked in the ambient context with the let-bound variables added.  A third kind of let-binding allows you to specify the *entire* context of the body, without inheriting anything from the ambient.  If you write ``let only x : A ≔ M and y : B ≔ N in P``, then *only* the variables ``x`` and ``y`` will be in scope in ``P``, not any of the other variables previously in the context.  The values such as ``M`` and ``N`` can use all the other variables previously in scope, but their types can only use variables occurring previously in the ``let only``: thus the first type ``A`` must be defined in the empty context, without using any variables, while the second type ``B`` can use the first variable ``x:A``, and so on.  The body term ``P`` must synthesize (otherwise, you must ascribe it).
+
+In contrast to ordinary and recursive let-binding, the variables are *not* bound to the supplied terms when typechecking the body of a ``let only``.  Indeed, this would not even make sense, since those values are defined in the ambient context.  Instead, these variables are treated as free (unbound) when typechecking the body.  They are only bound to the supplied values when *evaluating* the expression.
+
+Semantically, a ``let only`` defines an entirely new context consisting of the supplied types, such as ``(x:A, y:B)``, then synthesizes a term ``P`` in that context, and then applies a substitution (context morphism) from the ambient context to the new one consisting of the supplied terms, such as ``(M,N)``.  This is not usually extremely useful; it becomes a little more useful in the :ref:`modal case <Modal let-only>`, but its primary purpose is for printing metavariables.
 
 
 Eta-conversion and case trees
@@ -65,23 +84,29 @@ In addition, constants defined as functions do not reduce until they are applied
 .. code-block:: none
    
    def cplus (A:Type) (m n : (A → A) → (A → A)) : (A → A) → (A → A) ≔
-   f x ↦ m f (n f x)
+     f x ↦ m f (n f x)
 
-then ``cplus A (f x ↦ f x) (f x ↦ f x)`` (i.e. "1 + 1") doesn't reduce to ``(f x ↦ f (f x))`` because it is not fully applied, whereas ``cplus A (f x ↦ f x) (f x ↦ f x) f x`` does reduce to ``f (f x)``.  However, ``cplus A (f x ↦ f x) (f x ↦ f x)`` is still *convertible* with ``(f x ↦ f (f x))`` because equality-checking does η-conversion.  If you want to display the body of a constant defined as a function, you must manually η-expand it, which means it has to be ascribed as well:
+then ``cplus A (f x ↦ f x) (f x ↦ f x)`` (i.e. "1 + 1") doesn't reduce to ``(f x ↦ f (f x))`` because it is not fully applied, whereas ``cplus A (f x ↦ f x) (f x ↦ f x) f x`` does reduce to ``f (f x)``.
 
 .. code-block:: none
 
-   echo (A f x ↦ cplus A (f x ↦ f x) (f x ↦ f x) f x)
-      : (A:Type) → (A → A) → (A → A)
-  
-   A f x ↦ f (f x)
-      : (A : Type) → (A → A) → A → A
+   echo cplus A (f x ↦ f x) (f x ↦ f x)
 
-If there is significant demand for displaying function bodies, we may add an option to ask for η-expansion.
+   cplus A (f x ↦ f x) (f x ↦ f x)
+     : (A → A) → A → A
+
+However, ``cplus A (f x ↦ f x) (f x ↦ f x)`` is still *convertible* with ``(f x ↦ f (f x))`` because equality-checking does η-conversion.  To display the body of a constant defined as a function, use the interactive ``about`` command instead of ``echo``.
+
+.. code-block:: none
+
+   about cplus A (f x ↦ f x) (f x ↦ f x)
+  
+   f x ↦ f (f x)
+     : (A → A) → A → A
 
 More generally, the definition of a constant is not just a term, but something called a *case tree*, which can contain internal nodes of different sorts and ends in ordinary terms at its leaves.  Evaluation of such a constant, applied to arguments, does not reduce to anything unless the arguments are sufficient and sufficiently informative for the evaluation to reach a leaf.  In fact *every* defined constant in Narya is actually defined to equal a case tree, even if it consists only of a single leaf.
 
-So far, the only kinds of case tree node we have seen are abstractions and let-bindings.  The requirement for abstractions in a case tree to reduce is just that the function receives enough arguments to β-reduce all the abstractions, and let-bindings in a case tree reduce if their body does.  Thus, in particular, an abstraction directly inside a let-binding, such as that over ``y`` above, must also receive an argument before the definition reduces.  Other kinds of case tree nodes, with their own reduction rules, include :ref:`tuples`, :ref:`matches<matching>`, and :ref:`comatches<copattern matching>`.
+So far, the only kinds of case tree node we have seen are abstractions and let-bindings.  The requirement for abstractions in a case tree to reduce is just that the function receives enough arguments to β-reduce all the abstractions, and let-bindings in a case tree reduce if their body does.  Thus, in particular, an abstraction directly inside a let-binding, such as that over ``y`` above, must also receive an argument before the definition reduces.  Other kinds of case tree nodes, with their own reduction rules, include :ref:`tuples<Tuples>`, :ref:`matches<matching>`, and :ref:`comatches<copattern matching>`, as well as canonical types such as :ref:`record types<Record types and tuples>`, :ref:`datatypes<Inductive datatypes and matching>`, and :ref:`codatatypes<Codatatypes and comatching>`.
 
 Since abstractions and let-bindings can also occur at arbitrary positions in a term, there is some potential ambiguity in a definition containing these: are they part of the case tree, or part of a unique body term?  The rule to resolve this is that the case tree includes *as much as possible*.  Once another kind of term is encountered that cannot be a case tree node, then that term and all its sub-terms (including any abstractions or let-bindings) are part of the leaf.  Thus, for instance, in
 
@@ -108,3 +133,13 @@ Since a function application cannot be part of a case tree, it goes into the bod
         ≔ let id' : A → A ≔ (x ↦ x) in id'
 
 However, the type ``A → A`` still has to be written again, since a let-binding must synthesize.  If there is significant demand for it, we may implement a less kludgy way to force transitioning from case tree nodes to a leaf.
+
+
+Error reporting
+---------------
+
+When you run Narya on some code --- which may include various source files, the files they import, command-line execution strings, and interactively given commands --- its primary obligation is to either (1) verify that all the code is correct, or (2) report *at least one error* showing a place where the code is incorrect.  In the second case, you can fix that error, re-run Narya and perhaps get another error, and so on until the code is correct.
+
+Although Narya is not *obligated* to report more than one error at a time, it tries to make your life easier by reporting as many errors as possible at once.  It is not always possible, even in theory, to report *all* the errors at once.  This is already true for ordinary programming languages, and becomes even more true in a dependently typed language where later pieces of code can't in general even be typechecked without knowing the value of previous ones.  However, there are many situations in which it is possible to continue on past an error and check more code.  For instance, if the first component of a non-dependent tuple fails, that does not interfere with checking the other components; and if one definition in a file fails, there may be many later definitions that don't depend on it.
+
+It's not guaranteed that Narya will be able to find *all the possible* errors that could be reported at once.  If there is an error that could be reported at the same time as some previous error but isn't, that is not a bug, but adding the ability to report it is a feature enhancement request.  Similarly, it's not guaranteed that later-reported errors will always be "true" errors; they might be accidents that will disappear when some earlier error is fixed.  If you find such a "phantom" error, it is not a bug, but preventing it from being reported is a feature enhancement request.

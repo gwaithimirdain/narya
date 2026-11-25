@@ -14,6 +14,18 @@ module Trie = Yuujinchou.Trie
 let __COMPILE_VERSION__ =
   Option.value ~default:(-1) (int_of_string_opt ("0x" ^ [%blob "version.txt"]))
 
+(* The modification time of a file.  We follow symlinks, since a file loaded through a symlink is modified when its target is.  (The tests in FileUtil.test, such as Is_older_than, compare against the modification time of a symlink itself.) *)
+let mtime file = (FileUtil.stat ~dereference:true file).modification_time
+
+(* Sets of filenames, used to add each file only once to the transitive imports of a file. *)
+module Filenames = Set.Make (String)
+
+(* Normalize a file path, relative to a given directory, to a reduced absolute one, so we can use it as a hashtable key.  Symlinks are not resolved: a file loaded through a symlink is identified by the path of the symlink, has its compiled version stored next to the symlink, and resolves its imports relative to the symlink's directory.  Consistently with this, ".." is reduced lexically, so that "a/c/../b.ny" is the same file as "a/b.ny" even if "a/c" is a symlink. *)
+let normalize_filename cwd filename =
+  let filename =
+    if FilePath.is_relative filename then FilePath.make_absolute cwd filename else filename in
+  FilePath.reduce ~no_symlink:true filename
+
 (* This state module is for data that gets restarted when loading a new file. *)
 module Loadstate = struct
   type t = {
@@ -23,6 +35,8 @@ module Loadstate = struct
     parents : FilePath.filename Bwd.t;
     (* All the files imported so far by the current file, *transitively* (that is, files it imports, and files *they* import, etc.).  Stored in compiled files to ensure they are recompiled whenever any dependencies change, and for linking purposes. *)
     imports : (File.t * FilePath.filename) Bwd.t;
+    (* The filenames in imports, so that we add each file only once however many import paths reach it.  We record this as a set to avoid duplicates, but we also keep the above list to maintain the order in which the files were loaded. *)
+    imported : Filenames.t;
     (* Whether the current file has performed any effectual actions like 'echo'.  Stored in compiled files to produce a warning. *)
     actions : bool;
   }
@@ -30,6 +44,15 @@ end
 
 module Loading = struct
   include State.Make (Loadstate)
+
+  (* Add files to the transitive imports of the current file, skipping those that are already there. *)
+  let add_imports more =
+    modify (fun s ->
+        Bwd.fold_left
+          (fun (s : Loadstate.t) ((_, f) as x) ->
+            if Filenames.mem f s.imported then s
+            else { s with imports = Snoc (s.imports, x); imported = Filenames.add f s.imported })
+          s more)
 
   let run ~init f =
     run ~init @@ fun () ->
@@ -51,9 +74,11 @@ module FlagData = struct
     (* Marshal all the command-line type theory flags to disk. *)
     marshal : Out_channel.t -> unit;
     (* Unmarshal all the command-line type theory flags from a disk file and check that they agree with the current ones, returning the unmarshaled ones if not. *)
-    unmarshal : In_channel.t -> (unit, string) Result.t;
+    unmarshal : Istream.t -> (unit, string) Result.t;
     (* Load files from source only (not compiled versions). *)
     source_only : bool;
+    (* Don't write compiled versions of files to disk. *)
+    no_write_compiled : bool;
     (* All the filenames given explicitly on the command line. *)
     top_files : string list;
     (* Whether to reformat explicitly-loaded files *)
@@ -89,8 +114,7 @@ module Loaded = struct
     let loaded_contents : Scope.trie Lazy.t ref = ref (Lazy.from_val (Scope.get_visible ())) in
     try f () with
     | effect Add_to_files (file, data), k ->
-        let mtime = (FileUtil.stat file).modification_time in
-        Hashtbl.add loaded_files file (data, mtime);
+        Hashtbl.add loaded_files file (data, mtime file);
         continue k ()
     | effect Get_file file, k -> continue k (Hashtbl.find_opt loaded_files file)
     | effect Add_to_scope trie, k ->
@@ -108,19 +132,48 @@ module Loaded = struct
     Effect.perform (Add_to_files (filename, { trie; globals; file; old_imports; explicit }))
 end
 
-(* Save all the definitions from a given loaded file to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace. *)
+(* Written after all the marshaled values in a compiled file, so that we can tell whether a compiled file is complete before we start loading it. *)
+let compiled_trailer = "\nend of narya compiled file\n"
+
+(* Create a new temporary file in the same directory as a given file, so that it can be renamed onto that file.  Unlike Filename.temp_file, we create it with the ordinary permissions (subject to the umask), since it will become the compiled file. *)
+let open_temp_file ofile =
+  let rng = Random.State.make_self_init () in
+  let rec go n =
+    let tmpfile = Printf.sprintf "%s.%06x.tmp" ofile (Random.State.bits rng land 0xFFFFFF) in
+    match
+      Out_channel.open_gen [ Open_wronly; Open_creat; Open_excl; Open_binary ] 0o666 tmpfile
+    with
+    | chan -> (tmpfile, chan)
+    (* If the name was taken, try another one. *)
+    | exception (Sys_error _ as e) ->
+        if n < 100 && Sys.file_exists tmpfile then go (n + 1) else raise e in
+  go 0
+
+(* Save all the definitions from a given loaded file to a compiled disk file, along with other data such as the command-line type theory flags, the imported files, and the (supplied) export namespace.  We write to a temporary file and then rename it onto the compiled file, so that another run never sees a partially written compiled file, and an interrupted run doesn't leave one behind. *)
 let marshal (file : File.t) (filename : FilePath.filename) (trie : Scope.trie) =
-  if __COMPILE_VERSION__ > 0 then
+  if __COMPILE_VERSION__ > 0 && not (Flags.read ()).no_write_compiled then
     let ofile = FilePath.replace_extension filename "nyo" in
     try
-      Out_channel.with_open_bin ofile @@ fun chan ->
-      Marshal.to_channel chan __COMPILE_VERSION__ [];
-      (Flags.read ()).marshal chan;
-      Marshal.to_channel chan file [];
-      Marshal.to_channel chan (Loading.get ()).imports [];
-      Global.to_channel_origin chan (File file) [];
-      Parser.Scope.to_channel chan trie [];
-      Marshal.to_channel chan (Loading.get ()).actions []
+      let tmpfile, chan = open_temp_file ofile in
+      try
+        (try
+           Marshal.to_channel chan __COMPILE_VERSION__ [];
+           (Flags.read ()).marshal chan;
+           Marshal.to_channel chan file [];
+           Marshal.to_channel chan (Loading.get ()).imports [];
+           Global.to_channel_origin chan (File file) [];
+           Parser.Scope.to_channel chan trie [];
+           Marshal.to_channel chan (Loading.get ()).actions [];
+           Out_channel.output_string chan compiled_trailer;
+           (* Closing flushes the channel, which can also fail. *)
+           Out_channel.close chan
+         with e ->
+           Out_channel.close_noerr chan;
+           raise e);
+        Sys.rename tmpfile ofile
+      with e ->
+        (try Sys.remove tmpfile with Sys_error _ -> ());
+        raise e
       (* Just emit a warning if we can't write the compiled version *)
     with Sys_error _ -> emit (Cant_write_compiled_file ofile)
 
@@ -129,76 +182,80 @@ let rec unmarshal (file : File.t) (lookup : FilePath.filename -> File.t)
     (filename : FilePath.filename) =
   let ofile = FilePath.replace_extension filename "nyo" in
   (* To load a compiled file, first of all both the compiled file and its source file must exist, and the compiled file must be not older than the source.  (If the source was reformatted at the time of compiling, they could be exactly the same age.) *)
-  if
-    FileUtil.test Is_file filename
-    && FileUtil.test Is_file ofile
-    && not (FileUtil.test (Is_older_than filename) ofile)
+  if FileUtil.test Is_file filename && FileUtil.test Is_file ofile && mtime ofile >= mtime filename
   then
-    (* Now we can start loading things. *)
-    In_channel.with_open_bin ofile @@ fun chan ->
-    (* We check it was compiled with the same version as us. *)
-    let old_version = (Marshal.from_channel chan : int) in
-    if __COMPILE_VERSION__ > 0 && old_version = __COMPILE_VERSION__ then (
-      (* We also check it was compiled with the same type theory flags as us. *)
-      match (Flags.read ()).unmarshal chan with
-      | Ok () ->
-          let old_file = (Marshal.from_channel chan : File.t) in
-          (* Now we make sure none of the files *it* imports (transitively) have been modified more recently than the compilation, and that they have all been compiled. *)
-          let old_imports = (Marshal.from_channel chan : (File.t * FilePath.filename) Bwd.t) in
-          if
-            Bwd.for_all
-              (fun (_, ifile) ->
-                let oifile = FilePath.replace_extension ifile "nyo" in
-                FileUtil.test Is_file oifile
-                && (not (FileUtil.test (Is_older_than ifile) oifile))
-                && not (FileUtil.test (Is_newer_than ofile) ifile))
-              old_imports
-          then (
-            (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file. *)
-            Mbwd.miter
-              (fun [ (_, ifile) ] ->
-                let _ = load_file ifile false in
-                ())
-              [ old_imports ];
-            (* We create a hashtable mapping the old files to new ones. *)
-            let table = Hashtbl.create 20 in
-            Mbwd.miter (fun [ (i, ifile) ] -> Hashtbl.add table i (lookup ifile)) [ old_imports ];
-            Hashtbl.add table old_file file;
-            let find_in_table x =
-              Hashtbl.find_opt table x
-              <|> Anomaly "missing file identifier while unmarshaling compiled file" in
-            (* Now we load the definitions from the compiled file, replacing all the old files by the new ones. *)
-            let unit_entry = Global.from_istream_origin find_in_table (Channel chan) (File file) in
-            let trie = Parser.Scope.from_istream (Channel chan) find_in_table in
-            (* We check whether the compiled file had any actions, and issue a warning if so *)
-            if (Marshal.from_channel chan : bool) then emit (Actions_in_compiled_file ofile);
-            Some (trie, unit_entry, old_imports))
-          else None
-      | Error flags ->
-          emit (Incompatible_flags (filename, flags));
-          None)
-    else None
+    (* We read the whole compiled file into memory, and check that it is complete (it could have been truncated, e.g. by an older version of Narya that didn't write compiled files atomically), before unmarshaling anything from it.  Otherwise we could fail partway through after having already modified the global state.  If it isn't complete, we treat it like an outdated compiled file and load the source instead. *)
+    match
+      Option.bind
+        (try Some (In_channel.with_open_bin ofile In_channel.input_all) with Sys_error _ -> None)
+        (Istream.framed_string ~trailer:compiled_trailer)
+    with
+    | None -> None
+    | Some chan ->
+        (* We check it was compiled with the same version as us. *)
+        let old_version = (Istream.unmarshal chan : int) in
+        if __COMPILE_VERSION__ > 0 && old_version = __COMPILE_VERSION__ then (
+          (* We also check it was compiled with the same type theory flags as us. *)
+          match (Flags.read ()).unmarshal chan with
+          | Ok () ->
+              let old_file = (Istream.unmarshal chan : File.t) in
+              (* Now we make sure none of the files *it* imports (transitively) have been modified more recently than the compilation, and that they have all been compiled. *)
+              let old_imports = (Istream.unmarshal chan : (File.t * FilePath.filename) Bwd.t) in
+              let omtime = mtime ofile in
+              if
+                Bwd.for_all
+                  (fun (_, ifile) ->
+                    let oifile = FilePath.replace_extension ifile "nyo" in
+                    FileUtil.test Is_file oifile
+                    && mtime oifile >= mtime ifile
+                    && mtime ifile <= omtime)
+                  old_imports
+              then (
+                (* If so, we load all those files (from their compiled versions, or make sure that they were already loaded) right away.  We don't need their returned namespaces, since we aren't typechecking our compiled file.  Since the list is transitive and we load every file in it, a file that was already loaded only needs to check its own modification time, not those of its imports. *)
+                Mbwd.miter
+                  (fun [ (_, ifile) ] ->
+                    let _ = load_file ~check_imports:false ifile false in
+                    ())
+                  [ old_imports ];
+                (* We create a hashtable mapping the old files to new ones. *)
+                let table = Hashtbl.create 20 in
+                Mbwd.miter
+                  (fun [ (i, ifile) ] -> Hashtbl.add table i (lookup ifile))
+                  [ old_imports ];
+                Hashtbl.add table old_file file;
+                let find_in_table x =
+                  Hashtbl.find_opt table x
+                  <|> Anomaly "missing file identifier while unmarshaling compiled file" in
+                (* Now we load the definitions from the compiled file, replacing all the old files by the new ones. *)
+                let unit_entry = Global.from_istream_origin find_in_table chan (File file) in
+                let trie = Parser.Scope.from_istream chan find_in_table in
+                (* We check whether the compiled file had any actions, and issue a warning if so *)
+                if (Istream.unmarshal chan : bool) then emit (Actions_in_compiled_file ofile);
+                (* We return the imports with their *new* file identifiers, since they will be stored with this file and copied into the imports of any file that imports it, hence also into its compiled file.  The old identifiers are only meaningful relative to the run that compiled this file, and in the current run they could belong to different files. *)
+                Some
+                  (trie, unit_entry, Bwd.map (fun (_, ifile) -> (lookup ifile, ifile)) old_imports))
+              else None
+          | Error flags ->
+              emit (Incompatible_flags (filename, flags));
+              None)
+        else None
   else None
 
-(* Load a file, possibly one specified on the command line, either from source or from a compiled version. *)
-and load_file filename top =
+(* Load a file, possibly one specified on the command line, either from source or from a compiled version.  If it was already loaded, check that the file (and its imports, unless check_imports is false) haven't been modified since then, and then add it back to Global and record it as imported. *)
+and load_file ?(check_imports = true) filename top =
   if not (FilePath.check_extension filename "ny") then fatal (Invalid_filename filename);
-  (* We normalize the file path to a reduced absolute one, so we can use it for a hashtable key. *)
-  let filename =
-    if FilePath.is_relative filename then FilePath.make_absolute (Loading.get ()).cwd filename
-    else filename in
-  let filename = FilePath.reduce filename in
+  let filename = normalize_filename (Loading.get ()).cwd filename in
   match Loaded.get_file filename with
-  | Some ({ trie; globals; file; old_imports; explicit = top' }, mtime) ->
+  | Some ({ trie; globals; file; old_imports; explicit = top' }, loaded_mtime) ->
       (* If we already loaded that file, first we check that neither it nor any of its imports have been modified more recently that when they were loaded.  Each file is compared against its own loading time; an import is quite normally newer than the file that imports it. *)
-      if (FileUtil.stat filename).modification_time > mtime then fatal (Library_modified filename);
-      Bwd.iter
-        (fun (_, f) ->
-          match Loaded.get_file f with
-          | Some (_, fmtime) ->
-              if (FileUtil.stat f).modification_time > fmtime then fatal (Library_modified f)
-          | None -> ())
-        old_imports;
+      if mtime filename > loaded_mtime then fatal (Library_modified filename);
+      if check_imports then
+        Bwd.iter
+          (fun (_, f) ->
+            match Loaded.get_file f with
+            | Some (_, fmtime) -> if mtime f > fmtime then fatal (Library_modified f)
+            | None -> ())
+          old_imports;
       (* We add it back into Global, and to the 'all' namespace if it wasn't already there. *)
       Global.add_file file globals;
       if top && not top' then (
@@ -206,8 +263,8 @@ and load_file filename top =
         (* Ensure that it's marked as having been loaded explicitly. *)
         Loaded.add_to_files filename trie globals file old_imports true);
       (* We also add it, and the files it imports, to the list of things imported by the current ambient file, since that list is supposed to be transitive.  (The other branch appends the same thing, in the same order, after loading the file.)  TODO: Should that go in execute_command Import? *)
-      Loading.modify (fun s ->
-          { s with imports = Bwd_extra.append (Snoc (s.imports, (file, filename))) old_imports });
+      Loading.add_imports (Snoc (Emp, (file, filename)));
+      Loading.add_imports old_imports;
       (* Return its saved export namespace. *)
       trie
   | None ->
@@ -218,7 +275,7 @@ and load_file filename top =
       (* We make a name for it *)
       let file = File.make (`File filename) in
       (* Now we record it as a file that was imported by the current file. *)
-      Loading.modify (fun s -> { s with imports = Snoc (s.imports, (file, filename)) });
+      Loading.add_imports (Snoc (Emp, (file, filename)));
       (* Then we load it, in its directory and with itself added to the list of parents. *)
       let rename i = (fst (Loaded.get_file i <|> Anomaly "missing file in load_file")).file in
       let trie, imports =
@@ -228,6 +285,7 @@ and load_file filename top =
               cwd = FilePath.dirname filename;
               parents = Snoc ((Loading.get ()).parents, filename);
               imports = Emp;
+              imported = Filenames.empty;
               actions = false;
             }
         @@ fun () ->
@@ -249,11 +307,11 @@ and load_file filename top =
                 else None in
               let renderer = Option.map (PPrint.ToBuffer.pretty 1.0 (Display.columns ())) buf in
               (* Parse and execute the file and save its exported trie and global definitions *)
-              let exported, unsolved =
+              let exported, unsolved, failed =
                 execute_source ~holes_allowed:top file ?renderer (`File filename) in
+              (* We don't reformat a file that had errors, since the errors might be displayed later, referring to locations in the file as it is now. *)
               (match buf with
-              | None -> ()
-              | Some buf -> (
+              | Some buf when not failed -> (
                   (* If the reformatted version didn't change, do nothing. *)
                   let infile = open_in_bin filename in
                   let oldstr =
@@ -273,9 +331,10 @@ and load_file filename top =
                       Fun.protect ~finally:(fun () -> close_out outfile) @@ fun () ->
                       output_string outfile (Buffer.contents buf)
                       (* Ignore file errors (e.g. read-only source file) *)
-                    with Sys_error _ -> ()));
-              (* Save the compiled version, if it contains no holes (holes contain a functional value). *)
-              if unsolved = 0 then marshal file filename exported;
+                    with Sys_error _ -> ())
+              | _ -> ());
+              (* Save the compiled version, if it contains no holes (holes contain a functional value) and no errors. *)
+              if unsolved = 0 && not failed then marshal file filename exported;
               (exported, Global.find_file file, (Loading.get ()).imports, `Source) in
         (* Then we add it to the table of loaded files and (possibly) the content of top-level files. *)
         if not top then emit (File_loaded (filename, which));
@@ -283,27 +342,28 @@ and load_file filename top =
         if top then Loaded.add_to_scope trie;
         (trie, (Loading.get ()).imports) in
       (* We add the files that it imports to those of the current file, since the imports list is supposed to be transitive. *)
-      Loading.modify (fun s -> { s with imports = Bwd_extra.append s.imports imports });
+      Loading.add_imports imports;
       trie
 
 (* Load an -e string or stdin. *)
 and load_string ?init_visible title content =
   (* There is no caching and no change of state, since it can't be "required" from another file.  The caller specifies whether to use a special initial namespace. *)
   let file = File.make (`Other title) in
-  let trie, _ =
+  let trie, _, _ =
     execute_source ~holes_allowed:true ?init_visible file (`String { title = Some title; content })
   in
   (* A string is always at top-level, so we always add it to 'all'. *)
   Loaded.add_to_scope trie;
   trie
 
-(* Given a source (file or string), parse and execute all the commands in it, in a local scope that starts with either the supplied scope or a default one. *)
+(* Given a source (file or string), parse and execute all the commands in it, in a local scope that starts with either the supplied scope or a default one.  Also returns whether any of the commands failed. *)
 and execute_source ~holes_allowed ?init_visible ?renderer file (source : Asai.Range.source) =
   Origin.with_file ~holes_allowed file @@ fun () ->
   Option.iter Scope.set_visible init_visible;
   let p, src = Parser.Command.Parse.start_parse source in
+  let failed = ref false in
   Reporter.try_with
-    (fun () -> batch renderer p src `None [])
+    (fun () -> batch renderer failed p src `None [])
     ~fatal:(fun d ->
       match d.message with
       | Quit _ ->
@@ -312,11 +372,11 @@ and execute_source ~holes_allowed ?init_visible ?renderer file (source : Asai.Ra
             | `File name -> Some name
             | `String { title; _ } -> title in
           Reporter.emit (Quit src)
-      | _ -> Reporter.fatal_diagnostic d);
-  (Scope.get_export (), Global.current_unsolved_holes ())
+      | _ -> fatal_diagnostic d);
+  (Scope.get_export (), Global.current_unsolved_holes (), !failed)
 
-(* Parse, execute (if requested by Flags), and reformat (if requested by Flags) all the commands in a source. *)
-and batch renderer p src cdns ws =
+(* Parse, execute (if requested by Flags), and reformat (if requested by Flags) all the commands in a source.  If a command fails, we report its errors and go on to the next one, recording that something failed. *)
+and batch renderer failed p src cdns ws =
   match Parser.Command.Parse.final p with
   | Eof -> (
       match renderer with
@@ -324,11 +384,21 @@ and batch renderer p src cdns ws =
       | None -> ())
   | Bof ws ->
       let p, src = Parser.Command.Parse.restart_parse p src in
-      batch renderer p src `Bof ws
+      batch renderer failed p src `Bof ws
   | cmd ->
       let new_cdns = Parser.Command.condense cmd in
-      (* We discard the offset and hole information, since this is not used in interactive mode. *)
-      let _ = execute_command cmd in
+      (* Each command is a separate scope for errors, so that the errors of one command don't affect later ones.  A failed command leaves the constants it defines as errors or Failed (see Core.Command), so that later commands using them fail silently.  However, quitting stops everything. *)
+      let is_quit (d : Reporter.Code.t Asai.Diagnostic.t) =
+        match d.message with
+        | Quit _ -> true
+        | _ -> false in
+      (* The errors and other diagnostics of the command are passed on immediately, so that they are interleaved correctly with the output of commands like "echo".  If there were any errors, failing_on_errors raises a fatal error at the end, which we turn into a mortal one and record. *)
+      Reporter.mortalize
+        ~fallback:(fun () -> failed := true)
+        ~passthrough:is_quit
+        (fun () ->
+          (* We discard the offset and hole information, since this is not used in interactive mode. *)
+          ignore (Reporter.failing_on_errors ~why:"command" (fun () -> execute_command cmd)));
       let ws =
         match renderer with
         | Some render ->
@@ -343,7 +413,7 @@ and batch renderer p src cdns ws =
             wcmd
         | None -> [] in
       let p, src = Parser.Command.Parse.restart_parse p src in
-      batch renderer p src new_cdns ws
+      batch renderer failed p src new_cdns ws
 
 (* Wrapper around Parser.Command.execute that passes it the correct callbacks.  Does NOT check flags or reformat.  An uncaught "Failure" from anywhere inside a command (e.g. an internal invariant checked with "failwith") is a bug, so we convert it here into an ordinary fatal Anomaly.  This way it is reported like any other bug, and the caller -- an interactive loop, or the loading of another input file -- can carry on afterwards, rather than the exception escaping all the way out to the handler in Top.run_top and killing the whole session. *)
 and execute_command cmd =

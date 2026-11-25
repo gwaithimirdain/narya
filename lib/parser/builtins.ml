@@ -394,59 +394,83 @@ let process_abs cube ctx obs _loc =
 type (_, _, _) identity +=
   | Let : (closed, No.minus_omega_plus_one, No.nonstrict opn) identity
   | Letrec : (closed, No.minus_omega_plus_one, No.nonstrict opn) identity
+  | Letonly : (closed, No.minus_omega_plus_one, No.nonstrict opn) identity
 
 let letin : (closed, No.minus_omega_plus_one, No.nonstrict opn) notation =
   (Let, Prefixr No.minus_omega_plus_one)
 
+(* The value of a let-binding with a type, which becomes an ascription.  The type can also be a placeholder, meaning that the value must synthesize; this is the same as omitting the type in a non-modal let-binding, but a modal one has to have a type in order to write the modality. *)
+let process_let_value : type n.
+    (string option, n) Bwv.t -> observation -> observation -> n synth located =
+ fun ctx ty tm ->
+  match (ty, tm) with
+  | Term { value = Placeholder _; _ }, Term tm -> process_synth ctx tm "value of let"
+  | Term ty, Term tm ->
+      let ty = process ctx ty in
+      let tm = process ctx tm in
+      { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc }
+  | _ -> invalid "let"
+
+(* The keyword "let" that begins a let-binding, let-rec, or let-only can be superscripted by a dimension, although only a let-only allows a nontrivial one.  This splits it off an observation list, returning its whitespace, its superscript if any, and the rest of the observations. *)
+let split_let (obs : observation list) :
+    (Whitespace.t list * (string located * Whitespace.t list) option * observation list) option =
+  match obs with
+  | Token (Let, (ws, _)) :: obs | Ss_token ((Let, (ws, _)), []) :: obs -> Some (ws, None, obs)
+  | Ss_token ((Let, (ws, _)), [ sup ]) :: obs -> Some (ws, Some sup, obs)
+  | _ -> None
+
+(* Split off the "let" of an ordinary let-binding or let-rec, which can't have a superscript. *)
+let split_let_nodim (obs : observation list) : observation list option =
+  match split_let obs with
+  | Some (_, None, obs) -> Some obs
+  | Some (_, Some _, _) -> fatal (Parse_error "only a let-only can have a dimension")
+  | None -> None
+
 let process_let : type n.
     (string option, n) Bwv.t -> observation list -> Asai.Range.t option -> n check located =
  fun ctx obs loc ->
-  match obs with
-  | [
-   Token (Let, _);
-   Term x;
-   Token (Colon, _);
-   Term ty;
-   Token (Coloneq, _);
-   Term tm;
-   Token (In, _);
-   Term body;
-  ] ->
+  match split_let_nodim obs with
+  | Some
+      [
+        Term x;
+        Token (Colon, _);
+        (Term _ as ty);
+        Token (Coloneq, _);
+        (Term _ as tm);
+        Token (In, _);
+        Term body;
+      ] ->
       let x = get_var x in
-      let ty = process ctx ty in
-      let tm = process ctx tm in
+      let v = process_let_value ctx ty tm in
       let body = process (Bwv.snoc ctx x) body in
-      let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
       { value = Synth (Let (x, locate_opt None [], v, body)); loc }
-  | [ Token (Let, _); Term x; Token (Coloneq, _); Term tm; Token (In, _); Term body ] ->
+  | Some [ Term x; Token (Coloneq, _); Term tm; Token (In, _); Term body ] ->
       let x = get_var x in
       let term = process_synth ctx tm "value of let" in
       let body = process (Bwv.snoc ctx x) body in
       { value = Synth (Let (x, locate_opt None [], term, body)); loc }
-  | [
-   Token (Let, _);
-   Term x;
-   Token (Colon, _);
-   Term modality;
-   Token (Op "|", _);
-   Term ty;
-   Token (Coloneq, _);
-   Term tm;
-   Token (In, _);
-   Term body;
-  ] ->
+  | Some
+      [
+        Term x;
+        Token (Colon, _);
+        Term modality;
+        Token (Op "|", _);
+        (Term _ as ty);
+        Token (Coloneq, _);
+        (Term _ as tm);
+        Token (In, _);
+        Term body;
+      ] ->
       let x = get_var x in
-      let ty = process ctx ty in
-      let tm = process ctx tm in
+      let v = process_let_value ctx ty tm in
       let body = process (Bwv.snoc ctx x) body in
       let modality = get_modality fst modality in
-      let v : n synth located = { value = Asc (tm, ty); loc = Range.merge_opt ty.loc tm.loc } in
       { value = Synth (Let (x, modality, v, body)); loc }
   | _ -> invalid "let"
 
 let letin_tree =
   Closed_entry
-    (eop Let
+    (eop_ss Let
        (terms
           [
             (Coloneq, term In (Done_closed letin));
@@ -497,8 +521,8 @@ let rec process_letrec_terms : type c a.
   | _ -> invalid "let-rec"
 
 let process_letrec ctx obs loc =
-  match obs with
-  | Token (Let, _) :: Token (Rec, _) :: obs ->
+  match split_let_nodim obs with
+  | Some (Token (Rec, _) :: obs) ->
       let (Letrec_terms (tys, Zero, tms, body)) =
         process_letrec_terms ctx (Token (And, ([], None)) :: obs) Emp N.zero in
       locate (Synth (Letrec (tys, tms, body))) loc
@@ -508,7 +532,113 @@ let rec letrec_terms () =
   term Colon
     (term Coloneq (terms [ (And, Lazy (lazy (letrec_terms ()))); (In, Done_closed letrec) ]))
 
-let letrec_tree = Closed_entry (eop Let (op Rec (letrec_terms ())))
+let letrec_tree = Closed_entry (eop_ss Let (op Rec (letrec_terms ())))
+
+(* ********************
+   Let only
+ ******************** *)
+
+let letonly : (closed, No.minus_omega_plus_one, No.nonstrict opn) notation =
+  (Letonly, Prefixr No.minus_omega_plus_one)
+
+type _ letonly_terms =
+  | Letonly_terms : ('a, 'e) Raw.letonly_clauses * 'e synth located -> 'a letonly_terms
+
+(* The types of a let-only, and its body, are processed in the context of only the variables it binds, while its bound terms are processed in the ambient context.  We accumulate the clauses in a backwards list, along with the names of the variables bound so far.  Each clause, whether ordinary or a lock or key clause, is preceded by "only" or "and", which we don't distinguish (the processor below replaces the initial "only" by "and"). *)
+let rec process_letonly_terms : type a e.
+    (string option, a) Bwv.t ->
+    (a, e) Raw.letonly_clauses ->
+    (string option, e) Bwv.t ->
+    observation list ->
+    a letonly_terms =
+ fun ctx clauses bodyctx obs ->
+  match obs with
+  | Token (And, _) :: Term x :: Token (Colon, _) :: rest ->
+      let x = get_var x in
+      let modality, ty, tm, rest =
+        match rest with
+        | Term modality :: Token (Op "|", _) :: Term ty :: Token (Coloneq, _) :: Term tm :: rest ->
+            (get_modality fst modality, process bodyctx ty, process ctx tm, rest)
+        | Term ty :: Token (Coloneq, _) :: Term tm :: rest ->
+            (locate_opt None [], process bodyctx ty, process ctx tm, rest)
+        | _ -> invalid "let-only" in
+      process_letonly_terms ctx (Clause (clauses, x, modality, ty, tm)) (Snoc (bodyctx, x)) rest
+  | Token (And, _) :: Token (Lock, _) :: Term modality :: rest ->
+      process_letonly_terms ctx (Lock_clause (clauses, get_modality fst modality)) bodyctx rest
+  | Token (And, _) :: Token (Keyword_key, _) :: Term { value = Ident (key, _); loc } :: rest ->
+      process_letonly_terms ctx (Key_clause (clauses, locate_opt loc key)) bodyctx rest
+  | Token (And, _) :: Token (Keyword_key, _) :: Term { loc; _ } :: _ ->
+      fatal ?loc (Parse_error "invalid key")
+  | [ Token (In, _); Term body ] ->
+      Letonly_terms (clauses, process_synth bodyctx body "body of let-only")
+  | _ -> invalid "let-only"
+
+let process_letonly ctx obs loc =
+  match split_let obs with
+  | Some (_, _, Token (Only, _) :: Token (Omitted, _) :: _) ->
+      fatal ?loc
+        (Display_only_syntax "'let only ⋯ in'. Use 'display let := definitions' to print bindings")
+  | Some (_, _, Token (Only, _) :: Term _ :: Token ((Op "," | Coloneq), _) :: _) ->
+      fatal ?loc
+        (Display_only_syntax
+           "'let only x, y ≔ ⋯ in'. Use 'display let := definitions' to print bindings")
+  | Some (_, sup, Token (Only, _) :: obs) -> (
+      let (Letonly_terms (clauses, body)) =
+        process_letonly_terms ctx No_clauses Emp (Token (And, ([], None)) :: obs) in
+      let dim =
+        match sup with
+        | None -> ""
+        | Some (dim, _) -> dim.value in
+      match dim_of_string dim with
+      | Some (Any k) -> locate (Synth (Letonly (k, clauses, body))) loc
+      | None -> fatal ?loc (Parse_error "invalid dimension for let-only"))
+  | _ -> invalid "let-only"
+
+(* Each clause is an ordinary one, a lock clause, or a key clause, and after each there can be another clause or the body. *)
+let rec letonly_rest () = terms [ (And, Lazy (lazy (letonly_terms ()))); (In, Done_closed letonly) ]
+
+and letonly_clause () =
+  {
+    empty_branch with
+    ops = eops [ (Lock, letonly_rest ()); (Keyword_key, letonly_rest ()) ];
+    term =
+      Some
+        (TokMap.singleton Colon
+           (terms [ (Coloneq, letonly_rest ()); (Op "|", term Coloneq (letonly_rest ())) ], `Noss));
+  }
+
+and letonly_terms () = Inner (letonly_clause ())
+
+(* The names of the variables bound by a let-only whose clauses are elided except for those names, "x, y ≔ ⋯". *)
+let rec letonly_names () =
+  terms
+    [
+      (Op ",", Lazy (lazy (letonly_names ()))); (Coloneq, op Omitted (op In (Done_closed letonly)));
+    ]
+
+(* The first clause can also be the omission marker "⋯", which is how a let-only is displayed with its clauses elided, or the start of a list of only the names of its variables followed by "≔ ⋯".  These are parsed only so that we can give a helpful error message about them. *)
+let letonly_first_clause () =
+  let clause = letonly_clause () in
+  Inner
+    {
+      clause with
+      ops =
+        eops
+          [
+            (Lock, letonly_rest ());
+            (Keyword_key, letonly_rest ());
+            (Omitted, op In (Done_closed letonly));
+          ];
+      term =
+        Option.map
+          (fun t ->
+            t
+            |> TokMap.add (Op ",") (Lazy (lazy (letonly_names ())), `Noss)
+            |> TokMap.add Coloneq (op Omitted (op In (Done_closed letonly)), `Noss))
+          clause.term;
+    }
+
+let letonly_tree = Closed_entry (eop_ss Let (op Only (letonly_first_clause ())))
 
 (* ****************************************
    Printing abstractions and let-bindings
@@ -523,36 +653,111 @@ let rec get_abslets heads obs =
   | [ Term vars; Token (DblMapsto, (wsmapsto, _)); Term body ] ->
       get_abslets_of_parse (Snoc (heads, `Abs (Wrap vars, DblMapsto, wsmapsto))) (Wrap body)
   (* Let-binding *)
-  | Token _ :: _ -> (
+  | (Token _ | Ss_token _) :: _ -> (
       (* First we pull off the "let", "let rec", or "and" tokens and the variable name. *)
-      let toks, x, obs =
-        match obs with
-        | Token (Let, (wslet, _)) :: Token (Rec, (wsrec, _)) :: Term x :: rest ->
-            ([ (Token.Let, wslet); (Rec, wsrec) ], Wrap x, rest)
-        | Token (Let, (wslet, _)) :: Term x :: rest -> ([ (Token.Let, wslet) ], Wrap x, rest)
-        | Token (And, (wsand, _)) :: Term x :: rest -> ([ (Token.And, wsand) ], Wrap x, rest)
+      let toks, obs =
+        match (split_let obs, obs) with
+        | Some (wslet, sup, rest), _ -> (
+            (* The "let" may have a superscript. *)
+            let plet, wslet =
+              match sup with
+              | None -> (Token.pp Let, wslet)
+              | Some (dim, wsdim) ->
+                  ( Token.pp Let
+                    ^^ pp_ws (if Display.chars () = `Unicode then `None else `Nobreak) wslet
+                    ^^ pp_superscript dim,
+                    wsdim ) in
+            match rest with
+            | Token (Rec, (wsrec, _)) :: Term x :: rest ->
+                (`Var ([ (plet, wslet); (Token.pp Rec, wsrec) ], Wrap x), rest)
+            (* For display only, the clauses of a let-only can be elided except for the names of the variables, "let only x, y ≔ ⋯ in".  The names are separated by commas, after which the line can break. *)
+            | Token (Only, (wsonly, _)) :: Term x :: (Token ((Op "," | Coloneq), _) :: _ as rest) ->
+                let rec names : type lt ls rt rs.
+                    (document * Whitespace.t list * space) Bwd.t ->
+                    (lt, ls, rt, rs) parse located ->
+                    observation list ->
+                    (document * Whitespace.t list * space) list * observation list =
+                 fun acc x rest ->
+                  let px, wx = pp_term x in
+                  match rest with
+                  | Token (Op ",", (wscomma, _)) :: Term y :: rest ->
+                      names
+                        (Snoc (acc, (px ^^ pp_ws `None wx ^^ Token.pp (Op ","), wscomma, `Break)))
+                        y rest
+                  | Token (Coloneq, (wscoloneq, _)) :: Token (Omitted, (wsomitted, _)) :: rest ->
+                      ( Bwd.to_list acc
+                        @ [
+                            (px, wx, `Nobreak);
+                            (Token.pp Coloneq, wscoloneq, `Nobreak);
+                            (Token.pp Omitted, wsomitted, `Nobreak);
+                          ],
+                        rest )
+                  | _ -> invalid "let-only" in
+                let names, rest = names Emp x rest in
+                ( `Elided ([ (plet, wslet, `Nobreak); (Token.pp Only, wsonly, `Nobreak) ] @ names),
+                  rest )
+            | Token (Only, (wsonly, _)) :: Term x :: rest ->
+                (`Var ([ (plet, wslet); (Token.pp Only, wsonly) ], Wrap x), rest)
+            (* A let-only can also start with a lock or key clause. *)
+            | Token (Only, (wsonly, _))
+              :: Token (((Lock | Keyword_key) as tok), (wstok, _))
+              :: Term arg
+              :: rest ->
+                (`Op ([ (plet, wslet); (Token.pp Only, wsonly) ], tok, wstok, Wrap arg), rest)
+            (* For display only, the clauses of a let-only can be elided entirely by an omission marker. *)
+            | Token (Only, (wsonly, _)) :: Token (Omitted, (wsomitted, _)) :: rest ->
+                ( `Elided
+                    [
+                      (plet, wslet, `Nobreak);
+                      (Token.pp Only, wsonly, `Nobreak);
+                      (Token.pp Omitted, wsomitted, `Nobreak);
+                    ],
+                  rest )
+            | Term x :: rest -> (`Var ([ (plet, wslet) ], Wrap x), rest)
+            | _ -> invalid "let")
+        | None, Token (And, (wsand, _)) :: Term x :: rest ->
+            (`Var ([ (Token.pp And, wsand) ], Wrap x), rest)
+        | ( None,
+            Token (And, (wsand, _))
+            :: Token (((Lock | Keyword_key) as tok), (wstok, _))
+            :: Term arg
+            :: rest ) -> (`Op ([ (Token.pp And, wsand) ], tok, wstok, Wrap arg), rest)
         | _ -> invalid "let" in
-      (* Then we pull off the ascribed type, possibly with a modality, if any. *)
-      let ty, obs =
-        match obs with
-        | Token (Colon, (wscolon, _))
-          :: Term modality
-          :: Token (Op "|", (wsbar, _))
-          :: Term ty
-          :: rest -> (Some (wscolon, Some (Wrap modality, wsbar), Wrap ty), rest)
-        | Token (Colon, (wscolon, _)) :: Term ty :: rest -> (Some (wscolon, None, Wrap ty), rest)
-        | _ -> (None, obs) in
-      (* Finally we pull the bound value. *)
-      match obs with
-      (* If we're at an "in", this is the end of this "let". *)
-      | [ Token (Coloneq, (wscoloneq, _)); Term tm; Token (In, (wsin, _)); Term body ] ->
-          get_abslets_of_parse
-            (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, Some wsin)))
-            (Wrap body)
-      (* Otherwise, we must be at an "and", so we continue inspecting this observation list. *)
-      | Token (Coloneq, (wscoloneq, _)) :: Term tm :: rest ->
-          get_abslets (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, None))) rest
-      | _ -> invalid "let")
+      match toks with
+      | `Elided toks -> (
+          match obs with
+          | [ Token (In, (wsin, _)); Term body ] ->
+              get_abslets_of_parse (Snoc (heads, `Elided (toks, wsin))) (Wrap body)
+          | _ -> invalid "let-only")
+      (* A lock or key clause of a let-only goes on its own line. *)
+      | `Op (toks, tok, wstok, arg) -> (
+          let toks = toks @ [ (Token.pp tok, wstok) ] in
+          match obs with
+          | [ Token (In, (wsin, _)); Term body ] ->
+              get_abslets_of_parse (Snoc (heads, `Op (toks, arg, Some wsin))) (Wrap body)
+          | _ -> get_abslets (Snoc (heads, `Op (toks, arg, None))) obs)
+      | `Var (toks, x) -> (
+          (* Then we pull off the ascribed type, possibly with a modality, if any. *)
+          let ty, obs =
+            match obs with
+            | Token (Colon, (wscolon, _))
+              :: Term modality
+              :: Token (Op "|", (wsbar, _))
+              :: Term ty
+              :: rest -> (Some (wscolon, Some (Wrap modality, wsbar), Wrap ty), rest)
+            | Token (Colon, (wscolon, _)) :: Term ty :: rest -> (Some (wscolon, None, Wrap ty), rest)
+            | _ -> (None, obs) in
+          (* Finally we pull the bound value. *)
+          match obs with
+          (* If we're at an "in", this is the end of this "let". *)
+          | [ Token (Coloneq, (wscoloneq, _)); Term tm; Token (In, (wsin, _)); Term body ] ->
+              get_abslets_of_parse
+                (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, Some wsin)))
+                (Wrap body)
+          (* Otherwise, we must be at an "and", so we continue inspecting this observation list. *)
+          | Token (Coloneq, (wscoloneq, _)) :: Term tm :: rest ->
+              get_abslets (Snoc (heads, `Let (toks, x, ty, wscoloneq, Wrap tm, None))) rest
+          | _ -> invalid "let"))
   | _ -> invalid "abstraction"
 
 (* This subroutine takes a given parsed notation and extracts its argument list, if it is either an abstraction or a let-binding, to pass back to the previous function.  *)
@@ -562,6 +767,7 @@ and get_abslets_of_parse heads (Wrap body) =
   | Notn ((Cubeabs, _), d) -> get_abslets heads (args d)
   | Notn ((Let, _), d) -> get_abslets heads (args d)
   | Notn ((Letrec, _), d) -> get_abslets heads (args d)
+  | Notn ((Letonly, _), d) -> get_abslets heads (args d)
   | _ -> (heads, Wrap body)
 
 (* Given the argument list of an abstraction or let-binding, convert all the prefixes to PPrint documents and arrange them for printing.  Specifically, we convert the heterogeneous list of data returned by get_abslets into a list of PPrint documents.  In addition, we split off the first few abstractions and also the last few, so that the first few can be the intro, and all the trailing abstractions and the body can be flowed together on one line if they fit, and retain the preceding whitespace of each trailing abstraction so we can decide later whether it should be breaking.  We also return the trailing whitespace and the body (as yet unprinted). *)
@@ -583,8 +789,32 @@ let pp_abslets obs :
             match heads with
             | Bwd.Emp -> (Snoc (introabs, (prews, head)), heads, trailabs, Some wsmapsto)
             | Snoc _ -> (introabs, heads, Snoc (trailabs, (prews, head)), Some wsmapsto))
+        | `Op (toks, Wrap arg, wsin) ->
+            let kws = concat_map (fun (tok, ws) -> tok ^^ pp_ws `Nobreak ws) toks in
+            let parg, warg = pp_term arg in
+            let pin, ws =
+              match wsin with
+              | Some wsin -> (group (pp_ws `Break warg ^^ Token.pp In), wsin)
+              | None -> (empty, warg) in
+            ( introabs,
+              Snoc
+                ( Bwd_extra.append heads
+                    (Bwd.map (fun (ws, x) -> optional (pp_ws `Break) ws ^^ x) trailabs),
+                  optional (pp_ws `Break) prews ^^ group (hang 2 (kws ^^ parg) ^^ nest 2 pin) ),
+              Emp,
+              Some ws )
+        | `Elided (toks, wsin) ->
+            (* Each break is grouped separately, so that a long list of names fills lines rather than breaking at every comma. *)
+            let kws = concat_map (fun (tok, ws, space) -> tok ^^ group (pp_ws space ws)) toks in
+            ( introabs,
+              Snoc
+                ( Bwd_extra.append heads
+                    (Bwd.map (fun (ws, x) -> optional (pp_ws `Break) ws ^^ x) trailabs),
+                  optional (pp_ws `Break) prews ^^ group (kws ^^ Token.pp In) ),
+              Emp,
+              Some wsin )
         | `Let (toks, Wrap x, ty, wscoloneq, Wrap tm, wsin) ->
-            let kws = concat_map (fun (tok, ws) -> Token.pp tok ^^ pp_ws `Nobreak ws) toks in
+            let kws = concat_map (fun (tok, ws) -> tok ^^ pp_ws `Nobreak ws) toks in
             let px, wx = pp_term x in
             (* The type of an explicitly typed let-binding is always displayed in term mode, with a wrapping break allowed before the colon. *)
             (* This code should be as parallel as possible with the printing of "def" commands. *)
@@ -770,6 +1000,16 @@ let () =
       print_term = Some pp_abslet_term;
       print_case = Some pp_abslet_case;
       is_case = (fun _ -> true);
+    };
+  make letonly
+    {
+      name = "letonly";
+      tree = letonly_tree;
+      processor = process_letonly;
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "let only"));
+      print_term = Some pp_abslet_term;
+      print_case = Some pp_abslet_case;
+      is_case = (fun _ -> true);
     }
 
 (* ********************
@@ -778,22 +1018,27 @@ let () =
 
 (* These functions inspect and process multiple-variable type declarations like "x y z : A", such as appear (in paretheses) in the domain of a Π-type. *)
 
-(* Inspect 'xs', expecting it to be a spine of valid bindable local variables or underscores, and produce a list of those variables, consing it onto the accumulator argument 'vars'. *)
+(* Inspect 'xs', expecting it to be a spine of valid bindable local variables or underscores, and produce a list of those variables with their locations, consing it onto the accumulator argument 'vars'. *)
 let rec process_var_list : type lt ls rt rs.
     (lt, ls, rt, rs) parse located ->
-    (string option * Whitespace.t list) list ->
-    (string option * Whitespace.t list) list option =
+    (string option located * Whitespace.t list) list ->
+    (string option located * Whitespace.t list) list option =
  fun { value; loc } vars ->
   match value with
-  | Ident ([ x ], w) when Lexer.valid_var x -> Some ((Some x, w) :: vars)
-  | Placeholder w -> Some ((None, w) :: vars)
-  | App { fn; arg = { value = Ident ([ x ], w); _ }; _ } when Lexer.valid_var x ->
-      process_var_list fn ((Some x, w) :: vars)
-  | App { fn; arg = { value = Placeholder w; _ }; _ } -> process_var_list fn ((None, w) :: vars)
+  | Ident ([ x ], w) when Lexer.valid_var x -> Some ((locate_opt loc (Some x), w) :: vars)
+  | Placeholder w -> Some ((locate_opt loc None, w) :: vars)
+  | App { fn; arg = { value = Ident ([ x ], w); loc }; _ } when Lexer.valid_var x ->
+      process_var_list fn ((locate_opt loc (Some x), w) :: vars)
+  | App { fn; arg = { value = Placeholder w; loc }; _ } ->
+      process_var_list fn ((locate_opt loc None, w) :: vars)
   (* There's a choice here: an invalid variable name could still be a valid term, so we could allow for instance (x.y : A) → B to be parsed as a non-dependent function type.  But that seems a recipe for confusion. *)
   | Ident (name, _) -> fatal ?loc (Invalid_variable name)
   | App { arg = { value = Ident (xs, _); loc }; _ } -> fatal ?loc (Invalid_variable xs)
   | _ -> None
+
+(* The names of a list of variables produced by process_var_list. *)
+let var_names : (string option located * Whitespace.t list) list -> string option list =
+ fun vars -> List.map (fun ((x : string option located), _) -> x.value) vars
 
 (* ****************************************
    Function types (dependent and non)
@@ -811,7 +1056,7 @@ type arrow_opt = [ `Arrow of Whitespace.t list | `Noarrow | `First ]
 type pi_dom =
   | Dep of {
       wsarrow : arrow_opt;
-      vars : (string option * Whitespace.t list) list;
+      vars : (string option located * Whitespace.t list) list;
       tok : Token.t;
       modality : string located list located;
       ty : wrapped_parse;
@@ -913,6 +1158,23 @@ let rec get_pi :
       (get_pi_args DblArrow prev_arr doms vars, ws, (locate_opt None "", []), cod)
   | _ -> invalid "arrow 2"
 
+(* The variables bound by a group of domains of a pi-type that share a type, such as "(x y : A)", as a nonempty Namevec, together with the scope extended by them. *)
+type _ pi_vars =
+  | Pi_vars : ('n, 'b Fwn.suc, 'nb) Indexed.Namevec.t * (string option, 'nb) Bwv.t -> 'n pi_vars
+
+let rec pi_vars : type n.
+    (string option, n) Bwv.t ->
+    string option located ->
+    (string option located * Whitespace.t list) list ->
+    n pi_vars =
+ fun ctx x xs ->
+  let ctx = Bwv.snoc ctx x.value in
+  match xs with
+  | [] -> Pi_vars ([ x ], ctx)
+  | (y, _) :: ys ->
+      let (Pi_vars (names, ctx)) = pi_vars ctx y ys in
+      Pi_vars (x :: names, ctx)
+
 (* Given the variables with domains and the codomain of an ordinary (not higher) pi-type, process it into a raw term. *)
 let rec process_pi : type n lt ls rt rs.
     (string option, n) Bwv.t ->
@@ -931,28 +1193,33 @@ let rec process_pi : type n lt ls rt rs.
       let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt cdom.loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (None, modality, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi ([ locate_opt None None ], modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
-              Synth (HigherPi (None, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+              Synth
+                (HigherPi
+                   ( [ locate_opt None None ],
+                     modality,
+                     locate_opt cdom.loc sdom,
+                     locate_opt cod.loc scod ));
             loc;
           }
       | `Higher, Synth _, _ ->
           fatal ?loc:cod.loc (Nonsynthesizing "codomain of higher function type")
       | `Higher, _, _ -> fatal ?loc:cdom.loc (Nonsynthesizing "domain of higher function type"))
-  | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } as data)
-    :: doms -> (
+  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc; implicit = `Explicit; _ } :: doms -> (
+      (* A pi-type binds all the variables of a group at once, so that their shared domain is processed only once, in the scope outside all of them. *)
       let cdom = process ctx dom in
-      let ctx = Bwv.snoc ctx x in
-      let cod = process_pi ctx higher (Dep { data with vars = xs } :: doms) cod in
+      let (Pi_vars (names, ctx)) = pi_vars ctx x xs in
+      let cod = process_pi ctx higher doms cod in
       let loc = Range.merge_opt loc cod.loc in
       match (higher, cdom.value, cod.value) with
-      | `Lower, _, _ -> { value = Synth (Pi (x, modality, cdom, cod)); loc }
+      | `Lower, _, _ -> { value = Synth (Pi (names, modality, cdom, cod)); loc }
       | `Higher, Synth sdom, Synth scod ->
           {
             value =
-              Synth (HigherPi (x, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
+              Synth (HigherPi (names, modality, locate_opt cdom.loc sdom, locate_opt cod.loc scod));
             loc;
           }
       | `Higher, Synth _, _ ->
@@ -964,8 +1231,26 @@ let rec process_pi : type n lt ls rt rs.
 (* One group of domains for an instantiated higher pi-type: a telescope consisting of the implicit boundary domains and ending with the (first) explicit primary domain.  The number of domains needed is not known until typechecking time (it is determined by the modality, which can't be parsed until the modes are known), so we just collect them all in a telescope; but the *grouping* into successive higher pi-types is visible at parse time, since each group consists of implicit domains followed by a single explicit one. *)
 type _ higher_dom_group =
   | Higher_dom_group :
-      ('n, 'b, 'nb) tel * (string option, 'nb) Bwv.t * pi_dom list * Asai.Range.t option
+      ('n, 'b, 'nb) tel
+      (* Other variables sharing the type of the primary domain (see Raw.InstHigherPi). *)
+      * ('nb, 'c, 'nbc) Indexed.Namevec.t
+      * (string option, 'nbc) Bwv.t
+      * pi_dom list
+      * Asai.Range.t option
       -> 'n higher_dom_group
+
+(* A possibly-empty list of variables, as a Namevec, together with the scope extended by them. *)
+type _ some_vars =
+  | Some_vars : ('n, 'c, 'nc) Indexed.Namevec.t * (string option, 'nc) Bwv.t -> 'n some_vars
+
+let rec some_vars : type n.
+    (string option, n) Bwv.t -> (string option located * Whitespace.t list) list -> n some_vars =
+ fun ctx xs ->
+  match xs with
+  | [] -> Some_vars ([], ctx)
+  | (x, _) :: xs ->
+      let (Some_vars (names, ctx)) = some_vars (Bwv.snoc ctx x.value) xs in
+      Some_vars (x :: names, ctx)
 
 let rec process_higher_dom_group : type n.
     (string option, n) Bwv.t -> pi_dom list -> Asai.Range.t option -> n higher_dom_group =
@@ -975,24 +1260,37 @@ let rec process_higher_dom_group : type n.
       fatal
         (Unexpected_implicitness
            (`Implicit, "domain", "the primary domain of a higher function-type must be explicit"))
-  | Dep ({ vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } as data) :: rest
-    -> (
+  | Dep { vars = (x, _) :: xs; modality; ty = Wrap dom; loc = xloc; implicit; _ } :: rest -> (
+      (* The other variables of a group share its type, which we process only once, in the scope outside all of them. *)
       let cdom = process ctx dom in
-      let newdoms =
-        match xs with
-        | [] -> rest
-        | _ :: _ -> Dep { data with vars = xs } :: rest in
       let loc =
         match loc with
         | Some loc -> Some loc
         | None -> xloc in
       match implicit with
-      | `Explicit -> Higher_dom_group (Ext (x, modality, cdom, Emp), Bwv.snoc ctx x, newdoms, loc)
+      | `Explicit ->
+          (* The primary domain ends the group, so any other variables sharing its type become further pi-types with only a primary domain. *)
+          let (Some_vars (names, newctx)) = some_vars (Bwv.snoc ctx x.value) xs in
+          Higher_dom_group (Ext (x.value, modality, cdom, Emp), names, newctx, rest, loc)
       | `Implicit ->
-          let (Higher_dom_group (tele, newctx, rest2, loc2)) =
-            process_higher_dom_group (Bwv.snoc ctx x) newdoms loc in
-          Higher_dom_group (Ext (x, modality, cdom, tele), newctx, rest2, loc2))
+          let (Higher_dom_group (tele, names, newctx, rest2, loc2)) =
+            process_higher_dom_same (Bwv.snoc ctx x.value) xs rest loc in
+          Higher_dom_group (Ext (x.value, modality, cdom, tele), names, newctx, rest2, loc2))
   | _ -> invalid "higher pi"
+
+and process_higher_dom_same : type n.
+    (string option, n) Bwv.t ->
+    (string option located * Whitespace.t list) list ->
+    pi_dom list ->
+    Asai.Range.t option ->
+    n higher_dom_group =
+ fun ctx xs doms loc ->
+  match xs with
+  | [] -> process_higher_dom_group ctx doms loc
+  | (x, _) :: xs ->
+      let (Higher_dom_group (tele, names, newctx, rest, loc)) =
+        process_higher_dom_same (Bwv.snoc ctx x.value) xs doms loc in
+      Higher_dom_group (Same (x.value, tele), names, newctx, rest, loc)
 
 let rec process_inst_higher_pi : type n lt ls rt rs m.
     (string option, n) Bwv.t ->
@@ -1004,10 +1302,11 @@ let rec process_inst_higher_pi : type n lt ls rt rs m.
   match doms with
   | [] -> process ctx cod
   | _ :: _ ->
-      let (Higher_dom_group (tele, newctx, doms, loc)) = process_higher_dom_group ctx doms None in
+      let (Higher_dom_group (tele, names, newctx, doms, loc)) =
+        process_higher_dom_group ctx doms None in
       let cod = process_inst_higher_pi newctx dim doms cod in
       let loc = Range.merge_opt loc cod.loc in
-      { value = Synth (InstHigherPi (dim, tele, cod)); loc }
+      { value = Synth (InstHigherPi (dim, tele, names, cod)); loc }
 
 (* Pretty-print the domains of a right-associated iterated function-type that may mix dependent and non-dependent arguments.  Each argument is preceded by an arrow if its wsarrow is given; pi_doms ensures these go in the right place.  If linebreaked, the eventual codomain with its arrow goes on a line by itself with hanging indent, and then the domains are flowed with their own hanging indent.  Arrows never come at the beginnings of lines.  *)
 
@@ -1035,11 +1334,11 @@ let pp_doms : pi_dom list -> document * Whitespace.t list =
               } ->
               let pvars, wvars =
                 List.fold_left
-                  (fun (acc, prews) (x, wx) ->
+                  (fun (acc, prews) ((x : string option located), wx) ->
                     ( acc
                       ^^ group
                            (optional (pp_ws `Break) prews
-                           ^^ Option.fold ~some:utf8string ~none:(Token.pp Underscore) x),
+                           ^^ Option.fold ~some:utf8string ~none:(Token.pp Underscore) x.value),
                       Some wx ))
                   (empty, None) vars in
               let pty, wty = pp_term ty in
@@ -1212,7 +1511,7 @@ let rec process_tuple : type n.
   (* Comma ending the previous field *)
   | Token (Op ",", _) :: obs -> process_tuple flds found ctx obs loc
   (* Labeled field *)
-  | Term { value = Notn ((Coloneq, _), n); loc } :: obs -> (
+  | Term { value = Notn ((Coloneq, _), n); _ } :: obs -> (
       match args n with
       | [ Term { value = Ident ([ fld ], _); loc = xloc }; Token (Coloneq, _); Term tm ]
         when Lexer.valid_field fld ->
@@ -1307,7 +1606,9 @@ let pp_tuple_case (triv : [ `Trivial | `Nontrivial of Whitespace.t list ]) obs =
           | `Trivial -> (Token.pp LParen, group (align (pp_ws `None wslparen ^^ doc)), ws)
           | `Nontrivial _ -> (Token.pp LParen, group (nest 2 (pp_ws `Cut wslparen ^^ doc)), ws)))
   | `Parens (wslparen, Wrap body, wsrparen) ->
-      let ibody, pbody, wbody = pp_case (`Nontrivial wslparen) body in
+      (* If the body isn't a case tree, we print it as a "trivial" one, since otherwise it could have a break between the opening parenthesis and the beginning of the body, leaving the parenthesis alone on a line. *)
+      let triv = if is_case body then `Nontrivial wslparen else `Trivial in
+      let ibody, pbody, wbody = pp_case triv body in
       ( Token.pp LParen ^^ pp_ws `None wslparen ^^ ibody,
         pbody ^^ pp_ws `None wbody ^^ Token.pp RParen,
         wsrparen )
@@ -1359,6 +1660,133 @@ let () =
       print_case = None;
       is_case = (fun _ -> false);
     }
+
+(* ********************
+   Attributes
+   ******************** *)
+
+(* Several "case" notations (sig, codata, data) admit attributes written #(...) after the keyword.  Each attribute group contains either a multiword string attribute like #(transparent labeled), or a valued attribute like #(variables ≔ x,y,z).  This tree combinator allows any number of attribute groups before continuing with the given branch. *)
+let rec attributes rest () =
+  let r = rest () in
+  {
+    r with
+    ops =
+      TokMap.add (Op "#")
+        ( op LParen
+            (terms
+               [
+                 (RParen, Lazy (lazy (Inner (attributes rest ()))));
+                 (Coloneq, Lazy (lazy (attribute_values rest ())));
+                 (Pluseq, Lazy (lazy (attribute_values rest ())));
+               ]),
+          `Noss )
+        r.ops;
+  }
+
+and attribute_values rest () =
+  terms
+    [
+      (Op ",", Lazy (lazy (attribute_values rest ())));
+      (RParen, Lazy (lazy (Inner (attributes rest ()))));
+    ]
+
+(* Extract the attribute groups from the beginning of an observation list, as a list of multiword names with optional value lists.  A valued attribute records whether its values were given with ≔ (replacing any global defaults, [`Replace]) or with ⩲ (prepended to the global defaults, [`Prepend]). *)
+let rec get_attributes :
+    observation list ->
+    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list
+    * observation list =
+ fun obs ->
+  match obs with
+  | Token (Op "#", _) :: Token (LParen, _) :: Term attr :: rest -> (
+      let strs = fst (Postprocess.strings_of_term attr.value) in
+      match rest with
+      | Token (RParen, _) :: rest ->
+          let attrs, rest = get_attributes rest in
+          ((strs, None, attr.loc) :: attrs, rest)
+      | Token (((Coloneq | Pluseq) as sep), _) :: rest ->
+          let mode = if sep = Pluseq then `Prepend else `Replace in
+          let vals, rest = get_attribute_values rest in
+          let attrs, rest = get_attributes rest in
+          ((strs, Some (vals, mode), attr.loc) :: attrs, rest)
+      | _ -> invalid "attribute")
+  | _ -> ([], obs)
+
+and get_attribute_values : observation list -> wrapped_parse list * observation list =
+ fun obs ->
+  match obs with
+  | Term v :: Token (Op ",", _) :: rest ->
+      let vals, rest = get_attribute_values rest in
+      (Wrap v :: vals, rest)
+  | Term v :: Token (RParen, _) :: rest -> ([ Wrap v ], rest)
+  | _ -> invalid "attribute"
+
+(* Allow attribute groups at the beginning of a tree. *)
+let rec with_attributes : type t s. (t, s) tree -> (t, s) tree = function
+  | Inner b -> Inner (attributes (fun () -> b) ())
+  | Lazy t -> Lazy (lazy (with_attributes (Lazy.force t)))
+  | _ -> fatal (Anomaly "with_attributes requires an Inner tree")
+
+(* When the unparser displays the definition of a metavariable, it marks the outermost case-tree-only constructs (such as matches, comatches, or canonical types) with the attribute #(gen), since if the user copies and re-enters it, it will be generative and won't be equal to the original.  The only effect of this attribute when parsing is a warning. *)
+let process_gen_attribute (strs : string list) vals loc : bool =
+  match (strs, vals) with
+  | [ "gen" ], None ->
+      emit ?loc Generative_copy;
+      true
+  | _ -> false
+
+(* Strip and process the attributes following the initial token of the observations of a case tree construct that has no attributes other than 'gen'. *)
+let strip_gen_attributes : observation list -> observation list = function
+  | first :: obs ->
+      let attrs, obs = get_attributes obs in
+      List.iter
+        (fun (strs, vals, loc) ->
+          if not (process_gen_attribute strs vals loc) then fatal ?loc Unrecognized_attribute)
+        attrs;
+      first :: obs
+  | [] -> []
+
+(* Print the attribute groups at the beginning of an observation list, appended to the given document with the given whitespace pending before them.  Returns the extended document, the pending whitespace after it, and the remaining observations. *)
+let rec pp_attributes (accum : document) (prews : Whitespace.t list) (obs : observation list) :
+    document * Whitespace.t list * observation list =
+  match obs with
+  | Token (Op "#", (wshash, _)) :: Token (LParen, (wslattr, _)) :: Term attr :: rest -> (
+      let pattr, wattr = pp_term attr in
+      let start =
+        Token.pp (Op "#") ^^ pp_ws `None wshash ^^ Token.pp LParen ^^ pp_ws `None wslattr ^^ pattr
+      in
+      match rest with
+      | Token (RParen, (wsrattr, _)) :: rest ->
+          pp_attributes
+            (accum ^^ group (pp_ws `Break prews ^^ start ^^ pp_ws `None wattr ^^ Token.pp RParen))
+            wsrattr rest
+      | Token (((Coloneq | Pluseq) as sep), (wssep, _)) :: rest ->
+          let vals, wsrattr, rest = pp_attribute_values empty rest in
+          pp_attributes
+            (accum
+            ^^ group
+                 (pp_ws `Break prews
+                 ^^ start
+                 ^^ pp_ws `Nobreak wattr
+                 ^^ Token.pp sep
+                 ^^ pp_ws `Nobreak wssep
+                 ^^ vals
+                 ^^ Token.pp RParen))
+            wsrattr rest
+      | _ -> invalid "attribute")
+  | _ -> (accum, prews, obs)
+
+and pp_attribute_values (accum : document) (obs : observation list) :
+    document * Whitespace.t list * observation list =
+  match obs with
+  | Term v :: Token (Op ",", (wscomma, _)) :: rest ->
+      let pv, wv = pp_term v in
+      pp_attribute_values
+        (accum ^^ pv ^^ pp_ws `None wv ^^ Token.pp (Op ",") ^^ pp_ws `Nobreak wscomma)
+        rest
+  | Term v :: Token (RParen, (wsrparen, _)) :: rest ->
+      let pv, wv = pp_term v in
+      (accum ^^ pv ^^ pp_ws `None wv, wsrparen, rest)
+  | _ -> invalid "attribute"
 
 (* ********************
    Matches
@@ -1414,17 +1842,19 @@ let rec discriminees () =
 
 type pattern = Matchpattern.t
 
-(* For parsing matches, we use a special kind of scope that labels all the variables with integers (De Bruijn levels) in addition to possible strings. *)
+(* For parsing matches, we use a special kind of scope that labels all the variables with integers (De Bruijn levels) in addition to possible strings.  Only the variables added while processing the match can be named or renamed, but all of them can be looked up by level, including those in the base scope outside the match. *)
 module Matchscope : sig
   type 'a t
 
   val lookup_num : int -> 'a t -> 'a N.index option
+  val num_of_index : 'a t -> 'a N.index -> int
   val ext : 'a t -> string option -> 'a N.suc t
   val last_num : 'a t -> int
   val exts : ('a, 'm, 'am) Raw.Indexed.bplus -> 'a t -> 'am t * (int, 'm) Vec.t
   val make : (string option, 'a) Bwv.t -> 'a t
   val names : 'a t -> (string option, 'a) Bwv.t
   val give_name : int -> string option -> 'a t -> 'a t
+  val renameable : int -> 'a t -> bool
 end = struct
   type _ t =
     | Matchscope :
@@ -1433,7 +1863,8 @@ end = struct
 
   let rec lookup_num : type a. int -> a t -> a N.index option =
    fun i -> function
-    | Matchscope (_, Zero, Emp, _) -> None
+    (* At this point, the counter is the length of the base scope. *)
+    | Matchscope (base, Zero, Emp, n) -> N.index_of_int (Bwv.length base) (n - 1 - i)
     | Matchscope (base, Suc ab, Snoc (scope, (_, j)), n) -> (
         if i = j then Some Top
         else
@@ -1450,6 +1881,7 @@ end = struct
         | None -> ())
     | None -> ()
 
+  (* Extend by a named variable *)
   let ext : type a. a t -> string option -> a N.suc t =
    fun (Matchscope (base, ab, scope, i)) name ->
     check_duplicates scope name;
@@ -1457,6 +1889,11 @@ end = struct
 
   let last_num : type a. a t -> int = fun (Matchscope (_, _, _, i)) -> i - 1
 
+  (* Since the counter is the total length of the scope, the level of a variable is computed from its index by counting down from there. *)
+  let num_of_index : type a. a t -> a N.index -> int =
+   fun (Matchscope (_, _, _, n)) k -> n - 1 - N.int_of_index k
+
+  (* Extend by a list of unnamed variables *)
   let rec exts : type a m am. (a, m, am) Raw.Indexed.bplus -> a t -> am t * (int, m) Vec.t =
    fun am scope ->
     match (am, scope) with
@@ -1465,11 +1902,18 @@ end = struct
         let newscope, levels = exts am (Matchscope (base, Suc ab, Snoc (scope, (None, i)), i + 1)) in
         (newscope, i :: levels)
 
-  let make : type a. (string option, a) Bwv.t -> a t = fun base -> Matchscope (base, Zero, Emp, 0)
+  let make : type a. (string option, a) Bwv.t -> a t =
+   fun base -> Matchscope (base, Zero, Emp, N.to_int (Bwv.length base))
 
   let names : type a. a t -> (string option, a) Bwv.t =
    fun (Matchscope (base, ab, scope, _)) -> Bwv.bappend ab base (Bwv.map fst scope)
 
+  (* Whether a variable was added while processing the match and is still unnamed, so that it can be given a name. *)
+  let renameable : type a. int -> a t -> bool =
+   fun i (Matchscope (_, _, scope, _)) ->
+    Option.is_some (Bwv.find_opt (fun (y, j) -> i = j && Option.is_none y) scope)
+
+  (* Give a name to a previously added unnamed variable *)
   let give_name : type a. int -> string option -> a t -> a t =
    fun i x (Matchscope (base, ab, scope, n)) ->
     check_duplicates scope x;
@@ -1494,10 +1938,10 @@ type ('a, 'n) branch =
   * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
   * wrapped_parse
 
-(* An ('a, 'm, 'n) cbranch is a branch, with scope of 'a variables, that starts with a constructor (unspecified) having 'm arguments and proceeds with 'n other patterns.  *)
+(* An ('a, 'm, 'n) cbranch is a branch, with scope of 'a variables, that starts with a constructor (unspecified) having 'm arguments and proceeds with 'n other patterns.  The arguments of the constructor, unlike the other patterns, can carry explicit boundary variables.  *)
 type ('a, 'm, 'n) cbranch =
   'a Matchscope.t
-  * (pattern, 'm) Vec.t
+  * (Matchpattern.arg, 'm) Vec.t
   * (pattern, 'n) Vec.t
   * [ `Normal of Asai.Range.t option | `Cube of bool ref located list ]
   * wrapped_parse
@@ -1506,10 +1950,20 @@ type ('a, 'm, 'n) cbranch =
 type (_, _) cbranches =
   | CBranches : Constr.t located * ('a, 'm, 'n) cbranch Bwd.t -> ('a, 'n) cbranches
 
-let process_ix : type a. a Matchscope.t -> int -> a synth located =
- fun ctx i ->
-  match Matchscope.lookup_num i ctx with
-  | Some k -> unlocated (Raw.Var (k, None))
+(* A discriminee of a match that is already a variable in the match scope, identified by its level (see Matchscope), possibly with a face.  This includes the pattern variables, which become discriminees for deep matching, and also the later discriminees of a match with several of them, which we process only once (see bind_discriminees).  It is "generated" if it is a variable let-bound by the parser to a discriminee that is not a variable, so that matching against it is explicitly non-dependent.  It also remembers the window modality of the discriminee, if any, which is also the modality with which a generated variable is let-bound. *)
+type disc_var = {
+  num : int;
+  face : any_sface option;
+  generated : bool;
+  window : string located list located option;
+}
+
+let disc_var num = { num; face = None; generated = false; window = None }
+
+let process_ix : type a. a Matchscope.t -> disc_var -> a synth located =
+ fun ctx { num; face; generated = _; window = _ } ->
+  match Matchscope.lookup_num num ctx with
+  | Some k -> unlocated (Raw.Var (k, face))
   | None -> fatal (Anomaly "invalid parse-level in processing match")
 
 (* A discriminee of a match, along with an optional window modality with which to lock the discriminee.  A window modality is written by ascribing the discriminee with a modality and a placeholder type, as in "match (x :m| _) [...". *)
@@ -1544,7 +1998,7 @@ let get_discriminee_window (w : wrapped_parse) : discriminee located =
 
 let process_obs_or_ix : type a.
     a Matchscope.t ->
-    (discriminee located, int) Either.t ->
+    (discriminee located, disc_var) Either.t ->
     a synth located * string located list located option =
  fun ctx -> function
   | Left { value = { tm = Wrap x; window; ty = None }; loc = _ } ->
@@ -1552,19 +2006,110 @@ let process_obs_or_ix : type a.
   | Left { value = { tm = Wrap x; window; ty = Some (Wrap ty) }; loc } ->
       let ctx = Matchscope.names ctx in
       (locate (Raw.Asc (process ctx x, process ctx ty)) loc, window)
-  | Right i -> (
-      match Matchscope.lookup_num i ctx with
-      | Some k -> (unlocated (Raw.Var (k, None)), None)
-      | None -> fatal (Anomaly "invalid parse-level in processing match"))
+  | Right v -> (process_ix ctx v, v.window)
+
+(* The name that a pattern gives to the variable it matches: only a variable pattern names it, while a constructor pattern (which will be matched against further) leaves it anonymous. *)
+let name_of_pattern : pattern -> string option = function
+  | Var name -> name.value
+  | Constr _ -> None
+
+type (_, _) has_patternvars =
+  | Patternvars : ('a, 'm, 'am) Raw.Indexed.Patternvars.t -> ('a, 'm) has_patternvars
+
+let pattern_loc : pattern -> Asai.Range.t option = function
+  | Var name -> name.loc
+  | Constr (c, _) -> c.loc
+
+(* Assemble the pattern variables bound by the arguments of a constructor pattern.  An argument with no explicit boundary binds a single (cube) variable, while one with an explicit boundary binds one variable for each face, the last being the top face, which is the argument pattern itself. *)
+let rec patternvars_of_args : type a m. (Matchpattern.arg, m) Vec.t -> (a, m) has_patternvars =
+ fun args ->
+  match args with
+  | [] -> Patternvars []
+  | { boundary = []; pat } :: args ->
+      let (Patternvars xs) = patternvars_of_args args in
+      Patternvars (Cube (name_of_pattern pat) :: xs)
+  | { boundary = _ :: _ as boundary; pat } :: args ->
+      let (Wrap pats) = Vec.of_list (boundary @ [ pat ]) in
+      let (Bplus ac) = Raw.Indexed.bplus (Vec.length pats) in
+      let (Patternvars xs) = patternvars_of_args args in
+      Patternvars
+        (Boundary
+           (Indexed.Namevec.of_vec ac
+              (Vec.map (fun p -> locate_opt (pattern_loc p) (name_of_pattern p)) pats))
+        :: xs)
+
+(* The patterns to be matched against the variables bound by the arguments of a constructor pattern, in each of 'k branches for that constructor: one for each variable, i.e. a single pattern for a cube variable, and one for each face of an explicit boundary.  Thus they all have the same length, namely the number of variables bound, which is recorded by the bplus.  The shape of the variables is given by a Patternvars (computed from the first branch), and a branch whose boundaries don't match that shape is an error, since all the branches for a single constructor must extend the scope by the same number of variables. *)
+type (_, _, _) flat_patterns =
+  | Flat :
+      ('a, 'b, 'am) Raw.Indexed.bplus * ((pattern, 'b) Vec.t, 'k) Vec.t
+      -> ('a, 'am, 'k) flat_patterns
+
+(* Prepend the patterns for the faces of one explicit boundary, given in each branch as a list of boundary patterns followed by the top one, to the flattened patterns of the remaining arguments. *)
+let rec flatten_boundary : type a c ac b am k.
+    (a, c, ac) Raw.Indexed.Namevec.t ->
+    (pattern list * pattern, k) Vec.t ->
+    (ac, b, am) Raw.Indexed.bplus ->
+    ((pattern, b) Vec.t, k) Vec.t ->
+    (a, am, k) flat_patterns =
+ fun ns heads ab rest ->
+  match ns with
+  | [] -> fatal (Anomaly "empty boundary of match pattern variable")
+  | [ _ ] ->
+      Flat
+        ( Suc ab,
+          Vec.mmap
+            (fun [ p; ps ] ->
+              match p with
+              | [], pat -> Vec.cons pat ps
+              | x :: _, _ -> fatal ?loc:(pattern_loc x) Inconsistent_patterns)
+            [ heads; rest ] )
+  | _ :: (_ :: _ as ns) ->
+      let [ fsts; snds ] =
+        Vec.pmap
+          (fun [ hd ] ->
+            match hd with
+            | [], pat -> fatal ?loc:(pattern_loc pat) Inconsistent_patterns
+            | x :: bdry, pat -> [ x; (bdry, pat) ])
+          [ heads ] (Cons (Cons Nil)) in
+      let (Flat (ab, rest)) = flatten_boundary ns snds ab rest in
+      Flat (Suc ab, Vec.mmap (fun [ p; ps ] -> Vec.cons p ps) [ fsts; rest ])
+
+let rec flatten_args : type a m am k.
+    (a, m, am) Raw.Indexed.Patternvars.t ->
+    ((Matchpattern.arg, m) Vec.t, k) Vec.t ->
+    (a, am, k) flat_patterns =
+ fun xs argss ->
+  match xs with
+  | [] -> Flat (Zero, Vec.map (fun _ -> Vec.[]) argss)
+  | Cube _ :: xs ->
+      let [ heads; tails ] =
+        Vec.pmap
+          (fun [ (args : (Matchpattern.arg, m) Vec.t) ] ->
+            match args with
+            | { boundary = []; pat } :: tail -> [ pat; tail ]
+            | { boundary = x :: _; pat = _ } :: _ ->
+                fatal ?loc:(pattern_loc x) Inconsistent_patterns)
+          [ argss ] (Cons (Cons Nil)) in
+      let (Flat (ab, rest)) = flatten_args xs tails in
+      Flat (Suc ab, Vec.mmap (fun [ p; ps ] -> Vec.cons p ps) [ heads; rest ])
+  | Boundary ns :: xs ->
+      let [ heads; tails ] =
+        Vec.pmap
+          (fun [ (args : (Matchpattern.arg, m) Vec.t) ] ->
+            let (({ boundary; pat } : Matchpattern.arg) :: tail) = args in
+            [ (boundary, pat); tail ])
+          [ argss ] (Cons (Cons Nil)) in
+      let (Flat (ab, rest)) = flatten_args xs tails in
+      flatten_boundary ns heads ab rest
 
 (* Given a scope of 'a variables, a vector of 'n not-yet-processed discriminees or previous match variables, and a list of branches with 'n patterns each, compile them into a nested match.  The scope given as an argument to this function is used only for the discriminees; it is the original scope extended by unnamed variables (since the discriminees can't actually depend on the pattern variables).  The scopes used for the branches, which also include pattern variables, are stored in the branch data structures. *)
 let rec process_branches : type a n.
     a Matchscope.t ->
-    ((discriminee located, int) Either.t, n) Vec.t ->
-    int Bwd.t ->
+    ((discriminee located, disc_var) Either.t, n) Vec.t ->
+    disc_var Bwd.t ->
     (a, n) branch list ->
     Asai.Range.t option ->
-    [ `Implicit | `Explicit of wrapped_parse | `Nondep of int located ] ->
+    [ `Implicit | `Explicit of wrapped_parse | `Nondep of int located option ] ->
     a check located * bool ref located list =
  fun xctx xs seen branches loc sort ->
   match branches with
@@ -1596,7 +2141,7 @@ let rec process_branches : type a n.
   (* If that one remaining branch is a refutation, we refute all the "seen" terms or variables. *)
   | [ (_, [], _, Wrap { value = Notn ((Dot, _), _); loc }) ] ->
       let [] = xs in
-      let tms = Bwd_extra.to_list_map (fun i -> (process_ix xctx i, None)) seen in
+      let tms = Bwd_extra.to_list_map (fun i -> process_obs_or_ix xctx (Right i)) seen in
       (locate (Refute (tms, `Explicit)) loc, [])
   (* Otherwise, the result is just the body of that branch. *)
   | [ (bodyctx, [], cube, Wrap body) ] ->
@@ -1610,42 +2155,43 @@ let rec process_branches : type a n.
   | (xctx, Var name :: _, _, _) :: _ as branches -> (
       (* The variable is assigned to the value of the first discriminee. *)
       let (x :: xs) = xs in
+      (* In general, we have to let-bind it to the discriminee term, adding it as a new variable to the scope.  A discriminee with a window modality is let-bound modally, so that it is synthesized in the context locked by the window, as it would be if it were matched against. *)
+      let let_bind ?window stm =
+        let branches =
+          List.map
+            (function
+              | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
+                  (Matchscope.ext bodyctx y.value, patterns, cube, body)
+              | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
+            branches in
+        Reporter.try_with
+          (fun () ->
+            let xctx = Matchscope.ext xctx None in
+            let seen = Snoc (seen, { (disc_var (Matchscope.last_num xctx)) with window }) in
+            let mtch, any_constrs = process_branches xctx xs seen branches loc sort in
+            let modality = Option.value window ~default:(locate_opt None []) in
+            (locate (Synth (Let (name.value, modality, stm, mtch))) loc, any_constrs))
+          ~fatal:(fun d ->
+            match d.message with
+            | No_remaining_patterns -> fatal ?loc:name.loc Overlapping_patterns
+            | _ -> fatal_diagnostic d) in
       match x with
-      | Right i ->
-          (* If that discriminee is a pattern variable that was introduced earlier, then we just alias the current variable name to it. *)
+      | Right ({ face = None; _ } as v) when Matchscope.renameable v.num xctx ->
+          (* If that discriminee is an unnamed variable that was introduced earlier, such as a pattern variable, then we just alias the current variable name to it. *)
           let branches =
             List.map
               (function
                 | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
-                    (Matchscope.give_name i y.value bodyctx, patterns, cube, body)
+                    (Matchscope.give_name v.num y.value bodyctx, patterns, cube, body)
                 | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
               branches in
-          let seen = Snoc (seen, i) in
+          let seen = Snoc (seen, v) in
           process_branches xctx xs seen branches loc sort
-      | Left { value = { window = Some _; _ }; loc } ->
-          fatal ?loc
-            (Parse_error
-               "window modality requires the discriminee to be matched against a constructor pattern")
+      | Right v -> let_bind ?window:v.window (process_ix xctx v)
+      | Left { value = { window = Some window; _ }; _ } as x ->
+          let_bind ~window (fst (process_obs_or_ix xctx x))
       | Left { value = { tm = Wrap tm; window = None; ty = _ }; loc = _ } ->
-          (* Otherwise, we have to let-bind it to the discriminee term, adding it as a new variable to the scope. *)
-          let branches =
-            List.map
-              (function
-                | bodyctx, (Var y :: patterns : (pattern, n) Vec.t), cube, body ->
-                    (Matchscope.ext bodyctx y.value, patterns, cube, body)
-                | _, Constr _ :: _, _, _ -> fatal Overlapping_patterns)
-              branches in
-          let stm = process_synth (Matchscope.names xctx) tm "discriminee of match" in
-          Reporter.try_with
-            (fun () ->
-              let xctx = Matchscope.ext xctx None in
-              let seen = Snoc (seen, Matchscope.last_num xctx) in
-              let mtch, any_constrs = process_branches xctx xs seen branches loc sort in
-              (locate (Synth (Let (name.value, locate_opt None [], stm, mtch))) loc, any_constrs))
-            ~fatal:(fun d ->
-              match d.message with
-              | No_remaining_patterns -> fatal ?loc:name.loc Overlapping_patterns
-              | _ -> fatal_diagnostic d))
+          let_bind (process_synth (Matchscope.names xctx) tm "discriminee of match"))
   (* If the first pattern of the first branch is a constructor, the same must be true of all the other branches, and we can sort them by constructor.  We require that each constructor always appear with the same number of arguments. *)
   | (xctx, Constr _ :: _, _, _) :: _ as branches ->
       let cbranches =
@@ -1672,33 +2218,34 @@ let rec process_branches : type a n.
             match Bwd.to_list brs with
             | [] -> fatal (Anomaly "empty list of branches for constructor")
             | (_, pats, _, cube, _) :: _ as brs ->
-                let m = Vec.length pats in
-                let (Bplus am) = Raw.Indexed.bplus m in
-                let names =
-                  Indexed.Namevec.of_vec am
-                    (Vec.mmap
-                       (function
-                         (* Anywhere that the first pattern for this constructor has a name, we take it. *)
-                         | [ Matchpattern.Var name ] -> name.value
-                         | [ _ ] -> None)
-                       [ pats ]) in
-                let (Plus mn) = Fwn.plus m in
-                let newxctx, newnums = Matchscope.exts am xctx in
-                let newxs = Vec.append mn (Vec.mmap (fun [ n ] -> Either.Right n) [ newnums ]) xs in
+                (* The pattern variables of this constructor, for all of its direct arguments, including explicit boundaries if any (grouped with their primary argument).  This doesn't incorporate yet which of these arguments may be further deep patterns, those are just marked here as unnamed.  The names, if any, are taken from the first branch for this constructor; the other branches must bind the same number of variables with the same explicitness of boundaries, but can name them differently in their own scopes.  Every variable, including each face of an explicit boundary, is a new discriminee to be matched against the corresponding pattern; so like an ordinary discriminee it is added to the scope anonymously, and named by process_branches if its pattern is a variable. *)
+                let (Patternvars names) = patternvars_of_args pats in
+                let (Wrap brs) = Vec.of_list brs in
+                (* Now we pass through all the branches and flatten their patterns into a list of patterns, one for each pattern variable, with explicit boundaries interspersed with primary arguments.  Which of them are primary or boundaries is remembered by "names". *)
+                let (Flat (ab, newpats)) =
+                  flatten_args names (Vec.map (fun (_, cpats, _, _, _) -> cpats) brs) in
+                let (Plus bn) = Fwn.plus (Raw.Indexed.bplus_right ab) in
+                (* We add all the variables to the ambient scope (the one used for the discriminees) as unnamed.  This is fine because none of the names bound by the patterns are visible to the discriminees. *)
+                let newxctx, newnums = Matchscope.exts ab xctx in
+                let newxs =
+                  Vec.append bn (Vec.map (fun n -> Either.Right (disc_var n)) newnums) xs in
+                (* Now we add all those patterns and variables to each branch.  These are also added as unnamed for now although they may have names in each branch; we add those names with [give_name] when we encounter them as patterns in the [Var] case above. *)
                 let newbrs =
-                  List.map
-                    (fun (bodyctx, (cpats : (pattern, m) Vec.t), pats, cube, body) ->
-                      (fst (Matchscope.exts am bodyctx), Vec.append mn cpats pats, cube, body))
-                    brs in
+                  Vec.mmap
+                    (fun [ (bodyctx, _, pats, cube, body); fpats ] ->
+                      (fst (Matchscope.exts ab bodyctx), Vec.append bn fpats pats, cube, body))
+                    [ brs; newpats ]
+                  |> Vec.to_list in
                 Reporter.try_with ~fatal:(fun d ->
                     match d.message with
                     | No_remaining_patterns ->
                         fatal ?loc:c.loc (Duplicate_constructor_in_match c.value)
                     | _ -> fatal_diagnostic d)
                 @@ fun () ->
-                (* After the first outer match, we always switch to implicit matches. *)
+                (* Now we recurse, looking for the next pattern.  After the first outer match, we always switch to implicit matches. *)
                 let rest, bs = process_branches newxctx newxs seen newbrs loc `Implicit in
-                Hlist.Hlist.cons (x, Raw.Branch (locate names loc, cube, rest)) [ bs ])
+                (* Errors about the constructor of these branches as a whole, such as having the wrong number of arguments, are located at its first occurrence. *)
+                Hlist.Hlist.cons (x, Raw.Branch (locate names c.loc, cube, rest)) [ bs ])
           [ cbranches ] (Cons (Cons Nil)) in
       let tm, window = process_obs_or_ix xctx x in
       let refutables =
@@ -1707,19 +2254,71 @@ let rec process_branches : type a n.
             refutables =
               (fun plus_args ->
                 let xctx, _ = Matchscope.exts plus_args xctx in
-                Bwd_extra.prepend_map (process_ix xctx) seen
-                  (Vec.to_list_map (fun x -> fst (process_obs_or_ix xctx x)) xs));
+                Bwd_extra.prepend_map
+                  (fun v -> process_obs_or_ix xctx (Right v))
+                  seen
+                  (Vec.to_list_map (process_obs_or_ix xctx) xs));
           } in
       let sort =
-        match sort with
-        | `Implicit -> `Implicit
-        | `Nondep i -> `Nondep i
-        | `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
+        match (x, sort) with
+        (* A match against a variable let-bound by the parser to a discriminee that is not a variable can't refine anything, so we make it explicitly non-dependent, to silence the hint about falling back from a dependent match. *)
+        | Right { generated = true; _ }, `Implicit -> `Nondep None
+        | _, `Implicit -> `Implicit
+        | _, `Nondep i -> `Nondep i
+        | _, `Explicit (Wrap motive) -> `Explicit (process (Matchscope.names xctx) motive) in
       ( locate (Synth (Match { tm; window; sort; branches; refutables; highers = [] })) loc,
         List.flatten (Bwd.to_list highers) )
 
+(* In a match with several discriminees, the later ones are matched against in every branch of the matches against the earlier ones.  Rather than processing them separately in each branch, we process each of them once, in the scope outside the whole match (which is the only scope they can refer to anyway).  A discriminee that is a variable (possibly with a face) is then referred to by its level in every branch, so that matching against it can still refine it.  Any other discriminee is let-bound outside the whole match to a new unnamed variable, so that it is also typechecked only once, in the context outside the match, which is where it makes sense; matching against that variable is non-dependent, as matching against a term would be anyway.  A discriminee with a window modality is treated likewise, except that if it is not a variable it is let-bound modally with that window, so that it is synthesized in the context locked by the window; either way the variable remembers the window, to match against it with.  We return the scope extended by the let-bound variables, the processed discriminees, the branches with their scopes extended likewise, and a function that wraps the let-bindings around the match. *)
+type (_, _, _) bound_discriminees =
+  | Bound :
+      'b Matchscope.t
+      * ((discriminee located, disc_var) Either.t, 'n) Vec.t
+      * ('b, 'm) branch list
+      * ('b check located -> 'a check located)
+      -> ('a, 'n, 'm) bound_discriminees
+
+let rec bind_discriminees : type a n m.
+    a Matchscope.t ->
+    ((discriminee located, disc_var) Either.t, n) Vec.t ->
+    (a, m) branch list ->
+    (a, n, m) bound_discriminees =
+ fun xctx xs branches ->
+  match xs with
+  | [] -> Bound (xctx, [], branches, Fun.id)
+  | (Left _ as x) :: xs -> (
+      let stm, window = process_obs_or_ix xctx x in
+      match stm.value with
+      | Var (k, face) ->
+          let v =
+            Either.Right { num = Matchscope.num_of_index xctx k; face; generated = false; window }
+          in
+          let (Bound (xctx, xs, branches, wrap)) = bind_discriminees xctx xs branches in
+          Bound (xctx, v :: xs, branches, wrap)
+      | _ ->
+          let xctx = Matchscope.ext xctx None in
+          let v =
+            Either.Right { num = Matchscope.last_num xctx; face = None; generated = true; window }
+          in
+          let branches =
+            List.map
+              (fun (bodyctx, pats, cube, body) -> (Matchscope.ext bodyctx None, pats, cube, body))
+              branches in
+          let (Bound (xctx, xs, branches, wrap)) = bind_discriminees xctx xs branches in
+          Bound
+            ( xctx,
+              v :: xs,
+              branches,
+              fun tm ->
+                let tm = wrap tm in
+                let modality = Option.value window ~default:(locate_opt None []) in
+                locate (Synth (Let (None, modality, stm, tm))) tm.loc ))
+  | (Right _ as x) :: xs ->
+      let (Bound (xctx, xs, branches, wrap)) = bind_discriminees xctx xs branches in
+      Bound (xctx, x :: xs, branches, wrap)
+
 let rec get_discriminees :
-    observation list -> (discriminee located, int) Either.t Vec.wrapped * observation list =
+    observation list -> (discriminee located, disc_var) Either.t Vec.wrapped * observation list =
  fun obs ->
   match obs with
   | Term tm :: Token (Op ",", _) :: obs ->
@@ -1856,18 +2455,22 @@ let rec pp_discriminees accum prews obs : document * Whitespace.t list * observa
 (* Print an implicit match, explicit match, matching lambda, or comatch, with possible multiple discriminees and possible 'return'.  We can combine comatches with matches because a "field" is just a term that can be printed like a pattern.  Always nontrivial. *)
 let pp_match triv = function
   | Token (Match, (wsmatch, _)) :: obs -> (
-      let pdisc, wdisc, obs = pp_discriminees (Token.pp Match) wsmatch obs in
+      let pmatch, wsmatch, obs = pp_attributes (Token.pp Match) wsmatch obs in
+      let pdisc, wdisc, obs = pp_discriminees pmatch wsmatch obs in
       let pret, wret, obs =
         match obs with
         (* The motive is parsed as an abstraction sub-notation *)
         | Token (Return, (wsreturn, _)) :: Term motive :: Token (LBracket, (wslbrack, _)) :: obs ->
             let pmotive, wmotive = pp_term motive in
-            ( pp_ws `Break wdisc
-              ^^ Token.pp Return
-              ^^ pp_ws `Nobreak wsreturn
-              ^^ pmotive
-              ^^ pp_ws `Nobreak wmotive
-              ^^ Token.pp LBracket,
+            (* The "return" clause stays on the line of the "match" if it fits there, and otherwise moves to the next line, indented further than the branches. *)
+            ( group
+                (nest 4
+                   (pp_ws `Break wdisc
+                   ^^ Token.pp Return
+                   ^^ pp_ws `Nobreak wsreturn
+                   ^^ pmotive
+                   ^^ pp_ws `Nobreak wmotive
+                   ^^ Token.pp LBracket)),
               wslbrack,
               obs )
         | Token (LBracket, (wslbrack, _)) :: obs ->
@@ -1884,8 +2487,9 @@ let pp_match triv = function
             pp_branches true `Nontrivial empty None (must_start_with (Op "|") obs) in
           (align (group (hang 2 pdisc) ^^ pret), group (pp_ws `Break wret ^^ pbranches), wbranches))
   | Token (LBracket, (wslbrack, _)) :: obs ->
+      let plbrack, wslbrack, obs = pp_attributes (Token.pp LBracket) wslbrack obs in
       let pbranches, wbranches = pp_branches true triv empty None (must_start_with (Op "|") obs) in
-      ( Token.pp LBracket,
+      ( plbrack,
         group (pp_ws (if triv = `Trivial then `Nobreak else `Break) wslbrack ^^ pbranches),
         wbranches )
   | _ -> invalid "(co)match 6"
@@ -1895,11 +2499,11 @@ let () =
   make implicit_mtch
     {
       name = "implicit match";
-      tree = Closed_entry (eop Match (discriminees ()));
+      tree = Closed_entry (eop Match (with_attributes (discriminees ())));
       processor =
         (fun ctx obs loc ->
           let ctx = Matchscope.make ctx in
-          match obs with
+          match strip_gen_attributes obs with
           | Token (Match, _) :: obs -> (
               let Wrap xs, obs = get_discriminees obs in
               let branches =
@@ -1908,11 +2512,18 @@ let () =
                 | Token (LBracket, _) :: obs ->
                     get_branches ctx (Vec.length xs) (must_start_with (Op "|") obs)
                 | _ -> invalid "implicit_match" in
-              let mtch, highers = process_branches ctx xs Emp branches loc `Implicit in
-              match (mtch.value, highers) with
-              | Synth (Match data), _ -> locate_opt mtch.loc (Synth (Match { data with highers }))
-              | _, [] -> mtch
-              | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match"))
+              (* The first discriminee is matched against only once, but the later ones we process once outside the whole match. *)
+              match xs with
+              | [] -> invalid "implicit_match"
+              | x :: xs ->
+                  let (Bound (ctx, xs, branches, wrap)) = bind_discriminees ctx xs branches in
+                  let mtch, highers = process_branches ctx (x :: xs) Emp branches loc `Implicit in
+                  wrap
+                    (match (mtch.value, highers) with
+                    | Synth (Match data), _ ->
+                        locate_opt mtch.loc (Synth (Match { data with highers }))
+                    | _, [] -> mtch
+                    | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match")))
           | _ -> invalid "implicit_match");
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "match"));
       print_term = None;
@@ -1926,44 +2537,55 @@ let () =
       tree =
         Closed_entry
           (eop Match
-             (Inner
-                {
-                  empty_branch with
-                  term =
-                    Some
-                      (singleton Return
-                         (* The motive is parsed as an abstraction sub-notation *)
-                         (term LBracket (mtch_branches explicit_mtch true true false)));
-                }));
+             (with_attributes
+                (Inner
+                   {
+                     empty_branch with
+                     term =
+                       Some
+                         (singleton Return
+                            (* The motive is parsed as an abstraction sub-notation *)
+                            (term LBracket (mtch_branches explicit_mtch true true false)));
+                   })));
       processor =
         (fun ctx obs loc ->
           let ctx = Matchscope.make ctx in
-          match obs with
+          (* Process the branches of a match with a return-type. *)
+          let with_return tm sort obs =
+            let branches =
+              match obs with
+              | [ Token (RBracket, _) ] -> []
+              | _ -> get_branches ctx Fwn.one (must_start_with (Op "|") obs) in
+            let mtch, highers =
+              process_branches ctx [ Left (get_discriminee_window (Wrap tm)) ] Emp branches loc sort
+            in
+            match (mtch.value, highers) with
+            | Synth (Match data), _ -> locate_opt mtch.loc (Synth (Match { data with highers }))
+            | _, [] -> mtch
+            | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match") in
+          match strip_gen_attributes obs with
           | Token (Match, _)
             :: Term tm
             :: Token (Return, _) (* The motive is parsed as an abstraction sub-notation *)
             :: Term ({ value = Notn ((Abs, _), n); _ } as motive)
             :: Token (LBracket, _)
-            :: obs -> (
-              let branches =
-                match obs with
-                | [ Token (RBracket, _) ] -> []
-                | _ -> get_branches ctx Fwn.one (must_start_with (Op "|") obs) in
+            :: obs ->
               let sort =
                 match args n with
                 | [ Term vars; Token (Mapsto, _); Term { value = Placeholder _; _ } ] ->
                     (* TODO: Should not be ascribed, and especially not modal *)
                     let (Extctx (mn, _, _, _)) = get_vars (Matchscope.names ctx) vars in
-                    `Nondep ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located)
+                    `Nondep
+                      (Some ({ value = N.to_int (N.plus_right mn); loc = vars.loc } : int located))
                 | _ -> `Explicit (Wrap motive) in
-              let mtch, highers =
-                process_branches ctx
-                  [ Left (get_discriminee_window (Wrap tm)) ]
-                  Emp branches loc sort in
-              match (mtch.value, highers) with
-              | Synth (Match data), _ -> locate_opt mtch.loc (Synth (Match { data with highers }))
-              | _, [] -> mtch
-              | _, _ :: _ -> fatal (Anomaly "process_branches didn't produce a match"))
+              with_return tm sort obs
+          (* A bare placeholder as the motive also indicates a non-dependent match, without having to give the right number of variables for the indices. *)
+          | Token (Match, _)
+            :: Term tm
+            :: Token (Return, _)
+            :: Term { value = Placeholder _; _ }
+            :: Token (LBracket, _)
+            :: obs -> with_return tm (`Nondep None) obs
           | Token (Match, _) :: _ :: Token (Return, _) :: Term nonabs :: Token (LBracket, _) :: _ ->
               fatal ?loc:nonabs.loc (Parse_error "match motive is not an abstraction")
           | _ -> invalid "match");
@@ -1976,11 +2598,11 @@ let () =
   make mtchlam
     {
       name = "matchlam";
-      tree = Closed_entry (eop LBracket (mtch_branches mtchlam true false true));
+      tree = Closed_entry (eop LBracket (with_attributes (mtch_branches mtchlam true false true)));
       processor =
         (fun ctx obs loc ->
           (* Empty matching lambdas are a different notation, empty_co_match, so here there must be at least one branch. *)
-          match obs with
+          match strip_gen_attributes obs with
           | Token (LBracket, _) :: Token (Op "|", _) :: obs | Token (LBracket, _) :: obs -> (
               (* We get the *number* of patterns from the first branch. *)
               let Wrap pats, cube, obs = get_any_patterns obs in
@@ -1992,7 +2614,7 @@ let () =
                   let branches = get_branches ctx n obs in
                   let mtch, highers =
                     process_branches ctx
-                      (Vec.mmap (fun [ i ] -> Either.Right i) [ xs ])
+                      (Vec.mmap (fun [ i ] -> Either.Right (disc_var i)) [ xs ])
                       Emp
                       ((ctx, pats, cube, Wrap body) :: branches)
                       loc `Implicit in
@@ -2061,21 +2683,23 @@ let () =
       tree =
         Closed_entry
           (eop LBracket
-             (Inner
-                {
-                  empty_branch with
-                  ops = singleton (Op "|") (comatch_fields ());
-                  field =
-                    (let rest =
-                       terms
-                         [
-                           (Op "|", Lazy (lazy (comatch_fields ()))); (RBracket, Done_closed comatch);
-                         ] in
-                     Some (ops [ (Mapsto, rest); (DblMapsto, rest) ]));
-                }));
+             (with_attributes
+                (Inner
+                   {
+                     empty_branch with
+                     ops = singleton (Op "|") (comatch_fields ());
+                     field =
+                       (let rest =
+                          terms
+                            [
+                              (Op "|", Lazy (lazy (comatch_fields ())));
+                              (RBracket, Done_closed comatch);
+                            ] in
+                        Some (ops [ (Mapsto, rest); (DblMapsto, rest) ]));
+                   })));
       processor =
         (fun ctx obs loc ->
-          match obs with
+          match strip_gen_attributes obs with
           (* We strip off the starting bracket and make sure there is an initial bar, so that process_comatch can treat each clause uniformly. *)
           | Token (LBracket, _) :: obs ->
               let obs = must_start_with (Op "|") obs in
@@ -2099,15 +2723,23 @@ let () =
   make empty_co_match
     {
       name = "empty_co_match";
-      tree = Closed_entry (eop LBracket (op RBracket (Done_closed empty_co_match)));
-      processor = (fun _ _ loc -> { value = Empty_co_match; loc });
+      tree =
+        Closed_entry (eop LBracket (with_attributes (op RBracket (Done_closed empty_co_match))));
+      processor =
+        (fun _ obs loc ->
+          let _ = strip_gen_attributes obs in
+          { value = Empty_co_match; loc });
       pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "empty (co)match"));
       print_term = None;
       print_case =
         Some
           (fun _triv -> function
-            | [ Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ] ->
-                (Token.pp LBracket ^^ pp_ws `Nobreak wslbrack ^^ Token.pp RBracket, empty, wsrbrack)
+            | Token (LBracket, (wslbrack, _)) :: obs -> (
+                let plbrack, wslbrack, obs = pp_attributes (Token.pp LBracket) wslbrack obs in
+                match obs with
+                | [ Token (RBracket, (wsrbrack, _)) ] ->
+                    (plbrack ^^ pp_ws `Nobreak wslbrack ^^ Token.pp RBracket, empty, wsrbrack)
+                | _ -> invalid "empty_co_match")
             | _ -> invalid "empty_co_match");
       is_case = (fun _ -> true);
     }
@@ -2134,65 +2766,6 @@ let rec codata_fields bar_ok =
              (terms [ (Op "|", Lazy (lazy (codata_fields false))); (RBracket, Done_closed codata) ]));
     }
 
-(* ********************
-   Attributes
-   ******************** *)
-
-(* Several "case" notations (sig, codata, data) admit attributes written #(...) after the keyword.  Each attribute group contains either a multiword string attribute like #(transparent labeled), or a valued attribute like #(variables ≔ x,y,z).  This tree combinator allows any number of attribute groups before continuing with the given branch. *)
-let rec attributes rest () =
-  let r = rest () in
-  {
-    r with
-    ops =
-      TokMap.add (Op "#")
-        ( op LParen
-            (terms
-               [
-                 (RParen, Lazy (lazy (Inner (attributes rest ()))));
-                 (Coloneq, Lazy (lazy (attribute_values rest ())));
-                 (Pluseq, Lazy (lazy (attribute_values rest ())));
-               ]),
-          `Noss )
-        r.ops;
-  }
-
-and attribute_values rest () =
-  terms
-    [
-      (Op ",", Lazy (lazy (attribute_values rest ())));
-      (RParen, Lazy (lazy (Inner (attributes rest ()))));
-    ]
-
-(* Extract the attribute groups from the beginning of an observation list, as a list of multiword names with optional value lists.  A valued attribute records whether its values were given with ≔ (replacing any global defaults, [`Replace]) or with ⩲ (prepended to the global defaults, [`Prepend]). *)
-let rec get_attributes :
-    observation list ->
-    (string list * (wrapped_parse list * [ `Replace | `Prepend ]) option * Asai.Range.t option) list
-    * observation list =
- fun obs ->
-  match obs with
-  | Token (Op "#", _) :: Token (LParen, _) :: Term attr :: rest -> (
-      let strs = fst (Postprocess.strings_of_term attr.value) in
-      match rest with
-      | Token (RParen, _) :: rest ->
-          let attrs, rest = get_attributes rest in
-          ((strs, None, attr.loc) :: attrs, rest)
-      | Token (((Coloneq | Pluseq) as sep), _) :: rest ->
-          let mode = if sep = Pluseq then `Prepend else `Replace in
-          let vals, rest = get_attribute_values rest in
-          let attrs, rest = get_attributes rest in
-          ((strs, Some (vals, mode), attr.loc) :: attrs, rest)
-      | _ -> invalid "attribute")
-  | _ -> ([], obs)
-
-and get_attribute_values : observation list -> wrapped_parse list * observation list =
- fun obs ->
-  match obs with
-  | Term v :: Token (Op ",", _) :: rest ->
-      let vals, rest = get_attribute_values rest in
-      (Wrap v :: vals, rest)
-  | Term v :: Token (RParen, _) :: rest -> ([ Wrap v ], rest)
-  | _ -> invalid "attribute"
-
 (* Require an attribute value to be a valid local variable name. *)
 let var_of_attribute_value : wrapped_parse -> string =
  fun (Wrap x) ->
@@ -2213,10 +2786,11 @@ let process_data_attributes :
     Variables.hints =
  fun attrs ->
   List.fold_left
-    (fun _hints (strs, vals, loc) ->
+    (fun hints (strs, vals, loc) ->
       match (strs, vals) with
       | [ "variables" ], Some (vals, mode) -> hints_of_attribute vals mode
-      | _ -> fatal ?loc Unrecognized_attribute)
+      | _ ->
+          if process_gen_attribute strs vals loc then hints else fatal ?loc Unrecognized_attribute)
     Variables.no_hints attrs
 
 (* Interpret the attributes of a record type declaration: opacity attributes and "variables". *)
@@ -2235,51 +2809,30 @@ let process_record_attributes :
       | [ "transparent"; "positional" ], None -> (`Transparent `Unlabeled, hints)
       | [ "translucent"; "labeled" ], None -> (`Translucent `Labeled, hints)
       | [ "translucent"; "positional" ], None -> (`Translucent `Unlabeled, hints)
-      | _ -> fatal ?loc Unrecognized_attribute)
+      | _ ->
+          if process_gen_attribute strs vals loc then (opacity, hints)
+          else fatal ?loc Unrecognized_attribute)
     (`Opaque, Variables.no_hints) attrs
 
-(* Print the attribute groups at the beginning of an observation list, appended to the given document with the given whitespace pending before them.  Returns the extended document, the pending whitespace after it, and the remaining observations. *)
-let rec pp_attributes (accum : document) (prews : Whitespace.t list) (obs : observation list) :
-    document * Whitespace.t list * observation list =
-  match obs with
-  | Token (Op "#", (wshash, _)) :: Token (LParen, (wslattr, _)) :: Term attr :: rest -> (
-      let pattr, wattr = pp_term attr in
-      let start =
-        Token.pp (Op "#") ^^ pp_ws `None wshash ^^ Token.pp LParen ^^ pp_ws `None wslattr ^^ pattr
-      in
-      match rest with
-      | Token (RParen, (wsrattr, _)) :: rest ->
-          pp_attributes
-            (accum ^^ group (pp_ws `Break prews ^^ start ^^ pp_ws `None wattr ^^ Token.pp RParen))
-            wsrattr rest
-      | Token (((Coloneq | Pluseq) as sep), (wssep, _)) :: rest ->
-          let vals, wsrattr, rest = pp_attribute_values empty rest in
-          pp_attributes
-            (accum
-            ^^ group
-                 (pp_ws `Break prews
-                 ^^ start
-                 ^^ pp_ws `Nobreak wattr
-                 ^^ Token.pp sep
-                 ^^ pp_ws `Nobreak wssep
-                 ^^ vals
-                 ^^ Token.pp RParen))
-            wsrattr rest
-      | _ -> invalid "attribute")
-  | _ -> (accum, prews, obs)
+(* Print the keyword introducing a "case" notation ("sig", "codata", or "data"), which begins its observation list.  Returns the printed keyword, the whitespace pending after it, and the remaining observations, or None if the observations don't start with that keyword.
 
-and pp_attribute_values (accum : document) (obs : observation list) :
-    document * Whitespace.t list * observation list =
+   The keyword can carry a superscripted dimension, which the unparser emits to display a canonical type read back from a value of positive evaluation dimension, as "data⁽ᵉ⁾ [ … ]".  That is display-only syntax: the notation trees mark these keywords `Noss, so parsing a superscript there is a parse error, and hence a superscripted observation can only have come from the unparser. *)
+let pp_case_keyword (tok : Token.t) (obs : observation list) :
+    (document * Whitespace.t list * observation list) option =
   match obs with
-  | Term v :: Token (Op ",", (wscomma, _)) :: rest ->
-      let pv, wv = pp_term v in
-      pp_attribute_values
-        (accum ^^ pv ^^ pp_ws `None wv ^^ Token.pp (Op ",") ^^ pp_ws `Nobreak wscomma)
-        rest
-  | Term v :: Token (RParen, (wsrparen, _)) :: rest ->
-      let pv, wv = pp_term v in
-      (accum ^^ pv ^^ pp_ws `None wv, wsrparen, rest)
-  | _ -> invalid "attribute"
+  | Token (tok', (ws, _)) :: obs when tok' = tok -> Some (Token.pp tok, ws, obs)
+  | Ss_token ((tok', (ws, _)), sups) :: obs when tok' = tok -> (
+      match sups with
+      | [] -> Some (Token.pp tok, ws, obs)
+      | [ (dim, wsdim) ] ->
+          Some
+            ( Token.pp tok
+              ^^ pp_ws (if Display.chars () = `Unicode then `None else `Nobreak) ws
+              ^^ pp_superscript dim,
+              wsdim,
+              obs )
+      | _ -> None)
+  | _ -> None
 
 let process_codata_field : type n lt ls rt rs lt' ls' rt' rs' et.
     (potential, et) eta ->
@@ -2373,9 +2926,10 @@ let rec pp_codata_fields first prews accum obs : document * Whitespace.t list =
         obs
   | _ -> invalid "codata 2"
 
-let pp_codata _triv = function
-  | Token (Codata, (wscodata, _)) :: obs -> (
-      let withattr, wsattr, obs = pp_attributes (Token.pp Codata) wscodata obs in
+let pp_codata _triv obs =
+  match pp_case_keyword Codata obs with
+  | Some (pcodata, wscodata, obs) -> (
+      let withattr, wsattr, obs = pp_attributes pcodata wscodata obs in
       match obs with
       (* The empty codatatype fits all on one line *)
       | [ Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ] ->
@@ -2392,7 +2946,7 @@ let pp_codata _triv = function
             pp_ws `Break wslbrack ^^ fields,
             ws )
       | _ -> invalid "codata 3")
-  | _ -> invalid "codata 3"
+  | None -> invalid "codata 3"
 
 let () =
   make codata
@@ -2445,24 +2999,55 @@ let rec record_fields () =
 
 type _ any_tel = Any_tel : ('a, 'c, 'ac) Raw.tel -> 'a any_tel
 
+(* The names of a group of record fields sharing a type, such as "fst snd" in "sig (fst snd : A)", with their locations. *)
+let rec record_field_names : type lt ls rt rs.
+    (lt, ls, rt, rs) parse located ->
+    (string * Asai.Range.t option) list ->
+    (string * Asai.Range.t option) list option =
+ fun tm accum ->
+  match tm.value with
+  | Ident ([ name ], _) -> Some ((name, tm.loc) :: accum)
+  | App { fn; arg = { value = Ident ([ name ], _); loc }; _ } ->
+      record_field_names fn ((name, loc) :: accum)
+  | _ -> None
+
 let rec process_tel : type a.
     (string option, a) Bwv.t -> StringSet.t -> observation list -> a any_tel =
  fun ctx seen obs ->
   match obs with
   | [ Token (RParen, _) ] -> Any_tel Emp
   | Token (Op ",", _) :: obs -> process_tel ctx seen obs
-  | Term { value = Ident ([ name ], _); loc } :: Token (Colon, _) :: Term ty :: obs ->
-      if Lexer.valid_field name then (
-        if StringSet.mem name seen then
-          fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
-        let ty = process ctx ty in
-        let ctx = Bwv.snoc ctx (Some name) in
-        let (Any_tel tel) = process_tel ctx (StringSet.add name seen) obs in
-        Any_tel (Ext (Some name, locate_opt None [], ty, tel)))
-      else fatal ?loc (Invalid_field name)
-  | Term { loc; _ } :: Token (Colon, _) :: Term _ :: _ ->
-      fatal ?loc (Parse_error "invalid record field name")
+  | Term tm :: Token (Colon, _) :: Term ty :: obs -> (
+      match record_field_names tm [] with
+      | Some ((name, _) :: names as all_names) ->
+          let seen =
+            List.fold_left
+              (fun seen (name, loc) ->
+                if not (Lexer.valid_field name) then fatal ?loc (Invalid_field name);
+                if StringSet.mem name seen then
+                  fatal ?loc (Duplicate_field_in_record (Field.intern name D.zero));
+                StringSet.add name seen)
+              seen all_names in
+          (* The type is shared by all the fields in the group, so we process it only once, in the scope outside all of them. *)
+          let ty = process ctx ty in
+          let (Any_tel tel) = process_tel_same (Bwv.snoc ctx (Some name)) seen names obs in
+          Any_tel (Ext (Some name, locate_opt None [], ty, tel))
+      | _ -> fatal ?loc:tm.loc (Parse_error "invalid record field name"))
   | _ -> invalid "record"
+
+(* The remaining fields that share the type of the previous one. *)
+and process_tel_same : type a.
+    (string option, a) Bwv.t ->
+    StringSet.t ->
+    (string * Asai.Range.t option) list ->
+    observation list ->
+    a any_tel =
+ fun ctx seen names obs ->
+  match names with
+  | [] -> process_tel ctx seen obs
+  | (name, _) :: names ->
+      let (Any_tel tel) = process_tel_same (Bwv.snoc ctx (Some name)) seen names obs in
+      Any_tel (Same (Some name, tel))
 
 let rec process_self_record : type n.
     opacity ->
@@ -2493,19 +3078,20 @@ let process_record ctx obs loc =
       emit ?loc:mapstoloc (Deprecated "'sig … ↦' for higher records: use self variables");
       with_loc x.loc @@ fun () ->
       let vars =
-        process_var_list x [ (None, []) ] <|> Parse_error "invalid higher record specification"
-      in
-      let (Wrap vars) = Vec.of_list (List.map fst vars) in
+        process_var_list x [ (locate_opt None None, []) ]
+        <|> Parse_error "invalid higher record specification" in
+      let (Wrap vars) = Vec.of_list (var_names vars) in
       let (Bplus ac) = Fwn.bplus (Vec.length vars) in
       let ctx = Bwv.append ac ctx vars in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
       Range.locate (Raw.Record (locate_opt x.loc (namevec_of_vec ac vars), tel, opacity, hints)) loc
-  | Token (LParen, _) :: (Term { value = App _; _ } :: _ as obs) ->
-      process_self_record opacity hints Emp ctx obs loc
+  (* A field of a self-record, such as "x .fst", is an application of a self variable to a field; an application of identifiers, such as "fst snd", is instead a group of fields sharing a type. *)
+  | Token (LParen, _) :: (Term { value = App { arg = { value = Field _; _ }; _ }; _ } :: _ as obs)
+    -> process_self_record opacity hints Emp ctx obs loc
   | Token (LParen, _) :: obs ->
       let ctx = Bwv.snoc ctx None in
       let (Any_tel tel) = process_tel ctx StringSet.empty obs in
-      Range.locate (Raw.Record ({ value = [ None ]; loc }, tel, opacity, hints)) loc
+      Range.locate (Raw.Record ({ value = [ locate_opt None None ]; loc }, tel, opacity, hints)) loc
   | _ -> invalid "record"
 
 let rec pp_record_fields prews accum obs =
@@ -2545,9 +3131,9 @@ let rec pp_record_fields prews accum obs =
 
 let pp_record _triv obs =
   let withattr, wsattr, obs =
-    match obs with
-    | Token (Sig, (wssig, _)) :: obs -> pp_attributes (Token.pp Sig) wssig obs
-    | _ -> invalid "record" in
+    match pp_case_keyword Sig obs with
+    | Some (psig, wssig, obs) -> pp_attributes psig wssig obs
+    | None -> invalid "record" in
   let withlparen, wslparen, obs =
     match obs with
     | Term x :: Token (Mapsto, (wsmapsto, _)) :: Token (LParen, (wslparen, _)) :: obs ->
@@ -2639,7 +3225,7 @@ let rec constr_tel :
       | [ Token (LParen, _); Term xs; Token (Colon, _); Term ty; Token (RParen, _) ] -> (
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((List.map fst vars, locate_opt None [], Wrap ty) :: accum)
+              constr_tel (Term fn) ((var_names vars, locate_opt None [], Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | [
        Token (LParen, _);
@@ -2652,7 +3238,7 @@ let rec constr_tel :
       ] -> (
           match process_var_list xs [] with
           | Some vars ->
-              constr_tel (Term fn) ((List.map fst vars, get_modality fst modality, Wrap ty) :: accum)
+              constr_tel (Term fn) ((var_names vars, get_modality fst modality, Wrap ty) :: accum)
           | None -> fatal (Parse_error "invalid constructor argument variables"))
       | _ -> invalid "tel")
   | Term { loc; _ } -> fatal ?loc (Parse_error "invalid constructor")
@@ -2666,27 +3252,61 @@ let rec process_dataconstr : type n.
  fun ctx tel_args ty ->
   match (tel_args, ty) with
   | (vars, modality, argty) :: tel_args, _ ->
-      process_dataconstr_vars ctx vars modality argty tel_args ty
-  | [], Some (Wrap ty) -> dataconstr_of_pi (process ctx ty)
+      process_dataconstr_vars ctx vars (Some (modality, argty)) tel_args ty
+  | [], Some (Wrap ty) -> (
+      (* A constructor whose type is an ordinary pi-type takes the domains of that pi-type as its arguments.  We find them in the parse tree, rather than processing the pi-type and taking it apart, so that a group of variables sharing a type, such as "(x y : A) → B", becomes the same telescope as the arguments "(x y : A)" would. *)
+      match ty.value with
+      | Notn ((Parens, _), n) -> (
+          match args n with
+          | [ Token (LParen, _); Term body; Token (RParen, _) ] ->
+              process_dataconstr ctx [] (Some (Wrap body))
+          | _ ->
+              (* This will be a typechecking error, since a tuple can't be the output of a dataconstr, but we leave it to the typechecker to report. *)
+              Dataconstr (Emp, Some (process ctx ty)))
+      | Notn ((Arrow, _), n) ->
+          let doms, _, (dim, _), cod = get_pi `First (args n) in
+          if dim.value = "" then
+            let tel_args =
+              List.filter_map
+                (function
+                  | Dep { vars = []; _ } -> None
+                  | Dep { vars; modality; ty; implicit = `Explicit; _ } ->
+                      Some (var_names vars, modality, ty)
+                  | Dep { implicit = `Implicit; _ } ->
+                      fatal (Unimplemented "general implicit function-types")
+                  | Nondep { ty; _ } -> Some ([ None ], locate_opt None [], ty))
+                doms in
+            process_dataconstr ctx tel_args (Some cod)
+          else
+            (* This will be a typechecking error, since a dataconstr can't have a higher function-type, but we leave it to the typechecker to report. *)
+            Dataconstr (Emp, Some (process ctx ty))
+      | _ -> Dataconstr (Emp, Some (process ctx ty)))
   | [], None -> Dataconstr (Emp, None)
 
 and process_dataconstr_vars : type n.
     (string option, n) Bwv.t ->
     string option list ->
-    string located list located ->
-    wrapped_parse ->
+    (* We only carry the modality and type if we are at the first variable in the list. *)
+    (string located list located * wrapped_parse) option ->
     (string option list * string located list located * wrapped_parse) list ->
     wrapped_parse option ->
     n Raw.dataconstr =
- fun ctx vars modality (Wrap argty) tel_args ty ->
+ fun ctx vars argty tel_args ty ->
   match vars with
   | [] -> process_dataconstr ctx tel_args ty
-  | x :: xs ->
-      let newctx = Bwv.snoc ctx x in
-      let (Dataconstr (args, body)) =
-        process_dataconstr_vars newctx xs modality (Wrap argty) tel_args ty in
-      let arg = process ctx argty in
-      Dataconstr (Ext (x, modality, arg, args), body)
+  | x :: xs -> (
+      match argty with
+      | Some (modality, Wrap argty) ->
+          (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
+          let arg = process ctx argty in
+          let (Dataconstr (args, body)) =
+            process_dataconstr_vars (Bwv.snoc ctx x) xs None tel_args ty in
+          Dataconstr (Ext (x, modality, arg, args), body)
+      | None ->
+          (* The remaining variables that share the type of the previous one. *)
+          let (Dataconstr (args, body)) =
+            process_dataconstr_vars (Bwv.snoc ctx x) xs None tel_args ty in
+          Dataconstr (Same (x, args), body))
 
 let rec process_data : type n.
     Variables.hints ->
@@ -2749,9 +3369,10 @@ let rec pp_data_constrs first prews accum obs =
         obs
   | _ -> invalid "data"
 
-let pp_data _triv = function
-  | Token (Data, (wsdata, _)) :: obs -> (
-      let withattr, wsattr, obs = pp_attributes (Token.pp Data) wsdata obs in
+let pp_data _triv obs =
+  match pp_case_keyword Data obs with
+  | Some (pdata, wsdata, obs) -> (
+      let withattr, wsattr, obs = pp_attributes pdata wsdata obs in
       match obs with
       (* The empty datatype fits all on one line *)
       | [ Token (LBracket, (wslbrack, _)); Token (RBracket, (wsrbrack, _)) ] ->
@@ -2766,7 +3387,7 @@ let pp_data _triv = function
           let doc, ws = pp_data_constrs true None empty (must_start_with (Op "|") obs) in
           (withattr ^^ pp_ws `Nobreak wsattr ^^ Token.pp LBracket, pp_ws `Break wslbrack ^^ doc, ws)
       | _ -> invalid "data")
-  | _ -> invalid "data"
+  | None -> invalid "data"
 
 let () =
   make data
@@ -2806,15 +3427,26 @@ type (_, _, _) identity += Calc : (closed, No.plus_omega, closed) identity
 
 let calc : (closed, No.plus_omega, closed) notation = (Calc, Outfix)
 
-let rec calcs by_ok =
-  terms
-    (Bwd.prepend
-       (if by_ok then Snoc (Emp, (Token.Ident [ "by" ], Lazy (lazy (calcs false)))) else Emp)
-       [ (Op "=", Lazy (lazy (calcs true))); (Ident [ "∎" ], Done_closed calc) ])
+(* The proof of a step can start with ← (or <-) to indicate that it proves the reversed equality. *)
+let rec calc_steps by_ok =
+  Bwd.prepend
+    (if by_ok then Snoc (Emp, (Token.Ident [ "by" ], Lazy (lazy (calc_proof ())))) else Emp)
+    [ (Op "=", Lazy (lazy (calcs true))); (Ident [ "∎" ], Done_closed calc) ]
+
+and calcs by_ok = terms (calc_steps by_ok)
+
+and calc_proof () =
+  Inner
+    {
+      empty_branch with
+      ops =
+        oflist [ (Ident [ "←" ], Lazy (lazy (calcs false))); (Op "<-", Lazy (lazy (calcs false))) ];
+      term = Some (oflist (calc_steps false));
+    }
 
 let rec process_calcs : type n.
     n synth located ->
-    (n check located * n check located option) Bwd.t ->
+    (n check located * (n check located * [ `Plain | `Reversed ]) option) Bwd.t ->
     (string option, n) Bwv.t ->
     observation list ->
     Asai.Range.t option ->
@@ -2824,9 +3456,12 @@ let rec process_calcs : type n.
   | Token (Op "=", _) :: Term y :: obs -> (
       let y = process ctx y in
       match obs with
+      | Token (Ident [ "by" ], _) :: Token ((Ident [ "←" ] | Op "<-"), _) :: Term e :: obs ->
+          let e = process ctx e in
+          process_calcs x (Snoc (rest, (y, Some (e, `Reversed)))) ctx obs loc
       | Token (Ident [ "by" ], _) :: Term e :: obs ->
           let e = process ctx e in
-          process_calcs x (Snoc (rest, (y, Some e))) ctx obs loc
+          process_calcs x (Snoc (rest, (y, Some (e, `Plain)))) ctx obs loc
       | _ -> process_calcs x (Snoc (rest, (y, None))) ctx obs loc)
   | [ Token (Ident [ "∎" ], _) ] -> locate (Synth (Calc (x, Bwd.to_list rest))) loc
   | _ -> invalid "calc"
@@ -2839,6 +3474,22 @@ let rec pp_calcs : Whitespace.t list -> observation list -> document * Whitespac
       let peq = pp_ws `Hard ws ^^ hang 2 (group (Token.pp (Op "=") ^^ pp_ws `Nobreak wseq ^^ py)) in
       let pby, w, obs =
         match obs with
+        | Token (Ident [ "by" ], (wby, _))
+          :: Token ((Ident [ "←" ] | Op "<-"), (wrev, _))
+          :: Term e
+          :: obs ->
+            let pe, we = pp_term e in
+            ( nest 4
+                (pp_ws `Hard wy
+                ^^ hang 2
+                     (group
+                        (Token.pp (Ident [ "by" ])
+                        ^^ pp_ws `Nobreak wby
+                        ^^ utf8string (Display.alt_char "←" "<-")
+                        ^^ pp_ws `Nobreak wrev
+                        ^^ pe))),
+              we,
+              obs )
         | Token (Ident [ "by" ], (wby, _)) :: Term e :: obs ->
             let pe, we = pp_term e in
             ( nest 4
@@ -2919,6 +3570,25 @@ let () =
       is_case = (fun _ -> false);
     }
 
+(* The omission marker "⋯", which the unparser displays in place of a subterm too deep to fit in the display size, is parsed only so that we can give a helpful error message about it.  (The marker in a let-only with elided clauses is part of the let-only notation.) *)
+let () =
+  make Postprocess.omitted
+    {
+      name = "omitted";
+      tree = Closed_entry (eop Omitted (Done_closed Postprocess.omitted));
+      processor =
+        (fun _ _ loc ->
+          fatal ?loc (Display_only_syntax "'⋯', which marks a part of a term omitted from display"));
+      pattern = (fun _ loc -> fatal ?loc (Invalid_notation_pattern "omitted"));
+      print_term =
+        Some
+          (function
+          | [ Token (Omitted, (ws, _)) ] -> (Token.pp Omitted, ws)
+          | _ -> invalid "omitted");
+      print_case = None;
+      is_case = (fun _ -> false);
+    }
+
 (* ********************
    Generating the state
  ******************** *)
@@ -2955,6 +3625,7 @@ let install () =
     Situation.add Postprocess.braces;
     Situation.add letin;
     Situation.add letrec;
+    Situation.add letonly;
     Situation.add asc;
     Situation.add ascvar;
     Situation.add abs;
@@ -2965,6 +3636,7 @@ let install () =
     Situation.add coloneq;
     Situation.add comatch;
     Situation.add Postprocess.dot;
+    Situation.add Postprocess.omitted;
     Situation.add implicit_mtch;
     Situation.add explicit_mtch;
     Situation.add mtchlam;

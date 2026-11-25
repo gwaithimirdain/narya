@@ -63,6 +63,26 @@
    1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
      ^ unbound variable: x₀
   
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+     ^ unbound variable: x₁
+  
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+     ^ unbound variable: x₀
+  
+   ￫ error[E0300]
+   ￭ command-line exec string
+   1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+     ^ unbound variable: x₁
+  
+   ￫ error[E0705]
+   ￭ command-line exec string
+   1 | echo (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)
+     ^ not enough domains for an e-dimensional function type
+  
   [1]
 
   $ narya higherpi.ny -e "echo {x₀ x₁ : A} (x₂ : refl A x₀ x₁) →⁽ᵉ⁾ refl B x₂ (f x₀) (g x₁)"
@@ -123,6 +143,30 @@
    ￭ command-line exec string
    1 | echo (x : Id A) ⇒ A
      ^ invalid higher function-type: invalid single codomain dimension
+  
+  [1]
+
+The boundaries of the codomain must not use the other variables of the cube, including via a hole whose context contains them.
+
+  $ narya higherpi.ny -e "axiom F : A → A → Type echo (x : Id A) ⇒ Id (F x.1) x.2"
+   ￫ error[E0706]
+   ￭ command-line exec string
+   1 | axiom F : A → A → Type echo (x : Id A) ⇒ Id (F x.1) x.2
+     ^ invalid higher function-type: invalid codomain scope
+  
+  [1]
+  $ narya higherpi.ny -e "axiom F : A → A → Type echo (x : Id A) ⇒ Id (F x.0) x.2"
+   ￫ error[E0706]
+   ￭ command-line exec string
+   1 | axiom F : A → A → Type echo (x : Id A) ⇒ Id (F x.0) x.2
+     ^ invalid higher function-type: invalid codomain scope
+  
+  [1]
+  $ narya higherpi.ny -e "axiom F : A → A → Type echo (x : Id A) ⇒ Id (F ?) x.2"
+   ￫ error[E0706]
+   ￭ command-line exec string
+   1 | axiom F : A → A → Type echo (x : Id A) ⇒ Id (F ?) x.2
+     ^ invalid higher function-type: invalid codomain scope
   
   [1]
 

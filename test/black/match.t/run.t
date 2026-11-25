@@ -44,6 +44,12 @@
    ￮ constant doublematch' defined
   
    ￫ info[I0000]
+   ￮ constant doublematch'' defined
+  
+   ￫ info[I0000]
+   ￮ constant contra' defined
+  
+   ￫ info[I0000]
    ￮ constant ⊤ defined
   
    ￫ info[I0000]
@@ -63,6 +69,12 @@
   
    ￫ info[I0000]
    ￮ constant idvec_nil_or_cons defined
+  
+   ￫ info[I0000]
+   ￮ constant vec_is_nil defined
+  
+  true.
+    : bool
   
 
   $ narya -v -parametric multi.ny
@@ -272,7 +284,35 @@
    1 | def foo3 (x : bool) (y : unit) : ⊥ ≔ match x, y [ ]
      ^ missing match clause for constructor true
   
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def foo3 (x : bool) (y : unit) : ⊥ ≔ match x, y [ ]
+     ^ missing match clause for constructor false
+  
   [1]
+
+A refutation only matches against a discriminee whose type is literally an empty datatype; it doesn't perform additional matches to expose a term of empty type.  But discriminees that aren't of empty type, or even of a datatype at all, are skipped over.
+
+  $ narya -e 'def ⊥ : Type ≔ data [ ]' -e 'def ⊔ (A B : Type) : Type ≔ data [ inl. (_ : A) | inr. (_ : B) ]' -e 'def abort2 (A : Type) (u : ⊔ ⊥ ⊥) : A ≔ match u [ ]'
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def abort2 (A : Type) (u : ⊔ ⊥ ⊥) : A ≔ match u [ ]
+     ^ missing match clause for constructor inl
+  
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def abort2 (A : Type) (u : ⊔ ⊥ ⊥) : A ≔ match u [ ]
+     ^ missing match clause for constructor inr
+  
+  [1]
+
+  $ narya -v -e 'def ⊥ : Type ≔ data [ ]' -e 'def nd (A : Type) (f : A → A) (x : ⊥) : A ≔ match f, x [ ]'
+   ￫ info[I0000]
+   ￮ constant ⊥ defined
+  
+   ￫ info[I0000]
+   ￮ constant nd defined
+  
 
   $ narya -e 'def bool : Type ≔ data [ true. | false. ]' -e 'def foo (x : bool) : bool ≔ match x [ true. ↦ false. | false. y ↦ true. ]'
    ￫ error[E1303]
@@ -312,6 +352,11 @@
    1 | def foo : bool → bool → bool ≔ [ ]
      ^ missing match clause for constructor true
   
+   ￫ error[E1300]
+   ￭ command-line exec string
+   1 | def foo : bool → bool → bool ≔ [ ]
+     ^ missing match clause for constructor false
+  
   [1]
 
   $ narya -e 'def bool : Type ≔ data [ true. | false. ]' -e 'def foo : Type → bool → bool ≔ [ ]'
@@ -331,11 +376,31 @@
    1 | def bool : Type ≔ data [ true. | false. ] def bool.not (x : bool) : bool ≔ match x [ true. ⤇ false. | false. ⤇ true.]
      ^ cube abstraction not allowed for zero-dimensional match
   
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.not (x : bool) : bool ≔ match x [ true. ⤇ false. | false. ⤇ true.]
+     ^ cube abstraction not allowed for zero-dimensional match
+  
   [1]
 
   $ narya -v -parametric -e 'def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]'
    ￫ info[I0000]
    ￮ constant bool defined
+  
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
+     ^ cube abstraction not allowed for zero-dimensional match
+  
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
+     ^ cube abstraction not allowed for zero-dimensional match
+  
+   ￫ error[E0508]
+   ￭ command-line exec string
+   1 | def bool : Type ≔ data [ true. | false. ] def bool.and (x y : bool) : bool ≔ match x, y [ true., true. ⤇ true. | true., false. ⤇ false. | false., true. ⤇ false. | false., false. ⤇ false.]
+     ^ cube abstraction not allowed for zero-dimensional match
   
    ￫ error[E0508]
    ￭ command-line exec string
@@ -368,5 +433,292 @@
    ￭ command-line exec string
    1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bar (x : ℕ) (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : Type ≔ match x, y2 [ zero., zero. ↦ ℕ | zero., suc. n ↦ bar x n.0 n.1 n.2 | suc. _, zero. ↦ ℕ | suc. _, suc. n ↦ bar x n.0 n.1 n.2 ]
      ^ e-dimensional match requires cube abstraction
+  
+  [1]
+
+The pattern variables of a higher-dimensional match can be given explicit boundaries, in braces, like the variables of a non-cube higher-dimensional abstraction.
+
+  $ narya -v -parametric pattern-boundary.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant P defined
+  
+   ￫ info[I0000]
+   ￮ constant bar defined
+  
+   ￫ info[I0000]
+   ￮ constant bar′ defined
+  
+  bar′
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+  y0 y1 y2 ↦ match y2 [ suc. {m0} {m1} m2 ↦ m0 | zero. ↦ 0 ]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0001]
+   ￮ axiom a0 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a1 assumed
+  
+   ￫ info[I0001]
+   ￮ axiom a2 assumed
+  
+  let only y0 : ℕ ≔ a0
+  and y1 : ℕ ≔ a1
+  and y2 : ℕ⁽ᵉ⁾ y0 y1 ≔ a2 in
+  (match y2 [ suc. n ⤇ n.0 | zero. ⤇ 0 ] : ℕ)
+    : ℕ
+  
+  let only y0 : ℕ ≔ a0
+  and y1 : ℕ ≔ a1
+  and y2 : ℕ⁽ᵉ⁾ y0 y1 ≔ a2 in
+  (match y2 [ suc. {m0} {m1} m2 ↦ m0 | zero. ↦ 0 ] : ℕ)
+    : ℕ
+  
+  y0 y1 y2 ⤇
+  let⁽ᵉ⁾ only y0 : ℕ ≔ y0.2
+  and y1 : ℕ ≔ y1.2
+  and y2 : ℕ⁽ᵉ⁾ y0 y1 ≔ y2.2 in
+  (match y2 [ suc. {m0} {m1} m2 ↦ m0 | zero. ↦ 0 ] : ℕ)
+    : {y0₀ : ℕ} {y0₁ : ℕ} (y0₂ : ℕ⁽ᵉ⁾ y0₀ y0₁) {y1₀ : ℕ} {y1₁ : ℕ}
+      (y1₂ : ℕ⁽ᵉ⁾ y1₀ y1₁) {y2₀ : ℕ⁽ᵉ⁾ y0₀ y1₀} {y2₁ : ℕ⁽ᵉ⁾ y0₁ y1₁}
+      (y2₂ : ℕ⁽ᵉᵉ⁾ y0₂ y1₂ y2₀ y2₁)
+      →⁽ᵉ⁾ ℕ⁽ᵉ⁾ (bar′ y0₀ y1₀ y2₀) (bar′ y0₁ y1₁ y2₁)
+  
+   ￫ info[I0000]
+   ￮ constant baz defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {m0} {𝑥} m2 ↦ match m0 [ suc. k ↦ k | zero. ↦ 1 ]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant pred₀ defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {𝑥} {𝑦} 𝑧 ↦ match 𝑥 [ suc. k ↦ k | zero. ↦ 1 ]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant both defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {𝑥} {𝑦} 𝑧 ↦ match 𝑥 [
+    | suc. 𝑤 ↦ match 𝑦 [ suc. k1 ↦ k1 | zero. ↦ 3 ]
+    | zero. ↦ match 𝑦 [ suc. 𝑤 ↦ 2 | zero. ↦ 1 ]]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ hint[E1101]
+   ￭ $TESTCASE_ROOT/pattern-boundary.ny
+   64 | def bdry_top (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [
+   65 | | zero. ↦ 0
+   66 | | suc. {zero.} {m1} m2 ↦ m1
+   67 | | suc. {suc. k} {m1} (zero.) ↦ k
+   68 | | suc. {suc. k} {m1} (suc. {j0} {j1} j2) ↦ j1]
+      ^ match will not refine the goal or context (index is not a free variable):
+          suc. k
+  
+   ￫ info[I0000]
+   ￮ constant bdry_top defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {𝑥} {m1} m2 ↦ match 𝑥 [
+    | suc. k ↦ match m2 [ suc. {j0} {j1} j2 ↦ j1 | zero. ↦ k ]
+    | zero. ↦ m1]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant pair_bdry defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | pair. {𝑥} {𝑦} 𝑧 {𝑤} {b1} b2 ↦ match 𝑥 [ suc. k ↦ k | zero. ↦ b1 ]]
+    : (y0 : P) (y1 : P) (y2 : P⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant hi defined
+  
+  y0 y1 y2 ↦
+  match refl y2 [
+  | suc. {𝑥} {m01} {m02} {m10} {m11} {m12} {m20} {m21} m22 ↦ match 𝑥 [
+    | suc. k ↦ k
+    | zero. ↦ 1]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant qux defined
+  
+  y0 y1 y2 ↦ match y2 [ pair. {a0} {a1} a2 b ⤇ b.0 ]
+    : (y0 : P) (y1 : P) (y2 : P⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant quux defined
+  
+  y0 y1 y2 ↦
+  match refl y2 [
+  | suc. {m00} {m01} {m02} {m10} {m11} {m12} {m20} {m21} m22 ↦ m00
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant deep defined
+  
+  y0 y1 y2 ↦
+  match y2 [
+  | suc. {m0} {m1} 𝑥 ↦ match 𝑥 [ suc. {k0} {k1} k2 ↦ k1 | zero. ↦ m0 ]
+  | zero. ↦ 0]
+    : (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+   ￫ info[I0000]
+   ￮ constant multi defined
+  
+  x y0 y1 y2 ↦
+  match x [
+  | suc. 𝑥 ↦ match y2 [ suc. {n0} {n1} n2 ↦ n1 | zero. ↦ 1 ]
+  | zero. ↦ match y2 [ suc. {m0} {m1} m2 ↦ m0 | zero. ↦ 0 ]]
+    : (x : ℕ) (y0 : ℕ) (y1 : ℕ) (y2 : ℕ⁽ᵉ⁾ y0 y1) → ℕ
+  
+
+They must be exactly one for each face of the pattern variable's cube.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc.
+  >   {m0}
+  >   m2 ↦ m0 ]'
+   ￫ error[E1310]
+   ￭ command-line exec string
+   3 |   m2 ↦ m0 ]
+     ^ not enough boundary arguments for higher-dimensional pattern variable (need 1 more)
+  
+  [1]
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc.
+  >   {m0}
+  >   {m1}
+  >   {m2}
+  >   m3 ↦ m0 ]'
+   ￫ error[E1310]
+   ￭ command-line exec string
+   4 |   {m2}
+     ^ too many boundary arguments for higher-dimensional pattern variable (1 extra)
+  
+  [1]
+
+In particular, a zero-dimensional match has no boundary variables to name.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (n : ℕ) : ℕ ≔ match n [ zero. ↦ 0 | suc.
+  >   {m0}
+  >   m ↦ m0 ]'
+   ￫ error[E1310]
+   ￭ command-line exec string
+   2 |   {m0}
+     ^ too many boundary arguments for higher-dimensional pattern variable (1 extra)
+  
+  [1]
+
+Boundary patterns must be followed by the pattern they belong to.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} ↦ 0 ]'
+   ￫ error[E0200]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} ↦ 0 ]
+     ^ parse error: boundary pattern must be followed by the pattern it belongs to
+  
+  [1]
+
+An argument of a constructor that is modally filtered down to dimension zero has only one face, so in a higher-dimensional match with ↦ it is named by a single variable, which is not a cube variable.
+
+  $ narya -parametric -discrete-coreflector -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]' -e 'def D : Type ≔ data [ c. (x :♭| ℕ) (y : ℕ) ]' -e 'def h (d0 d1 : D) (d2 : Id D d0 d1) : ℕ ≔ match d2 [ c. x {y0} {y1} y2 ↦ x ]' -e 'about h'
+  d0 d1 d2 ↦ match d2 [ c. x {y0} {y1} y2 ↦ x ]
+    : (d0 : D) (d1 : D) (d2 : D⁽ᵉ⁾ d0 d1) → ℕ
+  
+
+Boundary patterns are patterns, so they have the same restrictions on variable names as other patterns.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m} {m} _ ↦ 0 ]'
+   ￫ error[E1304]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m} {m} _ ↦ 0 ]
+     ^ variable name 'm' used more than once in match patterns
+  
+  [1]
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {x.y} {_} _ ↦ 0 ]'
+   ￫ error[E0202]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {x.y} {_} _ ↦ 0 ]
+     ^ invalid local variable name: x.y
+  
+  [1]
+
+A branch that leaves any of its pattern variables as a cube still requires the cube abstraction.
+
+  $ narya -parametric -e 'def P : Type ≔ data [ pair. (x : P) (y : P) ] def bad (y0 y1 : P) (y2 : Id P y0 y1) : P ≔ match y2 [ pair. {a0} {a1} a2 b ↦ a0 ]'
+   ￫ error[E0510]
+   ￭ command-line exec string
+   1 | def P : Type ≔ data [ pair. (x : P) (y : P) ] def bad (y0 y1 : P) (y2 : Id P y0 y1) : P ≔ match y2 [ pair. {a0} {a1} a2 b ↦ a0 ]
+     ^ e-dimensional match requires cube abstraction
+  
+  [1]
+
+And all the branches for a single constructor must name the same number of variables, since they all extend the context in the same way.
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} (zero.) ↦ m0 | suc. n ⤇ n.0 ]'
+   ￫ error[E1306]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {m0} {m1} (zero.) ↦ m0 | suc. n ⤇ n.0 ]
+     ^ inconsistent patterns in match
+  
+  [1]
+
+  $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {zero.} {_} _ ↦ 1 | suc. {suc. k} _ ↦ k ]'
+   ￫ error[E1306]
+   ￭ command-line exec string
+   1 | def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc. {zero.} {_} _ ↦ 1 | suc. {suc. k} _ ↦ k ]
+     ^ inconsistent patterns in match
+  
+  [1]
+
+  $ narya -v nondep.ny
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0000]
+   ￮ constant Vec defined
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/nondep.ny
+   4 | def idvec (A : Type) (n : ℕ) (v : Vec A n) : Vec A n ≔ match v return _ [ nil. ↦ nil. | cons. m x xs ↦ cons. m x xs ]
+     ^ term synthesized type
+         Vec A 0
+       but is being checked against type
+         Vec A n
+       unequal terms:
+         0
+       does not equal
+         n
+  
+   ￫ error[E0401]
+   ￭ $TESTCASE_ROOT/nondep.ny
+   4 | def idvec (A : Type) (n : ℕ) (v : Vec A n) : Vec A n ≔ match v return _ [ nil. ↦ nil. | cons. m x xs ↦ cons. m x xs ]
+     ^ term synthesized type
+         Vec A (suc. m)
+       but is being checked against type
+         Vec A n
+       unequal terms:
+         suc. m
+       does not equal
+         n
   
   [1]

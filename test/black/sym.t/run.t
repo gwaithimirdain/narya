@@ -45,10 +45,10 @@
    ￮ axiom f assumed
   
   f⁽ᵉᵉ⁾ (sym a22)
-    : B⁽ᵉᵉ⁾ (refl f a20) (refl f a21) (refl f a02) (refl f a12)
+    : B⁽ᵉᵉ⁾ (ap f a20) (ap f a21) (ap f a02) (ap f a12)
   
   f⁽ᵉᵉ⁾ (sym a22)
-    : B⁽ᵉᵉ⁾ (refl f a20) (refl f a21) (refl f a02) (refl f a12)
+    : B⁽ᵉᵉ⁾ (ap f a20) (ap f a21) (ap f a02) (ap f a12)
   
    ￫ info[I0000]
    ￮ constant ap_sym defined
@@ -62,10 +62,10 @@
     : A⁽ᵉᵉ⁾ a02 a12 a20 a21
   
   f⁽ᵉᵉ⁾ (sym a22)
-    : B⁽ᵉᵉ⁾ (refl f a20) (refl f a21) (refl f a02) (refl f a12)
+    : B⁽ᵉᵉ⁾ (ap f a20) (ap f a21) (ap f a02) (ap f a12)
   
   f⁽ᵉᵉ⁾ (sym a22)
-    : B⁽ᵉᵉ⁾ (refl f a20) (refl f a21) (refl f a02) (refl f a12)
+    : B⁽ᵉᵉ⁾ (ap f a20) (ap f a21) (ap f a02) (ap f a12)
   
    ￫ error[E0601]
    ￭ command-line exec string
@@ -83,10 +83,10 @@
     : A⁽ᵉᵉ⁾ a02 a12 a20 a21
   
   f⁽ᵉᵉ⁾ (sym a22)
-    : B⁽ᵉᵉ⁾ (refl f a20) (refl f a21) (refl f a02) (refl f a12)
+    : B⁽ᵉᵉ⁾ (ap f a20) (ap f a21) (ap f a02) (ap f a12)
   
   f⁽ᵉᵉ⁾ (sym a22)
-    : B⁽ᵉᵉ⁾ (refl f a20) (refl f a21) (refl f a02) (refl f a12)
+    : B⁽ᵉᵉ⁾ (ap f a20) (ap f a21) (ap f a02) (ap f a12)
   
    ￫ error[E0601]
    ￭ command-line exec string

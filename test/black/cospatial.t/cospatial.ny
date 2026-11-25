@@ -54,11 +54,11 @@ def wau (x : Type) : adjunit ≔ au. x
 def adjcounit (A :ʃ♭| Type) (x :ʃ♭| A) : A ≔ x
 
 ` The negative operator dual to ♭, using the sinister modality ʃ (left adjoint to ♭).
-def Neg (A :♭| Type) : Type ≔ codata [ (x :ʃ| _) .un : A ]
+def ♭ (A :♭| Type) : Type ≔ codata [ (_ :ʃ| _) .♭ : A ]
 
-def mk (A :♭| Type) (a :♭| A) : Neg A ≔ [ .un ↦ a ]
+def mk (A :♭| Type) (a :♭| A) : ♭ A ≔ [ .♭ ↦ a ]
 
-def unmk (A :ʃ♭| Type) (u :ʃ| Neg A) : A ≔ (u :ʃ| _) .un
+def unmk (A :ʃ♭| Type) (u :ʃ| ♭ A) : A ≔ (u :ʃ| _) .♭
 
 ` unmk (mk a) reduces to a, with the (unique) counit key applied.
 def unmk_mk (A :ʃ♭| Type) (a :ʃ♭| A) : Id A (unmk A (mk A a)) a ≔ refl a

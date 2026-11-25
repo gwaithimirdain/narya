@@ -13,6 +13,7 @@ Execution behavior
 - ``-interactive`` or ``-i``: Enter interactive mode (see :ref:`Execution`)
 - ``-exec STRING`` or ``-e STRING``: Execute a string argument (see :ref:`Execution`)
 - ``-source-only``: Load all files from source, ignoring any compiled versions
+- ``-no-write-compiled``: Don't write compiled versions of files loaded from source
 
 Formatting output
 ^^^^^^^^^^^^^^^^^
@@ -20,13 +21,12 @@ Formatting output
 - ``-verbose`` or ``-v``: Show verbose messages
 - ``-unicode`` and ``-ascii``: Display and reformat code using Unicode (default) or ASCII
 - ``-no-reformat``: Do not automatically reformat source files (see :ref:`Code formatter`)
-- ``-show-function-boundaries``: Display boundaries of functions, when implicit (see :ref:`Implicit boundaries`)
-- ``-hide-function-boundaries``: Hide boundaries of functions, when implicit (default)
-- ``-show-type-boundaries``: Display boundaries of types, when implicit
-- ``-hide-type-boundaries``: Hide boundaries of types, when implicit (default)
+- ``-show-implicits``: Display implicit arguments, such as boundaries of functions and types (see :ref:`Implicit boundaries`)
+- ``-hide-implicits``: Hide implicit arguments (default)
 - ``-show-unique-keys``: Display keys that are the unique one between their endpoints (see :ref:`Keys`)
 - ``-hide-unique-keys``: Hide keys that are the unique one between their endpoints (default)
 - ``-variables X,Y,Z``: Set the default variable names (see :ref:`Default names`)
+- ``-display-size N``: Truncate displayed terms at around ``N`` subterms (default 2000), or never if ``N=∞`` (see :ref:`Display`)
 
 Controlling parametricity
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -37,7 +37,6 @@ These options are discussed under :ref:`Parametricity`.
 - ``-direction X``: Set the symbol and names for reflexivity
 - ``-arity N``: Set the arity of parametricity to N (1 ≤ N ≤ 9)
 - ``-internal`` and ``-external``: Set whether parametricity is internal (default) or external
-- ``-discreteness``: Enable strictly parametrically discrete types (deprecated)
 
 Modal type theory options
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -56,7 +55,7 @@ Execution
 
 When the Narya executable is run, it loads all the files given on its command line and any strings supplied on the command line with ``-e``.  As usual, the special filename ``-`` refers to standard input.  Files and strings are loaded in the order they are given on the command line; all files must have the extension ``.ny``.  Lastly, if ``-i`` was given anywhere on the command line, Narya enters interactive mode.
 
-In interactive mode, commands typed by the user are executed as they are entered.  Since many commands span multiple lines, Narya waits for a blank line before parsing and executing the command(s) being entered.  Make sure to enter a blank line before starting a new command; interactive commands must be entered and executed one at a time.  The result of the command is printed (more verbosely than is usual when loading a file) and then the user can enter more commands.  Type Control+D to exit interactive mode, or enter the command ``quit``.  In addition, in interactive mode you can enter a term instead of a command, and Narya will assume you mean to :ref:`echo<Echo/Synth>` it.
+In interactive mode, commands typed by the user are executed as they are entered.  Since many commands span multiple lines, Narya waits for a blank line before parsing and executing the command(s) being entered.  Make sure to enter a blank line before starting a new command; interactive commands must be entered and executed one at a time.  The result of the command is printed (more verbosely than is usual when loading a file) and then the user can enter more commands.  Type Control+D to exit interactive mode, or enter the command ``quit``.  In addition, in interactive mode you can enter a term instead of a command, and Narya will assume you mean to :ref:`echo<Echo/Synth/About>` it.
 
 
 Commands
@@ -71,7 +70,7 @@ Def
 
    def NAME [PARAMS] [: TYPE] ≔ TERM [and ...]
 
-Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see :ref:`Identifiers`), while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see :ref:`synth<Echo/Synth>`).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see :ref:`canonical types<Canonical types defined by case trees>`).
+Define a global constant called ``NAME`` having type ``TYPE`` and value ``TERM``.  Thus ``NAME`` must be a valid identifier (see :ref:`Identifiers`), while ``TYPE`` must parse and typecheck as a type, and ``TERM`` must parse and typecheck at type ``TYPE``.  If ``TYPE`` is omitted, then ``TERM`` must synthesize a type (see :ref:`synth<Echo/Synth/About>`).  In addition, if ``TYPE`` is specified, then ``TERM`` can also be a case tree or canonical type declaration (see :ref:`canonical types<Canonical types defined by case trees>`).
 
 The optional ``PARAMS`` is a list of parameters of the form ``(x : PTY)``, or more generally ``(x y z : PTY)``, with the effect that the actual type of the constant ``NAME`` is the iterated function-type with these parameters as domain and ``TYPE`` (or the synthesized type of ``TERM``) as codomain, and its value is the λ-abstraction of ``TERM`` over them.  That is, ``def foo (x:A) : B ≔ M`` is equivalent to ``def foo : A → B ≔ x ↦ M``.
 
@@ -88,8 +87,8 @@ Axiom
 
 Assert a global constant called ``NAME`` having type ``TYPE``, without any definition (an axiom).  Parameters and names are treated as for ``def``.
 
-Echo/Synth
-^^^^^^^^^^
+Echo/Synth/About
+^^^^^^^^^^^^^^^^
 
 .. code-block:: none
 
@@ -102,6 +101,13 @@ Normalize ``TERM`` and print its value and its type to standard output.  Note th
    synth TERM
 
 Like ``echo``, but does not normalize the term, only computes its type.
+
+.. code-block:: none
+
+   about TERM
+
+Like ``echo``, but after normalizing ``TERM``, display its definition rather than its value.  In particular, since functions do not evaluate until applied to arguments, if ``TERM`` is just the name of a function ``f``, then ``echo f`` will simply return ``f`` back again, while ``about f`` will display the *definition* of ``f``.  See :ref:`Eta-conversion and case trees` for further discussion, and :ref:`Matching and case trees` for one exception.
+
 
 Notation
 ^^^^^^^^
@@ -196,7 +202,7 @@ Undo
 
    undo N
 
-Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``show``, ``solve``, ``split``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
+Undo the last ``N`` commands that modify the global state, rewinding to a previous situation.  This includes all commands except ``echo``, ``synth``, ``about``, ``show``, ``solve``, ``split``, and ``display``: those commands are skipped over when undoing.  (Of course ``solve`` does modify the global state, but it is not undoable because it doesn't affect the "processed position" in ProofGeneral; it exists "outside the timestream".)  The command ``undo`` itself is also not "undoable" and there is no "redo": after a command is undone, it is lost permanently from Narya's memory (although you can press Up-arrow or Meta+P to find it in the interactive history and re-execute it).  Following an ``undo`` with another ``undo`` will just undo additional commands: ``undo 1`` followed by ``undo 1`` is the same as ``undo 2``.
 
 Display
 ^^^^^^^
@@ -205,25 +211,59 @@ Display
 
    display NAME ≔ VALUE
 
-Set one of the display settings (that are also set by command-line flags).  Possible display settings are
+Set one of the display settings (that are also set by command-line flags).  The possible display settings are:
    
 .. code-block:: none
 
     display chars ≔ unicode
     display chars ≔ ascii
     display chars ≔ toggle
-    display function boundaries ≔ on
-    display function boundaries ≔ off
-    display function boundaries ≔ toggle
-    display type boundaries ≔ on
-    display type boundaries ≔ off
-    display type boundaries ≔ toggle
+
+Some non-ASCII unicode characters have special meaning to Narya, but most of them also have ASCII equivalents, for instance ``→`` is equivalent to ``->``.  This setting controls whether unicode or ASCII characters are used when displaying terms; see :ref:`Tokens` for more information about character display.
+    
+.. code-block:: none
+
+    display implicits ≔ on
+    display implicits ≔ off
+    display implicits ≔ toggle
+
+See :ref:`Implicit boundaries` for more information about implicit boundaries of functions and types.
+
+.. code-block:: none
+
     display unique keys ≔ on
     display unique keys ≔ off
     display unique keys ≔ toggle
+
+See :ref:`Keys` for more information about unique keys.
+
+.. code-block:: none
+
+    display let ≔ names
+    display let ≔ environments
+    display let ≔ definitions
+    display let ≔ cycle
+
+See :ref:`Matches in terms and case trees` for more information about the display of local definitions and holes.
+
+.. code-block:: none
+
+    display degeneracy names ≔ N
+
+See :ref:`Symmetries and degeneracies` for more information about degeneracy names.
+
+.. code-block:: none
+
     display variables ≔ X,Y,Z
 
-See :ref:`Implicit boundaries` for more information about function and type boundaries, and :ref:`Keys` for more information about unique keys.
+See :ref:`Default names` for more information about default variable names.
+
+.. code-block:: none
+
+    display size ≔ N
+    display size ≔ ∞
+
+This setting limits how large a displayed term can be, whether in an error message, the output of ``echo``, or the context and type of a hole.  A term with more than about ``N`` subterms is displayed only to a limited depth of subterm nesting, with omitted subterms shown as ``⋯`` (or ``....`` in ASCII).  A truncated term can't be copied into input, so if you need to do that, increase the display size and re-display it.  The default display size is 2000, and ``∞`` (or ``infinity``) means no limit.
 
 
 Chdir
@@ -305,7 +345,7 @@ The most useful ProofGeneral key commands for Narya are the following.
 - ``C-c C-.`` : Move the cursor to the end of the processed region.
 - ``C-M-a`` : Move the cursor to the beginning of the command it is inside.
 - ``C-M-e`` : Move the cursor to the end of the command it is inside.
-- ``C-c C-v`` : Read a "state-preserving" command from the minibuffer and execute it, displaying its output in the result buffer.  Currently the only state-preserving commands are ``echo``, ``synth``, ``show``, and ``display``.
+- ``C-c C-v`` : Read a "state-preserving" command from the minibuffer and execute it, displaying its output in the result buffer.  Currently the only state-preserving commands are ``echo``, ``synth``, ``about``, ``show``, and ``display``.
 - ``C-c C-c`` : Interrupt Narya if a command is taking too long.  Narya attempts to recover, but its state may be unreliable afterwards.
 - ``C-c C-x`` : Retract the buffer and kill the Narya subprocess.
 - ``M-;`` : Insert a comment, remove a comment, or comment out a region.  This is a standard Emacs command, but is customized to use line comments on code lines and block comments elsewhere.
@@ -314,18 +354,21 @@ As noted above, Narya's ProofGeneral mode is enhanced to deal with open holes (s
 
 Narya's ProofGeneral mode also defines the following additional key commands.
 
-- ``C-c ;`` : Read a term from the minibuffer and normalize it (like ``C-c C-v`` with ``echo``), perhaps in the context of the current hole.
-- ``C-c :`` : Read a term from the minibuffer and synthesize its type (like ``C-c C-v`` with ``synth``), perhaps in the context of the current hole.
-- ``C-c C-?`` : Show the contexts and types of all open holes (like ``C-c C-v`` with ``show holes``).
-- ``C-c C-,`` : Show the context and type of the hole under point (like ``C-c C-v`` with ``show hole``, except that you don't need to know the hole number).
+- ``C-c ;`` : Read a term from the minibuffer and normalize it with ``echo``, perhaps in the context of the current hole.
+- ``C-c :`` : Read a term from the minibuffer and synthesize its type with ``synth``, perhaps in the context of the current hole.
+- ``C-c C-a`` : Read a term from the minibuffer and display its definition with ``about``, perhaps in the context of the current hole.
+- ``C-c C-?`` : Show the contexts and types of all open holes, with ``show holes``.
+- ``C-c C-,`` : Show the context and type of the hole under point, like ``show hole`` except that you don't need to know the hole number.
 - ``C-c C-j`` : Move the cursor to the position of the next open hole.
 - ``C-c C-k`` : Move the cursor to the position of the previous open hole.
 - ``C-c C-SPC`` : Fill the hole under point with a specified term, without retracting any code.
 - ``C-c C-y`` : Split in the hole under point based on its type.
 - ``C-c C-d C-u``: Toggle display of unicode characters.
-- ``C-c C-d C-f``: Toggle display of function boundaries.
-- ``C-c C-d C-t``: Toggle display of type boundaries.
+- ``C-c C-d C-i``: Toggle display of implicit arguments.
+- ``C-c C-d C-k``: Toggle display of unique keys.
+- ``C-c C-d C-l``: Cycle the display of local definitions and holes between names, environments, and definitions.
 - ``C-c C-d C-v``: Set the default variable names.
+- ``C-c C-d C-d``: Set the dimension up to which degeneracies are displayed with names.
 
 For Agda users
 ^^^^^^^^^^^^^^
@@ -428,7 +471,7 @@ It is not currently possible to reformat code without typechecking it.  The pres
 
 Currently there is only one configuration option for the code formatter: whether to print Unicode characters such as → or their ASCII equivalents such as ``->``.  This can be set on the command line with the flags ``-unicode`` and ``-ascii``, and in ProofGeneral with the state-preserving ``display`` command.  In accord with the goal of opinionated code formatters -- to eliminate time wasted by arguing about formatting, including formatter options -- I do not plan to add more configuration options; although I'll listen if you have a case to make for one.  Suggestions for improvements and changes to the standard formatting style are also welcome, although I can't promise to adopt them.
 
-It is possible to turn off the code formatter.  Unsetting the Emacs customization variable ``narya-reformat-commands`` will turn off reformatting in ProofGeneral, and the command-line option ``-no-format`` will turn off reformatting of input files.  However, if you don't like the way Narya reformats your code, I would appreciate it if you give me feedback about this rather than (or, at least, in addition to) turning it off entirely.  If ``narya-reformat-commands`` is turned off, you can manually reformat a command in the processed region with ``C-M-q``.  (Reformatting unprocessed commands would be too error-prone, as noted above: Narya wouldn't be able to tell which notations are in scope.)
+It is possible to turn off the code formatter.  Unsetting the Emacs customization variable ``narya-reformat-commands`` will turn off reformatting in ProofGeneral, and the command-line option ``-no-reformat`` will turn off reformatting of input files.  However, if you don't like the way Narya reformats your code, I would appreciate it if you give me feedback about this rather than (or, at least, in addition to) turning it off entirely.  If ``narya-reformat-commands`` is turned off, you can manually reformat a command in the processed region with ``C-M-q``.  (Reformatting unprocessed commands would be too error-prone, as noted above: Narya wouldn't be able to tell which notations are in scope.)
 
 
 jsNarya
@@ -436,5 +479,5 @@ jsNarya
 
 jsNarya is a JavaScript version of Narya that runs in a browser.  Its functionality is limited to the equivalent of ``narya -e "STARTUP" -i``: you can specify a single startup "file" by copying and pasting it into a text box, and then you drop into interactive mode.  Also there is no real Unicode input-mode, although there is a palette of buttons that can be used to enter a number of common Unicode characters.  These limitations are not intrinsic; we just have not yet found or implemented an appropriate frontend for anything more complicated.
 
-jsNarya does accept customization of the arity, direction name, and internality of parametricity, plus discreteness, for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters, such as ``?arity=1&direction=p,rel,Br`` for unary :ref:`Parametricity`, or ``?dtt`` for :ref:`Displayed type theory`.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
+jsNarya does accept customization of the arity, direction name, and internality of parametricity for :ref:`Observational higher dimensions`.  This can be done with input elements on the page before starting the interactive mode, or with appropriately-named URL parameters, such as ``?arity=1&direction=p,rel,Br`` for unary :ref:`Parametricity`, or ``?dtt`` for :ref:`Displayed type theory`.  The startup code can also be specified in the URL with the ``?startup=`` parameter.
 

@@ -704,6 +704,52 @@ The supplied files are symlinked into the directory where the test is run, and u
       ≔ 0 in
     x
   
+  def xo (n : ℕ) : ℕ ≔ let only x : ℕ ≔ n and y : ℕ ≔ 0 in x
+  
+  def xo1 (n : ℕ) : ℕ ≔
+    let only x : ℕ ≔ n `line comment
+    {` block comment `}
+    and y : ℕ ≔ 0 in
+    x
+  
+  def xo2 (n : ℕ) : ℕ ≔
+    let only x `line comment
+      : ℕ
+      ≔ n
+    and y : ℕ ≔ 0 in
+    x
+  
+  def xo3 (n : ℕ) : ℕ ≔
+    let only x : ℕ ≔ n
+    and y : ℕ ≔ 0
+    and z : ℕ ≔ 0
+    and w : ℕ ≔ 0
+    and v : ℕ ≔ 0
+    and u : ℕ ≔ 0 in
+    x
+  
+  def xh (X : Type) (x0 x1 : X) (x2 : Id X x0 x1) : Id X x0 x1 ≔
+    let⁽ᵉ⁾ only Y : Type ≔ Id X
+    and y : Y ≔ x2 in
+    y
+  
+  def xh1 (X : Type) (x0 x1 : X) (x2 : Id X x0 x1) : Id X x0 x1 ≔
+    let⁽ᵉ⁾ only Y : Type ≔ Id X
+    and y : Y ≔ x2 in
+    y
+  
+  def xh2 (X : Type) (x0 x1 : X) (x2 : Id X x0 x1) : Id X x0 x1 ≔
+    let⁽ᵉ⁾ `line comment
+      only Y : Type
+      ≔ Id X
+    and y : Y ≔ x2 in
+    y
+  
+  def xh3 (X : Type) (x0 x1 : X) (x2 : Id X x0 x1) : Id X x0 x1 ≔
+    let only Y : Type ≔ X
+    and x : Id Y ≔ x2 in
+    x
+  
   import "importable"
   import "importable" | all
   import "importable"
@@ -751,6 +797,20 @@ The supplied files are symlinked into the directory where the test is run, and u
     blahblah (blahblah2 blahblah3) (blahblah2 (blahblah2 blahblah3))
       (blahblah blahblah3 blahblah3 blahblah3),
     snd ≔ blahblah3)
+  
+  {` parenthesized case trees `}
+  
+  def parenthesized_implicit_match_with_long_name : ℕ → ℕ ≔ ([
+  | zero. ↦ zero.
+  | suc. n ↦ n])
+  
+  def parenthesized_tuple : prod ℕ ℕ ≔ ((
+    fst ≔ plus (plus 0 0) (plus 0 0),
+    snd ≔ plus (plus 0 0) (plus 0 0)))
+  
+  def parenthesized_comatch_with_a_long_name : stream ℕ ≔ ([
+  | .head ↦ 0
+  | .tail ↦ parenthesized_comatch_with_a_long_name])
 
 Reformatting must be idempotent: a second pass changes nothing.  In particular
 whitespace must not accumulate, as it did when a comment preceding a case-tree

@@ -6,7 +6,9 @@ This file records the design rationale for the equality/conversion checker in
 `e4c38209`, `a355dd0d`, `e31b5e4d`), its relationship to smalltt's
 "approximate conversion checking" (https://github.com/AndrasKovacs/smalltt),
 which the previous design was modeled on, and considerations for adding
-unification later.
+unification later.  (Glued evaluation has since been made permanent: the
+`GluedEval` toggle in `value.ml` and the eager-evaluation code paths it
+guarded have been removed.)
 
 ## Current design
 
@@ -53,8 +55,7 @@ type), with the following performance-critical structure:
    unfolding retry per node, and subterms whose spines match are never
    unfolded.  Any spine mismatch must fall through to unfolding before being
    reported, because equal-length spines with a shared *non-injective* head do
-   not determine inequality.  With glued evaluation off, `view_term` is the
-   identity and the comparison logic is unchanged.
+   not determine inequality.
 
 Ordering invariant (long-standing, worth preserving): `equal_apps` starts
 each case with its recursive call, so spines are processed by first comparing

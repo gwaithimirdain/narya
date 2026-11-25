@@ -38,12 +38,12 @@ def d : D ≔ [ .snd ↦ zero. ]
 def d_test : Id N (d .snd) zero. ≔ refl zero.
 
 ` Parametrized negative modal operators
-def ♯ (A :♯| Type) : Type ≔ sig ( (x :♭| _) .unsharp : A )
+def ♯ (A :♯| Type) : Type ≔ sig ( (_ :♭| _) .♯ : A )
 
-def ♯_unit (A :♯| Type) (x :♯| A) : ♯ A ≔ (unsharp ≔ x)
+def ♯_unit (A :♯| Type) (x :♯| A) : ♯ A ≔ (♯ ≔ x)
 
 def ♯_mult (A :♯| Type) (x : ♯ (♯ A)) : ♯ A ≔ (
-  unsharp ≔ ((x :♭| _) .unsharp :♭| _) .unsharp)
+  ♯ ≔ ((x :♭| _) .♯ :♭| _) .♯)
 
 ` The type of a modal field is checked in a context that is first locked by the
 ` right adjoint ♯ and then extended by the self variable, annotated by the left

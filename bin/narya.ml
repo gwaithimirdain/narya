@@ -51,18 +51,20 @@ let speclist =
       "Don't automatically reformat files supplied on the command line" );
     ("-unicode", Arg.Set unicode, "Display and reformat code using Unicode for built-ins (default)");
     ("-ascii", Arg.Clear unicode, "Display and reformat code using ASCII for built-ins");
-    ( "-hide-function-boundaries",
-      Arg.Clear show_function_boundaries,
-      "Hide implicit boundaries of higher-dimensional applications (default)" );
-    ( "-show-function-boundaries",
-      Arg.Set show_function_boundaries,
-      "Display implicit boundaries of higher-dimensional applications" );
-    ( "-hide-type-boundaries",
-      Arg.Clear show_type_boundaries,
-      "Hide implicit boundaries of instantiations of higher-dimensional types (default)" );
-    ( "-show-type-boundaries",
-      Arg.Set show_type_boundaries,
-      "Display implicit boundaries of instantiations of higher-dimensional types" );
+    ("-hide-implicits", Arg.Clear show_implicits, "Hide implicit arguments (default)");
+    ("-show-implicits", Arg.Set show_implicits, "Display implicit arguments");
+    ( "-display-size",
+      Arg.String
+        (fun n ->
+          display_size :=
+            match n with
+            | "∞" | "infinity" -> None
+            | _ -> (
+                match int_of_string_opt n with
+                | Some n when n > 0 -> Some n
+                | _ -> raise (Arg.Bad ("invalid display size: " ^ n)))),
+      "Truncate displayed terms with more than this many subterms (default 2000), or ∞ for no limit"
+    );
     ( "-hide-unique-keys",
       Arg.Clear show_unique_keys,
       "Hide keys that are the unique one between their endpoints (default)" );
@@ -80,9 +82,12 @@ let speclist =
       Arg.Clear hott,
       "Switch from higher observational type theory (fibrancy) to parametricity" );
     ("-hott", Arg.Set hott_deprecated, "");
-    ("-deprecated-discreteness", Arg.Set discreteness, "Enable discrete datatypes (deprecated)");
+    ("-deprecated-discreteness", Arg.Set old_discreteness, "");
     ("-discreteness", Arg.Set old_discreteness, "");
     ("-source-only", Arg.Set source_only, "Load all files from source (ignore compiled versions)");
+    ( "-no-write-compiled",
+      Arg.Set no_write_compiled,
+      "Don't write compiled versions of files (but still load existing ones)" );
     (* Mode theories *)
     ( "-coreflector",
       Arg.Unit
@@ -391,8 +396,7 @@ let () =
     print_endline (String.trim [%blob "version.txt"]);
     exit 0);
   if !old_discreteness then (
-    Printf.eprintf
-      "-discreteness is deprecated; use discrete modalities instead.\nYou can use -deprecated-discreteness while porting old code.";
+    Printf.eprintf "-discreteness has been removed; use discrete modalities instead.";
     exit 1);
   if !mode_theories > 1 then (
     Printf.fprintf stderr "too many mode theories! specify only one.";
@@ -464,9 +468,9 @@ let rec repl terminal history buf =
         let* () = Lwt_io.flush Lwt_io.stdout in
         let use_ansi = if !use_ansi then Some true else None in
         (* In interactive mode, we display all messages verbosely, and don't quit on fatal errors except for the Quit command. *)
-        ( Reporter.try_with
-            ~emit:(fun d -> Reporter.display ?use_ansi ~output:stdout d)
-            ~fatal:(fun d ->
+        ( Reporter.run ~emit:(Reporter.display ?use_ansi ~output:stdout)
+            ~mortal:(Reporter.display ?use_ansi ~output:stdout) ~fatal:(fun errs d ->
+              let d = Reporter.not_all_silent "interactive command" errs d in
               Reporter.display ?use_ansi ~output:stdout d;
               match d.message with
               | Quit _ -> exit 0
@@ -505,16 +509,13 @@ let interact () =
           let* () = LTerm_history.save history history_file in
           Lwt.fail exn)
 
-let rec print_error_locs (d : Reporter.Code.t Asai.Diagnostic.t) =
-  match d.message with
-  | Accumulated (_name, msgs) -> Mbwd.miter (fun [ e ] -> print_error_locs e) [ msgs ]
-  | _ -> (
-      match d.explanation.loc with
-      | Some loc -> (
-          match Asai.Range.view loc with
-          | `Range (s, e) -> Format.printf "%d %d\n" s.offset e.offset
-          | `End_of_file p -> Format.printf "%d\n" p.offset)
-      | None -> ())
+let print_error_locs (d : Reporter.Code.t Asai.Diagnostic.t) =
+  match d.explanation.loc with
+  | Some loc -> (
+      match Asai.Range.view loc with
+      | `Range (s, e) -> Format.printf "%d %d\n" s.offset e.offset
+      | `End_of_file p -> Format.printf "%d\n" p.offset)
+  | None -> ()
 
 (* In ProofGeneral interaction mode, the prompt is delimited by formfeeds, and commands are ended by a formfeed on a line by itself.  This prevents any possibility of collision with other input or output.  This doesn't require initialization. *)
 let rec interact_pg () : unit =
@@ -534,16 +535,21 @@ let rec interact_pg () : unit =
     let cmd = Buffer.contents buf in
     let holes = ref Emp in
     Display.modify (fun s -> { s with holes = `With_number });
-    Reporter.try_with
+    Reporter.run
     (* ProofGeneral sets TERM=dumb, but in fact it can display ANSI colors, so we tell Asai to override TERM and use colors unconditionally. *)
       ~emit:(fun d ->
         match d.message with
         | Hole _ -> holes := Snoc (!holes, d.message)
         | _ -> Reporter.display ~use_ansi:true ~output:stdout d)
-      ~fatal:(fun d ->
+      ~mortal:(Reporter.display ~use_ansi:true ~output:stdout)
+      ~fatal:(fun errs d ->
+        let d = Reporter.not_all_silent "proof general command" errs d in
         Reporter.display ~use_ansi:true ~output:stdout d;
         Format.printf "\x0C[errors]\x0C\n%!";
-        print_error_locs d)
+        (* Silent errors aren't displayed, so we don't report their locations either. *)
+        Mbwd.miter
+          (fun [ d ] -> if not (Reporter.is_silent d) then print_error_locs d)
+          [ Snoc (errs, d) ])
       (fun () ->
         try
           match Command.parse_single cmd with
@@ -677,9 +683,11 @@ let () =
           if try FileUtil.test Is_file file with _ -> false then `File file
           else `String { title = Some "command line fake-interact"; content = file } in
         let p, src = Parser.Command.Parse.start_parse source in
-        Reporter.try_with ~emit:(Reporter.display ?use_ansi ~output:stdout)
-          ~fatal:(Reporter.display ?use_ansi ~output:stdout) (fun () ->
-            Execute.batch None p src `None []))
+        Reporter.run
+          ~emit:(Reporter.display ?use_ansi ~output:stdout)
+          ~mortal:(Reporter.display ?use_ansi ~output:stdout)
+          ~fatal:(fun _ d -> Reporter.display ?use_ansi ~output:stdout d)
+          (fun () -> Execute.batch None (ref false) p src `None []))
       [ !fake_interacts ];
     if !interactive then Lwt_main.run (interact ())
     else if !proofgeneral then (

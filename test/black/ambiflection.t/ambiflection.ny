@@ -1,9 +1,9 @@
 {` -*- narya-prog-args: ("-proofgeneral" "-ambiflection") -*- `}
 
 ` The unit of △ ⊣ □: a plain Disc value can supply a □△-locked field.
-def □△ (A : Disc) : Disc ≔ data [ t. (_ :□△| A) ]
+def □△ (A : Disc) : Disc ≔ data [ □△. (_ :□△| A) ]
 
-def eta (A : Disc) (x : A) : □△ A ≔ t. x
+def eta (A : Disc) (x : A) : □△ A ≔ □△. x
 
 ` The counit of □ ⊣ △ is, together with the unit of △ ⊣ □, an isomorphism □△ ≅ 1_Disc: a
 ` □△-locked variable can also be used directly.
@@ -43,32 +43,32 @@ def roundtrip_good_ok (A :△□| Type) (x :△□| A)
 ` △□ is also adjoint to itself (unit id ⇒ △□∘△□ via unit-then-tribox_insert, counit
 ` △□∘△□ ⇒ id via tribox_extract-then-counit), so it too is sinister and can parametrize a modal
 ` (negative) field, just as ♮ does in Ambiflector.
-def Neg (A :△□| Type) : Type ≔ codata [ (x :△□| _) .un : A ]
+def △□ (A :△□| Type) : Type ≔ codata [ (_ :△□| _) .△□ : A ]
 
-def mk (A :△□| Type) (a :△□| A) : Neg A ≔ [ .un ↦ a ]
+def mk (A :△□| Type) (a :△□| A) : △□ A ≔ [ .△□ ↦ a ]
 
-def unmk (A :△□| Type) (u :△□| Neg A) : A ≔ (u :△□| _) .un
+def unmk (A :△□| Type) (u :△□| △□ A) : A ≔ (u :△□| _) .△□
 
 ` unmk (mk a) reduces to a, with the (unique) key applied.
 def unmk_mk (A :△□| Type) (a :△□| A) : Id A (unmk A (mk A a)) a ≔ refl a
 
 ` △ is sinister (△ ⊣ □), so it can parametrize a modal (negative) field.
-def □ (A :□| Type) : Disc ≔ codata [ (x :△| _) .unbox : A ]
+def □ (A :□| Type) : Disc ≔ codata [ (_ :△| _) .□ : A ]
 
-def box (A :□| Type) (a :□| A) : □ A ≔ [ .unbox ↦ a ]
+def box (A :□| Type) (a :□| A) : □ A ≔ [ .□ ↦ a ]
 
-def unbox (A :△□| Type) (u :△| □ A) : A ≔ (u :△| _) .unbox
+def unbox (A :△□| Type) (u :△| □ A) : A ≔ (u :△| _) .□
 
 ` unbox (box a) reduces to a, with the (unique) counit key applied.
 def unbox_box (A :△□| Type) (a :△□| A) : Id A (unbox A (box A a)) a
   ≔ refl a
 
 ` □ is sinister (□ ⊣ △), so it can parametrize a modal (negative) field, this time on Disc.
-def △ (A :△| Disc) : Type ≔ codata [ (x :□| _) .untri : A ]
+def △ (A :△| Disc) : Type ≔ codata [ (_ :□| _) .△ : A ]
 
-def tri (A :△| Disc) (a :△| A) : △ A ≔ [ .untri ↦ a ]
+def tri (A :△| Disc) (a :△| A) : △ A ≔ [ .△ ↦ a ]
 
-def untri (A :□△| Disc) (u :□| △ A) : A ≔ (u :□| _) .untri
+def untri (A :□△| Disc) (u :□| △ A) : A ≔ (u :□| _) .△
 
 def untri_tri (A :□△| Disc) (a :□△| A) : Id A (untri A (tri A a)) a
   ≔ refl a

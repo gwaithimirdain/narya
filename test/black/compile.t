@@ -313,3 +313,240 @@ Echos are not re-executed in compiled files
    ￫ warning[W2400]
    ￮ not re-executing echo/synth/show commands when loading compiled file $TESTCASE_ROOT/echo.nyo
   
+
+With -no-write-compiled, no compiled files are written, but existing ones are still loaded
+
+  $ cat >nw1.ny <<EOF
+  > axiom A : Type
+  > EOF
+
+  $ cat >nw2.ny <<EOF
+  > import "nw1"
+  > axiom a0 : A
+  > EOF
+
+  $ narya -no-write-compiled nw2.ny
+
+  $ test -e nw1.nyo || test -e nw2.nyo || echo none
+  none
+
+  $ narya nw1.ny
+
+  $ narya -no-write-compiled -v nw2.ny
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/nw1.ny (compiled)
+  
+   ￫ info[I0001]
+   ￮ axiom a0 assumed
+  
+
+  $ test -e nw1.nyo && (test -e nw2.nyo || echo only nw1)
+  only nw1
+
+A file loaded through a symlink has its compiled version next to the symlink, and is recompiled
+when the symlink's target is modified
+
+  $ mkdir symlib symproj
+
+  $ cat >symlib/one.ny <<EOF
+  > axiom A : Type
+  > EOF
+
+  $ ln -s ../symlib/one.ny symproj/one.ny
+
+  $ cat >symproj/two.ny <<EOF
+  > import "one"
+  > axiom a : A
+  > EOF
+
+  $ narya symproj/two.ny
+
+  $ test -e symproj/one.nyo && (test -e symlib/one.nyo || echo next to symlink)
+  next to symlink
+
+  $ touch -t 202001010000 symlib/one.ny symproj/one.nyo symproj/two.ny symproj/two.nyo
+
+  $ touch -h -t 202001010000 symproj/one.ny
+
+  $ cat >symlib/one.ny <<EOF
+  > axiom A : Type
+  > axiom B : Type
+  > EOF
+
+  $ narya -v symproj/two.ny
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/symproj/one.ny
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/symproj/one.ny (source)
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+
+The same file referred to with ".." is not loaded twice
+
+  $ mkdir -p dots/sub
+
+  $ cat >dots/d1.ny <<EOF
+  > axiom A : Type
+  > EOF
+
+  $ narya -v -e 'import "dots/d1"' -e 'import "dots/sub/../d1"'
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/dots/d1.ny
+  
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/dots/d1.ny (source)
+  
+
+Nor if one of them is given on the command line
+
+  $ narya -v dots/sub/../d1.ny -e 'import "dots/d1"'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+
+Incomplete compiled files are ignored and the source loaded instead, which writes a
+complete compiled file again
+
+  $ cat >full.ny <<EOF
+  > axiom B : Type
+  > axiom b : B
+  > EOF
+
+  $ cat >usefull.ny <<EOF
+  > import "full"
+  > axiom b' : B
+  > EOF
+
+  $ narya full.ny
+
+  $ cp full.nyo full.nyo.orig
+
+  $ : >full.nyo
+
+  $ narya -v usefull.ny
+   ￫ info[I0003]
+   ￮ loading file: $TESTCASE_ROOT/full.ny
+  
+   ￫ info[I0001]
+   ￮ axiom B assumed
+  
+   ￫ info[I0001]
+   ￮ axiom b assumed
+  
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/full.ny (source)
+  
+   ￫ info[I0001]
+   ￮ axiom b' assumed
+  
+
+  $ tail -n 1 full.nyo
+  end of narya compiled file
+
+  $ head -c 20 full.nyo.orig >full.nyo
+
+  $ narya usefull.ny
+
+  $ tail -n 1 full.nyo
+  end of narya compiled file
+
+  $ head -c 700 full.nyo.orig >full.nyo
+
+  $ narya usefull.ny
+
+  $ tail -n 1 full.nyo
+  end of narya compiled file
+
+  $ size=$(wc -c <full.nyo.orig)
+
+  $ head -c $((size - 1)) full.nyo.orig >full.nyo
+
+  $ narya usefull.ny
+
+  $ tail -n 1 full.nyo
+  end of narya compiled file
+
+  $ narya -v usefull.ny
+   ￫ info[I0004]
+   ￮ file loaded: $TESTCASE_ROOT/full.ny (compiled)
+  
+   ￫ info[I0001]
+   ￮ axiom b' assumed
+  
+
+No temporary files are left behind
+
+  $ ls | grep tmp
+  [1]
+
+Metavariables from compiled files work
+
+  $ cat >hasmeta.ny <<EOF
+  > def ℕ : Type ≔ data [ zero. | suc. (n : ℕ) ]
+  > def f (n : ℕ) : ℕ ≔ suc. (match n [ zero. ↦ zero. | suc. k ↦ k ])
+  > EOF
+
+  $ cat >usesmeta.ny <<EOF
+  > import "hasmeta"
+  > def t : Id ℕ (f zero.) (suc. zero.) ≔ refl (suc. zero.)
+  > EOF
+
+  $ narya hasmeta.ny
+
+  $ narya usesmeta.ny
+
+The imports of a file loaded from its compiled version, which are copied into the compiled versions of files that import it, refer to their files by the identifiers of the current run, not those of the run that compiled it.
+
+  $ echo 'axiom Y : Type → Type' >idy.ny
+  $ echo 'import "idy"' >idq.ny
+  $ echo 'axiom X : Type' >idx.ny
+  $ echo 'import "idq"' >idp.ny
+  $ cat >idg.ny <<EOF
+  > import "idx"
+  > import "idp"
+  > import "idq"
+  > def gx : Type ≔ X
+  > EOF
+  $ cat >idb.ny <<EOF
+  > import "idg"
+  > echo gx
+  > EOF
+
+  $ narya idq.ny
+
+  $ narya idg.ny
+
+  $ narya idb.ny
+  _OUT_OF_SCOPE.X
+    : Type
+  
+
+A file reachable along several import paths is saved only once among the imports of a compiled file, so these lists don't grow exponentially with the depth of diamonds in the import graph.
+
+  $ echo 'axiom D0 : Type' > d0.ny
+  $ for i in $(seq 1 14); do
+  >   echo "import \"d$((i-1))\"" > l$i.ny
+  >   echo "import \"d$((i-1))\"" > r$i.ny
+  >   printf 'import "l%d"\nimport "r%d"\n' $i $i > d$i.ny
+  > done
+  $ echo 'import "d14"' > diamond.ny
+
+  $ narya diamond.ny
+
+  $ [ $(wc -c < d14.nyo) -lt 50000 ] && echo small
+  small
+
+  $ narya -v diamond.ny 2>&1 | grep -c compiled
+  43

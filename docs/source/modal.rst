@@ -112,6 +112,14 @@ However, often it is not necessary to specify keys explicitly: if Narya can dete
 By default, Narya also omits unique 2-cell keys when printing a term.  However, the option ``display unique keys ≔ on`` (equivalently, the command-line flag ``-show-unique-keys``, or ``C-c C-d C-k`` in ProofGeneral) instructs it to print (nonidentity) keys even if they are unique.  Identity keys are never printed.
 
 
+Modal let-only
+^^^^^^^^^^^^^^
+
+The :ref:`Let-only binding`, which allows you to synthesize a term in a completely explicit context and then apply a completely explicit substitution (context morphism) to it, generalizes to these new constructs of modal type theory.  You can add locks to the context in which the body is synthesized with the syntax ``and lock □`` interspersed with the let-bound values.  When typechecking the bound terms in this case, the locks in the ambient context must end (at the right) with a matching lock, and that lock is stripped off of the ambient context while typechecking the terms to the left of the ``and lock``.  Moreover, any variables in the context appearing to the right of that lock (or interspersed with it, if the modality is composed of multiple generators) also become inaccessible while checking terms to the left.
+
+You can also add explicit key operations to the substitution with the syntax ``and key α``.  This requires the codomain context (the new one composed of the types in the ``let only``) to end (at the right) with locks matching the source of ``α``, and the domain (ambient) context to end with locks matching the target of ``α``.  In this case, those target locks are stripped off the ambient context and replaced by locks matching the source of ``α`` when typechecking the bound terms to the left of the ``and key``, similarly to the case of ``and lock``.  Semantically, this means *precomposing* the substitution to the left with the key substitution of ``α``.  Note that it does not change the codomain context in which the body is typechecked.  If it appears at the end of the ``let only`` chain, then it is equivalent to acting on the whole result by ``α``, that is ``let only x : A ≔ M and lock μ and key α in N`` is equivalent to ``(let only x : A ≔ M and lock μ in N) #α``.
+
+
 Modal function-types
 --------------------
 
@@ -250,6 +258,8 @@ In general, the correct window modality for a match cannot be deduced automatica
 
 but it's important to realize that the window modality is implicitly present even in this case.  In addition, even for a variable this is not always the *correct* choice: you might want to use a different window modality that's related to the variable's annotation by a key, in which case the window needs to be given explicitly.
 
+In a multiple or deep match, a discriminee with a window modality can also be matched against a variable pattern, as in ``match (y :▱| _) [ z ↦ M ]``.  This doesn't match against anything, so it places no requirements on the window modality (see below); instead it let-binds ``z`` modally to the discriminee, as in ``let z :▱| _ ≔ y in M`` (see :ref:`Modal let-bindings`).
+
 In principle, a window modality can be applied to *any* match: the datatype doesn't have to have any modal constructors itself.  However, this has consequences for the semantics of the window modality: it necessarily "preserves" all datatypes that it can be a window for.  Since this may be undesired, Narya allows a mode theory to specify three levels of "transparency" for modalities governing their applicability as windows.  (These are unrelated to the similarly-named :ref:`attributes of record types <Eta-expansion and opacity>`.)
 
 * A *pellucid* modality can be a window for any match at all.  This is a very strong property: it implies, for instance, that the modal operator preserves recursive datatypes such as the natural numbers.  The only nonidentity pellucid modality in the standard mode theories is ``△`` in ``-tconn``; this is semantically justified because it is the inverse image of a locally connected geometric morphism, so it preserves both colimits and function-types, out of which inductive types are constructed (at least in Grothendieck topoi) by transfinite iteration.  (Some additional modalities are pellucid in :ref:`discrete mode theories <Modal parametric discreteness>`.)
@@ -375,6 +385,8 @@ As with an ordinary let-binding, this is similar to writing a function redex
    ((x :□| A) ↦ N) M
 
 In particular, therefore, the type ``A`` and the value ``M`` are typechecked in a ``□``-locked context, while the body ``N`` is checked (or synthesized) in a context extended by an annotated variable ``x :□| A``.  And also as in the non-modal case, the difference between a let-binding and a function redex is that ``x`` is bound to the *value* ``M``, not just the type ``A``, already when *checking* the body ``N``.
+
+Unlike in the non-modal case, the type ``A`` cannot be omitted entirely, because the syntax for the modal annotation (such as ``:□|``) requires it.  However, if ``M`` synthesizes (in the locked context), the type can be written as a placeholder, as in ``let x :□| _ ≔ M in N``.
 
 Recursive let-bindings can not currently be modal.
 

@@ -15,15 +15,15 @@ open Raw
 type printable +=
   | Val : ('mode, 's) value -> printable
   | DeepVal : ('mode, 's) value * int -> printable
-  | Head : 'mode head -> printable
+  | Head : ('mode, 's) head -> printable
   | Binder : ('mode, 'modality, 'dom, 'b, 's) binder -> printable
   | Term : ('mode, 'b, 's) term -> printable
   | Tel : ('mode, 'a, 'b, 'ab) Telescope.t -> printable
   | Env : ('mode, 'n, 'b) Value.env -> printable
   | DeepEnv : ('mode, 'n, 'b) Value.env * int -> printable
   | Check : 'a check -> printable
-  | Apps : ('hmode, 'mode, 'any) apps -> printable
-  | Entry : ('dom, 'modality, 'mode, 'x, 'n) Ctx.entry -> printable
+  | Apps : ('hmode, 'mode, 'any, 'fail) apps -> printable
+  | Entry : ('dom, 'modality, 'mode, 'x, 'n, 'b, 'bb) Ctx.entry -> printable
   | OrderedCtx : ('mode, 'a, 'b) Ctx.Ordered.t -> printable
   | Ctx : ('mode, 'a, 'b) Ctx.t -> printable
 
@@ -68,8 +68,8 @@ module F = struct
     match v with
     | Neu { head = h; args = a; value = _; ty } ->
         if depth > 0 then
-          fprintf ppf "Neu (%a, %a, %a)" head h apps a (dvalue (depth - 1)) (Lazy.force ty)
-        else fprintf ppf "Neu (%a, %a, ?)" head h apps a
+          fprintf ppf "Neu (%a, %a, %a)" neu_head h apps a (dvalue (depth - 1)) (Lazy.force ty)
+        else fprintf ppf "Neu (%a, %a, ?)" neu_head h apps a
     | Lam (x, _, body) -> fprintf ppf "Lam (?^%s, %a)" (string_of_dim (dim_variables x)) binder body
     | Struct { fields = f; ins; _ } ->
         let n = cod_left_ins ins in
@@ -124,13 +124,13 @@ module F = struct
     else
       match !v with
       | Ready v -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (evaluation 0) v l
-      | Deferred _ -> fprintf ppf "(%s%s, (Deferred), %s)" (Field.to_string f) p l
-      | Deferred_eval (e, tm, ins, cell, args) ->
-          fprintf ppf "(%s%s, Deferred_eval (?(%s), %a, %s(%s), %a, %s), %s)"
+      | Deferred_eval (e, tm, ins, cell) ->
+          fprintf ppf "(%s%s, Deferred_eval (?(%s), %a, %s(%s), %s), %s)"
             (string_of_dim (dim_env e))
             (Field.to_string f) p term tm (string_of_ins ins)
             (string_of_dim (dom_ins ins))
-            apps args (Modalcell.to_string cell) l
+            (Modalcell.to_string cell) l
+      | _ -> fprintf ppf "(%s%s, %a, %s)" (Field.to_string f) p (lazy_eval 0) v l
 
   and lazy_eval : type mode s. int -> formatter -> (mode, s) lazy_eval -> unit =
    fun depth ppf v ->
@@ -138,25 +138,35 @@ module F = struct
     else
       match !v with
       | Ready v -> (evaluation (depth - 1)) ppf v
-      | _ -> fprintf ppf "(Deferred)"
+      | Deferred_eval _ -> fprintf ppf "(Deferred_eval)"
+      | Deferred _ -> fprintf ppf "(Deferred)"
+      | Applied (inner, Apps e) -> fprintf ppf "Applied (%a, %a)" (lazy_eval 0) inner apps_entry e
+      | Applied (inner, Action (s, c)) ->
+          fprintf ppf "Acted (%a, %s, %s)" (lazy_eval 0) inner (string_of_deg s)
+            (Modalcell.to_string c)
 
   and evaluation : type mode s. int -> formatter -> (mode, s) evaluation -> unit =
    fun depth ppf v ->
     match v with
-    | Unrealized -> fprintf ppf "Unrealized"
+    | Unrealized None -> fprintf ppf "Unrealized"
+    | Unrealized (Some _) -> fprintf ppf "Unrealized(stuck)"
     | Realize v -> fprintf ppf "Realize (%a)" (dvalue depth) v
     | Val v -> fprintf ppf "Val (%a)" (dvalue depth) v
 
-  (* TODO: display the outer insertion *)
-  and apps : type hmode mode any. formatter -> (hmode, mode, any) apps -> unit =
+  and apps : type hmode mode any fail. formatter -> (hmode, mode, any, fail) apps -> unit =
    fun ppf args ->
     match args with
     | Emp -> fprintf ppf "Emp"
-    | Arg (rest, _, xs, _) -> fprintf ppf "%a <: %a" apps rest (cubeof normal) xs
-    | Field (rest, _, fld, plus, ins) -> (
+    | Snoc (rest, e) -> fprintf ppf "%a <: %a" apps rest apps_entry e
+
+  (* TODO: display the outer insertion *)
+  and apps_entry : type mode1 mode2 any inst.
+      formatter -> (mode1, mode2, any, inst) apps_entry -> unit =
+   fun ppf e ->
+    match e with
+    | Arg (_, xs, _) -> cubeof normal ppf xs
+    | Field (_, fld, plus, ins) -> (
         (* 'ins' is an *outer* insertion, not the field insertion.  The field insertion has been pushed inside and become the 'plus'. *)
-        apps ppf rest;
-        fprintf ppf " <: ";
         (* Intrinsic dimension *)
         let i = D.plus_right plus in
         (* result dimension *)
@@ -169,15 +179,18 @@ module F = struct
             fprintf ppf ".%s%s(%s)" (Field.to_string fld)
               (string_of_ins (ins_of_plus t plus))
               (string_of_dim n))
-    | Inst (rest, d, args) ->
-        apps ppf rest;
-        fprintf ppf " <: ";
-        fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
+    | Inst (d, args) -> fprintf ppf "Inst (%a, %a)" dim (D.pos d) (tubeof normal) args
 
   and level : type a b m n. formatter -> level -> (a, m, n, b) Modalcell.t -> unit =
    fun ppf l key -> fprintf ppf "LVar (%d,%d,%s)" (fst l) (snd l) (Modalcell.to_string key)
 
-  and head : type mode. formatter -> mode head -> unit =
+  and neu_head : type mode fail. formatter -> (mode, fail) neu_head -> unit =
+   fun ppf h ->
+    match h with
+    | Failed _ -> fprintf ppf "Failed"
+    | Live h -> head ppf h
+
+  and head : type mode s. formatter -> (mode, s) head -> unit =
    fun ppf h ->
     match h with
     | Var { level = l; key; _ } -> level ppf l key
@@ -196,6 +209,7 @@ module F = struct
           | `Named x -> x
           | `Anon _ -> "_")
           (cubeof value) doms binder b
+    | Stuck _ -> fprintf ppf "Stuck (?)"
 
   and binder : type mode modality dom b s. formatter -> (mode, modality, dom, b, s) binder -> unit =
    fun ppf (Bind { env = e; modality; filter = _; ins = i; body }) ->
@@ -224,7 +238,6 @@ module F = struct
           (Modality.to_string (Modality.filter_modality filter))
           (cubeof (dvalue depth))
           v
-    | Ext { env = e; values = `Error _; _ } -> fprintf ppf "%a <: Err" env e
     | Ext { env = e; values = `Lazy v; _ } ->
         fprintf ppf "%a <; %a" env e (cubeof (lazy_eval depth)) v
     | Act (e, o) ->
@@ -233,11 +246,12 @@ module F = struct
           | Some (Op (f, d)) -> string_of_sface f ^ "," ^ string_of_deg d
           | None -> "None" in
         fprintf ppf "%a <* (%s)" env e opstr
-    | Key (e, key, _ac) -> fprintf ppf "%a <%% %s" env e (Modalcell.to_string key)
+    | Lock (e, g) -> fprintf ppf "%a <%%lock %s" env e (Modality.to_string (Modality.of_gen g))
     | Prekey (e, key) -> fprintf ppf "%a <%%pre %s" env e (Modalcell.to_string key)
     | Permute (_, e) -> fprintf ppf "(%a) permuted(?)" env e
     | Shift (e, mn, _) -> fprintf ppf "%a << %a" env e dim (D.plus_right mn)
     | Unshift (e, mn, _) -> fprintf ppf "%a >> %a" env e dim (D.plus_right mn)
+    | Ctx ctx -> ordered_ctx ppf ctx
 
   and env : type mode b n. formatter -> (mode, n, b) Value.env -> unit = fun ppf e -> denv 0 ppf e
 
@@ -248,12 +262,11 @@ module F = struct
         fprintf ppf "IVar %d.%s" (Tctx.int_of_insert x) (string_of_sface fa)
     | Const c -> fprintf ppf "Const %s" (print_to_string (PConstant c))
     | Meta (v, _) -> fprintf ppf "Meta %s" (print_to_string (PMeta v))
-    | MetaEnv (v, _) -> fprintf ppf "MetaEnv (%s,?)" (print_to_string (PMeta v))
-    | Field (Modal (_, _, tm), fld, ins) ->
+    | Field (_, Modal (_, _, tm), fld, ins) ->
         fprintf ppf "Field (%a, %s%s(%s))" term tm (Field.to_string fld) (string_of_ins ins)
           (string_of_dim (dom_ins ins))
     | UU (_, n) -> fprintf ppf "UU %a" dim n
-    | Inst (tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
+    | Inst (_, tm, args) -> fprintf ppf "Inst (%a, %a)" term tm (tubeof term) args
     | Pi
         (type k n dom modality)
         ({ x; filter; doms = Modal (_modality, _, doms); cods; _ } :
@@ -266,7 +279,7 @@ module F = struct
           (let (Cod (filt, t)) = CodCube.find_top cods in
            let Eq = Modality.filter_uniq filter filt in
            (t : (mode, (b, (modality, k) Tctx.dim_entry) Tctx.suc, s) term))
-    | App (fn, _, _, Modal (_modality, _al, arg)) ->
+    | App (_, fn, _, _, Modal (_modality, _al, arg)) ->
         fprintf ppf "App (%a, %a)" term fn (cubeof term) arg
     | Lam (x, _, filter, body) ->
         fprintf ppf "Lam^(%s) (?, %s, %a)"
@@ -274,9 +287,11 @@ module F = struct
           (Modality.to_string (Modality.filter_modality filter))
           term body
     | Constr (c, _, _) -> fprintf ppf "Constr (%s, ?, ?)" (Constr.to_string c)
-    | Act (tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
+    | Act (_, tm, s, _) -> fprintf ppf "Act (%a, %s)" term tm (string_of_deg s)
     | Key { tm; cell; _ } -> fprintf ppf "Key (%a, %s)" term tm (Modalcell.to_string cell)
     | Let (_, _, _) -> fprintf ppf "Let ?"
+    | Letonly { tm; ty; _ } -> fprintf ppf "Letonly (?, ?, %a, %a)" term tm term ty
+    | Stuck_meta (_, tm) -> fprintf ppf "Stuck_meta (?, %a)" term tm
     | Struct _ -> fprintf ppf "Struct ?"
     | Match _ -> fprintf ppf "Match ?"
     | Realize tm -> fprintf ppf "Realize (%a)" term tm
@@ -284,16 +299,17 @@ module F = struct
     | Unshift (n, _, tm) -> fprintf ppf "Unshift (%s, %a)" (string_of_dim n) term tm
     | Unact (_, tm) -> fprintf ppf "Unact (?, %a)" term tm
     | Shift (n, _, tm) -> fprintf ppf "Shift (%s, %a)" (string_of_dim n) term tm
-    | Weaken tm -> fprintf ppf "Weaken (%a)" term tm
+    | Failed _ -> fprintf ppf "Failed"
+    | Overflow -> fprintf ppf "Overflow"
 
   and canonical : type mode b. formatter -> (mode, b) canonical -> unit =
    fun ppf c ->
     match c with
-    | Data { indices; constrs; discrete = _; recursive = _; hints = _; tyfam = _ } ->
+    | Data { indices; evaldim = _; constrs; recursive = _; hints = _; tyfam = _ } ->
         fprintf ppf "Data (%d, (%a))" (Fwn.to_int indices)
           (pp_print_list
              ~pp_sep:(fun ppf () -> pp_print_string ppf " | ")
-             (fun ppf (c, d) -> fprintf ppf "%s %a" (Constr.to_string c) dataconstr d))
+             (fun ppf (c, d) -> fprintf ppf "%s %a" (Constr.to_string c) term d))
           (Bwd.to_list constrs)
     | Codata { eta; fields; _ } ->
         fprintf ppf "Codata (%s, (%s))"
@@ -305,17 +321,33 @@ module F = struct
                 (fun (CodatafieldAbwd.Entry (f, _)) -> Field.to_string f)
                 fields))
 
-  and dataconstr : type mode p i. formatter -> (mode, p, i) Term.dataconstr -> unit =
-   fun ppf (Dataconstr { args; indices = _ }) -> fprintf ppf "%a : ?" tel args
-
-  and tel : type mode a b ab. formatter -> (mode, a, b, ab) Term.tel -> unit =
+  and entry : type dom modality mode x n b bb.
+      formatter -> (dom, modality, mode, x, n, b, bb) Ctx.entry -> unit =
    fun ppf -> function
-    | Emp -> ()
-    | Ext (x, Modal (_, _, ty), rest) ->
-        fprintf ppf "(%a : %a)"
-          (pp_print_option ~none:(fun ppf () -> pp_print_string ppf "_") pp_print_string)
-          x term ty;
-        tel ppf rest
+    | { bindings; filter; vis = Vis { dim; plusdim; hasfields = No_fields; names; _ }; _ } -> (
+        match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
+        | Zero, Zero ->
+            let x =
+              match NICubeOf.find_top names with
+              | `Named x -> x
+              | `Anon _ -> "_" in
+            let b = CubeOf.find_top bindings in
+            let modality = Modality.filter_modality filter in
+            fprintf ppf "(%s%a : %a)" x
+              (pp_print_option (fun ppf l ->
+                   fprintf ppf "(%a)" (fun ppf lvl -> level ppf lvl (Modalcell.id modality)) l))
+              (Ctx.Binding.level b) value
+              (Lazy.force (Ctx.Binding.value b).ty)
+        | _ -> fprintf ppf "(?)")
+    | _ -> fprintf ppf "(?)"
+
+  and ordered_ctx : type mode a b. formatter -> (mode, a, b) Ctx.Ordered.t -> unit =
+   fun ppf -> function
+    | Emp _ -> ()
+    | Snoc (c, ({ vars = Alias; _ } as e), _) -> fprintf ppf "%a alias%a" ordered_ctx c entry e
+    | Snoc (c, ({ vars = Vars; _ } as e), _) -> fprintf ppf "%a %a" ordered_ctx c entry e
+    | Lock (c, _) -> fprintf ppf "%a Lock" ordered_ctx c
+    | Weaken (c, _) -> fprintf ppf "%a Weaken" ordered_ctx c
 
   let rec check : type a. formatter -> a check -> unit =
    fun ppf c ->
@@ -342,7 +374,10 @@ module F = struct
     | Constr (c, args) ->
         fprintf ppf "Constr(%s,(%a))" (Constr.to_string c.value)
           (fun ppf ->
-            List.iter (fun (x : a check Asai.Range.located) -> fprintf ppf "%a, " check x.value))
+            List.iter (fun ((x : a check Asai.Range.located), (i : _ Asai.Range.located)) ->
+                match i.value with
+                | `Implicit -> fprintf ppf "{%a}, " check x.value
+                | `Explicit -> fprintf ppf "%a, " check x.value))
           args
     | Numeral x -> fprintf ppf "Numeral(%s)" (Q.to_string x)
     | Empty_co_match -> fprintf ppf "Emptycomatch(?)"
@@ -353,7 +388,7 @@ module F = struct
     | Refute (_, _) -> fprintf ppf "Refute(?)"
     | Hole _ -> fprintf ppf "Hole"
     | Realize x -> fprintf ppf "Realize %a" check x
-    | ImplicitApp (fn, args) ->
+    | ImplicitApp (fn, _, args) ->
         fprintf ppf "ImplicitApp (%a," synth fn.value;
         List.iter
           (fun (_, (x : a check Asai.Range.located)) -> fprintf ppf "%a, " check x.value)
@@ -383,7 +418,7 @@ module F = struct
     | Key (tm, parts) -> fprintf ppf "Key(%a, #%s)" synth tm.value (String.concat "." parts.value)
     | Pi (_, _, _, _) -> fprintf ppf "Pi(?)"
     | HigherPi (_, _, _, _) -> fprintf ppf "HigherPi(?)"
-    | InstHigherPi (_, _, _) -> fprintf ppf "InstHigherPi(?)"
+    | InstHigherPi (_, _, _, _) -> fprintf ppf "InstHigherPi(?)"
     | App (fn, { value = Some arg; _ }, _) -> fprintf ppf "App(%a, %a)" check fn.value check arg
     | App (fn, { value = None; _ }, _) -> fprintf ppf "App(%a, .)" check fn.value
     | Asc (tm, ty) -> fprintf ppf "Asc(%a, %a)" check tm.value check ty.value
@@ -393,6 +428,7 @@ module F = struct
           check dom.value synth body.value
     | Let (_, _, _, _) -> fprintf ppf "Let(?)"
     | Letrec (_, _, _) -> fprintf ppf "LetRec(?)"
+    | Letonly (_, _, _) -> fprintf ppf "LetOnly(?)"
     | Act (_, _, _) -> fprintf ppf "Act(?)"
     | Match { tm; window = _; sort = _; branches = br; refutables = _; highers = _ } ->
         fprintf ppf "Match (%a, (%a))" synth tm.value branches br
@@ -418,44 +454,25 @@ module F = struct
 
   and branch : type a. formatter -> Constr.t * a branch -> unit =
    fun ppf (c, Branch (vars, cube, body)) ->
-    let rec strvars : type a b ab. (a, b, ab) Namevec.t -> string = function
+    let strvar : string option -> string = function
+      | Some x -> x
+      | None -> "_" in
+    let rec strnames : type a b ab. (a, b, ab) Namevec.t -> string = function
       | [] -> ""
-      | [ Some x ] -> x
-      | [ None ] -> "_"
-      | Some x :: xs -> x ^ " " ^ strvars xs
-      | None :: xs -> "_ " ^ strvars xs in
+      | [ x ] -> strvar x.value
+      | x :: xs -> "{" ^ strvar x.value ^ "} " ^ strnames xs in
+    let rec strvars : type a b ab. (a, b, ab) Patternvars.t -> string = function
+      | [] -> ""
+      | [ Cube x ] -> strvar x
+      | Cube x :: xs -> strvar x ^ " " ^ strvars xs
+      (* The last of the boundary names is the top face, which is displayed without braces. *)
+      | [ Boundary ns ] -> strnames ns
+      | Boundary ns :: xs -> strnames ns ^ " " ^ strvars xs in
     let mapsto =
       match cube with
       | `Normal _ -> "↦"
       | `Cube _ -> "⤇" in
     fprintf ppf "%s %s %s %a" (Constr.to_string c) (strvars vars.value) mapsto check body.value
-
-  let entry : type dom modality mode x n. formatter -> (dom, modality, mode, x, n) Ctx.entry -> unit
-      =
-   fun ppf -> function
-    | Vis { dim; plusdim; hasfields = No_fields; vars; bindings; filter; _ } -> (
-        match (D.compare_zero dim, D.compare_zero (D.plus_right plusdim)) with
-        | Zero, Zero ->
-            let x =
-              match NICubeOf.find_top vars with
-              | `Named x -> x
-              | `Anon _ -> "_" in
-            let b = CubeOf.find_top bindings in
-            let modality = Modality.filter_modality filter in
-            fprintf ppf "(%s%a : %a)" x
-              (pp_print_option (fun ppf l ->
-                   fprintf ppf "(%a)" (fun ppf lvl -> level ppf lvl (Modalcell.id modality)) l))
-              (Ctx.Binding.level b) value
-              (Lazy.force (Ctx.Binding.value b).ty)
-        | _ -> fprintf ppf "(?)")
-    | _ -> fprintf ppf "(?)"
-
-  let rec ordered_ctx : type mode a b. formatter -> (mode, a, b) Ctx.Ordered.t -> unit =
-   fun ppf -> function
-    | Emp _ -> ()
-    | Snoc (c, e, _) -> fprintf ppf "%a %a" ordered_ctx c entry e
-    | Lock (c, _) -> fprintf ppf "%a Lock" ordered_ctx c
-    | Weaken (c, _) -> fprintf ppf "%a Weaken" ordered_ctx c
 
   let ctx : type mode a b. formatter -> (mode, a, b) Ctx.t -> unit =
    fun ppf (Permute { ctx; _ }) -> fprintf ppf "Ctx (?, ?, %a)" ordered_ctx ctx
@@ -470,7 +487,6 @@ let binder v = PPrint.utf8string (Format.asprintf "%a" F.binder v)
 let env v = PPrint.utf8string (Format.asprintf "%a" F.env v)
 let denv depth v = PPrint.utf8string (Format.asprintf "%a" (F.denv depth) v)
 let term v = PPrint.utf8string (Format.asprintf "%a" F.term v)
-let tel v = PPrint.utf8string (Format.asprintf "%a" F.tel v)
 let check v = PPrint.utf8string (Format.asprintf "%a" F.check v)
 let synth v = PPrint.utf8string (Format.asprintf "%a" F.synth v)
 let apps v = PPrint.utf8string (Format.asprintf "%a" F.apps v)

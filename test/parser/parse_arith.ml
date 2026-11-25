@@ -3,7 +3,11 @@ open Showparse
 open Arith
 
 let () =
-  Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
+  Core.Reporter.run
+    ~mortal:(fun _ -> raise (Failure "fatal error"))
+    ~fatal:(fun _ _ -> raise (Failure "fatal error"))
+    ~emit:(fun _ -> ())
+  @@ fun () ->
   Core.Origin.Origin.run @@ fun () ->
   Parser.Lexer.Specials.run @@ fun () ->
   install_arith ();
@@ -164,7 +168,11 @@ let () =
 let rec cnat n = if n <= 0 then "x" else "(f " ^ cnat (n - 1) ^ ")"
 
 let _ =
-  Core.Reporter.run ~fatal:(fun _ -> raise (Failure "fatal error")) ~emit:(fun _ -> ()) @@ fun () ->
+  Core.Reporter.run
+    ~fatal:(fun _ _ -> raise (Failure "fatal error"))
+    ~mortal:(fun _ -> raise (Failure "fatal error"))
+    ~emit:(fun _ -> ())
+  @@ fun () ->
   Core.Origin.Origin.run @@ fun () ->
   Parser.Lexer.Specials.run @@ fun () ->
   let _ = parse (cnat 500) in

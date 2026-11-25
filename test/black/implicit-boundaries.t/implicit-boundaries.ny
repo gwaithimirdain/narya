@@ -81,3 +81,21 @@ echo ab22
 
 echo refl (refl h) {(a00, b00)} {(a01, b01)} {(a02, b02)} {ab10} {ab11}
        {ab12} {ab20} {ab21} ab22
+
+{` The boundaries of the arguments of a constructor are implicit too. `}
+
+def N : Type ≔ data [ zero. | suc. (_ : N) ]
+def P : Type ≔ data [ pair. (_ : N) (_ : N) ]
+
+axiom n0 : N
+axiom n1 : N
+axiom n2 : Id N n0 n1
+
+def sn2 : Id N (suc. n0) (suc. n1) ≔ suc. n2
+def pn2 : Id P (pair. n0 n0) (pair. n1 n1) ≔ pair. n2 n2
+
+echo sn2
+
+echo refl sn2
+
+echo pn2

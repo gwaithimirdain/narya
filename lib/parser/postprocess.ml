@@ -34,6 +34,9 @@ type (_, _, _) identity +=
   | Parens : (closed, No.plus_omega, closed) identity
   | Braces : (closed, No.plus_omega, closed) identity
   | Dot : (closed, No.plus_omega, closed) identity
+  | (* The marker "⋯" of a subterm omitted from display, such as one too deep to fit in the display size, is parsed only to give an error.  It is defined in builtins.ml, but we declare its identity here so that the unparser can produce it. *)
+      Omitted :
+      (closed, No.plus_omega, closed) identity
   | (* AscVar is defined (parsed and printed) in builtins.ml, but we declare its identity here so that process_apply can recognize a modal ascription "(x :f| _)" used as the head of a field projection. *)
       AscVar :
       (closed, No.plus_omega, closed) identity
@@ -41,6 +44,7 @@ type (_, _, _) identity +=
 let parens : (closed, No.plus_omega, closed) notation = (Parens, Outfix)
 let braces : (closed, No.plus_omega, closed) notation = (Braces, Outfix)
 let dot : (closed, No.plus_omega, closed) notation = (Dot, Outfix)
+let omitted : (closed, No.plus_omega, closed) notation = (Omitted, Outfix)
 let ascvar : (closed, No.plus_omega, closed) notation = (AscVar, Outfix)
 
 (* Process a bare identifier, resolving it into either a variable, a cube variable with face, a constant, a numeral, or a degeneracy name (the latter being an error since it isn't applied to anything). *)
@@ -54,6 +58,8 @@ let process_ident ctx loc parts =
   else
     match
       match parts with
+      (* The prefix "_root_" skips past the local variables, so that an identifier can refer to a constant that a local variable shadows.  It can't be the name of anything itself, since atomic identifiers can't begin with an underscore. *)
+      | "_root_" :: _ :: _ -> None
       | [ x ] ->
           let* _, n = Bwv.find_opt (fun y -> y = Some x) ctx in
           return (Synth (Var (n, None)))
@@ -65,7 +71,11 @@ let process_ident ctx loc parts =
     with
     | Some tm -> { value = tm; loc }
     | None -> (
-        match Scope.lookup parts with
+        let scope_parts =
+          match parts with
+          | "_root_" :: (_ :: _ as parts) -> parts
+          | _ -> parts in
+        match Scope.lookup scope_parts with
         | Some c -> { value = Synth (Const c); loc }
         | None -> (
             match parts with
@@ -78,12 +88,12 @@ let rec detect_spaceless_fields ctx loc (bwd_parts : string Bwd.t) fields found 
   match bwd_parts with
   | Emp | Snoc (Emp, _) -> found
   | Snoc (bwd_parts, fld) ->
-      Reporter.try_with
+      Reporter.discard_errors
         (fun () ->
           let parts = Bwd.to_list bwd_parts in
-          let _ = process_ident ctx loc parts in
+          ignore (process_ident ctx loc parts);
           detect_spaceless_fields ctx loc bwd_parts (fld :: fields) ((parts, fld :: fields) :: found))
-        ~fatal:(fun _ -> detect_spaceless_fields ctx loc bwd_parts (fld :: fields) found)
+        ~fallback:(fun () -> detect_spaceless_fields ctx loc bwd_parts (fld :: fields) found)
 
 (* Now the master postprocessing function.  Note that this function calls the "process" functions registered for individual notations, but those functions will be defined to call *this* function on their constituents, so we have some "open recursion" going on. *)
 
@@ -100,14 +110,17 @@ let rec process : type n lt ls rt rs.
   | Ident (parts, _) ->
       Reporter.try_with
         (fun () -> process_ident ctx loc parts)
-        ~fatal:(fun ({ severity; message; backtrace; explanation; extra_remarks } as d) ->
-          match message with
+        ~fatal:(fun d ->
+          (* Rather than failing on an invalid identifier, we report the error as mortal and replace the identifier by a term that fails silently if the typechecker reaches it, so that it can go on to report errors in other parts of the term that don't depend on it.  We report the error now rather than when the typechecker reaches it, since it might never do so if some other part of the term fails. *)
+          let failed = { value = Synth (Fail (Dependent "invalid identifier")); loc } in
+          match d.message with
           | Unbound_variable (p, _) ->
               let alt = detect_spaceless_fields ctx loc (Bwd.of_list parts) [] [] in
-              (* We create a new diagnostic, preserving all the information except the message, but we have to recompute the 'explanation'. *)
-              let message = Reporter.Code.Unbound_variable (p, alt) in
-              let explanation = locate_opt explanation.loc (Reporter.Code.default_text message) in
-              fatal_diagnostic { severity; message; backtrace; extra_remarks; explanation }
+              Reporter.mortal ?loc:d.explanation.loc (Unbound_variable (p, alt));
+              failed
+          | Missing_argument_of_degeneracy _ | Invalid_numeral _ ->
+              Reporter.mortal_diagnostic d;
+              failed
           | _ -> fatal_diagnostic d)
   | Constr (ident, _) -> { value = Raw.Constr ({ value = Constr.intern ident; loc }, []); loc }
   | Field _ ->
@@ -227,13 +240,20 @@ and process_apps_head : type n lt ls rt rs.
   | `Constr c ->
       let c = { value = c; loc = tm.loc } in
       let loc = ref None in
-      let args =
+      (* A constructor argument in braces is an implicit boundary argument of a higher-dimensional constructor, supplied redundantly as documentation; see Raw.Constr. *)
+      let cargs =
         List.map
           (fun (Wrap x, l) ->
             loc := l;
-            process ctx x)
+            match x.value with
+            | Notn ((Braces, _), n) -> (
+                match notation_args n with
+                | [ Token (LBrace, _); Term arg; Token (RBrace, _) ] ->
+                    (process ctx arg, locate_opt x.loc `Implicit)
+                | _ -> fatal (Anomaly "invalid notation arguments for braces"))
+            | _ -> (process ctx x, locate_opt x.loc `Explicit))
           args in
-      { value = Raw.Constr (c, args); loc = !loc }
+      { value = Raw.Constr (c, cargs); loc = !loc }
   | `Fn fn -> process_apply ctx fn args
 
 and process_head : type n lt ls rt rs.
@@ -329,29 +349,37 @@ let rec process_tel : type n. (string option, n) Bwv.t -> Parameter.t list -> n 
   | [] -> Processed_tel (Emp, ctx, [])
   | { names; modality; ty; _ } :: parameters ->
       process_vars ctx names
-        (locate_modality (List.map (fun x -> locate_opt x.loc (fst x.value)) modality))
-        ty parameters
+        (Some (locate_modality (List.map (fun x -> locate_opt x.loc (fst x.value)) modality), ty))
+        parameters
 
 and process_vars : type n.
     (string option, n) Bwv.t ->
     (string option * Whitespace.t list) list ->
-    string located list located ->
-    wrapped_parse ->
+    (* We only carry the modality and type if we are at the first variable in the list. *)
+    (string located list located * wrapped_parse) option ->
     Parameter.t list ->
     n processed_tel =
- fun ctx names modality (Wrap ty) parameters ->
+ fun ctx names argty parameters ->
   match names with
   | [] -> process_tel ctx parameters
-  | (name, w) :: names ->
-      let pty = process ctx ty in
-      let (Processed_tel (tel, ctx, ws)) =
-        process_vars (Bwv.snoc ctx name) names modality (Wrap ty) parameters in
-      Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
+  | (name, w) :: names -> (
+      match argty with
+      | Some (modality, Wrap ty) ->
+          (* The type is shared by all the variables, so we process it only once, in the scope outside all of them. *)
+          let pty = process ctx ty in
+          let (Processed_tel (tel, ctx, ws)) =
+            process_vars (Bwv.snoc ctx name) names None parameters in
+          Processed_tel (Ext (name, modality, pty, tel), ctx, w :: ws)
+      | None ->
+          (* The remaining variables that share the type of the previous one. *)
+          let (Processed_tel (tel, ctx, ws)) =
+            process_vars (Bwv.snoc ctx name) names None parameters in
+          Processed_tel (Same (name, tel), ctx, w :: ws))
 
 let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Matchpattern.t =
  fun pat ->
   let rec go : type n lt1 ls1 rt1 rs1.
-      (lt1, ls1, rt1, rs1) parse located -> (Matchpattern.t, n) Vec.t located -> Matchpattern.t =
+      (lt1, ls1, rt1, rs1) parse located -> (Matchpattern.arg, n) Vec.t located -> Matchpattern.t =
    fun pat pats ->
     match pat.value with
     | Ident ([ x ], _) when Lexer.valid_var x -> (
@@ -364,10 +392,28 @@ let get_pattern : type lt1 ls1 rt1 rs1. (lt1, ls1, rt1, rs1) parse located -> Ma
         | [] -> Var (locate_opt pat.loc None)
         | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern placeholder"))
     | Constr (c, _) -> Constr (locate_opt pat.loc (Constr.intern c), pats.value)
-    | App { fn; arg; _ } ->
-        go fn
-          (locate_opt pats.loc
-             (go arg (locate_opt arg.loc Vec.[]) :: pats.value : (Matchpattern.t, n Fwn.suc) Vec.t))
+    | App { fn; arg; _ } -> (
+        (* Since we accumulate the arguments from right to left, a boundary pattern is prepended to the boundary of the argument we've already seen. *)
+        match arg.value with
+        (* An argument of a constructor pattern that's enclosed in braces is an explicit pattern for a face of the boundary of the following higher-dimensional pattern variable. *)
+        | Notn ((Braces, _), n) -> (
+            match args n with
+            | [ Token (LBrace, _); Term bdry; Token (RBrace, _) ] -> (
+                match pats.value with
+                | [] ->
+                    fatal ?loc:arg.loc
+                      (Parse_error "boundary pattern must be followed by the pattern it belongs to")
+                | { boundary; pat } :: rest ->
+                    let boundary = go bdry (locate_opt bdry.loc Vec.[]) :: boundary in
+                    go fn
+                      (locate_opt pats.loc
+                         ({ boundary; pat } :: rest : (Matchpattern.arg, n) Vec.t)))
+            | _ -> fatal (Anomaly "invalid notation arguments for braces"))
+        | _ ->
+            go fn
+              (locate_opt pats.loc
+                 (Matchpattern.explicit (go arg (locate_opt arg.loc Vec.[])) :: pats.value
+                   : (Matchpattern.arg, n Fwn.suc) Vec.t)))
     | Notn (notn, n) -> pattern notn (args n) pat.loc
     | _ -> fatal ?loc:pat.loc (Parse_error "invalid pattern") in
   go pat (locate_opt pat.loc Vec.[])

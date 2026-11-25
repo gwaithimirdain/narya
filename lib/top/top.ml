@@ -21,13 +21,13 @@ let refl_names = ref [ "refl"; "Id"; "ap" ]
 let internal = ref true
 let hott = ref true
 let hott_deprecated = ref false
-let discreteness = ref false
 let source_only = ref false
+let no_write_compiled = ref false
 let number_metas = ref true
 let parenthesize_arguments = ref false
 let extra_spaces = ref true
-let show_function_boundaries = ref false
-let show_type_boundaries = ref false
+let show_implicits = ref false
+let display_size = ref Display.default.size
 let show_unique_keys = ref false
 let variables = ref None
 
@@ -37,33 +37,23 @@ let marshal_flags chan =
   Marshal.to_channel chan !refl_char [];
   Marshal.to_channel chan !refl_names [];
   Marshal.to_channel chan !internal [];
-  Marshal.to_channel chan !discreteness [];
   Marshal.to_channel chan !hott []
 
 (* Unmarshal saved flags from a file and check that they agree with the current ones. *)
 let unmarshal_flags chan =
-  let ar = (Marshal.from_channel chan : int) in
-  let rc = (Marshal.from_channel chan : char) in
-  let rs = (Marshal.from_channel chan : string list) in
-  let int = (Marshal.from_channel chan : bool) in
-  let disc = (Marshal.from_channel chan : bool) in
-  let ho = (Marshal.from_channel chan : bool) in
-  if
-    ar = !arity
-    && rc = !refl_char
-    && rs = !refl_names
-    && int = !internal
-    && disc = !discreteness
-    && ho = !hott
-  then Ok ()
+  let ar = (Istream.unmarshal chan : int) in
+  let rc = (Istream.unmarshal chan : char) in
+  let rs = (Istream.unmarshal chan : string list) in
+  let int = (Istream.unmarshal chan : bool) in
+  let ho = (Istream.unmarshal chan : bool) in
+  if ar = !arity && rc = !refl_char && rs = !refl_names && int = !internal && ho = !hott then Ok ()
   else
     Error
-      (Printf.sprintf "%s-arity %d -direction %s %s%s"
+      (Printf.sprintf "%s-arity %d -direction %s %s"
          (if ho then "" else "-parametric ")
          ar
          (String.concat "," (String.make 1 rc :: rs))
-         (if int then "-internal" else "-external")
-         (if disc then " -discreteness" else ""))
+         (if int then "-internal" else "-external"))
 
 (* Given a string like "r,refl,Id" as in a command-line "-direction" argument, set refl_char and refl_names *)
 let set_refls str =
@@ -87,6 +77,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
   Origin.run @@ fun () ->
   Parser.Builtins.install ();
   Parser.Scope.Mod.run @@ fun () ->
+  Unparse.MetaDefs.run_empty @@ fun () ->
   Display.run
     ~init:
       {
@@ -94,9 +85,11 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
         metas = (if !number_metas then `Numbered else `Anonymous);
         argstyle = (if !parenthesize_arguments then `Parens else `Spaces);
         spacing = (if !extra_spaces then `Wide else `Narrow);
-        function_boundaries = (if !show_function_boundaries then `Show else `Hide);
-        type_boundaries = (if !show_type_boundaries then `Show else `Hide);
+        implicits = (if !show_implicits then `Show else `Hide);
         unique_keys = (if !show_unique_keys then `Show else `Hide);
+        degeneracy_names = Display.default.degeneracy_names;
+        lets = Display.default.lets;
+        size = !display_size;
         holes = `Without_number;
         variables =
           (match !variables with
@@ -106,27 +99,27 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
   @@ fun () ->
   Annotate.run @@ fun () ->
   Readback.Displaying.run ~env:false @@ fun () ->
-  Core.Discrete.run ~env:!discreteness @@ fun () ->
   Core.Positivity.run @@ fun () ->
+  Core.Meta.run_owner @@ fun () ->
   (* A temporary Reporter.run to report these errors *)
   ( Reporter.run
       ~emit:(fun d ->
         if !verbose || d.severity = Error || d.severity = Warning then
           Reporter.display ?use_ansi ~output:stderr d)
-      ~fatal:(fun d ->
+      ~mortal:(Reporter.display ?use_ansi ~output:stderr)
+      ~fatal:(fun _ d ->
         Reporter.display ?use_ansi ~output:stderr d;
         raise Exit)
   @@ fun () ->
     if !arity < 0 || !arity > 9 then Reporter.fatal (Unimplemented "arities outside [0,9]");
-    if !discreteness && !arity > 1 then Reporter.fatal (Unimplemented "discreteness with arity > 1");
-    if !hott && (!arity <> 2 || !discreteness || not !internal) then Reporter.fatal Invalid_flags;
+    if !hott && (!arity <> 2 || not !internal) then Reporter.fatal Invalid_flags;
     if !hott_deprecated then Reporter.emit (Deprecated "-hott (this is now the default)");
     (* The argument of -variables must be a nonempty comma-separated list of valid variable names. *)
     match !variables with
     | Some str ->
         List.iter
           (fun x ->
-            Reporter.try_with ~fatal:(fun _ -> Reporter.fatal (Invalid_variable [ x ])) @@ fun () ->
+            Reporter.try_with ~fatal:(fun _ -> fatal (Invalid_variable [ x ])) @@ fun () ->
             match Lexer.single x with
             (* We require y = x so that names with surrounding whitespace, which the lexer would skip over, are also rejected, since the raw string is what gets stored in the Display state. *)
             | Some (Ident [ y ]) when y = x && Lexer.valid_var y -> ()
@@ -140,7 +133,8 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
     ~emit:(fun d ->
       if !verbose || d.severity = Error || d.severity = Warning then
         Reporter.display ?use_ansi ~output:stderr d)
-    ~fatal:(fun d ->
+    ~mortal:(Reporter.display ?use_ansi ~output:stderr)
+    ~fatal:(fun _ d ->
       Reporter.display ?use_ansi ~output:stderr d;
       raise Exit)
   @@ fun () ->
@@ -152,7 +146,7 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
       Bwd.fold_right
         (fun input acc ->
           match input with
-          | `File file -> FilePath.make_absolute (Sys.getcwd ()) file :: acc
+          | `File file -> Execute.normalize_filename (Sys.getcwd ()) file :: acc
           | _ -> acc)
         !inputs [] in
     Subtype.run @@ fun () ->
@@ -163,12 +157,21 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
           marshal = marshal_flags;
           unmarshal = unmarshal_flags;
           source_only = !source_only;
+          no_write_compiled = !no_write_compiled;
           top_files;
           reformat = !reformat;
         }
     @@ fun () ->
     Execute.Loaded.run @@ fun () ->
-    Execute.Loading.run ~init:{ cwd = Sys.getcwd (); parents = Emp; imports = Emp; actions = false }
+    Execute.Loading.run
+      ~init:
+        {
+          cwd = Sys.getcwd ();
+          parents = Emp;
+          imports = Emp;
+          imported = Execute.Filenames.empty;
+          actions = false;
+        }
     @@ fun () ->
     Mbwd.miter
       (fun [ input ] ->
@@ -187,6 +190,8 @@ let run_top ?use_ansi ?onechar_ops ?digit_vars ?ascii_symbols ?(interactive = tr
                 Execute.load_string ~init_visible:(Execute.Loaded.get_scope ())
                   "command-line exec string" content in
               `String in
+        (* Within an input, we go on after a failing command, but if an input had any errors we stop, since later inputs may depend on it. *)
+        if Reporter.moribund () then Reporter.fatal (Fatalize "input");
         if Global.unsolved_holes () > 0 then Reporter.fatal (Open_holes_remaining source))
       [ !inputs ];
     (* Interactive mode also has all the other units loaded.  Note that this should affect the "Top" origin. *)

@@ -97,6 +97,15 @@ module Situation : sig
   val unparse : Situation.PrintKey.t -> User.notation option
   val add : ('left, 'tight, 'right) Notation.notation -> unit
   val add_with_print : User.notation -> unit
+
+  (* How to print something, without adding anything to the trees that parse. *)
+  val add_print : User.notation -> unit
+
+  (* The binary notation that iterated successors of a non-numeral are written with: "suc. (suc. x)"
+     prints as "x+2" when "+" is registered here.  Printing only; nothing parses to a constructor
+     by it. *)
+  val set_successor : User.notation -> unit
+  val successor : unit -> User.notation option
   val add_user : User.prenotation -> User.notation * User.key list
 end
 

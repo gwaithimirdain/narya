@@ -94,7 +94,7 @@ let dblquery = Uchar.of_int 0x2047 (* ⁇ *)
 let gelded_query = Uchar.of_int 0x0294 (* ʔ *)
 let is_digit c = String.exists (fun x -> x = c) "0123456789"
 
-(* A hole is either the single character ?, or a hole with contents that start with ¿ and ends with ʔ.  Even comment sequences inside of a hole are ignored.  Holes with contents can be nested. *)
+(* A hole is either the single character ?, or a hole with contents that start with ¿ and ends with ʔ, or ⁇ followed by a number.  Even comment sequences inside of a hole are ignored.  Holes with contents can be nested. *)
 let rec hole_contents () : string t =
   parenthesized
     (fun l m r -> return (l ^ m ^ r))
@@ -126,8 +126,10 @@ let hole : Token.t t =
          "numbered hole"
        </> return DblQuery)
   (* Grab other hole-like sequences, which won't parse but which we don't want the user to use elsewhere. *)
-  </> let* _ = uchar gelded_query in
-      return GeldedQuery
+  </> (let* _ = uchar gelded_query in
+       return GeldedQuery)
+  </> (let* _ = char '!' in
+       return Bang)
 
 module Specials = struct
   (* Any of these characters is always its own token. *)
@@ -161,13 +163,13 @@ module Specials = struct
       (* ⩲ *)
       (0x2026, Ellipsis);
       (* … *)
+      (0x22EF, Omitted);
+      (* ⋯ *)
     |]
 
   (* Any sequence consisting entirely of these characters is its own token. *)
   let default_ascii_symbols =
-    [|
-      '~'; '!'; '@'; '#'; '$'; '%'; '&'; '*'; '/'; '='; '+'; '|'; ','; '<'; '>'; ':'; ';'; '-'; '^';
-    |]
+    [| '~'; '@'; '#'; '$'; '%'; '&'; '*'; '/'; '='; '+'; '|'; ','; '<'; '>'; ':'; ';'; '-'; '^' |]
 
   module Data = struct
     type t = {
@@ -217,6 +219,7 @@ let ascii_op : Token.t t =
   | "+=" -> return Pluseq
   | ":" -> return Colon
   | "..." -> return Ellipsis
+  | "...." -> return Omitted
   | _ -> return (Op op)
 
 (* A Unicode superscript is a string of Unicode superscript numbers and letters between superscript parentheses.  We don't ever want to fail lexing, so any string starting with a superscript left parenthesis that *doesn't* look like this, or a superscript right parenthesis occurring before a superscript left parenthesis, is lexed as an "invalid superscript". *)
@@ -281,20 +284,21 @@ let other_char : string t =
 
 let all_digits = String.for_all is_digit
 let is_numeral = List.for_all all_digits
-let valid_var x = not (all_digits x)
 
 (* Whether a string is valid as a dot-separated piece of an identifier name, or equivalently as a local variable name.  We don't test for absence of the delimited symbols, since they will automatically be lexed separately; this is for testing validity after the lexer has split things into potential tokens.  We also don't test for absence of dots, since identifiers will be split on dots automatically. *)
 let atomic_ident s =
   String.length s > 0
   && s.[0] <> '_'
-  && (Specials.digit_vars () || String.length s < 2 || s.[0] < '0' || s.[1] > '9')
+  && (Specials.digit_vars () || not (is_digit s.[0]))
   && not (all_digits s)
+
+let valid_var = atomic_ident
 
 (* A field name is like an identifier, but it could be all numeric for positional projections. *)
 let valid_field s =
   String.length s > 0
   && s.[0] <> '_'
-  && ((Specials.digit_vars () || String.length s < 2 || s.[0] < '0' || s.[1] > '9') || all_digits s)
+  && (Specials.digit_vars () || (not (is_digit s.[0])) || all_digits s)
 
 let valid_ident = List.for_all atomic_ident
 
@@ -339,12 +343,16 @@ let dot_separated_token : [ `Dots of int | `Atom of string ] list t =
 let get_reserved_word = function
   | "let" -> Some Let
   | "rec" -> Some Rec
+  | "only" -> Some Only
+  | "lock" -> Some Lock
+  | "key" -> Some Keyword_key
   | "in" -> Some In
   | "axiom" -> Some Axiom
   | "def" -> Some Def
   | "and" -> Some And
   | "echo" -> Some Echo
   | "synth" -> Some Synth
+  | "about" -> Some About
   | "quit" -> Some Quit
   | "match" -> Some Match
   | "return" -> Some Return
@@ -403,6 +411,7 @@ let canonicalize (loc : Asai.Range.t) (parts : [ `Dots of int | `Atom of string 
         match parts with
         | [ `Dots 1 ] -> Dot
         | [ `Dots 3 ] -> Ellipsis
+        | [ `Dots 4 ] -> Omitted
         (* Simple field (allowed to be positional) *)
         | [ `Dots 1; `Atom fld ] when valid_field fld -> Field (fld, [])
         (* Higher field with one suffix (not allowed to be positional) *)

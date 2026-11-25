@@ -603,7 +603,7 @@ handling in Proof General."
 
  ;; Undo
  proof-non-undoables-regexp            "undo"
- proof-ignore-for-undo-count           "echo\\|synth\\|show\\|undo"
+ proof-ignore-for-undo-count           "echo\\|synth\\|about\\|show\\|undo"
  proof-undo-n-times-cmd                "undo %s\n\x0C" ;; has to end with a formfeed to terminate a PG-mode command
  proof-state-preserving-p              'narya-state-preserving-p
  ;; The difference between proof-count-undos-fn and proof-find-and-forget-fn seems to be that the former is called iff staying inside a single proof.  However, as far as I can see, for Narya the default value of the former also works for the latter.
@@ -646,7 +646,7 @@ handling in Proof General."
                                         ;proof-shell-end-goals-regexp          ""
 
  ;; Settings for generic user-level commands
- proof-assistant-home-page             "https://github.com/mikeshulman/narya/"
+ proof-assistant-home-page             "https://github.com/gwaithimirdain/narya/"
  )
 
 ;; The Emacs comment functions are a bit weird and inconsistent.
@@ -917,7 +917,12 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
                   (insert "(" term ")")
                   (setq shift 1))
               (insert term)))
-          (progn
+          (let ((insert-end (point-marker))
+                ;; The numbers of the new holes created by the term.
+                ;; We read these off before reformatting the command,
+                ;; since that overwrites narya-pending-hole-positions.
+                (new-holes (mapcar (lambda (pos) (nth 2 pos))
+                                   narya-pending-hole-positions)))
             (delete-region (point) (overlay-end hole-overlay))
             ;; Delete the overlay for the solved hole and update the hole list.
             (narya-delete-hole-overlay hole-overlay)
@@ -925,29 +930,27 @@ Here \"empty\" means containing only whitespace; comments are nonempty."
             ;; Create new overlays from holes in the new term.
             (if narya-reformat-commands
                 ;; If the new term was reformatted, then its holes
-                ;; were printed using the ⁇0? syntax, so we can use
-                ;; narya-create-marked-hole-overlays.
-                ;; (narya-create-marked-hole-overlays insert-start (point))
-                (narya-reformat-command cmd-span)
+                ;; were printed using the ⁇0? syntax, so they will be
+                ;; found when we reformat the whole command, which
+                ;; also places the cursor for us.
+                (narya-reformat-command cmd-span (copy-marker insert-start) new-holes)
               ;; Otherwise, we get the hole position information
               ;; from the [data] block.
-              (let ((new-holes (narya-create-hole-overlays (+ byte-insert-start shift)
-                                                           narya-pending-hole-positions)))
-                (setq narya-pending-hole-positions nil)
-                ;; The rest is done by narya-reformat-command when we
-                ;; call that, but here we have to do it ourselves.
-                ;;
-                ;; First we add an Emacs undo action so that if the
-                ;; "solve" command is undone in Emacs, PG will rewind
-                ;; past the command containing the hole.  This is the
-                ;; only sensible course of action, since the Narya
-                ;; "solve" command can't be undone.
-                (narya-add-command-undo cmd-span)
-                ;; Then if any new holes were created, we position the
-                ;; cursor in the first of them.
-                (when (> new-holes 0)
-                  (goto-char insert-start)
-                  (narya-next-hole))))
+              (narya-create-hole-overlays (+ byte-insert-start shift)
+                                          narya-pending-hole-positions)
+              (setq narya-pending-hole-positions nil)
+              ;; The rest is done by narya-reformat-command when we
+              ;; call that, but here we have to do it ourselves.
+              ;;
+              ;; First we add an Emacs undo action so that if the
+              ;; "solve" command is undone in Emacs, PG will rewind
+              ;; past the command containing the hole.  This is the
+              ;; only sensible course of action, since the Narya
+              ;; "solve" command can't be undone.
+              (narya-add-command-undo cmd-span)
+              ;; Then we position the cursor in the first new hole,
+              ;; or at the start of the new term if there are none.
+              (narya-goto-new-hole insert-start insert-end new-holes))
             (message "Hole solved.")))))))
 
 (defun narya-split-hole ()
@@ -991,6 +994,12 @@ If cursor is over a hole, the term is interpreted in the context of that hole."
   (interactive)
   (narya-echo-or-synth "synth" "Term to synthesize: "))
 
+(defun narya-about ()
+  "Display the definition of a term, if possible.
+If cursor is over a hole, the term is interpreted in the context of that hole."
+  (interactive)
+  (narya-echo-or-synth "about" "Term to explicate: "))
+
 (defun narya-insert-hole-numbers (start end)
   "Insert hole-number labels ⁇n in front of hole overlays from START to END."
   (save-excursion
@@ -1000,9 +1009,25 @@ If cursor is over a hole, the term is interpreted in the context of that hole."
           (goto-char (overlay-start ovl))
           (insert "⁇" (number-to-string n)))))))
 
-(defun narya-reformat-command (&optional ovl)
+(defun narya-goto-new-hole (start end new-holes)
+  "Move point into the first hole from START to END numbered in NEW-HOLES.
+If there is no such hole, move point to START instead."
+  (let ((pos (cl-loop for ovl in (overlays-in start end)
+                      for n = (overlay-get ovl 'narya-hole)
+                      when (and n (memq n new-holes))
+                      minimize (overlay-start ovl))))
+    ;; Go to the beginning of that hole's interior.
+    (goto-char (if pos (1+ pos) start))))
+
+(defun narya-reformat-command (&optional ovl focus focus-holes)
   "Reformat the command with overlay OVL in the processed region.
-Defaults to the command containing point."
+Defaults to the command containing point.
+
+If FOCUS is a position in the command, then afterwards point is
+placed in the first hole after the reformatted location of FOCUS
+whose number is in FOCUS-HOLES, or if there is no such hole,
+at the reformatted location of FOCUS itself.  Otherwise, point is placed in the
+first hole of the command, if any."
   (interactive)
   ;; Find the current PG 'cmd overlay
   (let ((ovl (or ovl
@@ -1025,6 +1050,15 @@ Defaults to the command containing point."
                           (insert "\n\n"))
                         (point-marker)))
                (end (copy-marker (overlay-end ovl) t))
+               ;; Reformatting only changes whitespace (outside of
+               ;; the hole numbers, which are inserted below and
+               ;; removed again afterwards), so we can locate FOCUS
+               ;; afterwards by counting non-whitespace characters.
+               ;; (The exception is ASCII versus Unicode spellings of
+               ;; tokens like → if "display chars" was changed since
+               ;; the command was processed, in which case FOCUS may
+               ;; end up slightly misplaced.)
+               (focus-count (and focus (how-many "[^ \t\n\r\f]" start focus)))
                (cmd (progn
                       (narya-insert-hole-numbers start end)
                       (buffer-substring-no-properties start end)))
@@ -1033,7 +1067,10 @@ Defaults to the command containing point."
           (proof-shell-invisible-command
            (format "fmt %d := %s" (overlay-get ovl 'instant) cmd) t)
           (if (eq proof-shell-last-output-kind 'error)
-              (message "Reformatter failed!")
+              (progn
+                (message "Reformatter failed!")
+                (when focus
+                  (narya-goto-new-hole focus end focus-holes)))
             ;; Delete the existing hole overlays in the region
             (atomic-change-group
               (dolist (h (overlays-in start end))
@@ -1052,8 +1089,14 @@ Defaults to the command containing point."
               ;; Add an undo action to retract to here
               (narya-add-command-undo ovl)
               (goto-char start)
-              (when (> new-holes 0)
-                (narya-next-hole)))))
+              (if focus
+                  (progn
+                    (when (> focus-count 0)
+                      (re-search-forward "[^ \t\n\r\f]" end t focus-count))
+                    (skip-chars-forward " \t\n\r\f" end)
+                    (narya-goto-new-hole (point) end focus-holes))
+                (when (> new-holes 0)
+                  (narya-next-hole))))))
       (message "No current processed command found."))))
 
 (defun narya-display-chars (arg)
@@ -1069,31 +1112,29 @@ With a negative prefix argument, set display to ASCII."
          "display chars := ascii")
      "display chars := toggle")))
 
-(defun narya-display-function-boundaries (arg)
-  "Set, unset, or toggle display of function boundaries.
-With no prefix argument, toggle display of function boundaries.
-With a positive prefix argument, set display of function boundaries on.
-With a negative prefix argument,set display of function boundaries off."
+(defun narya-display-implicits (arg)
+  "Set, unset, or toggle display of implicit arguments.
+With no prefix argument, toggle display of implicit arguments.
+With a positive prefix argument, set display of implicit arguments on.
+With a negative prefix argument,set display of implicit arguments off."
   (interactive "P")
   (proof-shell-invisible-command
    (if arg
        (if (> (prefix-numeric-value arg) 0)
-           "display function boundaries := on"
-         "display function boundaries := off")
-     "display function boundaries := toggle")))
+           "display implicits := on"
+         "display implicits := off")
+     "display implicits := toggle")))
 
-(defun narya-display-type-boundaries (arg)
-  "Set, unset, or toggle display of type boundaries.
-With no prefix argument, toggle display of type boundaries.
-With a positive prefix argument, set display of type boundaries on.
-With a negative prefix argument,set display of type boundaries off."
+(defun narya-display-boundaries-deprecated (arg)
+  "Deprecated alias for `narya-display-implicits'.
+The separate commands for function and type boundaries have been
+merged into a single command for all implicit arguments, bound to
+\\[narya-display-implicits]."
   (interactive "P")
-  (proof-shell-invisible-command
-   (if arg
-       (if (> (prefix-numeric-value arg) 0)
-           "display type boundaries := on"
-         "display type boundaries := off")
-     "display type boundaries := toggle")))
+  (display-warning
+   'narya
+   "C-c C-d C-f and C-c C-d C-t are deprecated; use C-c C-d C-i instead")
+  (narya-display-implicits arg))
 
 (defun narya-display-unique-keys (arg)
   "Set, unset, or toggle display of unique keys.
@@ -1108,11 +1149,30 @@ With a negative prefix argument, set display of unique keys off."
          "display unique keys := off")
      "display unique keys := toggle")))
 
+(defun narya-display-let (arg)
+  "Cycle or set the display of local definitions and holes.
+With no prefix argument, cycle between displaying them by name, with
+their environments, and as their definitions.  With a prefix argument,
+prompt for which of these to set."
+  (interactive "P")
+  (proof-shell-invisible-command
+   (concat "display let := "
+           (if arg
+               (completing-read "Display let: "
+                                '("names" "environments" "definitions") nil t)
+             "cycle"))))
+
+(defun narya-display-degeneracy-names (num)
+  "Set the dimension up to which degeneracies are displayed with names.
+NUM is the largest dimension of an iterated reflexivity that is
+displayed with iterated names, such as \"refl (refl x)\", rather
+than with a superscript."
+  (interactive (list (read-number "Maximum dimension: " 1)))
+  (proof-shell-invisible-command
+   (format "display degeneracy names := %d" num)))
+
 (defun narya-display-variables (vars)
-  "Set, unset, or toggle display of type boundaries.
-With no prefix argument, toggle display of type boundaries.
-With a positive prefix argument, set display of type boundaries on.
-With a negative prefix argument,set display of type boundaries off."
+  "Set the default variable names used when displaying terms."
   (interactive "MDefault variables: ")
   (proof-shell-invisible-command
    (concat "display variables := " vars)))
@@ -1120,16 +1180,18 @@ With a negative prefix argument,set display of type boundaries off."
 (defvar narya-minibuffer-commands
   '("echo"
     "synth"
+    "about"
     "show hole"
     "show holes"
     "display chars ≔ unicode"
     "display chars ≔ ascii"
-    "display function boundaries ≔ on"
-    "display function boundaries ≔ off"
-    "display type boundaries ≔ on"
-    "display type boundaries ≔ off"
+    "display implicits ≔ on"
+    "display implicits ≔ off"
     "display unique keys ≔ on"
-    "display unique keys ≔ off"))
+    "display unique keys ≔ off"
+    "display let ≔ names"
+    "display let ≔ environments"
+    "display let ≔ definitions"))
 
 (defun narya-minibuffer-cmd (cmd)
   "Wrapper around `proof-minibuffer-cmd' with completion for Narya commands."
@@ -1236,12 +1298,16 @@ With a negative prefix argument,set display of type boundaries off."
 (keymap-set narya-mode-map "C-c C-;" 'narya-echo)
 (keymap-set narya-mode-map "C-c :" 'narya-synth)
 (keymap-set narya-mode-map "C-c C-:" 'narya-synth)
+(keymap-set narya-mode-map "C-c C-a" 'narya-about)
 (keymap-set narya-mode-map "C-c C-v" 'narya-minibuffer-cmd)
 (keymap-set narya-mode-map "C-c C-d C-u" 'narya-display-chars)
-(keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-function-boundaries)
-(keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-type-boundaries)
+(keymap-set narya-mode-map "C-c C-d C-i" 'narya-display-implicits)
+(keymap-set narya-mode-map "C-c C-d C-f" 'narya-display-boundaries-deprecated)
+(keymap-set narya-mode-map "C-c C-d C-t" 'narya-display-boundaries-deprecated)
 (keymap-set narya-mode-map "C-c C-d C-k" 'narya-display-unique-keys)
+(keymap-set narya-mode-map "C-c C-d C-l" 'narya-display-let)
 (keymap-set narya-mode-map "C-c C-d C-v" 'narya-display-variables)
+(keymap-set narya-mode-map "C-c C-d C-d" 'narya-display-degeneracy-names)
 (keymap-set narya-mode-map "C-M-q" 'narya-reformat-command)
 
 (provide 'narya)

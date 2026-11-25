@@ -6,6 +6,7 @@ open Tctx
 open Reporter
 open Term
 open Value
+open Env
 open View
 
 (* Operator actions on values.  Unlike substitution, operator actions take a *value* as input (and produces another value). *)
@@ -22,25 +23,6 @@ let deg_plus_to : type m n nk. on:string -> ?err:dim_err -> (m, n) deg -> nk D.t
       let (Plus mk) = D.plus (D.plus_right nk) in
       let sk = deg_plus s nk mk in
       Of sk
-
-type _ key_comp = Wrap : ('a, 'm, 'n, 'b) Modalcell.t -> 'a key_comp
-
-let key_vcomp : type a b c m n p q.
-    (a, m, n, b) Modalcell.t -> (a, p, q, c) Modalcell.t -> a key_comp =
- fun cell2 cell1 ->
-  match (Modalcell.compare_id cell2, Modalcell.compare_id cell1) with
-  | Eq, _ -> Wrap cell1
-  | _, Eq -> Wrap cell2
-  | _ -> (
-      match Modality.pushout (Modalcell.vtgt cell1) (Modalcell.vsrc cell2) with
-      | Some (Pushout (mu3, mu4, cod13, dom24)) ->
-          let (Comp cod24) = Modality.comp (Modalcell.vtgt cell2) in
-          let (Comp dom13) = Modality.comp (Modalcell.vsrc cell1) in
-          Wrap
-            (Modalcell.vcomp
-               (Modalcell.hcomp dom24 cod24 (Modalcell.id mu4) cell2)
-               (Modalcell.hcomp dom13 cod13 (Modalcell.id mu3) cell1))
-      | None -> fatal (Anomaly "incompatible keys"))
 
 (* Degenerate and shift the stored environment of a higher structfield so that one of its stored terms can be evaluated in it.  The data comes from decomposing a partial bijection on the field's evaluation dimension through 'plusdim' (unplus_pbij): 'rr' shuffles the remaining dimensions 'r3 of the outer decomposition with the dimensions 'r4 consumed from the environment dimension 'm, and 'mtr' splits 'm into the kept dimensions 't and the consumed ones 'r4.  The game is to build a degeneracy that we can apply to the m-dimensional environment 'env' so that we can shift it by the plusmap 'ra' and evaluate the corresponding stored term.  That means we need to get an environment whose dimension is something+r34.  We start by adding r3, and then apply a bunch of permutations.
        m + r3
@@ -157,12 +139,6 @@ module Act = struct
             () in
         Variables (m, ml, vars)
 
-  (* Acting on a binder and on other sorts of closures will be unified by the function 'act_closure', but its return value involves an existential type, so it has to be a GADT. *)
-  type (_, _, _, _) act_closure =
-    | Act_closure :
-        ('mode, 'm, 'a) env * ('mn, 'm, 'n) insertion
-        -> ('mode, 'a, 'mn, 'n) act_closure
-
   type (_, _, _, _, _) act_pi =
     | Act_pi :
         ('k, 'n) deg
@@ -181,7 +157,7 @@ module Act = struct
     | Neu { head; args; value; ty } ->
         (* We act on the applications from the outside (last) to the inside, since the degeneracy has to be factored and may leave neutral insertions behind.  The resulting inner degeneracy then acts on the head. *)
         let Any_deg s', Wrap hc, args = act_apps args s c in
-        let head = act_head head s' hc in
+        let head = act_neu_head head s' hc in
         (* We act on the value separately with the original s, since it is a "value" of the entire application spine, not just the head. *)
         let value = act_lazy_eval value s c in
         (* And we "act" on the type with the other kind of action that permutes the instantiated arguments, and by the original s since it is the type of the entire application spine.  We are careful not to force the original type until the acted type is itself demanded, since computing types of acted terms can cascade (the type's own spine contains normals whose types are acted in turn) and the acted type is frequently never inspected. *)
@@ -347,9 +323,17 @@ module Act = struct
       (mode, s) evaluation =
    fun tm s c ->
     match tm with
-    | Unrealized -> Unrealized
+    | Unrealized None -> Unrealized None
+    | Unrealized (Some stuck) -> Unrealized (Some (act_head stuck s c))
     | Realize tm -> Realize (act_value tm s c)
     | Val tm -> Val (act_value tm s c)
+
+  and act_env_deg : type mode m n b mu1 mu2 cod.
+      (mode, n, b) env -> (m, n) deg -> (mode, mu1, mu2, cod) Modalcell.t -> (mode, m, b) env =
+   fun env s cell ->
+    let env = act_env env (opt_op_of_deg s) in
+    let env = prekey_env env cell in
+    env
 
   and act_canonical : type mode mu1 mu2 cod m n i.
       (mode, n, i) canonical ->
@@ -363,53 +347,43 @@ module Act = struct
     | Pi { x; filter; doms; cods } ->
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa cell in
         Pi { x = act_variables x fb; filter; doms; cods }
-    | Data { dim = _; tyfam; indices; constrs; discrete; recursive; hints } ->
+    | Data { dim = _; tyfam; indices; constrs; recursive; hints } ->
         let tyfam = act_lazy_eval tyfam fa cell in
         let indices =
           Fillvec.map
             (fun ixs -> act_cube { act = (fun x s c -> act_normal x s c) } ixs fa cell)
             indices in
         let constrs = Abwd.map (fun con -> act_dataconstr con fa cell) constrs in
-        Data { dim = dom_deg fa; tyfam; indices; constrs; discrete; recursive; hints }
+        Data { dim = dom_deg fa; tyfam; indices; constrs; recursive; hints }
     | Codata { eta; opacity; hints; env; fields } ->
-        let env = act_env env (opt_op_of_deg fa) in
-        let env = prekey_env env cell in
+        let env = act_env_deg env fa cell in
         Codata { eta; opacity; hints; env; fields }
 
-  and act_dataconstr : type mode mu1 mu2 cod m n i.
-      (mode, n, i) dataconstr ->
+  and act_dataconstr : type mode mu1 mu2 cod m n.
+      (mode, n) dataconstr ->
       (m, n) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
-      (mode, m, i) dataconstr =
-   fun (Dataconstr { env; args; indices }) s cell ->
-    (* We key on the environment without changing its mode by prekeying it. *)
-    let env = act_env env (opt_op_of_deg s) in
-    let env = prekey_env env cell in
-    Dataconstr { env; args; indices }
+      (mode, m) dataconstr =
+   fun (Dataconstr { env; ty; fnty }) s cell ->
+    let env = act_env_deg env s cell in
+    Dataconstr { env; ty; fnty = act_lazy_eval fnty s cell }
 
-  (* act_closure and act_binder assume that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
-  and act_closure : type mode mn m n a kn.
-      (mode, m, a) env -> (mn, m, n) insertion -> (kn, mn) deg -> (mode, a, kn, n) act_closure =
-   fun env ins fa ->
-    let (Insfact_comp (fc, ins)) = insfact_comp ins fa in
-    Act_closure (act_env env (opt_op_of_deg fc), ins)
-
+  (* act_binder assumes that the degeneracy has exactly the correct codomain.  So if it doesn't, the caller should call deg_plus_to first. *)
   and act_binder : type mode modality dom mn kn s mu1 mu2 cod.
       (mode, modality, dom, mn, s) binder ->
       (kn, mn) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
       (mode, modality, dom, kn, s) binder =
    fun (Bind { env; modality; filter; ins; body }) fa c ->
-    let (Act_closure (env, ins)) = act_closure env ins fa in
-    (* A modal key acts on a binder by prekeying its captured environment.  The variables bound by the binder itself, which will be added on top of the Prekey when it is applied, are unaffected. *)
-    let env = prekey_env env c in
+    let (Insfact_comp (fc, ins)) = insfact_comp ins fa in
+    let env = act_env_deg env fc c in
     Bind { env; modality; filter; ins; body }
 
   and act_normal : type mode mu1 mu2 cod a b.
       mode normal -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> mode normal =
    fun ({ tm; ty } as nf) s c ->
     (* The public act_* entry points below are wrapped in short_circuit, but the recursive calls within this module are not, and act_apps factors the degeneracy per face, so a residual identity arrives here very often (96% of calls on a 3-dimensional Pi-type lift).  Re-testing here avoids rebuilding an identical normal, and in particular avoids allocating the deferred type-action thunk. *)
-    match (is_id_deg s, Modalcell.compare_id c) with
+    match (is_id_deg s, Modalcell.compare_id2 c) with
     | Some _, Eq -> nf
     | _ -> { tm = act_value tm s c; ty = lazy (act_ty tm (Lazy.force ty) s c) }
 
@@ -425,20 +399,23 @@ module Act = struct
     (* We have to normalize the type in order to be sure of exposing the instantiations.  But we can't use view_type, because that discards information and we need to reconstruct the acted type. *)
     match view_term tmty with
     | Lam _ | Struct _ | Constr _ -> fatal (Anomaly "invalid term: not a type to act on")
+    (* If the type is failed, so is the type of the acted term. *)
+    | Neu { head = Failed mode; args = Emp; _ } -> failed_type mode
     (* The type must be UU 0, since this IS a TYPE (that has elements).  But we don't bother checking that it is. *)
-    | Neu { head; args; value; ty } ->
+    | Neu { head = Live head; args; value; ty } ->
         (* Pull off the instantiation, perhaps empty, from the end of the arguments. *)
         let base_args, Full_tube inst_args =
           match args with
-          | Inst (base_args, _, inst_args) -> (
+          | Snoc (base_args, Inst (_, inst_args)) -> (
               match D.compare_zero (TubeOf.uninst inst_args) with
               | Zero ->
                   let Eq =
                     D.plus_uniq (TubeOf.plus inst_args) (D.zero_plus (TubeOf.inst inst_args)) in
-                  (base_args, (TubeOf.Full_tube inst_args : mode normal TubeOf.full))
+                  ( (base_args : (_, mode, noninst, live) apps),
+                    (TubeOf.Full_tube inst_args : mode normal TubeOf.full) )
               | Pos _ -> fatal (Dimension_mismatch ("act_ty", TubeOf.uninst inst_args, D.zero)))
-          | Arg _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
-          | Field _ -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
+          | Snoc (_, Arg _) -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
+          | Snoc (_, Field _) -> (args, TubeOf.Full_tube (TubeOf.empty D.zero))
           | Emp -> (args, TubeOf.Full_tube (TubeOf.empty D.zero)) in
         let (Ty_acted_instargs (fa, new_inst_args)) =
           gact_ty_instargs ?err tm tmty inst_args s cell in
@@ -449,13 +426,13 @@ module Act = struct
         let (Any args) =
           match D.compare_zero (TubeOf.inst new_inst_args) with
           | Zero -> Any base_args
-          | Pos k -> Any (Inst (new_base_args, k, new_inst_args)) in
+          | Pos k -> Any (Snoc (new_base_args, Inst (k, new_inst_args))) in
         (* Since we've normalized the type already, its 'value' can't be a 'Realize'; it must be a Val Canonical or an Unrealized.  In the Canonical case, we act on its instantiation arguments (which should really be the same arguments) in the same way.  We defer this computation, since it forces the type's stored value and rebuilds its instantiation tube, and the acted type's value is frequently never inspected; any dimension errors were already reported by the eager action on the outer instantiation arguments above, which are the same arguments. *)
         let value =
-          defer (Modalcell.hsrc cell) @@ fun () ->
+          defer @@ fun () ->
           match force_eval value with
           | Realize _ -> fatal (Anomaly "Realize in normalized type in act_ty")
-          | Unrealized -> Unrealized
+          | Unrealized _ -> Unrealized None
           | Val
               (Canonical { mode; canonical = c; tyargs = ctyargs; ins; fields = _; inst_fields = _ })
             -> (
@@ -479,7 +456,7 @@ module Act = struct
                        })
               | Pos _ -> fatal (Anomaly "non fully instantiated type in act_ty"))
           | Val _ -> fatal (Anomaly "non-canonical potential value in act_ty") in
-        Neu { head; args; value; ty }
+        Neu { head = Live head; args; value; ty }
 
   (* Subroutine of gact_ty that acts on the instantiation arguments of a type, keeping them a full tube. *)
   and gact_ty_instargs : type mode mu1 mu2 cod a b n.
@@ -522,15 +499,26 @@ module Act = struct
       (mode, kinetic) value =
    fun ?err tm tmty s c -> gact_ty ?err (Some tm) tmty s c
 
+  and act_neu_head : type mode fail mu1 mu2 cod a b.
+      (mode, fail) neu_head ->
+      (a, b) deg ->
+      (mode, mu1, mu2, cod) Modalcell.t ->
+      (mode, fail) neu_head =
+   fun ne s c ->
+    match ne with
+    (* A failed term remains failed.  Its value, which raises an error when forced, is acted on separately (see act_value). *)
+    | Failed mode -> Failed mode
+    | Live head -> Live (act_head head s c)
+
   (* Action on a head *)
-  and act_head : type mode mu1 mu2 cod a b.
-      mode head -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> mode head =
+  and act_head : type mode s mu1 mu2 cod a b.
+      (mode, s) head -> (a, b) deg -> (mode, mu1, mu2, cod) Modalcell.t -> (mode, s) head =
    fun ne s c ->
     match ne with
     (* To act on a variable, we accumulate the delayed actions, extending if necessary to match. *)
     | Var { level; deg; key } -> (
         let (DegExt (_, _, deg)) = comp_deg_extending deg s in
-        match Modalcell.compare_id c with
+        match Modalcell.compare_id2 c with
         | Eq -> Var { level; deg; key }
         | Neq -> (
             match Modality.factor (Modalcell.vtgt key) (Modalcell.vsrc c) with
@@ -544,15 +532,14 @@ module Act = struct
                      ^ Modalcell.to_string key
                      ^ " doesn't factor through domain of "
                      ^ Modalcell.to_string c))))
-    (* To act on a constant, we push as much of the degeneracy through the insertion as possible.  The actual degeneracy that gets pushed through doesn't matter, since it just raises the constant to an even higher dimension, and that dimension is stored in the insertion.  The key is actually completely ignored. *)
+    (* To act on a constant, we push as much of the degeneracy through the insertion as possible.  The actual degeneracy that gets pushed through doesn't matter, since it just raises the constant to an even higher dimension, and that dimension is stored in the insertion.  The key is actually completely ignored, since keys act by simply pushing through to variables, and constant have no variables in them. *)
     | Const { name; ins } ->
         let (Insfact_comp_ext (_, ins, _, _)) = insfact_comp_ext ins s in
         Const { name; ins }
-    (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment. *)
+    (* Acting on a metavariable is similar to a constant, but now the inner degeneracy acts on the stored environment, as does the key. *)
     | Meta { meta; env; ins } ->
         let (Insfact_comp_ext (deg, ins, _, _)) = insfact_comp_ext ins s in
-        let env = act_env env (opt_op_of_deg deg) in
-        let env = prekey_env env c in
+        let env = act_env_deg env deg c in
         Meta { meta; env; ins }
     | UU (mode, nk) ->
         let (Of fa) = deg_plus_to s nk ~on:"universe head" in
@@ -561,6 +548,11 @@ module Act = struct
         let (Of fa) = deg_plus_to s (BindCube.dim cods) ~on:"pi-type head" in
         let (Act_pi (fb, filter, doms, cods)) = act_pi filter doms cods fa c in
         Pi { x = act_variables x fb; filter; doms; cods }
+    (* A stuck match stays stuck in the acted environment, so we can push the action into it.  The environment of a stuck match has the dimension of the evaluation (Shift and Unshift change the dimension of the environment that the match itself is evaluated in, not just of its result), and an evaluation is only ever acted on by a degeneracy whose codomain is its dimension.  But since evaluations aren't indexed by their dimension we have to check this. *)
+    | Stuck { env; tm; display } -> (
+        match D.compare (cod_deg s) (dim_env env) with
+        | Eq -> Stuck { env = act_env_deg env s c; tm; display }
+        | Neq -> fatal (Anomaly "acting on a stuck match by a degeneracy of the wrong dimension"))
 
   and act_pi : type dom modality mode mu1 mu2 cod m n k.
       (dom, modality, mode, k, n) Modality.filter_dim ->
@@ -589,16 +581,16 @@ module Act = struct
     Act_pi (fa', filter', doms', cods')
 
   (* Action on a Bwd of applications (each of which is just the argument and its boundary).  Pushes the degeneracy past the stored insertions, factoring it each time and leaving an appropriate insertion on the outside.  Also returns the innermost degeneracy and key cell, for acting on the head with: the cell gets prewhiskered by the left adjoint each time it crosses a modal field projection. *)
-  and act_apps : type hmode mode mu1 mu2 cod a b any.
-      (hmode, mode, any) apps ->
+  and act_apps : type hmode mode mu1 mu2 cod a b any fail.
+      (hmode, mode, any, fail) apps ->
       (a, b) deg ->
       (mode, mu1, mu2, cod) Modalcell.t ->
-      any_deg * hmode Modalcell.cod2_wrapped * (hmode, mode, any) apps =
+      any_deg * hmode Modalcell.cod2_wrapped * (hmode, mode, any, fail) apps =
    fun apps s c ->
     match apps with
     | Emp -> (Any_deg s, Wrap c, Emp)
     (* To act on an application, we compose the acting degeneracy with the delayed insertion, factor the result into a new insertion to leave outside and a smaller degeneracy to push in, and push the smaller degeneracy action into the application, acting on the function/struct. *)
-    | Arg (rest, filter, args, ins) ->
+    | Snoc (rest, Arg (filter, args, ins)) ->
         (* In the function case, we also act on the arguments by factorization of dimensions and by whiskering of keys. *)
         let modality = Modality.filter_modality filter in
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
@@ -607,8 +599,8 @@ module Act = struct
           let (Wrap newc) = Modalcell.prewhisker_wrapped c modality in
           act_cube { act = (fun x s c -> act_normal x s c) } args fb newc in
         let new_s, new_c, new_rest = act_apps rest fa c in
-        (new_s, new_c, Arg (new_rest, arg_filter, new_arg, new_ins))
-    | Field (rest, filter, fld, fldplus, ins) -> (
+        (new_s, new_c, Snoc (new_rest, Arg (arg_filter, new_arg, new_ins)))
+    | Snoc (rest, Field (filter, fld, fldplus, ins)) -> (
         let (Insfact_comp_ext (fa, new_ins, _, _)) = insfact_comp_ext ins s in
         (* Note that we don't need to change the degeneracy on the outside, since it can be extended on the right as needed. *)
         let (Plus new_fldplus) = D.plus (D.plus_right fldplus) in
@@ -619,15 +611,15 @@ module Act = struct
         match Modality.compare_id modality with
         | Eq ->
             let new_s, new_c, new_rest = act_apps rest fb c in
-            (new_s, new_c, Field (new_rest, new_filter, fld, new_fldplus, new_ins))
+            (new_s, new_c, Snoc (new_rest, Field (new_filter, fld, new_fldplus, new_ins)))
         | Neq ->
             let (Wrap c) = Modalcell.prewhisker_wrapped c modality in
             let new_s, new_c, new_rest = act_apps rest fb c in
-            (new_s, new_c, Field (new_rest, new_filter, fld, new_fldplus, new_ins)))
-    | Inst (rest, dim, args) ->
+            (new_s, new_c, Snoc (new_rest, Field (new_filter, fld, new_fldplus, new_ins))))
+    | Snoc (rest, Inst (dim, args)) ->
         let (Acted_instargs (fa, new_args, None)) = act_instargs args s c None in
         let new_s, new_c, new_rest = act_apps rest fa c in
-        (new_s, new_c, Inst (new_rest, dim, new_args))
+        (new_s, new_c, Snoc (new_rest, Inst (dim, new_args)))
 
   and act_instargs : type mode mu1 mu2 cod a b n j nj p.
       (n, j, nj, mode normal) TubeOf.t ->
@@ -643,7 +635,7 @@ module Act = struct
     let nj = TubeOf.plus args in
     let m = dom_deg fa in
     let (Plus mj) = D.plus j in
-    (* The new arguments are obtained by factoring and acting on appropriate original arguments *)
+    (* The new arguments are obtained by factoring and acting on appropriate original arguments. *)
     let args =
       TubeOf.build m mj
         {
@@ -663,22 +655,20 @@ module Act = struct
       =
    fun lev s c ->
     match !lev with
-    (* When there are no accumulated pending arguments (apps = Emp), we compose the outer actions onto the environment and leave the term untouched. *)
-    | Deferred_eval (env, tm, ins, key, Emp) ->
+    (* An unevaluated term: we compose the outer actions onto the environment and leave the term untouched. *)
+    | Deferred_eval (env, tm, ins, key) ->
         let (Insfact_comp_ext (fa, ins, _, _)) = insfact_comp_ext ins s in
         let acted_env = act_env env (opt_op_of_deg fa) in
-        (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite.  We use the cell returned by act_apps, which lives at the mode inside the pending spine. *)
+        (* The stored key is applied to the evaluated value when forcing, and the new cell acts on the result of that, so the stored key is applied first in the composite. *)
         let (Wrap newkey) = key_vcomp c key in
-        ref (Deferred_eval (acted_env, tm, ins, newkey, Emp))
-    | Deferred (tm, s', key, Emp) ->
+        ref (Deferred_eval (acted_env, tm, ins, newkey))
+    (* A pending action on something else: we compose the two actions, still acting on the same shared inner value. *)
+    | Applied (inner, Action (s', key)) ->
         let (DegExt (_, _, fa)) = comp_deg_extending s' s in
         let (Wrap newkey) = key_vcomp c key in
-        ref (Deferred (tm, fa, newkey, Emp))
-    (* When the deferral carries a pending argument spine (which happens only in glued evaluation), we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
-    | Deferred_eval (_, _, _, _, (Arg _ | Field _ | Inst _))
-    | Deferred (_, _, _, (Arg _ | Field _ | Inst _)) ->
-        ref (Deferred ((fun () -> force_eval lev), s, c, Emp))
-    | Ready tm -> ref (Deferred ((fun () -> tm), s, c, Emp))
+        ref (Applied (inner, Action (fa, newkey)))
+    (* Otherwise, and in particular when there is a pending argument spine, we do not push the action eagerly through the spine: that would duplicate the work of acting on the neutral's own arguments, and produce a fresh deferral not sharing its forced result with the original.  Instead we defer the action outside the whole spine, forcing the original (whose result is then cached and shared by all acted copies) and acting on the result. *)
+    | Applied (_, Apps _) | Deferred _ | Ready _ -> ref (Applied (lev, Action (s, c)))
 end
 
 let short_circuit : type mode mu1 mu2 cod m n a.
@@ -688,7 +678,7 @@ let short_circuit : type mode mu1 mu2 cod m n a.
     ((m, n) deg -> (mode, mu1, mu2, cod) Modalcell.t -> a) ->
     a =
  fun s c x act ->
-  match (is_id_deg s, Modalcell.compare_id c) with
+  match (is_id_deg s, Modalcell.compare_id2 c) with
   | Some _, Eq -> x
   | _ -> act s c
 
@@ -721,15 +711,7 @@ let field_lazy : type src f mode s n t i.
   let p = deg_of_perm (perm_inv (perm_of_ins_plus fldins nk)) in
   (* The stored filter is that of the field's modality at the (outer) result dimension n; the inner spine already lives at the filtered dimension.  Trivial for a fresh projection. *)
   let (Has_filter filter) = Modality.filter f n in
-  match !(act_lazy_eval lev p (Modalcell.id2 src)) with
-  | Deferred_eval (env, tm, ins, cell, apps) ->
-      ref (Deferred_eval (env, tm, ins, cell, Field (apps, filter, fld, nk, ins_zero n)))
-  | Deferred (tm, ins, cell, apps) ->
-      ref (Deferred (tm, ins, cell, Field (apps, filter, fld, nk, ins_zero n)))
-  | Ready tm ->
-      ref
-        (Deferred
-           ( (fun () -> tm),
-             id_deg D.zero,
-             Modalcell.id2 src,
-             Field (Emp, filter, fld, nk, ins_zero n) ))
+  let lev = act_lazy_eval lev p (Modalcell.id2 src) in
+  match !lev with
+  | Ready (Unrealized _) -> ready (Unrealized None)
+  | _ -> ref (Applied (lev, Apps (Field (filter, fld, nk, ins_zero n))))
