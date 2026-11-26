@@ -514,6 +514,12 @@ disappears at dimensions it filters (the reflexivity/parametric direction).
    ￫ info[I0000]
    ￮ constant a22 defined
   
+   ￫ info[I0000]
+   ￮ constant M defined
+  
+   ￫ info[I0000]
+   ￮ constant refl_var defined
+  
   ()
     : ♯⁽ᵉ⁾ (Id A) (_ ≔ (a0 :♭| _) .♯) (_ ≔ (a1 :♭| _) .♯)
   
@@ -567,6 +573,20 @@ An ordinary (non-modal) field never disappears: it projects at any dimension.
   $ narya -discrete-spatial -parametric discretefields.ny -e "echo (refl d) .snd"
   refl 0
     : N⁽ᵉ⁾ 0 0
+  
+
+Degenerating a tuple, or evaluating one at a higher dimension, drops a ♭-field, since it disappears there.
+
+  $ narya -discrete-spatial -parametric discretefields.ny -e "echo refl_var (zero., zero.)" -e "echo refl ((zero., zero.) : M)" -e "echo refl (refl ((zero., zero.) : M))"
+  (_ ≔ refl 0)
+    : M⁽ᵉ⁾ (0, 0) (0, 0)
+  
+  (_ ≔ refl 0)
+    : M⁽ᵉ⁾ (0, 0) (0, 0)
+  
+  (_ ≔ 0⁽ᵉᵉ⁾)
+    : M⁽ᵉᵉ⁾ {(0, 0)} {(0, 0)} (_ ≔ refl 0) {(0, 0)} {(0, 0)} (_ ≔ refl 0)
+        (_ ≔ refl 0) (_ ≔ refl 0)
   
 
 If a type is given in a modal field projection, it must be correct.
