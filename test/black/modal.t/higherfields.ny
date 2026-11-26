@@ -90,3 +90,16 @@ def cfst : Id N ((c :♭| _) .fst) (suc. zero.) ≔ refl (suc. zero.)
 ` variable, whose modal key matters (unlike that of a constant).
 
 def proot (z :♭| C) : Id N ((z :♭| _) .fst) ((z :♭| _) .fst) ≔ (refl z :♭| _) .root.1
+
+` A comatch for a higher-dimensional instance of a modal higher codatatype.  The
+` boundary of the type of each component lives behind the lock by ♯, like the
+` component itself.
+
+def √♭A_comatch (t0 t1 : √♭A) (t2 : Id √♭A t0 t1) : Id √♭A t0 t1 ≔ [
+| .root.1 ↦ (t2 :♭| _) .root.1
+| .root.e ↦ (t2.2 :♭| _) .root.2]
+
+def C_comatch (c0 c1 : C) (c2 : Id C c0 c1) : Id C c0 c1 ≔ [
+| .fst ↦ (c2 :♭| _) .fst
+| .root.1 ↦ (c2 :♭| _) .root.1
+| .root.e ↦ (c2.2 :♭| _) .root.2]

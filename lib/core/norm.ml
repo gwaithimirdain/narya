@@ -940,11 +940,28 @@ and self_values : type amode f g gmode mn.
   let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton tm) in
   CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ]
 
+(* The boundary of the type of an ambient value being projected from, transported along the adjunction unit like the value itself is by self_values, so that it presents the boundary of the self in the context behind the locks.  This is what instantiates the type of a *component* of a tuple or comatch (~key:`Nokey below), which stays behind the lock by the right adjoint; whereas the type of a projection (~key:`Counit) is keyed back into the ambient context, where it is instantiated by the untransported boundary. *)
+and self_tyargs : type amode f g gmode mn.
+    (amode, f, g, gmode) Modalcell.adjunction ->
+    (D.zero, mn, mn, amode normal) TubeOf.t ->
+    (D.zero, mn, mn, amode normal) TubeOf.t =
+ fun (Adjunction { unit; _ }) tyargs ->
+  TubeOf.mmap
+    {
+      map =
+        (fun _ [ nf ] ->
+          {
+            tm = act_value nf.tm (id_deg D.zero) unit;
+            ty = lazy (act_value (Lazy.force nf.ty) (id_deg D.zero) unit);
+          });
+    }
+    [ tyargs ]
+
 (* We dispatch to separate helper functions for lower fields and higher fields that assume all the dimensions are correct.  These helper functions can be called directly by a caller who knows that all the dimensions are correct, such as check_field where the field is obtained by iterating directly through the codatatype.  The ~key flag distinguishes two uses.  `Counit computes the type of a *projection* x .fld, which is keyed by the adjunction counit to put it in the ambient context (rule 3 of modal fields).  `Nokey computes the type at which the *component* of a tuple/comatch is checked or read back, which lives behind the lock by the right adjoint and is not keyed (rule 2).  For ordinary fields the two agree, since the counit is the identity. *)
 and tyof_lower_codatafield : type amode m n mn a f g gmode ag.
     (* As for a higher field, the self value and its boundary, in the context behind the locks where the field's type lives: an ambient value being projected from is transported there along the adjunction unit (self_values does that), while a caller displaying a codatatype supplies the self variable of its self-extended context, which is already there. *)
     (mn, (amode, kinetic) value) CubeOf.t ->
-    (* The boundary of the self, as its type presents it in the context where it lives: an ambient term's untransported boundary, or the boundary of the self variable's own type.  These are the terms whose field projections instantiate the field type. *)
+    (* The terms whose field projections instantiate the field type, which must live where the resulting type does.  For a projection (~key:`Counit), whose type is keyed back into the ambient context, they are the untransported boundary of the type of the ambient term.  For a component (~key:`Nokey), whose type stays behind the lock by the right adjoint, they are the boundary of the self as its type presents it there: the boundary of the self variable's own type, or that of an ambient term transported along the unit (see self_tyargs). *)
     (D.zero, mn, mn, amode normal) TubeOf.t ->
     D.zero Field.t ->
     (amode, f, g, gmode) Modalcell.adjunction ->

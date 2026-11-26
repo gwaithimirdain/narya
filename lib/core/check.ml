@@ -3393,8 +3393,9 @@ and check_field : type mode a b c s m n mn i et.
                     @@ fun () ->
                     (* We don't need the error-checking of tyof_field, since we are getting our fields directly from the codatatype definition and so we already know that they have the right dimensions.  So we can call directly into the helper function tyof_lower_codatafield.  Note that we pass it prev_etm, env, and tyargs that consist of values in the old context, but the return value ety is in the new degenerated context. *)
                     let ety =
-                      tyof_lower_codatafield (self_values adj prev_etm tyargs) tyargs fld adj
-                        fld_plus_lock fldty env m mn ~key:`Nokey in
+                      tyof_lower_codatafield (self_values adj prev_etm tyargs)
+                        (self_tyargs adj tyargs) fld adj fld_plus_lock fldty env m mn ~key:`Nokey
+                    in
                     let ctm = check (mkstatus lbl status) lctx tm ety in
                     add_field ctm lbl in
               check_fields status eta ctx ty m mn codata_args fields tyargs tms ctms etms
@@ -3646,16 +3647,17 @@ and check_higher_field : type mode f g gmode a b bg c d m i ag iagx.
                       let (Locked (plus, lctx)) = Ctx.lock ctx (Modalcell.adj_right adj) in
                       eval_env (lock_env degenv plus) r_k (readback_env lctx e tctx));
                 } in
-            (* The shuffleable degenerates the codatatype's parameters; the self value and its boundary we degenerate here, since the field type is applied to them only after that degeneration.  The boundary is used to instantiate the field type, by projecting this field from it, so it stays in the ambient context; but the self value is substituted for the self *variable*, which lies behind the locks by the right and then the left adjoint, so we transport it there along the adjunction unit first and degenerate it in that doubly locked context.  (For an ordinary field the unit is an identity cell and both locks are trivial.) *)
-            let dtyargs =
-              TubeOf.mmap { map = (fun _ [ nf ] -> degenerate_normal ctx degenv nf) } [ tyargs ]
-            in
+            (* The shuffleable degenerates the codatatype's parameters; the self value and its boundary we degenerate here, since the field type is applied to them only after that degeneration.  The self value is substituted for the self *variable*, which lies behind the locks by the right and then the left adjoint, so we transport it there along the adjunction unit first and degenerate it in that doubly locked context.  The boundary instantiates the field type, by projecting this field from it; since the type of a component stays behind the lock by the right adjoint (unlike that of a projection, which is keyed back into the ambient context by the counit), so must its instantiation, so we transport and degenerate the boundary in the same way (see self_tyargs).  (For an ordinary field the unit is an identity cell and both locks are trivial.) *)
             let (Plus r_m) = D.plus m in
+            let (Locked (rplus, ulctx)) = Ctx.lock ctx right in
+            let (Locked (lplus, uflctx)) = Ctx.lock ulctx left in
+            let fdegenv = lock_env (lock_env degenv rplus) lplus in
+            let dtyargs =
+              TubeOf.mmap
+                { map = (fun _ [ nf ] -> degenerate_normal uflctx fdegenv nf) }
+                [ self_tyargs adj tyargs ] in
             let values =
               let (Adjunction { unit; _ }) = adj in
-              let (Locked (rplus, ulctx)) = Ctx.lock ctx right in
-              let (Locked (lplus, uflctx)) = Ctx.lock ulctx left in
-              let fdegenv = lock_env (lock_env degenv rplus) lplus in
               let vs = TubeOf.plus_cube (val_of_norm_tube tyargs) (CubeOf.singleton prev_etm) in
               degenerate_value_cube uflctx fdegenv r_m
                 (CubeOf.mmap { map = (fun _ [ v ] -> act_value v (id_deg D.zero) unit) } [ vs ])
