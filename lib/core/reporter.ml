@@ -257,7 +257,13 @@ module Code = struct
     | Notation_variable_used_twice : string -> t
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
-    | Invalid_notation_binder : string -> t
+    | Invalid_notation_binder :
+        [ `Typed_var_not_bound of string
+        | `Typed_type_bound of string
+        | `Too_few_arguments of string
+        | `Arg_arity of string list * string * string * int * [ `Only of int | `Higher ]
+        | `Arg_modality of string * string list * string list * string * string * string list ]
+        -> t
     | Constant_assumed : { name : printable; parametric : bool; holes : int } -> t
     | Constant_defined : { names : printable list; parametric : bool; holes : int } -> t
     | Hole_solved : int -> t
@@ -1116,7 +1122,37 @@ module Code = struct
       | Notation_variable_used_twice x -> textf "notation variable '%s' used twice" x
       | Unbound_variable_in_notation xs ->
           textf "unbound variable(s) in notation definition: %s" (String.concat ", " xs)
-      | Invalid_notation_binder str -> textf "invalid binding in notation: %s" str
+      | Invalid_notation_binder err -> (
+          let show_modality = function
+            | [] -> "no modality"
+            | m -> "modality " ^ String.concat " " m in
+          match err with
+          | `Typed_var_not_bound x ->
+              textf
+                "invalid binding in notation: variable '%s' of a typed binder must be bound by an abstraction"
+                x
+          | `Typed_type_bound ty ->
+              textf
+                "invalid binding in notation: type '%s' of a typed binder can't be bound by an abstraction"
+                ty
+          | `Too_few_arguments head ->
+              textf
+                "invalid binding in notation: %s doesn't take enough arguments for this notation"
+                head
+          | `Arg_arity (xs, body, head, k, found) ->
+              textf
+                "invalid binding in notation: argument (%s ↦ %s) of %s must have a function-type with at least %d argument%s, but its type %s"
+                (String.concat " " xs) body head k
+                (if k = 1 then "" else "s")
+                (match found with
+                | `Only 0 -> "is not a function-type"
+                | `Only n -> Printf.sprintf "has only %d" n
+                | `Higher -> "has a higher-dimensional argument")
+          | `Arg_modality (x, binder_modality, xs, body, head, arg_modality) ->
+              textf
+                "invalid binding in notation: typed binder %s has %s, but the type of argument (%s ↦ %s) of %s binds it with %s"
+                x (show_modality binder_modality) (String.concat " " xs) body head
+                (show_modality arg_modality))
       | Head_already_has_notation name ->
           textf "replacing printing notation for %s (previous notation will still be parseable)"
             name

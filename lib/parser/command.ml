@@ -1202,15 +1202,9 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
           | User.Pattern.Plain _ -> ()
           | Typed { var; ty; _ } ->
               if List.assoc var uses <> `Binder then
-                fatal
-                  (Invalid_notation_binder
-                     (Printf.sprintf
-                        "variable '%s' of a typed binder must be bound by an abstraction" var));
+                fatal (Invalid_notation_binder (`Typed_var_not_bound var));
               if List.assoc ty uses <> `Arg then
-                fatal
-                  (Invalid_notation_binder
-                     (Printf.sprintf "type '%s' of a typed binder can't be bound by an abstraction"
-                        ty)))
+                fatal (Invalid_notation_binder (`Typed_type_bound ty)))
         (User.Pattern.slots pattern);
       (* If the head is a constant, each argument that is an abstraction must be given at a function-type with at least as many (0-dimensional) arguments as the variables it binds (if it has more, the body is itself a function).  We can't check a constructor this way, since its name doesn't determine its datatype. *)
       (match key with
@@ -1234,30 +1228,19 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                 | User.Pattern.Typed { var; modality; _ } -> Some (var, List.map fst modality)
                 | Plain _ -> None)
               (User.Pattern.slots pattern) in
-          let show_modality = function
-            | [] -> "no modality"
-            | m -> "modality " ^ String.concat " " m in
           let rec go shape args =
             match (args, shape) with
             | [], _ | _, (Arg_higher | Arg_unknown) -> ()
             | _ :: _, Arg_none ->
                 if List.exists User.is_abs args then
-                  fatal
-                    (Invalid_notation_binder
-                       (Printf.sprintf "%s doesn't take enough arguments for this notation" cname))
+                  fatal (Invalid_notation_binder (`Too_few_arguments cname))
             | arg :: args, Arg_pi { dom; cod; _ } ->
                 (match arg with
                 | User.Arg _ -> ()
                 | Abs (xs, body) -> (
                     let k = List.length xs in
                     let fail found =
-                      fatal
-                        (Invalid_notation_binder
-                           (Printf.sprintf
-                              "argument (%s ↦ %s) of %s must have a function-type with at least %d argument%s, but its type %s"
-                              (String.concat " " xs) body cname k
-                              (if k = 1 then "" else "s")
-                              found)) in
+                      fatal (Invalid_notation_binder (`Arg_arity (xs, body, cname, k, found))) in
                     match arity k 0 [] (dom ()) with
                     | `Enough modalities ->
                         List.iter2
@@ -1267,16 +1250,11 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                               when not (User.same_modality (List.map (locate_opt None) tm) m) ->
                                 fatal
                                   (Invalid_notation_binder
-                                     (Printf.sprintf
-                                        "typed binder %s has %s, but the type of argument (%s ↦ %s) of %s binds it with %s"
-                                        x (show_modality tm) (String.concat " " xs) body cname
-                                        (show_modality m)))
+                                     (`Arg_modality (x, tm, xs, body, cname, m)))
                             | _ -> ())
                           xs modalities
                     | `Unknown -> ()
-                    | `Only 0 -> fail "is not a function-type"
-                    | `Only n -> fail (Printf.sprintf "has only %d" n)
-                    | `Higher -> fail "has a higher-dimensional argument"));
+                    | (`Only _ | `Higher) as found -> fail found));
                 go (cod ()) args in
           go (arg_shape_of_ty ctx (Norm.eval_term (Ctx.env ctx) ty)) val_args
       | _ -> ());
