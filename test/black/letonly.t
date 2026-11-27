@@ -648,7 +648,7 @@ The ambient context must have a matching lock, and the bound terms to its left c
   [1]
 
   $ narya -coreflector locks.ny -e 'def k : ♭ (Type → Type) ≔ ♭. (z ↦ let only w : Type ≔ z and lock ♭ in w)'
-   ￫ error[E0313]
+   ￫ error[E0306]
    ￭ command-line exec string
    1 | def k : ♭ (Type → Type) ≔ ♭. (z ↦ let only w : Type ≔ z and lock ♭ in w)
      ^ variable hidden by lock

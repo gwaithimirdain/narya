@@ -540,10 +540,10 @@ module Code = struct
     | Self_used -> "E0004"
     | Evaluating_display_term _ -> "E0005"
     | Fatalize _msg -> "E0006"
-    | Typeless_meta _ -> "E0010"
+    | Typeless_meta _ -> "E0007"
     (* Past and future features *)
     | Unimplemented _ -> "E0100"
-    | Deprecated _ -> "E0110"
+    | Deprecated _ -> "E0101"
     (* Parse errors *)
     | Parse_error _ -> "E0200"
     | Parsing_ambiguity _ -> "E0201"
@@ -556,16 +556,16 @@ module Code = struct
     | Unrecognized_attribute -> "E0208"
     | Display_only_syntax _ -> "E0209"
     | Generative_copy -> "W0210"
-    | Comment_end_in_string -> "E0250"
-    | Encoding_error -> "E0299"
+    | Comment_end_in_string -> "E0211"
+    | Encoding_error -> "E0212"
     (* Scope errors *)
     | Unbound_variable _ -> "E0300"
     | Undefined_constant _ -> "E0301"
     | Undefined_metavariable _ -> "E0302"
-    | Locked_variable -> "E0310"
-    | Locked_constant _ -> "E0311"
-    | Axiom_in_parametric_definition _ -> "E0312"
-    | Hidden_variable _ -> "E0313"
+    | Locked_variable -> "E0303"
+    | Locked_constant _ -> "E0304"
+    | Axiom_in_parametric_definition _ -> "E0305"
+    | Hidden_variable _ -> "E0306"
     (* Bidirectional typechecking and case trees *)
     | Nonsynthesizing _ -> "E0400"
     | Unequal_synthesized_type _ -> "E0401"
@@ -585,7 +585,6 @@ module Code = struct
     | Zero_dimensional_cube_abstraction _ -> "E0508"
     | Mismatched_dimensions_in_cube_abstraction _ -> "E0509"
     | Noncube_abstraction_in_higher_dimensional_match _ -> "E0510"
-    | Invalid_flags -> "E0511"
     (* Degeneracies *)
     | Missing_argument_of_degeneracy _ -> "E0600"
     | Low_dimensional_argument_of_degeneracy _ -> "E0601"
@@ -631,7 +630,6 @@ module Code = struct
     | No_such_constructor_in_match _ -> "E1301"
     | Duplicate_constructor_in_match _ -> "E1302"
     | Wrong_number_of_arguments_to_pattern _ -> "E1303"
-    | Wrong_boundary_of_pattern_variable _ -> "E1310"
     | Duplicate_pattern_variable _ -> "E1304"
     | Wrong_number_of_patterns -> "E1305"
     | Inconsistent_patterns -> "E1306"
@@ -640,6 +638,8 @@ module Code = struct
     | Invalid_refutation -> "E1309"
     (* - Match motive *)
     | Wrong_number_of_arguments_to_motive _ -> "E1310"
+    (* - Match branches, continued *)
+    | Wrong_boundary_of_pattern_variable _ -> "E1311"
     (* Comatches *)
     | Comatching_at_noncodata _ -> "E1400"
     | Comatching_at_degenerated_codata _ -> "E1401"
@@ -670,20 +670,22 @@ module Code = struct
     | Missing_key _ -> "E1705"
     | Unknown_modalcell _ -> "E1706"
     | Key_mismatch _ -> "E1707"
-    | Letonly_lock_mismatch _ -> "E1716"
+    | Nonparametric_mode_degeneracy _ -> "E1708"
+    | Intangible_modality _ -> "E1709"
+    | Invalid_mode_theory _ -> "E1710"
     | Modality_not_sinister _ -> "E1711"
     | Wrong_locking_modality _ -> "E1712"
     | Modal_field_filtered_away _ -> "E1713"
     | Extra_filtered_field_in_tuple _ -> "E1714"
-    | Invalid_mode_theory _ -> "E1710"
-    | Intangible_modality _ -> "E1709"
     | Nontransparent_window_modality _ -> "E1715"
-    | Nonparametric_mode_degeneracy _ -> "E1708"
+    | Letonly_lock_mismatch _ -> "E1716"
     (* Commands *)
     | Too_many_commands -> "E2000"
     | Forbidden_interactive_command _ -> "E2001"
     | No_holes_allowed _ -> "E2002"
     | Invalid_instant _ -> "E2003"
+    | Break -> "E2004"
+    | Invalid_flags -> "E2005"
     (* def *)
     | Redefining_constant _ -> "E2100"
     | Invalid_constant_name _ -> "E2101"
@@ -715,10 +717,10 @@ module Code = struct
     (* section *)
     | No_such_section -> "E2600"
     | Invalid_section_name _ -> "E2601"
-    (* oracles *)
-    | Oracle_failed _ -> "E3000"
     (* errors of a client's own, each numbered by the client within this one code *)
     | Extern { code; _ } -> "E3100-" ^ code
+    (* oracles *)
+    | Oracle_failed _ -> "E3200"
     (* Interactive proof *)
     | Open_holes _ -> "W3000"
     | No_such_hole _ -> "E3001"
@@ -741,7 +743,6 @@ module Code = struct
     | Display_set _ -> "I0101"
     (* Control of execution *)
     | Quit _ -> "I0200"
-    | Break -> "E2004"
     (* Debugging *)
     | Show _ -> "I9999"
 

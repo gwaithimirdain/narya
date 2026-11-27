@@ -596,7 +596,7 @@ They must be exactly one for each face of the pattern variable's cube.
   $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (y0 y1 : ℕ) (y2 : Id ℕ y0 y1) : ℕ ≔ match y2 [ zero. ↦ 0 | suc.
   >   {m0}
   >   m2 ↦ m0 ]'
-   ￫ error[E1310]
+   ￫ error[E1311]
    ￭ command-line exec string
    3 |   m2 ↦ m0 ]
      ^ not enough boundary arguments for higher-dimensional pattern variable (need 1 more)
@@ -608,7 +608,7 @@ They must be exactly one for each face of the pattern variable's cube.
   >   {m1}
   >   {m2}
   >   m3 ↦ m0 ]'
-   ￫ error[E1310]
+   ￫ error[E1311]
    ￭ command-line exec string
    4 |   {m2}
      ^ too many boundary arguments for higher-dimensional pattern variable (1 extra)
@@ -620,7 +620,7 @@ In particular, a zero-dimensional match has no boundary variables to name.
   $ narya -parametric -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] def bad (n : ℕ) : ℕ ≔ match n [ zero. ↦ 0 | suc.
   >   {m0}
   >   m ↦ m0 ]'
-   ￫ error[E1310]
+   ￫ error[E1311]
    ￭ command-line exec string
    2 |   {m0}
      ^ too many boundary arguments for higher-dimensional pattern variable (1 extra)

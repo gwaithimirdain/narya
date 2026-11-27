@@ -184,7 +184,7 @@ Can't take external degeneracies of nonparametric axioms.
    ￫ info[I0001]
    ￮ nonparametric axiom A assumed
   
-   ￫ error[E0311]
+   ￫ error[E0304]
    ￭ command-line exec string
    1 | echo A⁽ᵈ⁾
      ^ constant A is or uses a nonparametric axiom, can't appear inside an external degeneracy
@@ -200,7 +200,7 @@ Or of anything that uses a nonparametric axiom.
    ￫ info[I0000]
    ￮ nonparametric constant f defined
   
-   ￫ error[E0311]
+   ￫ error[E0304]
    ￭ command-line exec string
    1 | axiom #(nonparametric) A : Type def f : A → A ≔ x ↦ x echo f⁽ᵈ⁾
      ^ constant f is or uses a nonparametric axiom, can't appear inside an external degeneracy
@@ -216,7 +216,7 @@ All axioms using a nonparametric axiom must also be nonparametric
    ￫ info[I0001]
    ￮ nonparametric axiom a assumed
   
-   ￫ error[E0312]
+   ￫ error[E0305]
    ￭ command-line exec string
    1 | axiom #(nonparametric) A : Type axiom #(nonparametric) a : A axiom a' : A
      ^ constant A is or uses a nonparametric axiom, can't be used in a parametric command
@@ -254,7 +254,7 @@ But if one of them uses an axiom, the others don't have external degeneracies ei
        f
        g
   
-   ￫ error[E0311]
+   ￫ error[E0304]
    ￭ command-line exec string
    1 | axiom #(nonparametric) A:Type def f : Type := A and g : Type := sig () echo g⁽ᵈ⁾
      ^ constant g is or uses a nonparametric axiom, can't appear inside an external degeneracy
@@ -279,7 +279,7 @@ When a constant is defined containing a hole, it is allowed to be parametric, bu
   B⁽ᵈ⁾
     : Type⁽ᵈ⁾ B
   
-   ￫ error[E0312]
+   ￫ error[E0305]
    ￭ command line fake-interact
    1 | axiom #(nonparametric) A:Type def B:Type := ? echo B⁽ᵈ⁾ solve 0 := A
      ^ constant A is or uses a nonparametric axiom, can't be used in a parametric command
