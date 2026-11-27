@@ -912,6 +912,17 @@ let eval_structfield_abwd : type mode m n mn a status et.
     (mode * (n * a * status * et)) Term.StructfieldAbwd.t ->
     (mode * mn * status * et) Value.StructfieldAbwd.t =
  fun env m m_n mn fields ->
+  (* A modal field whose (left adjoint) modality is nonparametric disappears at any dimension it filters nontrivially, so a tuple at such a dimension omits it (see Check.check_field); thus so must the evaluation of a tuple at such a dimension. *)
+  let fields =
+    Bwd.Bwd.filter
+      (fun (Term.StructfieldAbwd.Entry (_, sf) :
+             (mode * (n * a * status * et)) Term.StructfieldAbwd.entry) ->
+        match sf with
+        | Lower (adj, _, _, _) ->
+            let (Has_filter filter) = Modality.filter (Modalcell.adj_left adj) mn in
+            Option.is_some (Modality.filter_is_trivial mn filter)
+        | Higher _ | LazyHigher _ -> true)
+      fields in
   Mbwd.mmap
     (fun [ Term.StructfieldAbwd.Entry (f, sf) ] ->
       Value.StructfieldAbwd.Entry (f, eval_structfield env m m_n mn sf))

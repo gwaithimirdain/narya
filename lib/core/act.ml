@@ -175,6 +175,18 @@ module Act = struct
                ((deg0, new_ins, _, _) :
                  (q, p) deg * (ql, q, l) insertion * (k, j, l) D.plus * (m, z, ql) D.plus)) =
           insfact_comp_ext ins s in
+        (* A modal field whose (left adjoint) modality is nonparametric disappears at any dimension it filters nontrivially, so a tuple at such a dimension omits it (see Check.check_field); thus so must a degeneration of a tuple to such a dimension. *)
+        let q = dom_deg deg0 in
+        let fields =
+          Bwd.Bwd.filter
+            (fun (StructfieldAbwd.Entry (_, sfld) : (mode * p * status * et) StructfieldAbwd.entry)
+               ->
+              match sfld with
+              | Structfield.Lower (adj, _, _) ->
+                  let (Has_filter filter) = Modality.filter (Modalcell.adj_left adj) q in
+                  Option.is_some (Modality.filter_is_trivial q filter)
+              | Structfield.Higher _ -> true)
+            fields in
         let fields = act_structfield_abwd deg0 c fields in
         Struct { fields; ins = new_ins; energy; eta }
     | Constr (name, dim, args) ->
