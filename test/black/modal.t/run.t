@@ -333,6 +333,21 @@ the corresponding locks.
    ￫ info[I0000]
    ￮ constant projsnd defined
   
+   ￫ info[I0000]
+   ￮ constant M defined
+  
+   ￫ info[I0000]
+   ￮ constant M_tuple defined
+  
+   ￫ info[I0000]
+   ￮ constant M_eta defined
+  
+   ￫ info[I0000]
+   ￮ constant C3 defined
+  
+   ￫ info[I0000]
+   ￮ constant C3_comatch defined
+  
 
 A modal field projection computes on a comatch/tuple.
 
@@ -717,6 +732,12 @@ adjunction counit.
   
    ￫ info[I0000]
    ￮ constant proot defined
+  
+   ￫ info[I0000]
+   ￮ constant √♭A_comatch defined
+  
+   ￫ info[I0000]
+   ￮ constant C_comatch defined
   
 
 Supplying a component of a modal higher field in a comatch omitting its

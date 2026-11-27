@@ -63,3 +63,23 @@ def c2_snd : Id N ((c2 :♭| _) .fst) ((c2 :♭| _) .fst) ≔ (c2 :♭| _) .snd
 ` adjunction unit, so a self-dependent modal field can be projected from a
 ` *variable* (whose modal key matters), not just from a constant.
 def projsnd (z :♭| C2) : Id N ((z :♭| _) .fst) ((z :♭| _) .fst) ≔ (z :♭| _) .snd
+
+` At higher dimensions, the boundary of the type of a component of a tuple or
+` comatch, like the component itself, lives behind the lock by the right
+` adjoint ♯: it consists of projections of the boundary transported there along
+` the unit of the adjunction.
+def M : Type ≔ sig ( (x :♭| _) .a : N, y .b : N )
+
+def M_tuple (u0 u1 : M) (u2 : Id M u0 u1) : Id M u0 u1 ≔ (
+  a ≔ (u2 :♭| _) .a,
+  b ≔ u2 .b)
+
+def M_eta (u0 u1 : M) (u2 : Id M u0 u1)
+  : Id (Id M u0 u1) (M_tuple u0 u1 u2) u2
+  ≔ refl u2
+
+def C3 : Type ≔ codata [ (x :♭| _) .a : N | y .b : N ]
+
+def C3_comatch (u0 u1 : C3) (u2 : Id C3 u0 u1) : Id C3 u0 u1 ≔ [
+| .a ↦ (u2 :♭| _) .a
+| .b ↦ u2 .b]
