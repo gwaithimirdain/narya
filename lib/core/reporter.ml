@@ -257,6 +257,13 @@ module Code = struct
     | Notation_variable_used_twice : string -> t
     | Unbound_variable_in_notation : string list -> t
     | Head_already_has_notation : string -> t
+    | Invalid_notation_binder :
+        [ `Typed_var_not_bound of string
+        | `Typed_type_bound of string
+        | `Too_few_arguments of string
+        | `Arg_arity of string list * string * string * int * [ `Only of int | `Higher ]
+        | `Arg_modality of string * string list * string list * string * string * string list ]
+        -> t
     | Constant_assumed : { name : printable; parametric : bool; holes : int } -> t
     | Constant_defined : { names : printable list; parametric : bool; holes : int } -> t
     | Hole_solved : int -> t
@@ -296,6 +303,9 @@ module Code = struct
     | Invalid_synthesized_type : string * printable -> t
     | Unrecognized_attribute : t
     | Display_only_syntax : string -> t
+    | Invalid_notation_binding :
+        [ `Implicit | `Multiple | `Not_variable | `Modality of string list ]
+        -> t
     | Generative_copy : t
     | Invalid_degeneracy_action : string * 'nk D.t * 'n D.t -> t
     | Wrong_number_of_patterns : t
@@ -456,6 +466,7 @@ module Code = struct
     | Notation_variable_used_twice _ -> Error
     | Unbound_variable_in_notation _ -> Error
     | Head_already_has_notation _ -> Warning
+    | Invalid_notation_binder _ -> Error
     | Constant_assumed _ -> Info
     | Constant_defined _ -> Info
     | Notation_defined _ -> Info
@@ -485,6 +496,7 @@ module Code = struct
     | Invalid_synthesized_type _ -> Error
     | Unrecognized_attribute -> Error
     | Display_only_syntax _ -> Error
+    | Invalid_notation_binding _ -> Error
     | Generative_copy -> Warning
     | Invalid_degeneracy_action _ -> Bug
     | Wrong_number_of_patterns -> Error
@@ -555,6 +567,7 @@ module Code = struct
     | No_relative_precedence _ -> "E0207"
     | Unrecognized_attribute -> "E0208"
     | Display_only_syntax _ -> "E0209"
+    | Invalid_notation_binding _ -> "E0211"
     | Generative_copy -> "W0210"
     | Comment_end_in_string -> "E0250"
     | Encoding_error -> "E0299"
@@ -698,6 +711,7 @@ module Code = struct
     | Notation_variable_used_twice _ -> "E2207"
     | Unbound_variable_in_notation _ -> "E2208"
     | Head_already_has_notation _ -> "E2209"
+    | Invalid_notation_binder _ -> "E2211"
     (* import *)
     | Circular_import _ -> "E2300"
     | Library_has_extension _ -> "W2301"
@@ -1113,6 +1127,37 @@ module Code = struct
       | Notation_variable_used_twice x -> textf "notation variable '%s' used twice" x
       | Unbound_variable_in_notation xs ->
           textf "unbound variable(s) in notation definition: %s" (String.concat ", " xs)
+      | Invalid_notation_binder err -> (
+          let show_modality = function
+            | [] -> "no modality"
+            | m -> "modality " ^ String.concat " " m in
+          match err with
+          | `Typed_var_not_bound x ->
+              textf
+                "invalid binding in notation: variable '%s' of a typed binder must be bound by an abstraction"
+                x
+          | `Typed_type_bound ty ->
+              textf
+                "invalid binding in notation: type '%s' of a typed binder can't be bound by an abstraction"
+                ty
+          | `Too_few_arguments head ->
+              textf
+                "invalid binding in notation: %s doesn't take enough arguments for this notation"
+                head
+          | `Arg_arity (xs, body, head, k, found) ->
+              textf
+                "invalid binding in notation: argument (%s ↦ %s) of %s must have a function-type with at least %d argument%s, but its type %s"
+                (String.concat " " xs) body head k
+                (if k = 1 then "" else "s")
+                (match found with
+                | `Only 0 -> "is not a function-type"
+                | `Only n -> Printf.sprintf "has only %d" n
+                | `Higher -> "has a higher-dimensional argument")
+          | `Arg_modality (x, binder_modality, xs, body, head, arg_modality) ->
+              textf
+                "invalid binding in notation: typed binder %s has %s, but the type of argument (%s ↦ %s) of %s binds it with %s"
+                x (show_modality binder_modality) (String.concat " " xs) body head
+                (show_modality arg_modality))
       | Head_already_has_notation name ->
           textf "replacing printing notation for %s (previous notation will still be parseable)"
             name
@@ -1214,6 +1259,15 @@ module Code = struct
           textf "type %a synthesized by %s is invalid for entire term" pp_printed (print ty) str
       | Unrecognized_attribute -> textf "unrecognized attribute"
       | Display_only_syntax str -> textf "display-only syntax can't be parsed: %s" str
+      | Invalid_notation_binding err ->
+          textf "invalid binder in notation: %s"
+            (match err with
+            | `Implicit -> "this notation can't bind an implicit variable"
+            | `Multiple -> "this notation binds only one variable here"
+            | `Not_variable -> "not a variable"
+            | `Modality [] -> "this notation binds a variable here without a modality"
+            | `Modality m ->
+                "this notation binds a variable here with modality " ^ String.concat " " m)
       | Generative_copy ->
           textf "a term copied from a printed local case tree won't be equal to the original"
       | Invalid_degeneracy_action (str, nk, n) ->

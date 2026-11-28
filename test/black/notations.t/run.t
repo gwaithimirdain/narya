@@ -288,3 +288,43 @@
   a
     : A
   
+
+  $ narya implicitargs.ny
+  F a , e
+    : Id A a a
+  
+   ￫ warning[E2209]
+   ￮ replacing printing notation for f (previous notation will still be parseable)
+  
+  (K a) e
+    : Id A a a
+  
+  g a {y ↦ y} {y ↦ y} (y ⤇ y.2)
+    : Id A a a
+  
+   ￫ warning[E2209]
+   ￮ replacing printing notation for g (previous notation will still be parseable)
+  
+  (L a) {y ↦ y} {y ↦ y} (y ⤇ y.2)
+    : Id A a a
+  
+
+  $ narya -show-implicits implicitargs.ny
+  f a {a} {a} e
+    : Id A a a
+  
+   ￫ warning[E2209]
+   ￮ replacing printing notation for f (previous notation will still be parseable)
+  
+  (K a) {a} {a} e
+    : Id A a a
+  
+  g a {y ↦ y} {y ↦ y} (y ⤇ y.2)
+    : Id A a a
+  
+   ￫ warning[E2209]
+   ￮ replacing printing notation for g (previous notation will still be parseable)
+  
+  (L a) {y ↦ y} {y ↦ y} (y ⤇ y.2)
+    : Id A a a
+  

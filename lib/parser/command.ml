@@ -35,6 +35,17 @@ type 'a attribute = {
   wsrparen : Whitespace.t list;
 }
 
+(* An argument of the head in the definition of a notation: a variable of its pattern, or an abstraction "(x y ↦ b)" of one over others.  We remember the whitespace after each token, for reformatting. *)
+type notation_arg =
+  | Notn_arg of string * Whitespace.t list
+  | Notn_abs of {
+      wslparen : Whitespace.t list;
+      binders : (string * Whitespace.t list) list;
+      wsmapsto : Whitespace.t list;
+      body : string * Whitespace.t list;
+      wsrparen : Whitespace.t list;
+    }
+
 type def = {
   wsdef : Whitespace.t list;
   name : Trie.path;
@@ -80,7 +91,7 @@ module Command = struct
         wscoloneq : Whitespace.t list;
         head : [ `Constr of string | `Constant of Trie.path ];
         wshead : Whitespace.t list;
-        args : (string * Whitespace.t list) list;
+        args : notation_arg list;
       }
         -> t
     | Import of {
@@ -332,8 +343,39 @@ module Parse = struct
     let* loc, (x, ws) = located ident in
     match x with
     (* Currently we hard code a `Break space after each *variable* in a notation. *)
-    | [ x ] when Lexer.valid_var x -> return (`Var (x, `Break, ws))
+    | [ x ] when Lexer.valid_var x -> return (`Var (User.Pattern.Plain x, `Break, ws))
     | _ -> fatal ~loc:(Range.convert loc) (Invalid_variable x)
+
+  (* A typed binder "(x : A)" or "(x :μ| A)" in a pattern. *)
+  let pattern_typed =
+    let* wslparen = token LParen in
+    let valid_var =
+      let* loc, (x, ws) = located ident in
+      match x with
+      | [ x ] when Lexer.valid_var x -> return (x, ws)
+      | _ -> fatal ~loc:(Range.convert loc) (Invalid_variable x) in
+    let* var, wsvar = valid_var in
+    let* wscolon = token Colon in
+    (* After the colon come either the type, or a modality (a sequence of names) followed by a bar and the type. *)
+    let* first = valid_var in
+    let* rest = zero_or_more valid_var in
+    let* modality, wsbar, (ty, wsty) =
+      (let* wsbar = token (Op "|") in
+       let* ty = valid_var in
+       return (first :: rest, wsbar, ty))
+      </>
+      (* We bind a unit so that the failure is only raised if this alternative is reached. *)
+      let* () = return () in
+      match rest with
+      | [] -> return ([], [], first)
+      | _ -> fatal (Invalid_notation_pattern "invalid typed binder") in
+    let* wsrparen = token RParen in
+    (* As for an ordinary variable, we hard code a `Break space after a typed binder. *)
+    return
+      (`Var
+         ( User.Pattern.Typed { var; ty; wslparen; wsvar; wscolon; modality; wsbar; wsty },
+           `Break,
+           wsrparen ))
 
   let pattern_ellipsis =
     let* ws = token Ellipsis in
@@ -348,7 +390,7 @@ module Parse = struct
 
   let fixity_of_pattern pat tight =
     let rec go : type left right.
-        [ `Var of string * space * Whitespace.t list
+        [ `Var of User.Pattern.slot * space * Whitespace.t list
         | `Op of Token.t * space * Whitespace.t list
         | `Ellipsis of Whitespace.t list ]
         Bwd.t ->
@@ -450,17 +492,29 @@ module Parse = struct
     | [ x ] when Lexer.valid_var x -> return (x, ws)
     | _ -> fatal ~loc:(Range.convert loc) (Invalid_variable x)
 
+  (* An argument of the head of a notation: a variable, or an abstraction "(x y ↦ b)" of a variable over others. *)
+  let notation_arg =
+    (let* x, ws = notation_var in
+     return (Notn_arg (x, ws)))
+    </> let* wslparen = token LParen in
+        let* b, bs = one_or_more notation_var in
+        let* wsmapsto = token Mapsto in
+        let* body = notation_var in
+        let* wsrparen = token RParen in
+        return (Notn_abs { wslparen; binders = b :: bs; wsmapsto; body; wsrparen })
+
   let notation =
     let* wsnotation = token Notation in
     let* wslparen, tight, wstight, wsrparen = tightness in
     let* loc, (pat, pattern) =
-      located (one_or_more (pattern_token </> pattern_var </> pattern_ellipsis)) in
+      located (one_or_more (pattern_token </> pattern_var </> pattern_typed </> pattern_ellipsis))
+    in
     let loc = Some (Range.convert loc) in
     let pattern = pat :: pattern in
     let Fix_pat (fixity, pattern), wsellipsis = fixity_of_pattern pattern tight in
     let* wscoloneq = token Coloneq in
     let* head, wshead = notation_head in
-    let* args = zero_or_more notation_var in
+    let* args = zero_or_more notation_arg in
     return
       (Command.Notation
          {
@@ -1115,33 +1169,96 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
             match Scope.lookup c with
             | Some c -> `Constant c
             | None -> fatal (Invalid_notation_head (String.concat "." c))) in
+      let val_args =
+        List.map
+          (function
+            | Notn_arg (x, _) -> User.Arg x
+            | Notn_abs { binders; body = body, _; _ } -> User.Abs (List.map fst binders, body))
+          args in
+      (* Each variable of the pattern must be used exactly once in the definition, either as an argument (possibly the body of an abstraction) or as a variable bound by an abstraction. *)
+      let uses =
+        List.concat_map
+          (function
+            | User.Arg x -> [ (x, `Arg) ]
+            | Abs (xs, body) -> List.map (fun x -> (x, `Binder)) xs @ [ (body, `Arg) ])
+          val_args in
+      let seen =
+        List.fold_left
+          (fun seen x ->
+            if List.mem x seen then fatal (Duplicate_notation_variable x);
+            match List.filter (fun (y, _) -> x = y) uses with
+            | [ _ ] -> x :: seen
+            | [] -> fatal (Unused_notation_variable x)
+            | _ -> fatal (Notation_variable_used_twice x))
+          []
+          (List.concat_map User.Pattern.slot_names (User.Pattern.slots pattern)) in
       (* Find the "unbound" variables, if any, in the notation definition. *)
-      let rec unbounds : type left right.
-          (string * Whitespace.t list) list ->
-          string list ->
-          (left, right) User.Pattern.t ->
-          (string * Whitespace.t list) list =
-       fun args seen pat ->
-        let check_var x =
-          if List.mem x seen then fatal (Duplicate_notation_variable x);
-          let found, rest = List.partition (fun (y, _) -> x = y) args in
-          match found with
-          | [ _ ] -> rest
-          | [] -> fatal (Unused_notation_variable x)
-          | _ -> fatal (Notation_variable_used_twice x) in
-        match pat with
-        | User.Pattern.Var ((x, _, _), pat) ->
-            let rest = check_var x in
-            unbounds rest (x :: seen) pat
-        | Op (_, pat) -> unbounds args seen pat
-        | Op_nil _ -> args
-        | Var_nil (_, (x, _)) -> check_var x in
-      (match unbounds args [] pattern with
+      (match List.filter (fun (x, _) -> not (List.mem x seen)) uses with
       | [] -> ()
       | _ :: _ as unbound -> fatal (Unbound_variable_in_notation (List.map fst unbound)));
-      let user =
-        User { id = User.Id.make (); name; fixity; pattern; key; val_vars = List.map fst args }
-      in
+      (* The variable of a typed binder must be bound by an abstraction, while its type must be an argument. *)
+      List.iter
+        (function
+          | User.Pattern.Plain _ -> ()
+          | Typed { var; ty; _ } ->
+              if List.assoc var uses <> `Binder then
+                fatal (Invalid_notation_binder (`Typed_var_not_bound var));
+              if List.assoc ty uses <> `Arg then
+                fatal (Invalid_notation_binder (`Typed_type_bound ty)))
+        (User.Pattern.slots pattern);
+      (* If the head is a constant, each argument that is an abstraction must be given at a function-type with at least as many (0-dimensional) arguments as the variables it binds (if it has more, the body is itself a function).  We can't check a constructor this way, since its name doesn't determine its datatype. *)
+      (match key with
+      | `Constant c when List.exists User.is_abs val_args ->
+          let cname = String.concat "." (Scope.name_of c) in
+          let (Definition { ty; mode; _ }) = Global.find_const c in
+          let ctx = Ctx.empty mode in
+          (* Whether a function-type has at least k 0-dimensional arguments, and if so the modalities of the first k of them, and if not how many it has. *)
+          let rec arity k n modalities shape =
+            if n >= k then `Enough (List.rev modalities)
+            else
+              match shape with
+              | Arg_pi { modality; cod; _ } -> arity k (n + 1) (modality :: modalities) (cod ())
+              | Arg_none -> `Only n
+              | Arg_higher -> `Higher
+              | Arg_unknown -> `Unknown in
+          (* The modality of each typed binder, which must be that of the corresponding argument. *)
+          let typed_modalities =
+            List.filter_map
+              (function
+                | User.Pattern.Typed { var; modality; _ } -> Some (var, List.map fst modality)
+                | Plain _ -> None)
+              (User.Pattern.slots pattern) in
+          let rec go shape args =
+            match (args, shape) with
+            | [], _ | _, (Arg_higher | Arg_unknown) -> ()
+            | _ :: _, Arg_none ->
+                if List.exists User.is_abs args then
+                  fatal (Invalid_notation_binder (`Too_few_arguments cname))
+            | arg :: args, Arg_pi { dom; cod; _ } ->
+                (match arg with
+                | User.Arg _ -> ()
+                | Abs (xs, body) -> (
+                    let k = List.length xs in
+                    let fail found =
+                      fatal (Invalid_notation_binder (`Arg_arity (xs, body, cname, k, found))) in
+                    match arity k 0 [] (dom ()) with
+                    | `Enough modalities ->
+                        List.iter2
+                          (fun x m ->
+                            match List.assoc_opt x typed_modalities with
+                            | Some tm
+                              when not (User.same_modality (List.map (locate_opt None) tm) m) ->
+                                fatal
+                                  (Invalid_notation_binder
+                                     (`Arg_modality (x, tm, xs, body, cname, m)))
+                            | _ -> ())
+                          xs modalities
+                    | `Unknown -> ()
+                    | (`Only _ | `Higher) as found -> fail found));
+                go (cod ()) args in
+          go (arg_shape_of_ty ctx (Norm.eval_term (Ctx.env ctx) ty)) val_args
+      | _ -> ());
+      let user = User { id = User.Id.make (); name; fixity; pattern; key; val_args } in
       let shadow = Scope.define_notation user ?loc notation_name in
       List.iter
         (fun key ->
@@ -1313,7 +1430,12 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               ->
                 let nargs = List.length (Term.pi_names ty) in
                 unparse_spine names (`Constr constr)
-                  (Bwd.init nargs (fun _ -> { unparse = (fun li ri -> hole li ri) }))
+                  (Bwd.init nargs (fun _ ->
+                       {
+                         implicitness = `Explicit;
+                         peel = no_peel;
+                         unparse = (fun li ri -> hole li ri);
+                       }))
                   No.Interval.entire No.Interval.entire
             | Canonical (_, Data { constrs = Emp; _ }, _, _) ->
                 fatal (Invalid_split (`Goal, "empty datatype"))
@@ -1359,7 +1481,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                      | None -> `Anon hint in
                    let x, names = Names.add_cube dim names name in
                    constr_args names dim hints
-                     ~acc:(Snoc (acc, { unparse = (fun _ _ -> unparse_var x) }))
+                     ~acc:
+                       (Snoc
+                          ( acc,
+                            {
+                              implicitness = `Explicit;
+                              peel = no_peel;
+                              unparse = (fun _ _ -> unparse_var x);
+                            } ))
                      args in
             let rec go = function
               | [] ->
@@ -1636,21 +1765,42 @@ let pp_command : t -> PPrint.document * Whitespace.t list =
           wshead;
           args;
         } ->
+        let pp_arg = function
+          | Notn_arg (x, ws) -> (utf8string x, ws)
+          | Notn_abs { wslparen; binders; wsmapsto; body = body, wsbody; wsrparen } ->
+              let pbinders, wbinders =
+                List.fold_left
+                  (fun (acc, prews) (x, ws) ->
+                    (acc ^^ optional (pp_ws `Break) prews ^^ utf8string x, Some ws))
+                  (empty, None) binders in
+              let wbinders = Option.value wbinders ~default:[] in
+              ( group
+                  (Token.pp LParen
+                  ^^ pp_ws `None wslparen
+                  ^^ group pbinders
+                  ^^ pp_ws `Break wbinders
+                  ^^ Token.pp Mapsto
+                  ^^ pp_ws `Break wsmapsto
+                  ^^ utf8string body
+                  ^^ pp_ws `None wsbody
+                  ^^ Token.pp RParen),
+                wsrparen ) in
         let pargs, rest =
           match split_last args with
           | None ->
               let wshead, rest = Whitespace.split wshead in
               (pp_ws `None wshead, rest)
-          | Some (args, (last, wslast)) ->
+          | Some (args, last) ->
+              let plast, wslast = pp_arg last in
               let wslast, rest = Whitespace.split wslast in
               (* We "flow" the arguments of the head. *)
               let pargs, wargs =
                 List.fold_left
-                  (fun (acc, prews) (arg, wsarg) ->
-                    (acc ^^ group (pp_ws `Break prews ^^ utf8string arg), wsarg))
+                  (fun (acc, prews) arg ->
+                    let parg, wsarg = pp_arg arg in
+                    (acc ^^ group (pp_ws `Break prews ^^ parg), wsarg))
                   (empty, wshead) args in
-              (pargs ^^ group (pp_ws `Break wargs ^^ utf8string last) ^^ pp_ws `None wslast, rest)
-        in
+              (pargs ^^ group (pp_ws `Break wargs ^^ plast) ^^ pp_ws `None wslast, rest) in
         let ppat, wpat = User.pp_pattern pattern in
         let notn_tight, ws =
           match tightness_of_fixity fixity with

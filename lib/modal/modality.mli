@@ -91,6 +91,9 @@ val of_name_src :
 
 val to_string : ('a, 'm, 'b) t -> string
 
+(* Split a name into the names of its generators, which, if all generators are single characters, may have been run together. *)
+val split_names : string located list -> string located list
+
 (* *)
 val compare_name :
   string located list ->
