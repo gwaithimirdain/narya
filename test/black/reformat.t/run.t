@@ -499,6 +499,19 @@ The supplied files are symlinked into the directory where the test is run, and u
     let yet_another_long_variable : ℕ ≔ 0 in
     w ↦ another_long_variable
   
+  def tuplet : prod ℕ ℕ ≔ (
+    0,
+    let a_long_variable : ℕ
+      ≔ (plus (plus 0 (plus 0 0)) (plus 0 (plus 0 0))) in
+    let another_long_variable : ℕ ≔ a_long_variable in
+    another_long_variable)
+  
+  def tuplet2 : prod ℕ (A → ℕ) ≔ (
+    0,
+    let a_long_variable : ℕ
+      ≔ (plus (plus 0 (plus 0 0)) (plus 0 (plus 0 0))) in
+    x ↦ a_long_variable)
+  
   def mlet : ℕ → ℕ → ℕ ≔
     let a_long_variable : ℕ
       ≔ (plus (plus 0 (plus 0 0)) (plus 0 (plus 0 0))) in

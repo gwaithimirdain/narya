@@ -403,7 +403,7 @@ Matches outside case trees can be implicitly wrapped in a let-binding:
   true.
     : bool
   
-  let only b : bool ≔ u in
+  let only b ≔ ⋯ in
   (match #(gen) b [ false. ↦ true. | true. ↦ false. ] : bool)
     : bool
   
@@ -442,10 +442,7 @@ Pattern-matching lambdas can be used in arbitrary places:
    ￫ info[I0001]
    ￮ axiom n assumed
   
-  let only 𝑥 : ℕ ≔
-    let only 𝑥 : ℕ ≔ n in
-    (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ) in
-  (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ)
+  let only 𝑥 ≔ ⋯ in (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ)
     : ℕ
   
 

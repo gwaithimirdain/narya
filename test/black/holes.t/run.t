@@ -531,7 +531,7 @@ A case tree construct in a kinetic position is wrapped in a metavariable, which 
      J Type (codata #(gen) [ x .head : X | x .tail : ?4 ]) X
   
 
-If such a metavariable has a nontrivial environment, its definition is wrapped in a let-only binding the variables of its context.
+If such a metavariable has a nontrivial environment, its definition is wrapped in a let-only binding the variables of its context, which by default displays only their names.
 
   $ narya -v -fake-interact 'def B : Type ≔ data [ true. | false. ]  def J (A : Type) (a : A) : A → Type ≔ data [ rfl. : J A a a ]
   > def t (b : B) : B ≔ ((y p ↦ true.) : (y : B) → J Type (match y [ true. ↦ B | false. ↦ Type ]) B → B) b ?
@@ -559,9 +559,8 @@ If such a metavariable has a nontrivial environment, its definition is wrapped i
      b : B
      ----------------------------------------------------------------------
      J Type
-       (let only b : B ≔ b
-        and y : B ≔ b in
-        (match #(gen) y [ false. ↦ Type | true. ↦ B ] : Type)) B
+       (let only b, y ≔ ⋯ in (match #(gen) y [ false. ↦ Type | true. ↦ B ] : Type))
+       B
   
    ￫ info[I0001]
    ￮ axiom u assumed
@@ -575,18 +574,71 @@ If such a metavariable has a nontrivial environment, its definition is wrapped i
    ￮ constant f defined
   
   J Type
-    (let only x : B ≔ u in
-     (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B
+    (let only x ≔ ⋯ in (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type))
+    B
     : Type
   
   J⁽ᵉ⁾ Type⁽ᵉ⁾
-    (let⁽ᵉ⁾ only x : B ≔ refl u in
+    (let⁽ᵉ⁾ only x ≔ ⋯ in
      (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B⁽ᵉ⁾
     : Type⁽ᵉ⁾
         (J Type
-           (let only x : B ≔ u in
+           (let only x ≔ ⋯ in
             (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
         (J Type
-           (let only x : B ≔ u in
+           (let only x ≔ ⋯ in
             (match #(gen) x [ false. ↦ Type | true. ↦ B ] : Type)) B)
+  
+
+Reformatting preserves the contents of holes, including nested ones.
+
+  $ cat >reformat_holes.ny <<'EOT'
+  > axiom   A : Type
+  > def B : Type ≔   ?
+  > def C : Type ≔ ¿ʔ
+  > def D : Type ≔   ¿ fill this with A ʔ
+  > def E : Type ≔ ¿outer ¿inner ʔ outerʔ
+  > EOT
+
+  $ narya reformat_holes.ny >/dev/null 2>&1
+  [1]
+
+  $ cat reformat_holes.ny
+  axiom A : Type
+  
+  def B : Type ≔ ?
+  
+  def C : Type ≔ ¿ʔ
+  
+  def D : Type ≔ ¿ fill this with A ʔ
+  
+  def E : Type ≔ ¿outer ¿inner ʔ outerʔ
+
+If a let-bound variable's definition and type don't fit on one line, the type goes on its own line.
+
+  $ narya -v -fake-interact 'axiom A : Type
+  > axiom f : A → A → A → A
+  > axiom aaaaaaaaaaaaaaaaaaaa : A
+  > def t : A ≔ let x ≔ f (f aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa) (f aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa) aaaaaaaaaaaaaaaaaaaa in ?'
+   ￫ info[I0001]
+   ￮ axiom A assumed
+  
+   ￫ info[I0001]
+   ￮ axiom f assumed
+  
+   ￫ info[I0001]
+   ￮ axiom aaaaaaaaaaaaaaaaaaaa assumed
+  
+   ￫ info[I0000]
+   ￮ constant t defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     x ≔ f (f aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa)
+           (f aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaa)
+           aaaaaaaaaaaaaaaaaaaa
+       : A
+     ----------------------------------------------------------------------
+     A
   

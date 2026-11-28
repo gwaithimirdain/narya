@@ -232,10 +232,12 @@ However, unlike the other types and constructs we have discussed so far, matches
 
 then ``neg1`` and ``neg2`` are not convertible.  By η-expansion, when trying to convert them we do automatically introduce a new variable ``x`` and try to compare ``neg1 x`` with ``neg2 x``, but neither of these terms reduce since ``x`` is not a constructor.  In particular, datatypes do not satisfy any kind of η-conversion themselves.
 
-Unlike for other case tree nodes, the ``about`` command will not display a stuck match; instead it simply displays the application spine of the function defined by matching, like ``echo``.  Indeed, in general there may not be an obvious well-typed syntax to display for a stuck match: the branches of a :ref:`Variable matches` can depend for their well-typedness on its refinement of the context and goal, which only makes sense if the discriminee is a variable, but after application the discriminee of a stuck match may become an arbitrary term.
+The ``about`` command can display a stuck match, but this is tricky because its discriminee may now be an arbitrary term, while the branches of a :ref:`variable match <Variable matches>` can depend for their well-typedness on its refinement of the context and goal, which only makes sense if the discriminee is a variable.  Thus, ``about`` displays a stuck match in its original context, with its discriminee as originally written, wrapped in a :ref:`Let-only binding`.  For instance, with ``neg1`` as above and an axiom ``b : Bool``, the command ``about neg1 b`` displays
 
-There is one case in which ``about`` will display a match, however: if you give it a bare top-level named constant such as ``about neg1``, it can simply look up and display the definition of that constant without needing to do any normalization.
+.. code-block:: none
 
+   let only 𝑥 : Bool ≔ b in
+   (match 𝑥 [ false. ↦ true. | true. ↦ false. ] : Bool)
 
 Recursion
 ---------
@@ -724,7 +726,9 @@ In addition, the behavior of an escaped local variable might depend on the value
 
 This form is also not re-parseable.  As noted above, like any other global constant defined by a case tree, ``sqdec2._dec`` does not evaluate at all unless it reaches a leaf of its case tree; thus this term does not reduce further since ``z`` is not a constructor.  (But ``sqdec2 (suc. z)`` will, of course, reduce once to ``(let only ⋯ in sqdec2._dec) z``.)
 
-The above-described defaults can be controlled with the interactive command ``display let`` (or the key command ``C-c C-d C-l`` in ProofGeneral, which cycles between the three possible values).  The default behavior described above corresponds to ``display let ≔ names``.  The second alternative ``display let ≔ environments`` prints the substitution in full, but still with the name of the local definition in the body:
+The above-described defaults can be controlled with the interactive command ``display let`` (or the key command ``C-c C-d C-l`` in ProofGeneral, which cycles between the three possible values).  The default behavior described above corresponds to ``display let ≔ names``.
+
+The second alternative ``display let ≔ environments`` prints the substitution in full, but still with the name of the local definition in the body:
 
 .. code-block:: none
 
@@ -735,7 +739,9 @@ The above-described defaults can be controlled with the interactive command ``di
    (let only x : ℕ ≔ z in sqdec2._dec) ((let only x : ℕ ≔ z in sqdec2._dec) z)
      : ℕ
 
-In this case the ``let only`` blocks are re-parseable, but the names such as ``sqdec2._dec`` still are not.  The third alternative ``display let ≔ definitions`` produces a fully re-parseable term with the *definitions* of local variables instead of their names:
+In this case the ``let only`` blocks are re-parseable, but the names such as ``sqdec2._dec`` still are not.
+
+The third alternative ``display let ≔ definitions`` produces a fully re-parseable term, showing the *definitions* of local variables instead of their names.  Moreover, a local definition that has been applied to arguments and is stuck on a match is printed as that match, wrapped in a ``let only`` that binds the variables in its context (including the arguments it has been applied to) to their values:
 
 .. code-block:: none
 
@@ -743,11 +749,15 @@ In this case the ``let only`` blocks are re-parseable, but the names such as ``s
    
    echo sqdec2 z
    
-   (let only x : ℕ ≔ z in
-    (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ))
-     ((let only x : ℕ ≔ z in
-       (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ)) z)
+   let only x : ℕ ≔ z
+   and 𝑥 : ℕ ≔
+     let only x : ℕ ≔ z
+     and 𝑥 : ℕ ≔ z in
+     (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ) in
+   (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ)
      : ℕ
+
+Here the inner ``let only`` is the value of ``dec z``, which is stuck on the match against ``z``, and the outer one is the value of ``dec (dec z)``, stuck on the match against ``dec z``.
 
 Note that even in this case, the printed term will not re-parsee to the *same term*, because local case trees are generative: textually identical definitions given in two different places will produce unequal values.  To remind you of this, each outermost case-tree-only construct in the printed definition of a local case tree (such as a ``match``, a comatch, or a canonical type) is marked with the attribute ``#(gen)``: after the keyword of a construct that has one, as in ``match #(gen) 𝑥 [ … ]`` or ``data #(gen) [ … ]``, and otherwise after its opening bracket, as in ``[ #(gen) .head ↦ … ]``.  If you copy such a printed term and enter it again without editing, the attribute will produce a warning that the term is generative, so that it will not be equal to the original local case tree it was copied from.  This may cause typechecking errors elsewhere.
 
@@ -775,7 +785,7 @@ Note that even in this case, the printed term will not re-parsee to the *same te
 
 Here both local functions are named after ``dec``, their name when defined, but the second one has a prime to distinguish it, and they are unequal.  (The second one is printed with ``let only ⋯ in`` because it was defined in a context containing the earlier variables ``dec`` and ``dec1``.)
 
-A match not occuring inside any ``let`` value doesn't have a user-assigned name like ``dec``, so it is always printed as its definition (wrapped in a ``let only`` if it has a nontrivial substitution), regardless of the setting of ``display let``.  For instance, ``echo sqdec3`` from above will print ``sq (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ])``.  The setting of ``display let`` still controls whether such matches display their entire environment in a ``let only``: it is displayed if ``display let ≔ definitions`` or ``environments`` and elided if ``display let ≔ names``.
+A match not occurring inside any ``let`` value doesn't have a user-assigned name like ``dec``, so it is always printed as its definition (wrapped in a ``let only`` if it has a nontrivial substitution), regardless of the setting of ``display let``.  For instance, ``echo sqdec3`` from above will print ``sq (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ])``.  The setting of ``display let`` still controls whether such matches display their entire environment in a ``let only``: it is displayed if ``display let ≔ definitions`` or ``environments``.  With ``display let ≔ names``, only the names of the variables are displayed, as in ``let only x, y ≔ ⋯ in (match #(gen) y [ … ] : ℕ)``, so that you can tell which variables in the match are bound by the ``let only`` rather than the ambient context, without their types, values, or any modal locks; like ``let only ⋯ in``, this form is not re-parseable.  The same goes for a match that a local definition displayed as its definition is stuck on (see above).
 
 The advantage of "bare" matches of this sort is that, unlike the value of a let-bound variable, they can check rather than synthesize.  For instance, if ``e`` is an element of an empty datatype, then ``match e [ ]`` can be written anywhere and will typecheck at any type.
 

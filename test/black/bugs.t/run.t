@@ -697,3 +697,26 @@ being defined used to produce an anomaly when checking the constructor outputs.
     : B⁽ᵉᵉ⁾ (A⁽ᵉᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ x⁽ᵉᵉ⁾ .trr x⁽ᵉᵉ⁾) (refl u) (refl u)
         (refl u) (refl u)
   
+
+Projecting a higher field from a neutral with a nontrivial insertion used to
+compute a type whose boundary was permuted twice.
+
+  $ narya -v -parametric -direction p,rel,Br permuted_field.ny
+   ￫ info[I0000]
+   ￮ constant connectable defined
+  
+   ￫ info[I0000]
+   ￮ constant gHasConn defined
+  
+   ￫ info[I0000]
+   ￮ constant connectable_Br defined
+  
+   ￫ info[I0000]
+   ￮ constant connectableᵈ defined
+  
+   ￫ info[I0000]
+   ￮ constant gHasConnᵈ defined
+  
+   ￫ info[I0000]
+   ￮ constant connectableᵈ_Br defined
+  

@@ -1430,7 +1430,12 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
               ->
                 let nargs = List.length (Term.pi_names ty) in
                 unparse_spine names (`Constr constr)
-                  (Bwd.init nargs (fun _ -> { peel = no_peel; unparse = (fun li ri -> hole li ri) }))
+                  (Bwd.init nargs (fun _ ->
+                       {
+                         implicitness = `Explicit;
+                         peel = no_peel;
+                         unparse = (fun li ri -> hole li ri);
+                       }))
                   No.Interval.entire No.Interval.entire
             | Canonical (_, Data { constrs = Emp; _ }, _, _) ->
                 fatal (Invalid_split (`Goal, "empty datatype"))
@@ -1476,7 +1481,14 @@ let execute ~(action_taken : unit -> unit) ~(get_file : string -> Scope.trie) (c
                      | None -> `Anon hint in
                    let x, names = Names.add_cube dim names name in
                    constr_args names dim hints
-                     ~acc:(Snoc (acc, { peel = no_peel; unparse = (fun _ _ -> unparse_var x) }))
+                     ~acc:
+                       (Snoc
+                          ( acc,
+                            {
+                              implicitness = `Explicit;
+                              peel = no_peel;
+                              unparse = (fun _ _ -> unparse_var x);
+                            } ))
                      args in
             let rec go = function
               | [] ->

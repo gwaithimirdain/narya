@@ -19,17 +19,127 @@ By default, they are displayed by name, with the substitution elided.
   (let only x : ℕ ≔ z in sqdec._dec) ((let only x : ℕ ≔ z in sqdec._dec) z)
     : ℕ
   
+With "definitions", a local definition is displayed as its definition, except that if it is stuck on a match after being applied to arguments, it is displayed as that match, in a let-only binding the variables of its context (including those bound to the arguments) to their values.
+
   $ narya dl.ny -e 'display let ≔ definitions' -e 'echo sqdec z'
-  (let only x : ℕ ≔ z in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ))
-    ((let only x : ℕ ≔ z in
-      (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ → ℕ)) z)
+  let only x : ℕ ≔ z
+  and 𝑥 : ℕ ≔
+    let only x : ℕ ≔ z
+    and 𝑥 : ℕ ≔ z in
+    (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ) in
+  (match #(gen) 𝑥 [ suc. n ↦ n | zero. ↦ 0 ] : ℕ)
     : ℕ
   
   $ narya dl.ny -ascii -e 'echo sqdec z'
   (let only .... in sqdec._dec) ((let only .... in sqdec._dec) z)
     : ℕ
   
+
+A stuck local definition that is degenerated is displayed with a higher-dimensional let-only.  One that has been applied to more arguments after getting stuck is displayed with those arguments applied outside the let-only.
+
+  $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]' -e 'axiom a : ℕ' -e 'def k (z : ℕ) : ℕ ≔ let f : ℕ → ℕ → ℕ ≔ x ↦ y ↦ match y [ zero. ↦ x | suc. _ ↦ z ] in suc. (f a z)' -e 'def m (z : ℕ) : ℕ ≔ let g : ℕ → ℕ → ℕ ≔ [ zero. ↦ y ↦ y | suc. _ ↦ y ↦ z ] in g a z' -e 'display let ≔ definitions' -e 'echo k a' -e 'echo refl k (refl a)' -e 'echo m a'
+  suc.
+    (let only z : ℕ ≔ a
+     and x : ℕ ≔ a
+     and y : ℕ ≔ a in
+     (match #(gen) y [ suc. 𝑥 ↦ z | zero. ↦ x ] : ℕ))
+    : ℕ
+  
+  suc.
+    (let⁽ᵉ⁾ only z : ℕ ≔ refl a
+     and x : ℕ ≔ refl a
+     and y : ℕ ≔ refl a in
+     (match #(gen) y [ suc. 𝑥 ↦ z | zero. ↦ x ] : ℕ))
+    : ℕ⁽ᵉ⁾
+        (suc.
+           (let only z : ℕ ≔ a
+            and x : ℕ ≔ a
+            and y : ℕ ≔ a in
+            (match #(gen) y [ suc. 𝑥 ↦ z | zero. ↦ x ] : ℕ)))
+        (suc.
+           (let only z : ℕ ≔ a
+            and x : ℕ ≔ a
+            and y : ℕ ≔ a in
+            (match #(gen) y [ suc. 𝑥 ↦ z | zero. ↦ x ] : ℕ)))
+  
+  (let only z : ℕ ≔ a
+   and 𝑥 : ℕ ≔ a in
+   (match #(gen) 𝑥 [ suc. 𝑦 ↦ y ↦ z | zero. ↦ y ↦ y ] : ℕ → ℕ)) a
+    : ℕ
+  
+
+A bare match (not bound by a let) is always displayed as its definition.  With "names", the let-only around it displays only the names of the variables it binds, so that it's clear which variables in the match are local to it.  A let-only that the user wrote is displayed in full regardless.  The abbreviated form can't be re-entered.
+
+  $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]' -e 'axiom a : ℕ' -e 'def kc (z : ℕ) : ℕ ≔ suc. (((y ↦ match y [ zero. ↦ z | suc. _ ↦ 0 ]) : ℕ → ℕ) a)' -e 'def t1 : ℕ → ℕ ≔ let only 𝑥 : ℕ ≔ a in (match 𝑥 [ suc. n ↦ m ↦ suc. n | zero. ↦ m ↦ m ] : ℕ → ℕ)' -e 'echo kc 3' -e 'about t1' -e 'display let ≔ environments' -e 'echo kc 3' -e 'display let ≔ definitions' -e 'echo kc 3'
+  suc. (let only z, y ≔ ⋯ in (match #(gen) y [ suc. 𝑥 ↦ 0 | zero. ↦ z ] : ℕ))
+    : ℕ
+  
+  let only 𝑥 : ℕ ≔ a in
+  (match #(gen) 𝑥 [ suc. n ↦ m ↦ suc. n | zero. ↦ m ↦ m ] : ℕ → ℕ)
+    : ℕ → ℕ
+  
+  suc.
+    (let only z : ℕ ≔ 3
+     and y : ℕ ≔ a in
+     (match #(gen) y [ suc. 𝑥 ↦ 0 | zero. ↦ z ] : ℕ))
+    : ℕ
+  
+  suc.
+    (let only z : ℕ ≔ 3
+     and y : ℕ ≔ a in
+     (match #(gen) y [ suc. 𝑥 ↦ 0 | zero. ↦ z ] : ℕ))
+    : ℕ
+  
+
+This includes a let-only around a hole, which is abbreviated only when the hole appears with a substitution applied.
+
+  $ narya -fake-interact 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ] axiom a : ℕ def f (x : ℕ) : ℕ ≔ let only y : ℕ ≔ x in (? : ℕ) about f echo f a'
+   ￫ info[I0000]
+   ￮ constant ℕ defined
+  
+   ￫ info[I0001]
+   ￮ axiom a assumed
+  
+   ￫ info[I0000]
+   ￮ constant f defined, containing 1 hole
+  
+   ￫ info[I3003]
+   ￮ hole ?0:
+     
+     y : ℕ
+     ----------------------------------------------------------------------
+     ℕ
+  
+  x ↦ let only y : ℕ ≔ x in ?0
+    : (x : ℕ) → ℕ
+  
+  let only ⋯ in ?0
+    : ℕ
+  
+
+  $ narya -e 'axiom A : Type' -e 'echo let only z, y ≔ ⋯ in A'
+   ￫ error[E0209]
+   ￭ command-line exec string
+   1 | echo let only z, y ≔ ⋯ in A
+     ^ display-only syntax can't be parsed: 'let only x, y ≔ ⋯ in'. Use 'display let := definitions' to print bindings
+  
+  [1]
+
+  $ narya -e 'axiom A : Type' -e 'echo let only z ≔ ⋯ in A'
+   ￫ error[E0209]
+   ￭ command-line exec string
+   1 | echo let only z ≔ ⋯ in A
+     ^ display-only syntax can't be parsed: 'let only x, y ≔ ⋯ in'. Use 'display let := definitions' to print bindings
+  
+  [1]
+
+  $ narya -ascii -e 'axiom A : Type' -e 'echo let only z, y := .... in A'
+   ￫ error[E0209]
+   ￭ command-line exec string
+   1 | echo let only z, y := .... in A
+     ^ display-only syntax can't be parsed: 'let only x, y ≔ ⋯ in'. Use 'display let := definitions' to print bindings
+  
+  [1]
 
 The option can also be cycled.
 
@@ -76,8 +186,9 @@ Holes have no definitions, so they are displayed by name with "definitions" too.
 A recursive local definition refers to itself by name.
 
   $ narya -e 'def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  def bool : Type ≔ data [ true. | false. ]' -e 'display let ≔ definitions' -e 'def ev (m : ℕ) : bool ≔ let rec even : ℕ → bool ≔ [ zero. ↦ true. | suc. n ↦ even n ] in even m' -e 'axiom k : ℕ' -e 'echo ev (suc. k)'
-  (let only m : ℕ ≔ suc. k in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ ev._even n | zero. ↦ true. ] : ℕ → bool)) k
+  let only m : ℕ ≔ suc. k
+  and 𝑥 : ℕ ≔ k in
+  (match #(gen) 𝑥 [ suc. n ↦ ev._even n | zero. ↦ true. ] : bool)
     : bool
   
 
@@ -112,9 +223,9 @@ In a mutual block, the variables bound to the other local definitions are not di
     : ℕ → bool
   
   $ narya eo.ny -e 'display let ≔ definitions' -e 'echo eo (suc. k)' -e 'echo eo2'
-  (let only m : ℕ ≔ suc. k in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ eo._even n | zero. ↦ false. ] : ℕ → bool))
-    k
+  let only m : ℕ ≔ suc. k
+  and 𝑥 : ℕ ≔ k in
+  (match #(gen) 𝑥 [ suc. n ↦ eo._even n | zero. ↦ false. ] : bool)
     : bool
   
   𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ eo2._even n | zero. ↦ false. ]
@@ -140,11 +251,12 @@ Variables bound to local definitions from other blocks, such as enclosing ones, 
     : bool
   
   $ narya nested.ny -e 'display let ≔ definitions' -e 'echo h k'
-  (let only m : ℕ ≔ k
-   and f : ℕ → bool ≔
-     let only m : ℕ ≔ k in
-     (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ h._f n | zero. ↦ true. ] : ℕ → bool) in
-   (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ h._g2 n | zero. ↦ h._g m ] : ℕ → bool)) k
+  let only m : ℕ ≔ k
+  and f : ℕ → bool ≔
+    let only m : ℕ ≔ k in
+    (𝑥 ↦ match #(gen) 𝑥 [ suc. n ↦ h._f n | zero. ↦ true. ] : ℕ → bool)
+  and 𝑥 : ℕ ≔ k in
+  (match #(gen) 𝑥 [ suc. n ↦ h._g2 n | zero. ↦ h._g m ] : bool)
     : bool
   
 
@@ -172,19 +284,13 @@ An ascribed definition displayed as the value of a let-only clause doesn't leave
 The body of a let-only around a displayed definition is ascribed unless it synthesizes.  An implicitly dependent match (on a variable, refining the goal) doesn't synthesize, since its branches may have different types; but a non-dependent match synthesizes if one of its branches does, and a match with an explicit motive always synthesizes.
 
   $ narya -e 'def B : Type ≔ data [ true. | false. ]  def ℕ : Type ≔ data [ zero. | suc. (_ : ℕ) ]  def T (x : B) : Type ≔ match x [ true. ↦ B | false. ↦ ℕ ]  axiom u : B  axiom b0 : B  axiom n0 : ℕ  axiom not : B → B' -e 'def g (x : B) (b : B) (n : ℕ) : T x ≔ ((y ↦ y) : T x → T x) (match x [ true. ↦ b | false. ↦ n ])' -e 'echo g u b0 n0' -e 'def g2 (x : B) (b : B) : B ≔ ((y ↦ y) : B → B) (match not x [ true. ↦ b | false. ↦ true. ])' -e 'echo g2 u b0' -e 'def g3 (x : B) (b : B) : B ≔ ((y ↦ y) : B → B) (match x return _ ↦ B [ true. ↦ b | false. ↦ true. ])' -e 'echo g3 u b0'
-  let only x : B ≔ u
-  and b : B ≔ b0
-  and n : ℕ ≔ n0 in
-  (match #(gen) x [ false. ↦ n | true. ↦ b ] : T x)
+  let only x, b, n ≔ ⋯ in (match #(gen) x [ false. ↦ n | true. ↦ b ] : T x)
     : T u
   
-  let only x : B ≔ u
-  and b : B ≔ b0 in
-  match #(gen) not x [ false. ↦ true. | true. ↦ b ]
+  let only x, b ≔ ⋯ in match #(gen) not x [ false. ↦ true. | true. ↦ b ]
     : B
   
-  let only x : B ≔ u
-  and b : B ≔ b0 in
+  let only x, b ≔ ⋯ in
   match #(gen) x return 𝑥 ↦ B [ false. ↦ true. | true. ↦ b ]
     : B
   

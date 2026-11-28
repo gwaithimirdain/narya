@@ -584,6 +584,10 @@ let process_letonly ctx obs loc =
   | Some (_, _, Token (Only, _) :: Token (Omitted, _) :: _) ->
       fatal ?loc
         (Display_only_syntax "'let only ⋯ in'. Use 'display let := definitions' to print bindings")
+  | Some (_, _, Token (Only, _) :: Term _ :: Token ((Op "," | Coloneq), _) :: _) ->
+      fatal ?loc
+        (Display_only_syntax
+           "'let only x, y ≔ ⋯ in'. Use 'display let := definitions' to print bindings")
   | Some (_, sup, Token (Only, _) :: obs) -> (
       let (Letonly_terms (clauses, body)) =
         process_letonly_terms ctx No_clauses Emp (Token (And, ([], None)) :: obs) in
@@ -611,7 +615,14 @@ and letonly_clause () =
 
 and letonly_terms () = Inner (letonly_clause ())
 
-(* The first clause can also be the omission marker "⋯", which is how a let-only is displayed with its clauses elided.  This is parsed only so that we can give a helpful error message about it. *)
+(* The names of the variables bound by a let-only whose clauses are elided except for those names, "x, y ≔ ⋯". *)
+let rec letonly_names () =
+  terms
+    [
+      (Op ",", Lazy (lazy (letonly_names ()))); (Coloneq, op Omitted (op In (Done_closed letonly)));
+    ]
+
+(* The first clause can also be the omission marker "⋯", which is how a let-only is displayed with its clauses elided, or the start of a list of only the names of its variables followed by "≔ ⋯".  These are parsed only so that we can give a helpful error message about them. *)
 let letonly_first_clause () =
   let clause = letonly_clause () in
   Inner
@@ -624,6 +635,13 @@ let letonly_first_clause () =
             (Keyword_key, letonly_rest ());
             (Omitted, op In (Done_closed letonly));
           ];
+      term =
+        Option.map
+          (fun t ->
+            t
+            |> TokMap.add (Op ",") (Lazy (lazy (letonly_names ())), `Noss)
+            |> TokMap.add Coloneq (op Omitted (op In (Done_closed letonly)), `Noss))
+          clause.term;
     }
 
 let letonly_tree = Closed_entry (eop_ss Let (op Only (letonly_first_clause ())))
@@ -658,6 +676,32 @@ let rec get_abslets heads obs =
             match rest with
             | Token (Rec, (wsrec, _)) :: Term x :: rest ->
                 (`Var ([ (plet, wslet); (Token.pp Rec, wsrec) ], Wrap x), rest)
+            (* For display only, the clauses of a let-only can be elided except for the names of the variables, "let only x, y ≔ ⋯ in".  The names are separated by commas, after which the line can break. *)
+            | Token (Only, (wsonly, _)) :: Term x :: (Token ((Op "," | Coloneq), _) :: _ as rest) ->
+                let rec names : type lt ls rt rs.
+                    (document * Whitespace.t list * space) Bwd.t ->
+                    (lt, ls, rt, rs) parse located ->
+                    observation list ->
+                    (document * Whitespace.t list * space) list * observation list =
+                 fun acc x rest ->
+                  let px, wx = pp_term x in
+                  match rest with
+                  | Token (Op ",", (wscomma, _)) :: Term y :: rest ->
+                      names
+                        (Snoc (acc, (px ^^ pp_ws `None wx ^^ Token.pp (Op ","), wscomma, `Break)))
+                        y rest
+                  | Token (Coloneq, (wscoloneq, _)) :: Token (Omitted, (wsomitted, _)) :: rest ->
+                      ( Bwd.to_list acc
+                        @ [
+                            (px, wx, `Nobreak);
+                            (Token.pp Coloneq, wscoloneq, `Nobreak);
+                            (Token.pp Omitted, wsomitted, `Nobreak);
+                          ],
+                        rest )
+                  | _ -> invalid "let-only" in
+                let names, rest = names Emp x rest in
+                ( `Elided ([ (plet, wslet, `Nobreak); (Token.pp Only, wsonly, `Nobreak) ] @ names),
+                  rest )
             | Token (Only, (wsonly, _)) :: Term x :: rest ->
                 (`Var ([ (plet, wslet); (Token.pp Only, wsonly) ], Wrap x), rest)
             (* A let-only can also start with a lock or key clause. *)
@@ -668,7 +712,12 @@ let rec get_abslets heads obs =
                 (`Op ([ (plet, wslet); (Token.pp Only, wsonly) ], tok, wstok, Wrap arg), rest)
             (* For display only, the clauses of a let-only can be elided entirely by an omission marker. *)
             | Token (Only, (wsonly, _)) :: Token (Omitted, (wsomitted, _)) :: rest ->
-                ( `Elided [ (plet, wslet); (Token.pp Only, wsonly); (Token.pp Omitted, wsomitted) ],
+                ( `Elided
+                    [
+                      (plet, wslet, `Nobreak);
+                      (Token.pp Only, wsonly, `Nobreak);
+                      (Token.pp Omitted, wsomitted, `Nobreak);
+                    ],
                   rest )
             | Term x :: rest -> (`Var ([ (plet, wslet) ], Wrap x), rest)
             | _ -> invalid "let")
@@ -761,7 +810,8 @@ let pp_abslets obs :
               Emp,
               Some ws )
         | `Elided (toks, wsin) ->
-            let kws = concat_map (fun (tok, ws) -> tok ^^ pp_ws `Nobreak ws) toks in
+            (* Each break is grouped separately, so that a long list of names fills lines rather than breaking at every comma. *)
+            let kws = concat_map (fun (tok, ws, space) -> tok ^^ group (pp_ws space ws)) toks in
             ( introabs,
               Snoc
                 ( Bwd_extra.append heads
@@ -868,9 +918,11 @@ let pp_abslet_case (triv : [ `Trivial | `Nontrivial of Whitespace.t list ]) obs 
             wsbody )
       | _ :: _ -> (
           let ibody, pbody, wsbody = pp_case `Trivial body in
-          let newbody = nest 2 (concat abslets ^^ optional (pp_ws `Break) ws ^^ ibody ^^ pbody) in
+          let lets = concat abslets ^^ optional (pp_ws `Break) ws ^^ ibody ^^ pbody in
+          let newbody = nest 2 lets in
           match (introabs, triv) with
-          | [], `Trivial -> (empty, newbody, wsbody)
+          (* A trivial caller has already placed us at the start of a line (or aligned us), so the let-bindings and body line up there without further indentation. *)
+          | [], `Trivial -> (empty, lets, wsbody)
           | [], `Nontrivial _ ->
               let doc = ifflat empty (hardline ^^ blank 2) ^^ newbody in
               (empty, (if List.is_empty abslets then group doc else doc), wsbody)
@@ -880,18 +932,18 @@ let pp_abslet_case (triv : [ `Trivial | `Nontrivial of Whitespace.t list ]) obs 
                 wsbody )))
   | (absws, abs) :: trailabs -> (
       let ibody, pbody, wsbody = pp_case (`Nontrivial (Option.value ws ~default:[])) body in
-      let newbody =
-        nest 2
-          (concat abslets
-          ^^ optional (pp_ws `Break) absws
-          ^^ group
-               (abs
-               ^^ concat_map (fun (w, x) -> optional (pp_ws `Break) w ^^ x) trailabs
-               ^^ optional (pp_ws `Break) ws
-               ^^ ibody)
-          ^^ pbody) in
+      let lets =
+        concat abslets
+        ^^ optional (pp_ws `Break) absws
+        ^^ group
+             (abs
+             ^^ concat_map (fun (w, x) -> optional (pp_ws `Break) w ^^ x) trailabs
+             ^^ optional (pp_ws `Break) ws
+             ^^ ibody)
+        ^^ pbody in
+      let newbody = nest 2 lets in
       match (introabs, triv) with
-      | [], `Trivial -> (empty, newbody, wsbody)
+      | [], `Trivial -> (empty, lets, wsbody)
       | [], `Nontrivial _ ->
           let doc = ifflat empty (hardline ^^ blank 2) ^^ newbody in
           (empty, (if List.is_empty abslets then group doc else doc), wsbody)

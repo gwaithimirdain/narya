@@ -165,9 +165,13 @@ module rec Term : sig
     | Letonly : {
         termctx : ('mode, 'c, 'b) termctx;
         env : ('mode, 'a, 'k, 'b) env;
-        tm : ('mode, 'b, kinetic) term;
+        tm : ('mode, 'b, 's) term;
         ty : ('mode, 'b, kinetic) term;
+        abbreviable : bool;
       }
+        -> ('mode, 'a, 's) term
+    | Stuck_meta :
+        ('hmode, 'x, 'b, 's) Meta.t * ('mode, 'a, potential) term
         -> ('mode, 'a, kinetic) term
     | Lam :
         'k variables
@@ -183,6 +187,7 @@ module rec Term : sig
         dim : 'n D.t;
         motive : ('mode, 'a) match_motive;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
+        display : (('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term) option;
       }
         -> ('mode, 'a, potential) term
     | Realize : ('mode, 'a, kinetic) term -> ('mode, 'a, potential) term
@@ -508,13 +513,19 @@ end = struct
         (* A let is also always zero-dimensional. *)
         * ('mode, ('a, ('modality, D.zero) dim_entry) snoc, 's) term
         -> ('mode, 'a, 's) term
-    (* A 'let only' binds some variables, forming a context that doesn't extend the ambient one, and whose values are given by a term environment in the ambient context, of some dimension 'k.  The body lives in that context of only those variables, without their values.  Evaluation just evaluates the environment and then the body in it.  The context, and the type of the body, are stored only for display (the latter so that a body that doesn't synthesize on its own can be displayed with an ascription).  A let-only is always kinetic, as are its bound terms and its body: a case tree in any of them is bound to a metavariable as usual. *)
+    (* A 'let only' binds some variables, forming a context that doesn't extend the ambient one, and whose values are given by a term environment in the ambient context, of some dimension 'k.  The body lives in that context of only those variables, without their values.  Evaluation just evaluates the environment and then the body in it.  The context, and the type of the body, are stored only for display (the latter so that a body that doesn't synthesize on its own can be displayed with an ascription).  A let-only produced by typechecking is always kinetic, as are its bound terms and its body: a case tree in any of them is bound to a metavariable as usual.  But for display, readback can produce a potential let-only whose body is a stuck match (see Value.stuck); its bound terms are still kinetic. *)
     | Letonly : {
         termctx : ('mode, 'c, 'b) termctx;
         env : ('mode, 'a, 'k, 'b) env;
-        tm : ('mode, 'b, kinetic) term;
+        tm : ('mode, 'b, 's) term;
         ty : ('mode, 'b, kinetic) term;
+        (* Whether the display settings may abbreviate this let-only, by displaying only the names of the variables it binds, or eliding its clauses entirely if its body is a named metavariable.  This is true only for a let-only produced by readback to display a term from another context with a substitution applied to it (a metavariable or a stuck match), not for one typechecked from a let-only that the user wrote, nor for one that the "about" command was asked to display. *)
+        abbreviable : bool;
       }
+        -> ('mode, 'a, 's) term
+    (* The stuck value of a metavariable, displayed in place of the metavariable (see Readback.readback_val): a potential term, usually a let-only around the match that the metavariable's definition is stuck on.  This is produced only by readback for display, and never evaluated.  We remember the metavariable so that unparsing can treat this as part of its definition, displaying recursive occurrences of it by name.  (Its mode is that of the head of the neutral, which might differ from that of the value if the spine projects modal fields, although in that case the value can't remember where it got stuck.) *)
+    | Stuck_meta :
+        ('hmode, 'x, 'b, 's) Meta.t * ('mode, 'a, potential) term
         -> ('mode, 'a, kinetic) term
     (* Abstractions and structs can appear in any kind of term.  The dimension 'n is the substitution dimension of the type being checked against (function-type or codata/record).  *)
     | Lam :
@@ -533,6 +544,8 @@ end = struct
         (* How the match was typechecked: with an explicit motive supplied by the user (a type family over the datatype's indices and the datatype itself), implicitly dependently (refining a variable in the context and the goal), or non-dependently.  This is stored only for display: the explicit motive is displayed with a "return" clause, and whether the match synthesizes when redisplayed depends on how it was checked.  Evaluation never needs it, since the branch it selects carries its own body. *)
         motive : ('mode, 'a) match_motive;
         branches : ('mode, 'a, 'n) branch Constr.Map.t;
+        (* The context of a match and the type it was checked at, stored only for display.  If the match is stuck when evaluated, its evaluation environment can be read back along this context, and the match displayed as a let-only around itself (ascribed with its type, since a match doesn't synthesize). *)
+        display : (('mode, 'c, 'a) termctx * ('mode, 'a, kinetic) term) option;
       }
         -> ('mode, 'a, potential) term
     (* A potential term is "realized" by kinetic terms, or canonical types, at its leaves. *)

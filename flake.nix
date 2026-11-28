@@ -57,12 +57,27 @@
         # Packages from devPackagesQuery
         devPackages = builtins.attrValues
           (pkgs.lib.getAttrs (builtins.attrNames devPackagesQuery) scopes.scope');
+        # Emacs with ProofGeneral, for running the tests in test/proofgeneral
+        emacsWithPG = pkgs.emacs-nox.pkgs.withPackages (p: [ p.proof-general ]);
       in {
         packages.default = scopesStatic.main;
+
+        # The ProofGeneral mode, built for the default Emacs.  To build it for
+        # another Emacs, see proofgeneral/package.nix.
+        packages.emacs-narya =
+          (pkgs.emacsPackagesFor pkgs.emacs).callPackage ./proofgeneral/package.nix { };
 
         devShells.default = pkgs.mkShell {
           inputsFrom = [ scopes.main ];
           buildInputs = devPackages;
+        };
+
+        # The same as the default shell, plus Emacs and ProofGeneral so that
+        # "dune test" also runs the ProofGeneral tests.  Use it with
+        # "nix develop .#proofgeneral".
+        devShells.proofgeneral = pkgs.mkShell {
+          inputsFrom = [ scopes.main ];
+          buildInputs = devPackages ++ [ emacsWithPG ];
         };
       });
   nixConfig = {
