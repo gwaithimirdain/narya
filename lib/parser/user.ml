@@ -198,11 +198,11 @@ type notation = {
   inner_symbols : [ `Single of Token.t | `Multiple of Token.t * Token.t option list * Token.t ];
 }
 
-(* What was written at a binding position of a notation: a variable or underscore, or a parenthesized variable or underscore ascribed to a type, possibly with a modality; or a parenthesized ascription that can't be a binder (with an explanation), or something else. *)
+(* What was written at a binding position of a notation: a variable or underscore, or a parenthesized variable or underscore ascribed to a type, possibly with a modality; or a parenthesized ascription that can't be a binder (with the reason), or something else. *)
 type binder_parse =
   | Binder of
       string option * (string Asai.Range.located list Asai.Range.located * wrapped_parse) option
-  | Invalid_binder of string
+  | Invalid_binder of [ `Implicit | `Multiple | `Not_variable ]
   | Not_binder
 
 (* The global processing function isn't defined until postprocess.ml, but we need it before that here. *)
@@ -236,18 +236,16 @@ let get_binder (slot : Pattern.slot) (Wrap x : wrapped_parse) :
     string option Asai.Range.located
     * (string Asai.Range.located list Asai.Range.located * wrapped_parse) option =
   match (slot, !global_processor.binder x) with
-  | _, Invalid_binder str -> fatal ?loc:x.loc (Parse_error str)
+  | _, Invalid_binder err ->
+      fatal ?loc:x.loc
+        (Invalid_notation_binding
+           (err :> [ `Implicit | `Multiple | `Not_variable | `Modality of string list ]))
   | Plain _, Binder (name, dom) -> ({ value = name; loc = x.loc }, dom)
-  | Plain _, Not_binder -> fatal ?loc:x.loc (Parse_error "invalid variable")
+  | Plain _, Not_binder -> fatal ?loc:x.loc (Invalid_notation_binding `Not_variable)
   | Typed { modality; _ }, Binder (name, Some (m, ty)) ->
       let modality = List.map fst modality in
       if not (same_modality m.value modality) then
-        fatal ?loc:x.loc
-          (Parse_error
-             (match modality with
-             | [] -> "this notation binds a variable here without a modality"
-             | _ ->
-                 "this notation binds a variable here with modality " ^ String.concat " " modality));
+        fatal ?loc:x.loc (Invalid_notation_binding (`Modality modality));
       ({ value = name; loc = x.loc }, Some (m, ty))
   | Typed _, (Binder (_, None) | Not_binder) ->
       ({ value = None; loc = x.loc }, Some (Asai.Range.locate_opt None [], Wrap x))

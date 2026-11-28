@@ -303,6 +303,9 @@ module Code = struct
     | Invalid_synthesized_type : string * printable -> t
     | Unrecognized_attribute : t
     | Display_only_syntax : string -> t
+    | Invalid_notation_binding :
+        [ `Implicit | `Multiple | `Not_variable | `Modality of string list ]
+        -> t
     | Generative_copy : t
     | Invalid_degeneracy_action : string * 'nk D.t * 'n D.t -> t
     | Wrong_number_of_patterns : t
@@ -493,6 +496,7 @@ module Code = struct
     | Invalid_synthesized_type _ -> Error
     | Unrecognized_attribute -> Error
     | Display_only_syntax _ -> Error
+    | Invalid_notation_binding _ -> Error
     | Generative_copy -> Warning
     | Invalid_degeneracy_action _ -> Bug
     | Wrong_number_of_patterns -> Error
@@ -563,6 +567,7 @@ module Code = struct
     | No_relative_precedence _ -> "E0207"
     | Unrecognized_attribute -> "E0208"
     | Display_only_syntax _ -> "E0209"
+    | Invalid_notation_binding _ -> "E0211"
     | Generative_copy -> "W0210"
     | Comment_end_in_string -> "E0250"
     | Encoding_error -> "E0299"
@@ -1254,6 +1259,15 @@ module Code = struct
           textf "type %a synthesized by %s is invalid for entire term" pp_printed (print ty) str
       | Unrecognized_attribute -> textf "unrecognized attribute"
       | Display_only_syntax str -> textf "display-only syntax can't be parsed: %s" str
+      | Invalid_notation_binding err ->
+          textf "invalid binder in notation: %s"
+            (match err with
+            | `Implicit -> "this notation can't bind an implicit variable"
+            | `Multiple -> "this notation binds only one variable here"
+            | `Not_variable -> "not a variable"
+            | `Modality [] -> "this notation binds a variable here without a modality"
+            | `Modality m ->
+                "this notation binds a variable here with modality " ^ String.concat " " m)
       | Generative_copy ->
           textf "a term copied from a printed local case tree won't be equal to the original"
       | Invalid_degeneracy_action (str, nk, n) ->

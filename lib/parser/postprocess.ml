@@ -428,13 +428,13 @@ let get_binder : type lt ls rt rs. (lt, ls, rt, rs) parse located -> User.binder
   match x.value with
   | Notn ((AscVar, _), n) -> (
       match notation_args n with
-      | Token (LBrace, _) :: _ -> Invalid_binder "this notation can't bind an implicit variable"
+      | Token (LBrace, _) :: _ -> Invalid_binder `Implicit
       | obs -> (
           let Wrap v, modality, ty = args_of_ascvar ?loc:x.loc obs in
           match (var v, v.value) with
           | Some name, _ -> Binder (name, Some (modality, ty))
-          | None, App _ -> Invalid_binder "this notation binds only one variable here"
-          | None, _ -> Invalid_binder "invalid variable"))
+          | None, App _ -> Invalid_binder `Multiple
+          | None, _ -> Invalid_binder `Not_variable))
   | _ -> (
       match var x with
       | Some name -> Binder (name, None)

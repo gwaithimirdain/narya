@@ -135,34 +135,34 @@ The notations survive compilation
 Errors when using binding notations
 
   $ narya prelude.ny -e "echo ∃ (a b), B a"
-   ￫ error[E0200]
+   ￫ error[E0211]
    ￭ command-line exec string
    1 | echo ∃ (a b), B a
-     ^ parse error: invalid variable
+     ^ invalid binder in notation: not a variable
   
   [1]
 
   $ narya prelude.ny -e "echo ∃ (x y : A), B x"
-   ￫ error[E0200]
+   ￫ error[E0211]
    ￭ command-line exec string
    1 | echo ∃ (x y : A), B x
-     ^ parse error: this notation binds only one variable here
+     ^ invalid binder in notation: this notation binds only one variable here
   
   [1]
 
   $ narya prelude.ny -e "echo (x y : A) × B x"
-   ￫ error[E0200]
+   ￫ error[E0211]
    ￭ command-line exec string
    1 | echo (x y : A) × B x
-     ^ parse error: this notation binds only one variable here
+     ^ invalid binder in notation: this notation binds only one variable here
   
   [1]
 
   $ narya prelude.ny -e "echo ∃ {x : A}, B x"
-   ￫ error[E0200]
+   ￫ error[E0211]
    ￭ command-line exec string
    1 | echo ∃ {x : A}, B x
-     ^ parse error: this notation can't bind an implicit variable
+     ^ invalid binder in notation: this notation can't bind an implicit variable
   
   [1]
 
@@ -272,18 +272,18 @@ Modal binders
   
 
   $ narya -spatial modalprelude.ny -e "echo (x : A) ⊗ B x"
-   ￫ error[E0200]
+   ￫ error[E0211]
    ￭ command-line exec string
    1 | echo (x : A) ⊗ B x
-     ^ parse error: this notation binds a variable here with modality ♭
+     ^ invalid binder in notation: this notation binds a variable here with modality ♭
   
   [1]
 
   $ narya -spatial modalprelude.ny -e "echo (x :♯| A) ⊗ B x"
-   ￫ error[E0200]
+   ￫ error[E0211]
    ￭ command-line exec string
    1 | echo (x :♯| A) ⊗ B x
-     ^ parse error: this notation binds a variable here with modality ♭
+     ^ invalid binder in notation: this notation binds a variable here with modality ♭
   
   [1]
 
